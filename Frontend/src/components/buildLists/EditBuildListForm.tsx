@@ -98,7 +98,7 @@ const EditBuildListForm: React.FC<EditBuildListFormProps> = ({
 
   return (
     <div className="p-1">
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form onSubmit={(e) => void handleSubmit(e)} className="space-y-4">
         <Input
           label="Build List Name"
           id="edit-buildlist-name"

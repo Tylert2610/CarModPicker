@@ -8,17 +8,33 @@ import reactDom from 'eslint-plugin-react-dom';
 import eslintConfigPrettier from 'eslint-config-prettier'; // Import eslint-config-prettier
 
 export default tseslint.config(
-  ...tseslint.configs.recommendedTypeChecked, // Add this for recommended type-checked rules
-  // Or for stricter rules, use: ...tseslint.configs.strictTypeChecked,
-  // Optionally, for stylistic rules: ...tseslint.configs.stylisticTypeChecked,
   {
+    ignores: ['dist/', 'node_modules/', '*.config.js'],
+  },
+  // Base config for non-type-checked files
+  {
+    files: ['*.config.ts', 'vite.config.ts'],
+    extends: [...tseslint.configs.recommended],
+    languageOptions: {
+      globals: {
+        ...globals.node,
+      },
+    },
+    rules: {
+      '@typescript-eslint/no-unused-vars': 'warn',
+    },
+  },
+  // Main application files with full type checking
+  {
+    files: ['src/**/*.ts', 'src/**/*.tsx'],
+    extends: [...tseslint.configs.recommendedTypeChecked],
     languageOptions: {
       globals: {
         ...globals.browser,
         ...globals.es2021,
       },
       parserOptions: {
-        project: ['./tsconfig.app.json', './tsconfig.node.json'],
+        project: ['./tsconfig.app.json'],
         tsconfigRootDir: import.meta.dirname,
       },
     },
@@ -39,6 +55,9 @@ export default tseslint.config(
       // Enable its recommended typescript rules
       ...reactX.configs['recommended-typescript'].rules,
       ...reactDom.configs.recommended.rules,
+      // Disable React 19 warnings for now since we're not using React 19
+      'react-x/no-use-context': 'off',
+      'react-x/no-context-provider': 'off',
     },
   },
   eslintConfigPrettier // Add this last

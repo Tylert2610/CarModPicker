@@ -11,6 +11,10 @@ RUN npm install
 # Copy the rest of the application code
 COPY . .
 
+# Accept build-time environment variables
+ARG VITE_API_URL
+ENV VITE_API_URL=$VITE_API_URL
+
 # Build the application
 # The build script is "tsc -b && vite build" from your package.json
 RUN npm run build

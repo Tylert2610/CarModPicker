@@ -40,7 +40,7 @@ const PartList: React.FC<PartListProps> = ({
   } = useApiRequest(fetchPartsByBuildListIdRequestFn);
 
   useEffect(() => {
-    fetchBuildListParts(buildListId);
+    void fetchBuildListParts(buildListId);
   }, [buildListId, fetchBuildListParts, refreshKey]);
 
   useEffect(() => {

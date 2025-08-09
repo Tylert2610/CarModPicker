@@ -85,7 +85,7 @@ const CreateCarForm: React.FC<CreateCarFormProps> = ({ onCarCreated }) => {
   return (
     <Card className="mb-6">
       <SectionHeader title="Add a New Car" />
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form onSubmit={(e) => void handleSubmit(e)} className="space-y-4">
         <Input
           label="Make"
           id="make"

@@ -104,7 +104,7 @@ const EditCarForm: React.FC<EditCarFormProps> = ({
 
   return (
     <div className="p-1">
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form onSubmit={(e) => void handleSubmit(e)} className="space-y-4">
         <Input
           label="Make"
           id="edit-make"

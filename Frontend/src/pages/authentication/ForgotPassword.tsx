@@ -52,7 +52,7 @@ function ForgotPassword() {
         </div>
       ) : (
         <>
-          <AuthForm onSubmit={handleSubmit}>
+          <AuthForm onSubmit={(e) => void handleSubmit(e)}>
             <Input
               label="Email"
               id="email"

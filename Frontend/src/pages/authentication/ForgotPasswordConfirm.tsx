@@ -94,7 +94,7 @@ function ForgotPasswordConfirm() {
         </div>
       ) : (
         <>
-          <AuthForm onSubmit={handleSubmit}>
+          <AuthForm onSubmit={(e) => void handleSubmit(e)}>
             <Input
               label="New Password"
               id="new-password"

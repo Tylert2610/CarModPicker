@@ -28,7 +28,7 @@ function ViewUser() {
 
   useEffect(() => {
     if (userIdParam) {
-      fetchUser(userIdParam);
+      void fetchUser(userIdParam);
      
     }
   }, [userIdParam, fetchUser]); // Dependency array updated

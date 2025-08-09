@@ -10,7 +10,7 @@ interface UseApiRequestReturn<TData, TPayload> {
   setError: (message: string | null) => void;
 }
 
-const parseApiError = (err: any): string => {
+const parseApiError = (err: unknown): string => {
   const axiosError = err as AxiosError<HTTPValidationError>;
   if (axiosError.isAxiosError && axiosError.response?.data) {
     const responseData = axiosError.response.data;
@@ -23,21 +23,19 @@ const parseApiError = (err: any): string => {
         return responseData.detail;
       }
     }
-    if (
-      (responseData as any).message &&
-      typeof (responseData as any).message === 'string'
-    ) {
-      return (responseData as any).message;
+    // Check for alternative message formats
+    if ('message' in responseData && typeof responseData.message === 'string') {
+      return responseData.message;
     }
     return 'An unexpected error format was received from the server.';
   }
-  if (err.message) {
+  if (err instanceof Error && err.message) {
     return err.message;
   }
   return 'An unexpected error occurred.';
 };
 
-function useApiRequest<TData, TPayload = any>(
+function useApiRequest<TData, TPayload = unknown>(
   requestFn: (payload: TPayload) => Promise<AxiosResponse<TData>>
 ): UseApiRequestReturn<TData, TPayload> {
   const [data, setData] = useState<TData | null>(null);

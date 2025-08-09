@@ -51,13 +51,13 @@ function Register() {
 
     if (result) {
       console.log('Registration successful:', result);
-      navigate('/login'); // Redirect to login page after successful registration
+      void navigate('/login'); // Redirect to login page after successful registration
     }
   };
 
   return (
     <AuthCard title="Create your account">
-      <AuthForm onSubmit={handleSubmit}>
+      <AuthForm onSubmit={(e) => void handleSubmit(e)}>
         <Input
           label="Username"
           id="username"

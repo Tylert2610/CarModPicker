@@ -21,6 +21,7 @@ const Dialog: React.FC<DialogProps> = ({
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-xl font-semibold text-white">{title}</h2>
           <button
+            type="button"
             onClick={onClose}
             className="text-gray-400 hover:text-gray-200 text-3xl leading-none p-2 hover:bg-gray-800 rounded-md transition-colors duration-200"
             aria-label="Close dialog"

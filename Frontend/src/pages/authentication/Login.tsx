@@ -6,7 +6,7 @@ import apiClient from '../../services/Api';
 import type { UserRead } from '../../types/Api'; 
 import AuthCard from '../../components/auth/AuthCard';
 import { ErrorAlert } from '../../components/common/Alerts';
-import { useAuth } from '../../contexts/AuthContext';
+import { useAuth } from '../../hooks/useAuth';
 import AuthRedirectLink from '../../components/auth/AuthRedirectLink';
 import useApiRequest from '../../hooks/UseApiRequest';
 import AuthForm from '../../components/auth/AuthForm';
@@ -50,14 +50,14 @@ function Login() {
       // Successfully logged in
       console.log('Login successful:', result);
       authLogin(result);
-      navigate('/');
+      void navigate('/');
     }
     // If result is null, an API error occurred and apiError will be set by the hook
   };
 
   return (
     <AuthCard title="Sign in to your account">
-      <AuthForm onSubmit={handleSubmit}>
+      <AuthForm onSubmit={(e) => void handleSubmit(e)}>
         <Input
           label="Username"
           id="username"
