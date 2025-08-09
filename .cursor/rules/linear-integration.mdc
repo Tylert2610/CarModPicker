@@ -1,9 +1,0 @@
----
-alwaysApply: true
----
-
-- Always use the linear MCP server to reference the development plan and open issues. The team name is CarModPicker
-- Creating a linear issue syncs to github issues
-- Feel free to suggest adding new issues to this linear team if you identify a bug or see a clear feature that should probably be added to the roadmap
-- Apply relevant labels to issues
-- Do not insert next steps into issues. If next steps are needed, create a new issue or find an existing issue that is related and add a comment to it.
