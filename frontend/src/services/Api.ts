@@ -8,8 +8,14 @@ const getApiBaseUrl = () => {
   }
   
   // In production, check for environment variable first
-  if (import.meta.env.VITE_API_URL) {
-    return `${import.meta.env.VITE_API_URL}/api`;
+  const apiUrl: string | undefined = import.meta.env.VITE_API_URL as string | undefined;
+  if (apiUrl && typeof apiUrl === 'string') {
+    // Ensure the URL has a protocol
+    const urlWithProtocol =
+      apiUrl.startsWith('http://') || apiUrl.startsWith('https://')
+        ? apiUrl
+        : `https://${apiUrl}`;
+    return `${urlWithProtocol}/api`;
   }
   
   // Default fallback for production
