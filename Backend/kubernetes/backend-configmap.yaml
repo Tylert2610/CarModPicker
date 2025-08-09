@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backend-config
+data:
+  PROJECT_NAME: "CarModPicker"
+  API_V1_STR: "/api/v1"
+  DEBUG: "False"
+  ACCESS_TOKEN_EXPIRE_MINUTES: "60"
+  # Adjust ALLOWED_ORIGINS based on frontend's URL in production
+  ALLOWED_ORIGINS: '["http://localhost", "http://carmodpicker.com"]'

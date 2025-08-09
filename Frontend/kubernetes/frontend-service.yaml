@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: carmodpicker-frontend-svc
+  labels:
+    app: carmodpicker-frontend
+spec:
+  selector:
+    app: carmodpicker-frontend
+  ports:
+  - protocol: TCP
+    port: 80 # Port the service will listen on
+    targetPort: 80 # Port the frontend pods (Nginx) are listening on
+  type: ClusterIP
