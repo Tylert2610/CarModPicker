@@ -1,0 +1,15 @@
+services:
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - '8080:8080'
+    volumes:
+      - ./nginx.dev.conf:/etc/nginx/conf.d/default.conf
+    container_name: carmodpicker_frontend
+    networks:
+      - carmodpicker_network
+networks:
+  carmodpicker_network:
+    external: true # Declare that this network is created outside of this compose file

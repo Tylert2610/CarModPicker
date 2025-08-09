@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: carmodpicker-frontend
+  labels:
+    app: carmodpicker-frontend
+spec:
+  replicas: 1 # Adjust as needed
+  selector:
+    matchLabels:
+      app: carmodpicker-frontend
+  template:
+    metadata:
+      labels:
+        app: carmodpicker-frontend
+    spec:
+      imagePullSecrets:
+        - name: regcred 
+      containers:
+      - name: nginx-frontend
+        image: webbpulse/carmodpicker:frontend-latest 
+        imagePullPolicy: Always # Or IfNotPresent if using local images well known to K8s
+        
+        ports:
+        - containerPort: 80 # Nginx in your frontend Dockerfile exposes port 80
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "100m"
+          limits:
+            memory: "128Mi"
+            cpu: "250m"
+        readinessProbe:
+          httpGet:
+            path: /index.html # Or simply / if your Nginx serves index.html at root
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /index.html
+            port: 80
+          initialDelaySeconds: 15
+          periodSeconds: 20
