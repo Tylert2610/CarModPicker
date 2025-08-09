@@ -122,9 +122,13 @@ function ViewPart() {
     if (ownerData) setItemOwner(ownerData);
   }, [ownerData]);
 
-  const handlePartUpdated = () => {
+  const handlePartUpdated = async () => {
     if (partId) {
+<<<<<<< Updated upstream:Frontend/src/pages/builder/ViewPart.tsx
       fetchPart(partId); // Refresh part data
+=======
+      await fetchPart(partId); // Refresh part data
+>>>>>>> Stashed changes:frontend/src/pages/builder/ViewPart.tsx
     }
     setIsEditPartFormOpen(false);
   };
