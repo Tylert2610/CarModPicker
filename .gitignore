@@ -108,6 +108,3 @@ coverage/
 
 # Kubernetes secrets
 *-secrets.yaml
-
-# Docker
-.dockerignore
