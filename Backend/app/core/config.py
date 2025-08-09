@@ -1,6 +1,7 @@
-from pydantic import Field
+from pydantic import Field, validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
+import os
 
 
 class Settings(BaseSettings):
@@ -14,12 +15,31 @@ class Settings(BaseSettings):
         "sqlite:///./test.db"  # will load url from env but will fallback to this if not found
     )
 
+    # Railway-specific database URL (Railway provides this automatically)
+    # This will override DATABASE_URL if present
+    @validator("DATABASE_URL", pre=True)
+    def assemble_db_connection(cls, v, values):
+        # If there's a Railway DATABASE_URL in environment, use it
+        railway_db_url = os.getenv("DATABASE_URL")
+        if railway_db_url:
+            # Railway's DATABASE_URL already includes connection parameters
+            return railway_db_url
+        return v
+
     # JWT Auth
     SECRET_KEY: str = Field(...)
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
 
     # CORS settings
-    ALLOWED_ORIGINS: list[str] = ["http://localhost"]
+    ALLOWED_ORIGINS: list[str] = [
+        "http://localhost",
+        "http://localhost:3000",
+        "http://localhost:5173",
+    ]
+
+    # Railway deployment settings
+    PORT: int = 8000
+    RAILWAY_ENVIRONMENT: str = "development"
 
     # Email settings
     SENDGRID_API_KEY: str

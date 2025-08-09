@@ -8,7 +8,7 @@ import type {
   CarRead,
   UserRead,
 } from '../../types/Api';
-import { useAuth } from '../../contexts/AuthContext';
+import { useAuth } from '../../hooks/useAuth';
 
 import PageHeader from '../../components/layout/PageHeader';
 import Card from '../../components/common/Card';
@@ -88,25 +88,25 @@ function ViewPart() {
 
   useEffect(() => {
     if (partId) {
-      fetchPart(partId);
+      void fetchPart(partId);
     }
   }, [partId, fetchPart]);
 
   useEffect(() => {
     if (part?.build_list_id) {
-      fetchBuildList(part.build_list_id);
+      void fetchBuildList(part.build_list_id);
     }
   }, [part?.build_list_id, fetchBuildList]);
 
   useEffect(() => {
     if (buildListData?.car_id) {
-      fetchCar(buildListData.car_id);
+      void fetchCar(buildListData.car_id);
     }
   }, [buildListData?.car_id, fetchCar]);
 
   useEffect(() => {
     if (carData?.user_id) {
-      fetchUser(carData.user_id);
+      void fetchUser(carData.user_id);
     }
   }, [carData?.user_id, fetchUser]);
 
@@ -124,7 +124,7 @@ function ViewPart() {
 
   const handlePartUpdated = () => {
     if (partId) {
-      fetchPart(partId); // Refresh part data
+      void fetchPart(partId); // Refresh part data
     }
     setIsEditPartFormOpen(false);
   };
@@ -138,16 +138,16 @@ function ViewPart() {
   };
   const closeDeleteConfirmDialog = () => setIsDeleteConfirmOpen(false);
 
-  const handleConfirmDelete = async () => {
+  const handleConfirmDelete = async (): Promise<void> => {
     if (!part || !partId) return;
 
     const result = await executeDeletePart(partId);
     if (result !== null) {
       setIsDeleteConfirmOpen(false);
       if (part.build_list_id) {
-        navigate(`/build-lists/${part.build_list_id}`);
+        void navigate(`/build-lists/${part.build_list_id}`);
       } else {
-        navigate('/builder'); // Fallback
+        void navigate('/builder'); // Fallback
       }
     }
   };
@@ -302,7 +302,7 @@ function ViewPart() {
         <DeleteConfirmationDialog
           isOpen={isDeleteConfirmOpen}
           onClose={closeDeleteConfirmDialog}
-          onConfirm={handleConfirmDelete}
+          onConfirm={() => void handleConfirmDelete()}
           itemName={part.name}
           itemType="part"
           isProcessing={isDeletingPart}

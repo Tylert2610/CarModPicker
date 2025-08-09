@@ -41,7 +41,7 @@ const CarList: React.FC<CarListProps> = ({
 
   useEffect(() => {
     if (userId) {
-      fetchUserCars(userId);
+      void fetchUserCars(userId);
     } else {
       setInternalCars([]);
     }

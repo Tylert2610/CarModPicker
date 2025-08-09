@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import apiClient from '../../services/Api';
 import useApiRequest from '../../hooks/UseApiRequest';
 import type { BuildListRead, CarRead, UserRead } from '../../types/Api';
-import { useAuth } from '../../contexts/AuthContext';
+import { useAuth } from '../../hooks/useAuth';
 
 import PageHeader from '../../components/layout/PageHeader';
 import Card from '../../components/common/Card';
@@ -76,19 +76,19 @@ function ViewBuildList() {
 
   useEffect(() => {
     if (buildListId) {
-      fetchBuildList(buildListId);
+      void fetchBuildList(buildListId);
     }
   }, [buildListId, fetchBuildList]);
 
   useEffect(() => {
     if (buildList?.car_id) {
-      fetchCar(buildList.car_id);
+      void fetchCar(buildList.car_id);
     }
   }, [buildList?.car_id, fetchCar]);
 
   useEffect(() => {
     if (carData?.user_id) {
-      fetchUser(carData.user_id);
+      void fetchUser(carData.user_id);
     }
   }, [carData?.user_id, fetchUser]);
 
@@ -106,7 +106,7 @@ function ViewBuildList() {
 
   const handleBuildListUpdated = () => {
     if (buildListId) {
-      fetchBuildList(buildListId); // Refresh build list data
+      void fetchBuildList(buildListId); // Refresh build list data
     }
     setIsEditBuildListFormOpen(false);
   };
@@ -127,9 +127,9 @@ function ViewBuildList() {
     if (result !== null) {
       setIsDeleteConfirmOpen(false);
       if (buildList.car_id) {
-        navigate(`/cars/${buildList.car_id}`);
+        void navigate(`/cars/${buildList.car_id}`);
       } else {
-        navigate('/builder');
+        void navigate('/builder');
       }
     }
   };
@@ -275,7 +275,7 @@ function ViewBuildList() {
         <DeleteConfirmationDialog
           isOpen={isDeleteConfirmOpen}
           onClose={closeDeleteConfirmDialog}
-          onConfirm={handleConfirmDelete}
+          onConfirm={() => void handleConfirmDelete()}
           itemName={buildList.name}
           itemType="build list"
           isProcessing={isDeletingBuildList}

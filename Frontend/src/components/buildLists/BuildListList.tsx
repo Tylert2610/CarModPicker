@@ -43,7 +43,7 @@ const BuildListList: React.FC<BuildListListProps> = ({
   } = useApiRequest(fetchBuildListsByCarIdRequestFn);
 
   useEffect(() => {
-    fetchCarBuildLists(carId);
+    void fetchCarBuildLists(carId);
   }, [carId, fetchCarBuildLists, refreshKey]);
 
   useEffect(() => {

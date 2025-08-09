@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import apiClient from '../../services/Api';
 import useApiRequest from '../../hooks/UseApiRequest';
 import type { CarRead, UserRead } from '../../types/Api';
-import { useAuth } from '../../contexts/AuthContext';
+import { useAuth } from '../../hooks/useAuth';
 
 import PageHeader from '../../components/layout/PageHeader';
 import Card from '../../components/common/Card';
@@ -60,14 +60,14 @@ function ViewCar() {
 
   useEffect(() => {
     if (carId) {
-      fetchCar(carId);
+      void fetchCar(carId);
     }
   }, [carId, fetchCar]);
 
   // useEffect to fetch user data when car data is available
   useEffect(() => {
     if (car?.user_id) {
-      fetchUser(car.user_id);
+      void fetchUser(car.user_id);
     }
   }, [car?.user_id, fetchUser]);
 
@@ -101,7 +101,7 @@ function ViewCar() {
 
   const handleCarUpdated = () => {
     if (carId) {
-      fetchCar(carId);
+      void fetchCar(carId);
     }
     setIsEditCarFormOpen(false);
   };
@@ -121,7 +121,7 @@ function ViewCar() {
     const result = await executeDeleteCar(carId);
     if (result !== null) {
       setIsDeleteConfirmOpen(false);
-      navigate('/builder');
+      void navigate('/builder');
     }
   };
 
@@ -240,7 +240,7 @@ function ViewCar() {
         <DeleteConfirmationDialog
           isOpen={isDeleteConfirmOpen}
           onClose={closeDeleteConfirmDialog}
-          onConfirm={handleConfirmDelete}
+          onConfirm={() => void handleConfirmDelete()}
           itemName={`${car.year} ${car.make} ${car.model}`}
           itemType="car"
           isProcessing={isDeletingCar}

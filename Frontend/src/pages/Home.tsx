@@ -1,4 +1,4 @@
-import { useAuth } from '../contexts/AuthContext';
+import { useAuth } from '../hooks/useAuth';
 import LinkButton from '../components/buttons/LinkButton';
 
 export default function HomePage() {

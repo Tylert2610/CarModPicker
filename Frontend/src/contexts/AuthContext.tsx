@@ -1,20 +1,10 @@
 // filepath: src/contexts/AuthContext.tsx
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import type { ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import apiClient from '../services/Api';
 import type { UserRead } from '../types/Api';
-
-interface AuthContextType {
-  isAuthenticated: boolean;
-  user: UserRead | null;
-  login: (userData: UserRead) => void;
-  logout: () => void;
-  checkAuthStatus: () => Promise<void>;
-  isLoading: boolean;
-}
-
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+import { AuthContext } from './AuthContextDefinition';
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({
   children,
@@ -24,7 +14,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const navigate = useNavigate();
 
-  const checkAuthStatus = async () => {
+  const checkAuthStatus = useCallback(async () => {
     setIsLoading(true);
     try {
       const response = await apiClient.get<UserRead>('/users/me'); 
@@ -42,11 +32,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    checkAuthStatus();
-  }, []);
+    void checkAuthStatus();
+  }, [checkAuthStatus]);
 
   const login = (userData: UserRead) => {
     setUser(userData);
@@ -54,7 +44,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
    
   };
 
-  const logout = async () => {
+  const logout = useCallback(async () => {
     setIsLoading(true);
     try {
       await apiClient.post('/auth/logout'); 
@@ -64,31 +54,24 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
       setUser(null);
       setIsAuthenticated(false);
       setIsLoading(false);
-      navigate('/'); // Redirect to login after logout
-      checkAuthStatus();
+      void navigate('/'); // Redirect to login after logout
     }
-  };
+  }, [navigate]);
+
+  const contextValue = useMemo(() => ({
+    isAuthenticated,
+    user,
+    login,
+    logout,
+    checkAuthStatus,
+    isLoading,
+  }), [isAuthenticated, user, logout, checkAuthStatus, isLoading]);
 
   return (
-    <AuthContext.Provider
-      value={{
-        isAuthenticated,
-        user,
-        login,
-        logout,
-        checkAuthStatus,
-        isLoading,
-      }}
-    >
+    <AuthContext.Provider value={contextValue}>
       {children}
     </AuthContext.Provider>
   );
 };
 
-export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
-};
+

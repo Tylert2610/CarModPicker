@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext';
+import { useAuth } from '../hooks/useAuth';
 import LoadingSpinner from '../components/common/LoadingSpinner';
 import PageHeader from '../components/layout/PageHeader';
 import { ConfirmationAlert, ErrorAlert } from '../components/common/Alerts';
@@ -270,7 +270,7 @@ function Profile() {
             </ActionButton>
           </>
         ) : (
-          <form onSubmit={handleSubmit} className="space-y-6 mb-6">
+          <form onSubmit={(e) => void handleSubmit(e)} className="space-y-6 mb-6">
             <Input
               label="Username"
               id="username"
@@ -354,7 +354,7 @@ function Profile() {
 
         <Divider />
         <ActionButton
-          onClick={async () => {
+          onClick={() => void (async () => {
             setStatusMessage(null);
             setUpdateApiError(null);
             await checkAuthStatus();
@@ -362,7 +362,7 @@ function Profile() {
               type: 'success',
               message: 'Profile data refreshed.',
             });
-          }}
+          })()}
           disabled={authIsLoading || isUpdating}
         >
           {authIsLoading || isUpdating

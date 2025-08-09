@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { useAuth } from '../../../contexts/AuthContext';
+import { useAuth } from '../../../hooks/useAuth';
 import HeaderNavLink from './HeaderNavLink';
 import LoadingSpinner from '../../common/LoadingSpinner';
 import HeaderSeparator from './HeaderSeparator';
@@ -32,7 +32,8 @@ function Header() {
               <HeaderSeparator />
               <li>
                 <button
-                  onClick={logout}
+                  type="button"
+                  onClick={() => void logout()}
                   className="text-gray-300 hover:bg-gray-700 hover:text-white px-3 py-2 text-sm font-medium bg-transparent border-none"
                 >
                   Logout
