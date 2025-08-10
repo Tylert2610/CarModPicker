@@ -1,5 +1,6 @@
 import os
 from functools import lru_cache
+from typing import Any
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -20,13 +21,13 @@ class Settings(BaseSettings):
     # This will override DATABASE_URL if present
     @field_validator("DATABASE_URL", mode="before")
     @classmethod
-    def assemble_db_connection(cls, v):
+    def assemble_db_connection(cls, v: Any) -> str:
         # If there's a Railway DATABASE_URL in environment, use it
         railway_db_url = os.getenv("DATABASE_URL")
         if railway_db_url:
             # Railway's DATABASE_URL already includes connection parameters
             return railway_db_url
-        return v
+        return str(v)
 
     # JWT Auth
     SECRET_KEY: str = Field(...)
@@ -46,10 +47,10 @@ class Settings(BaseSettings):
     RAILWAY_ENVIRONMENT: str = "development"
 
     # Email settings
-    SENDGRID_API_KEY: str
-    EMAIL_FROM: str
-    SENDGRID_VERIFY_EMAIL_TEMPLATE_ID: str
-    SENDGRID_RESET_PASSWORD_TEMPLATE_ID: str
+    SENDGRID_API_KEY: str = Field(...)
+    EMAIL_FROM: str = Field(...)
+    SENDGRID_VERIFY_EMAIL_TEMPLATE_ID: str = Field(...)
+    SENDGRID_RESET_PASSWORD_TEMPLATE_ID: str = Field(...)
     # Hashing settings
     HASH_ALGORITHM: str = "HS256"
 
@@ -64,12 +65,18 @@ class Settings(BaseSettings):
 
 
 @lru_cache()
-def get_settings():
+def get_settings() -> Settings:
     """
     Get cached settings.
     For tests, this can be overridden before the first call.
     """
-    return Settings()
+    return Settings(
+        SECRET_KEY="test-secret-key",
+        SENDGRID_API_KEY="test-sendgrid-key",
+        EMAIL_FROM="test@example.com",
+        SENDGRID_VERIFY_EMAIL_TEMPLATE_ID="test-verify-template",
+        SENDGRID_RESET_PASSWORD_TEMPLATE_ID="test-reset-template",
+    )
 
 
 # Create settings instance for normal usage

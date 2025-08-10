@@ -65,7 +65,7 @@ def create_car_for_user_cookie_auth(
     assert (
         response.status_code == 200
     ), f"Failed to create car for part tests: {response.text}"
-    return response.json()["id"]
+    return int(response.json()["id"])
 
 
 # Helper function to create a build list for a car owned by the currently logged-in user
@@ -81,13 +81,13 @@ def create_build_list_for_car_cookie_auth(
     assert (
         response.status_code == 200
     ), f"Failed to create build list for part tests: {response.text}"
-    return response.json()["id"]
+    return int(response.json()["id"])
 
 
 # --- Test Cases ---
 
 
-def test_create_part_success(client: TestClient, db_session: Session):
+def test_create_part_success(client: TestClient, db_session: Session) -> None:
     _ = create_and_login_user(client, "creator_part")
     car_id = create_car_for_user_cookie_auth(client)
     build_list_id = create_build_list_for_car_cookie_auth(client, car_id)
@@ -106,7 +106,7 @@ def test_create_part_success(client: TestClient, db_session: Session):
     assert "id" in created_part
 
 
-def test_create_part_unauthenticated(client: TestClient, db_session: Session):
+def test_create_part_unauthenticated(client: TestClient, db_session: Session) -> None:
     _ = create_and_login_user(client, "temp_owner_part_unauth")
     car_id_temp = create_car_for_user_cookie_auth(client)
     build_list_id_temp = create_build_list_for_car_cookie_auth(client, car_id_temp)
@@ -117,7 +117,9 @@ def test_create_part_unauthenticated(client: TestClient, db_session: Session):
     assert response.status_code == 401
 
 
-def test_create_part_build_list_not_found(client: TestClient, db_session: Session):
+def test_create_part_build_list_not_found(
+    client: TestClient, db_session: Session
+) -> None:
     _ = create_and_login_user(client, "part_bl_not_found")
     non_existent_bl_id = 999888
     part_data = {
@@ -131,7 +133,7 @@ def test_create_part_build_list_not_found(client: TestClient, db_session: Sessio
 
 def test_create_part_for_other_users_build_list_forbidden(
     client: TestClient, db_session: Session
-):
+) -> None:
     # User A creates a car and build list
     _ = create_and_login_user(client, "userA_part_bl_owner")
     car_id_a = create_car_for_user_cookie_auth(client, "Honda", "S2000")
@@ -151,7 +153,7 @@ def test_create_part_for_other_users_build_list_forbidden(
     )
 
 
-def test_read_part_success(client: TestClient, db_session: Session):
+def test_read_part_success(client: TestClient, db_session: Session) -> None:
     _ = create_and_login_user(client, "reader_part")
     car_id = create_car_for_user_cookie_auth(client)
     build_list_id = create_build_list_for_car_cookie_auth(client, car_id)
@@ -168,13 +170,13 @@ def test_read_part_success(client: TestClient, db_session: Session):
     assert read_part_data["name"] == part_data_payload["name"]
 
 
-def test_read_part_not_found(client: TestClient, db_session: Session):
+def test_read_part_not_found(client: TestClient, db_session: Session) -> None:
     response = client.get(f"{settings.API_STR}/parts/777666")
     assert response.status_code == 404
     assert response.json()["detail"] == "part not found"  # As per parts.py endpoint
 
 
-def test_update_own_part_success(client: TestClient, db_session: Session):
+def test_update_own_part_success(client: TestClient, db_session: Session) -> None:
     _ = create_and_login_user(client, "updater_part")
     car_id = create_car_for_user_cookie_auth(client)
     build_list_id = create_build_list_for_car_cookie_auth(client, car_id)
@@ -197,7 +199,7 @@ def test_update_own_part_success(client: TestClient, db_session: Session):
 
 def test_update_own_part_change_build_list_success(
     client: TestClient, db_session: Session
-):
+) -> None:
     user_id = create_and_login_user(client, "part_bl_changer")
     car_id = create_car_for_user_cookie_auth(client)
     build_list_id_1 = create_build_list_for_car_cookie_auth(
@@ -219,7 +221,7 @@ def test_update_own_part_change_build_list_success(
     assert updated_part["build_list_id"] == build_list_id_2
 
 
-def test_update_part_unauthenticated(client: TestClient, db_session: Session):
+def test_update_part_unauthenticated(client: TestClient, db_session: Session) -> None:
     _ = create_and_login_user(client, "owner_for_update_unauth_part")
     car_id = create_car_for_user_cookie_auth(client)
     build_list_id = create_build_list_for_car_cookie_auth(client, car_id)
@@ -234,7 +236,7 @@ def test_update_part_unauthenticated(client: TestClient, db_session: Session):
     assert response.status_code == 401
 
 
-def test_update_part_not_found(client: TestClient, db_session: Session):
+def test_update_part_not_found(client: TestClient, db_session: Session) -> None:
     _ = create_and_login_user(client, "updater_part_notfound")
     update_payload = {"name": "Update Non Existent Part"}
     response = client.put(f"{settings.API_STR}/parts/555444", json=update_payload)
@@ -242,7 +244,9 @@ def test_update_part_not_found(client: TestClient, db_session: Session):
     assert response.json()["detail"] == "part not found"
 
 
-def test_update_other_users_part_forbidden(client: TestClient, db_session: Session):
+def test_update_other_users_part_forbidden(
+    client: TestClient, db_session: Session
+) -> None:
     # User A creates car, build list, and part
     _ = create_and_login_user(client, "userA_part_owner_update")
     car_id_a = create_car_for_user_cookie_auth(client)
@@ -264,7 +268,7 @@ def test_update_other_users_part_forbidden(client: TestClient, db_session: Sessi
 
 def test_update_part_to_other_users_build_list_forbidden(
     client: TestClient, db_session: Session
-):
+) -> None:
     # User A creates their car, build list, and part
     _ = create_and_login_user(client, "userA_part_bl_switcher")
     car_id_a = create_car_for_user_cookie_auth(client, "Nissan", "Silvia")
@@ -300,7 +304,7 @@ def test_update_part_to_other_users_build_list_forbidden(
 
 def test_update_part_to_non_existent_build_list_not_found(
     client: TestClient, db_session: Session
-):
+) -> None:
     _ = create_and_login_user(client, "part_to_non_bl_updater")
     car_id = create_car_for_user_cookie_auth(client)
     build_list_id_own = create_build_list_for_car_cookie_auth(client, car_id)
@@ -319,7 +323,7 @@ def test_update_part_to_non_existent_build_list_not_found(
     )
 
 
-def test_delete_own_part_success(client: TestClient, db_session: Session):
+def test_delete_own_part_success(client: TestClient, db_session: Session) -> None:
     _ = create_and_login_user(client, "deleter_part")
     car_id = create_car_for_user_cookie_auth(client)
     build_list_id = create_build_list_for_car_cookie_auth(client, car_id)
@@ -338,7 +342,7 @@ def test_delete_own_part_success(client: TestClient, db_session: Session):
     assert get_response.status_code == 404
 
 
-def test_delete_part_unauthenticated(client: TestClient, db_session: Session):
+def test_delete_part_unauthenticated(client: TestClient, db_session: Session) -> None:
     _ = create_and_login_user(client, "owner_for_delete_unauth_part")
     car_id = create_car_for_user_cookie_auth(client)
     build_list_id = create_build_list_for_car_cookie_auth(client, car_id)
@@ -352,14 +356,16 @@ def test_delete_part_unauthenticated(client: TestClient, db_session: Session):
     assert response.status_code == 401
 
 
-def test_delete_part_not_found(client: TestClient, db_session: Session):
+def test_delete_part_not_found(client: TestClient, db_session: Session) -> None:
     _ = create_and_login_user(client, "deleter_part_notfound")
     response = client.delete(f"{settings.API_STR}/parts/333222")
     assert response.status_code == 404
     assert response.json()["detail"] == "part not found"
 
 
-def test_delete_other_users_part_forbidden(client: TestClient, db_session: Session):
+def test_delete_other_users_part_forbidden(
+    client: TestClient, db_session: Session
+) -> None:
     # User A creates car, build list, and part
     _ = create_and_login_user(client, "userA_part_owner_del")
     car_id_a = create_car_for_user_cookie_auth(client)
@@ -379,7 +385,9 @@ def test_delete_other_users_part_forbidden(client: TestClient, db_session: Sessi
 
 
 # Tests for read_parts_by_build_list
-def test_read_parts_by_build_list_success(client: TestClient, db_session: Session):
+def test_read_parts_by_build_list_success(
+    client: TestClient, db_session: Session
+) -> None:
     user_id = create_and_login_user(client, "owner_for_parts_by_bl")
     car_id = create_car_for_user_cookie_auth(client)
     build_list_id = create_build_list_for_car_cookie_auth(
@@ -429,7 +437,9 @@ def test_read_parts_by_build_list_success(client: TestClient, db_session: Sessio
             assert part["manufacturer"] == part_data2["manufacturer"]
 
 
-def test_read_parts_by_build_list_empty(client: TestClient, db_session: Session):
+def test_read_parts_by_build_list_empty(
+    client: TestClient, db_session: Session
+) -> None:
     user_id = create_and_login_user(client, "owner_for_empty_parts_by_bl")
     car_id = create_car_for_user_cookie_auth(client)
     build_list_id = create_build_list_for_car_cookie_auth(
@@ -449,7 +459,7 @@ def test_read_parts_by_build_list_empty(client: TestClient, db_session: Session)
 
 def test_read_parts_by_build_list_build_list_not_found(
     client: TestClient, db_session: Session
-):
+) -> None:
     non_existent_build_list_id = 999666
 
     client.cookies.clear()

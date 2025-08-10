@@ -56,7 +56,7 @@ def create_and_login_user(
 # --- Test Cases ---
 
 
-def test_create_car_success(client: TestClient, db_session: Session):
+def test_create_car_success(client: TestClient, db_session: Session) -> None:
     _ = create_and_login_user(client, "creator_car")  # Logs in user, client gets cookie
 
     car_data = {"make": "Honda", "model": "Civic", "year": 2022, "trim": "Sport"}
@@ -71,14 +71,14 @@ def test_create_car_success(client: TestClient, db_session: Session):
     assert "user_id" in created_car  # Assuming user_id is part of CarRead
 
 
-def test_create_car_unauthenticated(client: TestClient, db_session: Session):
+def test_create_car_unauthenticated(client: TestClient, db_session: Session) -> None:
     client.cookies.clear()  # Ensure no auth cookie
     car_data = {"make": "Toyota", "model": "Corolla", "year": 2021}
     response = client.post(f"{settings.API_STR}/cars/", json=car_data)
     assert response.status_code == 401  # Expect unauthorized
 
 
-def test_read_car_success(client: TestClient, db_session: Session):
+def test_read_car_success(client: TestClient, db_session: Session) -> None:
     user_id = create_and_login_user(client, "reader_car")
     car_data_payload = {"make": "Mazda", "model": "3", "year": 2020}
     create_response = client.post(f"{settings.API_STR}/cars/", json=car_data_payload)
@@ -97,12 +97,12 @@ def test_read_car_success(client: TestClient, db_session: Session):
     assert read_car_data["user_id"] == user_id
 
 
-def test_read_car_not_found(client: TestClient, db_session: Session):
+def test_read_car_not_found(client: TestClient, db_session: Session) -> None:
     response = client.get(f"{settings.API_STR}/cars/999999")  # Non-existent ID
     assert response.status_code == 404
 
 
-def test_update_own_car_success(client: TestClient, db_session: Session):
+def test_update_own_car_success(client: TestClient, db_session: Session) -> None:
     _ = create_and_login_user(client, "updater_car")  # Logs in, client gets cookie
 
     initial_car_data = {"make": "Nissan", "model": "Altima", "year": 2019}
@@ -121,7 +121,7 @@ def test_update_own_car_success(client: TestClient, db_session: Session):
     assert updated_car["make"] == initial_car_data["make"]  # Make should be unchanged
 
 
-def test_update_car_unauthenticated(client: TestClient, db_session: Session):
+def test_update_car_unauthenticated(client: TestClient, db_session: Session) -> None:
     _ = create_and_login_user(client, "owner_for_update_unauth_car")
     car_data = {"make": "Subaru", "model": "WRX", "year": 2021}
     create_response = client.post(f"{settings.API_STR}/cars/", json=car_data)
@@ -134,7 +134,9 @@ def test_update_car_unauthenticated(client: TestClient, db_session: Session):
     assert response.status_code == 401
 
 
-def test_update_other_users_car_forbidden(client: TestClient, db_session: Session):
+def test_update_other_users_car_forbidden(
+    client: TestClient, db_session: Session
+) -> None:
     # User A creates a car
     _ = create_and_login_user(client, "userA_car_owner")  # Client has User A's cookie
     car_data_a = {"make": "Ford", "model": "Focus", "year": 2018}
@@ -154,7 +156,7 @@ def test_update_other_users_car_forbidden(client: TestClient, db_session: Sessio
     assert response.json()["detail"] == "Not authorized to update this car"
 
 
-def test_delete_own_car_success(client: TestClient, db_session: Session):
+def test_delete_own_car_success(client: TestClient, db_session: Session) -> None:
     _ = create_and_login_user(client, "deleter_car")  # Logs in, client gets cookie
     car_data = {"make": "Kia", "model": "Stinger", "year": 2020}
     create_response = client.post(f"{settings.API_STR}/cars/", json=car_data)
@@ -172,7 +174,7 @@ def test_delete_own_car_success(client: TestClient, db_session: Session):
     assert get_response.status_code == 404
 
 
-def test_delete_car_unauthenticated(client: TestClient, db_session: Session):
+def test_delete_car_unauthenticated(client: TestClient, db_session: Session) -> None:
     _ = create_and_login_user(client, "owner_for_delete_unauth_car")
     car_data = {"make": "Hyundai", "model": "Elantra", "year": 2019}
     create_response = client.post(f"{settings.API_STR}/cars/", json=car_data)
@@ -184,7 +186,9 @@ def test_delete_car_unauthenticated(client: TestClient, db_session: Session):
     assert response.status_code == 401
 
 
-def test_delete_other_users_car_forbidden(client: TestClient, db_session: Session):
+def test_delete_other_users_car_forbidden(
+    client: TestClient, db_session: Session
+) -> None:
     # User A creates a car
     _ = create_and_login_user(
         client, "userA_car_owner_del"
@@ -207,7 +211,7 @@ def test_delete_other_users_car_forbidden(client: TestClient, db_session: Sessio
     assert response.json()["detail"] == "Not authorized to delete this car"
 
 
-def test_update_car_not_found(client: TestClient, db_session: Session):
+def test_update_car_not_found(client: TestClient, db_session: Session) -> None:
     _ = create_and_login_user(client, "updater_car_notfound")  # Sets cookie
     update_payload = {"make": "NonExistent"}
     response = client.put(
@@ -217,7 +221,7 @@ def test_update_car_not_found(client: TestClient, db_session: Session):
     assert response.json()["detail"] == "Car not found"
 
 
-def test_delete_car_not_found(client: TestClient, db_session: Session):
+def test_delete_car_not_found(client: TestClient, db_session: Session) -> None:
     _ = create_and_login_user(client, "deleter_car_notfound")  # Sets cookie
     response = client.delete(
         f"{settings.API_STR}/cars/777777"
@@ -229,7 +233,7 @@ def test_delete_car_not_found(client: TestClient, db_session: Session):
 # --- Tests for read_cars_by_user ---
 
 
-def test_read_cars_by_user_success(client: TestClient, db_session: Session):
+def test_read_cars_by_user_success(client: TestClient, db_session: Session) -> None:
     # Create a user and log them in to create cars
     user_id = create_and_login_user(client, "car_owner_for_list")
 
@@ -269,7 +273,7 @@ def test_read_cars_by_user_success(client: TestClient, db_session: Session):
             assert car["trim"] == car_data2["trim"]
 
 
-def test_read_cars_by_user_no_cars(client: TestClient, db_session: Session):
+def test_read_cars_by_user_no_cars(client: TestClient, db_session: Session) -> None:
     # Create a user but no cars for them
     user_id = create_and_login_user(client, "car_owner_no_cars")
 
@@ -283,7 +287,9 @@ def test_read_cars_by_user_no_cars(client: TestClient, db_session: Session):
     assert len(cars_list) == 0
 
 
-def test_read_cars_by_user_non_existent_user(client: TestClient, db_session: Session):
+def test_read_cars_by_user_non_existent_user(
+    client: TestClient, db_session: Session
+) -> None:
     non_existent_user_id = 9999999
 
     # Clear cookies as the endpoint is public

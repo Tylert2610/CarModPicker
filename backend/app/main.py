@@ -1,6 +1,7 @@
 import logging
 import os
 import subprocess
+from typing import Any
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -19,7 +20,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def run_migrations():
+def run_migrations() -> None:
     """Run database migrations on startup"""
     try:
         logger.info("Running database migrations...")
@@ -75,11 +76,11 @@ app.include_router(auth.router, prefix=settings.API_STR + "/auth", tags=["auth"]
 
 
 @app.get("/")
-def read_root():
+def read_root() -> dict[str, str]:
     return {"Hello": "World"}
 
 
 @app.get("/health")
-def health_check():
+def health_check() -> dict[str, Any]:
     """Health check endpoint for monitoring."""
     return {"status": "healthy", "service": "CarModPicker API", "version": "1.0.0"}

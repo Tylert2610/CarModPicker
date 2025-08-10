@@ -25,7 +25,9 @@ def create_test_user_direct_db(
     return db_user
 
 
-def test_login_for_access_token_success(client: TestClient, db_session: Session):
+def test_login_for_access_token_success(
+    client: TestClient, db_session: Session
+) -> None:
     username = "auth_test_user_cookie"  # Ensure unique username for test
     password = "auth_test_password"
     email = "auth_test_cookie@example.com"
@@ -73,7 +75,7 @@ def test_login_for_access_token_success(client: TestClient, db_session: Session)
     assert "token_type" not in response_data  # Ensure token_type is not in body
 
 
-def test_login_for_access_token_incorrect_username(client: TestClient):
+def test_login_for_access_token_incorrect_username(client: TestClient) -> None:
     login_data = {"username": "wronguser_cookie", "password": "password123"}
     response = client.post(f"{settings.API_STR}/auth/token", data=login_data)  # Changed
     assert response.status_code == 401
@@ -83,7 +85,7 @@ def test_login_for_access_token_incorrect_username(client: TestClient):
 
 def test_login_for_access_token_incorrect_password(
     client: TestClient, db_session: Session
-):
+) -> None:
     username = "auth_test_user_wrong_pass_cookie"  # Ensure unique username
     password = "correct_password"
     email = "auth_test_wrong_pass_cookie@example.com"
@@ -101,7 +103,9 @@ def test_login_for_access_token_incorrect_password(
     assert "access_token" not in response.cookies  # Check no cookie is set
 
 
-def test_login_for_access_token_disabled_user(client: TestClient, db_session: Session):
+def test_login_for_access_token_disabled_user(
+    client: TestClient, db_session: Session
+) -> None:
     username = "disabled_user_cookie"  # Ensure unique username
     password = "password123"
     email = "disabled_cookie@example.com"

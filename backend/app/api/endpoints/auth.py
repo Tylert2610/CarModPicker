@@ -1,4 +1,5 @@
 from datetime import timedelta
+from typing import Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response, status
 from fastapi.responses import RedirectResponse
@@ -26,7 +27,7 @@ async def login_for_access_token(
     response: Response,
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db),
-):
+) -> DBUser:
     """
     Authenticate user, set JWT token in an HTTP-only cookie, and return user details.
     Takes form data: username and password.
@@ -62,7 +63,7 @@ async def login_for_access_token(
 async def verify_email(
     email: str = Body(..., embed=True),
     db: Session = Depends(get_db),
-):
+) -> dict[str, str]:
     user = db.query(DBUser).filter(DBUser.email == email).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -85,7 +86,7 @@ async def verify_email(
 async def verify_email_confirm(
     token: str = Query(...),
     db: Session = Depends(get_db),
-):
+) -> RedirectResponse:
     if settings.DEBUG:
         frontend_base_url = "http://localhost:4000/verify-email/confirm"
     else:
@@ -136,7 +137,7 @@ async def verify_email_confirm(
 async def reset_password(
     email: str = Body(..., embed=True),
     db: Session = Depends(get_db),
-):
+) -> dict[str, str]:
     user = db.query(DBUser).filter(DBUser.email == email).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -166,7 +167,7 @@ async def reset_password_confirm(
     token: str = Query(...),
     new_password_data: NewPassword = Body(...),
     db: Session = Depends(get_db),
-):
+) -> dict[str, str]:
     try:
         payload = jwt.decode(
             token, settings.SECRET_KEY, algorithms=[settings.HASH_ALGORITHM]
@@ -197,7 +198,7 @@ async def reset_password_confirm(
 
 
 @router.post("/logout")
-async def logout(response: Response):
+async def logout(response: Response) -> dict[str, str]:
     """
     Invalidate the user's session by clearing the access token cookie.
     """

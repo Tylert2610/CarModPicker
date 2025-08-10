@@ -1,4 +1,5 @@
 import logging
+from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -77,7 +78,7 @@ async def create_part(
     db: Session = Depends(get_db),
     logger: logging.Logger = Depends(get_logger),
     current_user: DBUser = Depends(get_current_user),
-):
+) -> DBPart:
     # Verify ownership of the build list (via the car)
     db_build_list = await _verify_build_list_ownership(
         build_list_id=part.build_list_id,
@@ -108,7 +109,7 @@ async def read_part(
     part_id: int,
     db: Session = Depends(get_db),
     logger: logging.Logger = Depends(get_logger),
-):
+) -> DBPart:
     db_part = (
         db.query(DBPart).filter(DBPart.id == part_id).first()
     )  # Query the database
@@ -128,7 +129,7 @@ async def read_parts_by_build_list(
     build_list_id: int,
     db: Session = Depends(get_db),
     logger: logging.Logger = Depends(get_logger),
-):
+) -> List[DBPart]:
     """
     Retrieve all parts for a specific build list by its ID.
     """
@@ -156,7 +157,7 @@ async def update_part(
     db: Session = Depends(get_db),
     logger: logging.Logger = Depends(get_logger),
     current_user: DBUser = Depends(get_current_user),
-):
+) -> DBPart:
     db_part = db.query(DBPart).filter(DBPart.id == part_id).first()
     if db_part is None:
         raise HTTPException(status_code=404, detail="part not found")
@@ -211,7 +212,7 @@ async def delete_part(
     db: Session = Depends(get_db),
     logger: logging.Logger = Depends(get_logger),
     current_user: DBUser = Depends(get_current_user),
-):
+) -> PartRead:
     db_part = db.query(DBPart).filter(DBPart.id == part_id).first()
     if db_part is None:
         raise HTTPException(status_code=404, detail="part not found")

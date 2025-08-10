@@ -51,7 +51,7 @@ async def create_car(
     db: Session = Depends(get_db),
     logger: logging.Logger = Depends(get_logger),
     current_user: DBUser = Depends(get_current_user),
-):
+) -> DBCar:
     db_car = DBCar(**car.model_dump(), user_id=current_user.id)
     db.add(db_car)
     db.commit()
@@ -72,7 +72,7 @@ async def read_car(
     car_id: int,
     db: Session = Depends(get_db),
     logger: logging.Logger = Depends(get_logger),
-):
+) -> DBCar:
 
     db_car = db.query(DBCar).filter(DBCar.id == car_id).first()
     if db_car is None:
@@ -91,7 +91,7 @@ async def read_cars_by_user(
     user_id: int,
     db: Session = Depends(get_db),
     logger: logging.Logger = Depends(get_logger),
-):
+) -> List[DBCar]:
     """
     Retrieve all cars owned by a specific user.
     """
@@ -117,7 +117,7 @@ async def update_car(
     db: Session = Depends(get_db),
     logger: logging.Logger = Depends(get_logger),
     current_user: DBUser = Depends(get_current_user),
-):
+) -> DBCar:
     db_car = await _verify_car_ownership(
         car_id=car_id,
         db=db,
@@ -151,7 +151,7 @@ async def delete_car(
     db: Session = Depends(get_db),
     logger: logging.Logger = Depends(get_logger),
     current_user: DBUser = Depends(get_current_user),
-):
+) -> CarRead:
     db_car = await _verify_car_ownership(
         car_id=car_id,
         db=db,

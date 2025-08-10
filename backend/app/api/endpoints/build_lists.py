@@ -1,4 +1,5 @@
 import logging
+from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -58,7 +59,7 @@ async def create_build_list(
     db: Session = Depends(get_db),
     logger: logging.Logger = Depends(get_logger),
     current_user: DBUser = Depends(get_current_user),
-):
+) -> DBBuildList:
     # Verify car ownership
     db_car = await _verify_car_ownership(
         car_id=build_list.car_id,
@@ -89,7 +90,7 @@ async def read_build_list(
     build_list_id: int,
     db: Session = Depends(get_db),
     logger: logging.Logger = Depends(get_logger),
-):
+) -> DBBuildList:
     db_build_list = (
         db.query(DBBuildList).filter(DBBuildList.id == build_list_id).first()
     )  # Query the database
@@ -110,7 +111,7 @@ async def read_build_lists_by_car(
     car_id: int,
     db: Session = Depends(get_db),
     logger: logging.Logger = Depends(get_logger),
-):
+) -> List[DBBuildList]:
     """
     Retrieve all build lists associated with a specific car.
     """
@@ -138,7 +139,7 @@ async def update_build_list(
     db: Session = Depends(get_db),
     logger: logging.Logger = Depends(get_logger),
     current_user: DBUser = Depends(get_current_user),
-):
+) -> DBBuildList:
     db_build_list = (
         db.query(DBBuildList).filter(DBBuildList.id == build_list_id).first()
     )
@@ -191,7 +192,7 @@ async def delete_build_list(
     db: Session = Depends(get_db),
     logger: logging.Logger = Depends(get_logger),
     current_user: DBUser = Depends(get_current_user),
-):
+) -> BuildListRead:
     db_build_list = (
         db.query(DBBuildList).filter(DBBuildList.id == build_list_id).first()
     )

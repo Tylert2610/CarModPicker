@@ -11,7 +11,7 @@ from app.api.dependencies.auth import (
 from app.core.config import settings
 
 
-def test_get_password_hash():
+def test_get_password_hash() -> None:
     password = "testpassword"
     hashed_password = get_password_hash(password)
     assert hashed_password is not None
@@ -19,20 +19,20 @@ def test_get_password_hash():
     assert hashed_password != password
 
 
-def test_verify_password_correct():
+def test_verify_password_correct() -> None:
     password = "testpassword123"
     hashed_password = get_password_hash(password)
     assert verify_password(password, hashed_password) is True
 
 
-def test_verify_password_incorrect():
+def test_verify_password_incorrect() -> None:
     password = "testpassword123"
     wrong_password = "wrongpassword"
     hashed_password = get_password_hash(password)
     assert verify_password(wrong_password, hashed_password) is False
 
 
-def test_verify_password_with_different_hashes():
+def test_verify_password_with_different_hashes() -> None:
     password = "anotherpassword"
     hashed1 = get_password_hash(password)
     hashed2 = get_password_hash(password)  # bcrypt generates different salts
@@ -41,7 +41,7 @@ def test_verify_password_with_different_hashes():
     assert verify_password(password, hashed2) is True
 
 
-def test_create_access_token():
+def test_create_access_token() -> None:
     data = {"sub": "testuser"}
     token = create_access_token(data)
     assert token is not None
@@ -61,7 +61,7 @@ def test_create_access_token():
     assert abs((expected_exp_datetime - actual_exp_datetime).total_seconds()) < 5
 
 
-def test_create_access_token_custom_expiry():
+def test_create_access_token_custom_expiry() -> None:
     data = {"sub": "testuser_custom_exp"}
     custom_delta = timedelta(minutes=10)
     token = create_access_token(data, expires_delta=custom_delta)

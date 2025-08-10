@@ -16,19 +16,19 @@ from app.main import app
 class TestRateLimiter:
     """Test cases for the RateLimiter class."""
 
-    def test_rate_limiter_initialization(self):
+    def test_rate_limiter_initialization(self) -> None:
         """Test rate limiter initialization with default values."""
         limiter = RateLimiter()
         assert limiter.requests_per_minute == 60
         assert limiter.requests_per_hour == 1000
 
-    def test_rate_limiter_custom_limits(self):
+    def test_rate_limiter_custom_limits(self) -> None:
         """Test rate limiter initialization with custom limits."""
         limiter = RateLimiter(requests_per_minute=30, requests_per_hour=500)
         assert limiter.requests_per_minute == 30
         assert limiter.requests_per_hour == 500
 
-    def test_get_client_ip_direct(self):
+    def test_get_client_ip_direct(self) -> None:
         """Test getting client IP from direct connection."""
         limiter = RateLimiter()
         request = Mock()
@@ -38,7 +38,7 @@ class TestRateLimiter:
         ip = limiter._get_client_ip(request)
         assert ip == "192.168.1.1"
 
-    def test_get_client_ip_proxy(self):
+    def test_get_client_ip_proxy(self) -> None:
         """Test getting client IP from proxy headers."""
         limiter = RateLimiter()
         request = Mock()
@@ -48,7 +48,7 @@ class TestRateLimiter:
         ip = limiter._get_client_ip(request)
         assert ip == "203.0.113.1"
 
-    def test_rate_limiting_minute_limit(self):
+    def test_rate_limiting_minute_limit(self) -> None:
         """Test minute rate limiting."""
         limiter = RateLimiter(requests_per_minute=2, requests_per_hour=100)
         request = Mock()
@@ -70,7 +70,7 @@ class TestRateLimiter:
         assert is_limited
         assert "Rate limit exceeded" in reason
 
-    def test_rate_limiting_hour_limit(self):
+    def test_rate_limiting_hour_limit(self) -> None:
         """Test hour rate limiting."""
         limiter = RateLimiter(requests_per_minute=100, requests_per_hour=2)
         request = Mock()
@@ -90,7 +90,7 @@ class TestRateLimiter:
         assert is_limited
         assert "Rate limit exceeded" in reason
 
-    def test_cleanup_old_requests(self):
+    def test_cleanup_old_requests(self) -> None:
         """Test cleanup of old requests."""
         limiter = RateLimiter(requests_per_minute=10, requests_per_hour=100)
         request = Mock()
@@ -127,7 +127,7 @@ class TestRateLimiter:
         assert limiter.minute_requests["192.168.1.1"][0] == recent_time
         assert limiter.hour_requests["192.168.1.1"][0] == recent_time
 
-    def test_get_remaining_requests(self):
+    def test_get_remaining_requests(self) -> None:
         """Test getting remaining request counts."""
         limiter = RateLimiter(requests_per_minute=10, requests_per_hour=100)
         request = Mock()
@@ -150,7 +150,7 @@ class TestRateLimiter:
 class TestRateLimitMiddleware:
     """Test cases for the rate limiting middleware."""
 
-    def test_middleware_skips_health_check(self):
+    def test_middleware_skips_health_check(self) -> None:
         """Test that middleware skips rate limiting for health checks."""
         client = TestClient(app)
 
@@ -159,7 +159,7 @@ class TestRateLimitMiddleware:
         assert response.status_code == 200
         assert response.json()["status"] == "healthy"
 
-    def test_middleware_skips_docs(self):
+    def test_middleware_skips_docs(self) -> None:
         """Test that middleware skips rate limiting for docs."""
         client = TestClient(app)
 
@@ -167,7 +167,7 @@ class TestRateLimitMiddleware:
         response = client.get("/docs")
         assert response.status_code == 200
 
-    def test_middleware_adds_headers(self):
+    def test_middleware_adds_headers(self) -> None:
         """Test that middleware adds rate limit headers."""
         client = TestClient(app)
 
@@ -178,7 +178,7 @@ class TestRateLimitMiddleware:
         # Since rate limiting is disabled, we won't have rate limit headers
         # This test is now testing that the middleware doesn't interfere with normal requests
 
-    def test_middleware_rate_limiting(self):
+    def test_middleware_rate_limiting(self) -> None:
         """Test that middleware properly rate limits requests."""
         # Create a test app with very low limits for testing
         from fastapi import FastAPI
@@ -198,7 +198,7 @@ class TestRateLimitMiddleware:
             test_app.middleware("http")(rate_limit_middleware)
 
             @test_app.get("/test")
-            def test_endpoint():
+            def test_endpoint() -> dict[str, str]:
                 return {"message": "test"}
 
             client = TestClient(test_app)

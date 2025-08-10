@@ -1,5 +1,6 @@
 import logging
 import sys
+from typing import Any
 
 # Logger setup
 logger = logging.getLogger(__name__)
@@ -12,5 +13,5 @@ logger.addHandler(console_handler)
 
 
 # Define the dependency function
-def get_logger():
+def get_logger() -> logging.Logger:
     return logger

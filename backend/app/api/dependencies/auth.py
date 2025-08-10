@@ -54,7 +54,7 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     encoded_jwt = jwt.encode(
         to_encode, settings.SECRET_KEY, algorithm=settings.HASH_ALGORITHM
     )
-    return encoded_jwt
+    return str(encoded_jwt)
 
 
 # --- Dependency to Get Current User ---

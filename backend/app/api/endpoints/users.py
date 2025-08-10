@@ -1,4 +1,5 @@
 import logging
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.exc import IntegrityError
@@ -24,7 +25,9 @@ router = APIRouter()
 
 
 @router.get("/me", response_model=UserRead)
-async def read_users_me_route(current_user: DBUser = Depends(get_current_user)):
+async def read_users_me_route(
+    current_user: DBUser = Depends(get_current_user),
+) -> DBUser:
     """
     Fetch the current logged in user.
     """
@@ -43,7 +46,7 @@ async def create_user(
     user: UserCreate,
     db: Session = Depends(get_db),
     logger: logging.Logger = Depends(get_logger),
-):
+) -> DBUser:
     """
     Creates a new user in the database.
     """
@@ -93,7 +96,7 @@ async def read_user(
     user_id: int,
     db: Session = Depends(get_db),
     logger: logging.Logger = Depends(get_logger),
-):
+) -> DBUser:
     db_user = (
         db.query(DBUser).filter(DBUser.id == user_id).first()
     )  # Query the database
@@ -124,7 +127,7 @@ async def update_user(
     db: Session = Depends(get_db),
     logger: logging.Logger = Depends(get_logger),
     current_user: DBUser = Depends(get_current_user),
-):
+) -> DBUser:
     db_user = db.query(DBUser).filter(DBUser.id == user_id).first()
 
     if not db_user:
@@ -253,7 +256,7 @@ async def delete_user(
     db: Session = Depends(get_db),
     logger: logging.Logger = Depends(get_logger),
     current_user: DBUser = Depends(get_current_user),
-):
+) -> UserRead:
     # Authorization check
     if current_user.id != user_id:
         raise HTTPException(

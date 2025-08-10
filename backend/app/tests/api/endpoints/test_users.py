@@ -68,7 +68,7 @@ def create_and_login_user(
 
 
 # --- Create User Tests ---
-def test_create_user_success(client: TestClient, db_session: Session):
+def test_create_user_success(client: TestClient, db_session: Session) -> None:
     username = "new_unique_user"
     email = "new_unique_user@example.com"
     password = "password123"
@@ -86,7 +86,9 @@ def test_create_user_success(client: TestClient, db_session: Session):
     assert "hashed_password" not in created_user
 
 
-def test_create_user_duplicate_username(client: TestClient, db_session: Session):
+def test_create_user_duplicate_username(
+    client: TestClient, db_session: Session
+) -> None:
     user_info = create_and_login_user(
         client, "duplicate_username_test"
     )  # Creates and logs in first user
@@ -101,7 +103,7 @@ def test_create_user_duplicate_username(client: TestClient, db_session: Session)
     assert "username already registered" in response.json()["detail"].lower()
 
 
-def test_create_user_duplicate_email(client: TestClient, db_session: Session):
+def test_create_user_duplicate_email(client: TestClient, db_session: Session) -> None:
     user_info = create_and_login_user(
         client, "duplicate_email_test"
     )  # Creates and logs in first user
@@ -117,7 +119,7 @@ def test_create_user_duplicate_email(client: TestClient, db_session: Session):
 
 
 # --- Read User (/me) Tests ---
-def test_read_users_me_success(client: TestClient, db_session: Session):
+def test_read_users_me_success(client: TestClient, db_session: Session) -> None:
     user_info = create_and_login_user(client, "me_test")  # Logs in, client gets cookie
 
     response = client.get(f"{settings.API_STR}/users/me")  # Cookie sent automatically
@@ -128,14 +130,14 @@ def test_read_users_me_success(client: TestClient, db_session: Session):
     assert me_user["id"] == user_info["id"]
 
 
-def test_read_users_me_unauthenticated(client: TestClient, db_session: Session):
+def test_read_users_me_unauthenticated(client: TestClient, db_session: Session) -> None:
     client.cookies.clear()  # Ensure no auth cookie
     response = client.get(f"{settings.API_STR}/users/me")
     assert response.status_code == 401  # Expect unauthorized
 
 
 # --- Read User (/{user_id}) Tests ---
-def test_read_user_by_id_success(client: TestClient, db_session: Session):
+def test_read_user_by_id_success(client: TestClient, db_session: Session) -> None:
     user_info = create_and_login_user(client, "read_by_id_test")
     user_id_to_read = user_info["id"]
 
@@ -147,14 +149,14 @@ def test_read_user_by_id_success(client: TestClient, db_session: Session):
     assert read_user["username"] == user_info["username"]
 
 
-def test_read_user_by_id_not_found(client: TestClient, db_session: Session):
+def test_read_user_by_id_not_found(client: TestClient, db_session: Session) -> None:
     response = client.get(f"{settings.API_STR}/users/9999999")  # Non-existent ID
     assert response.status_code == 404
     assert response.json()["detail"] == "User not found"
 
 
 # --- Update User Tests ---
-def test_update_own_user_success(client: TestClient, db_session: Session):
+def test_update_own_user_success(client: TestClient, db_session: Session) -> None:
     user_info = create_and_login_user(client, "update_self")
     user_id = user_info["id"]
     current_password = "testpassword"  # Default password from create_and_login_user
@@ -174,7 +176,7 @@ def test_update_own_user_success(client: TestClient, db_session: Session):
 
 def test_update_own_user_change_password_success(
     client: TestClient, db_session: Session
-):
+) -> None:
     username_suffix = "change_pass"
     initial_password = "initialPassword123"
     new_password = "newStrongPassword456"
@@ -211,7 +213,7 @@ def test_update_own_user_change_password_success(
 
 def test_update_own_user_incorrect_current_password(
     client: TestClient, db_session: Session
-):
+) -> None:
     user_info = create_and_login_user(client, "update_wrong_curr_pass")
     user_id = user_info["id"]
 
@@ -224,7 +226,7 @@ def test_update_own_user_incorrect_current_password(
     assert "incorrect current password" in response.json()["detail"].lower()
 
 
-def test_update_other_user_forbidden(client: TestClient, db_session: Session):
+def test_update_other_user_forbidden(client: TestClient, db_session: Session) -> None:
     user_a_info = create_and_login_user(
         client, "user_a_update_target"
     )  # User A logged in
@@ -246,7 +248,7 @@ def test_update_other_user_forbidden(client: TestClient, db_session: Session):
     assert response.json()["detail"] == "Not authorized to update this user"
 
 
-def test_update_user_unauthenticated(client: TestClient, db_session: Session):
+def test_update_user_unauthenticated(client: TestClient, db_session: Session) -> None:
     user_info = create_and_login_user(client, "update_unauth_target")
     user_id = user_info["id"]
     client.cookies.clear()  # Ensure unauthenticated
@@ -256,7 +258,7 @@ def test_update_user_unauthenticated(client: TestClient, db_session: Session):
     assert response.status_code == 401
 
 
-def test_update_user_not_found(client: TestClient, db_session: Session):
+def test_update_user_not_found(client: TestClient, db_session: Session) -> None:
     # Logs in a user, assume default password "testpassword"
     logged_in_user_info = create_and_login_user(client, "updater_user_notfound")
     logged_in_user_password = "testpassword"
@@ -273,7 +275,7 @@ def test_update_user_not_found(client: TestClient, db_session: Session):
 
 
 # --- Delete User Tests ---
-def test_delete_own_user_success(client: TestClient, db_session: Session):
+def test_delete_own_user_success(client: TestClient, db_session: Session) -> None:
     user_info = create_and_login_user(client, "delete_self")
     user_id = user_info["id"]
     username = user_info["username"]
@@ -299,7 +301,7 @@ def test_delete_own_user_success(client: TestClient, db_session: Session):
     assert get_response.status_code == 404
 
 
-def test_delete_other_user_forbidden(client: TestClient, db_session: Session):
+def test_delete_other_user_forbidden(client: TestClient, db_session: Session) -> None:
     user_a_info = create_and_login_user(
         client, "user_a_delete_target"
     )  # User A logged in
@@ -315,7 +317,7 @@ def test_delete_other_user_forbidden(client: TestClient, db_session: Session):
     assert response.json()["detail"] == "Not authorized to delete this user"
 
 
-def test_delete_user_unauthenticated(client: TestClient, db_session: Session):
+def test_delete_user_unauthenticated(client: TestClient, db_session: Session) -> None:
     user_info = create_and_login_user(client, "delete_unauth_target")
     user_id = user_info["id"]
     client.cookies.clear()  # Ensure unauthenticated
@@ -324,7 +326,7 @@ def test_delete_user_unauthenticated(client: TestClient, db_session: Session):
     assert response.status_code == 401
 
 
-def test_delete_user_not_found(client: TestClient, db_session: Session):
+def test_delete_user_not_found(client: TestClient, db_session: Session) -> None:
     _ = create_and_login_user(client, "deleter_user_notfound")  # Logs in a user
 
     response = client.delete(f"{settings.API_STR}/users/9999997")  # Non-existent ID
@@ -334,7 +336,7 @@ def test_delete_user_not_found(client: TestClient, db_session: Session):
     )  # Changed detail
 
 
-def test_update_user_conflict_username(client: TestClient, db_session: Session):
+def test_update_user_conflict_username(client: TestClient, db_session: Session) -> None:
     user_a_info = create_and_login_user(client, "conflict_username_A")
     # User B is now logged in, default password is "testpassword"
     user_b_info = create_and_login_user(client, "conflict_username_B")
@@ -350,7 +352,7 @@ def test_update_user_conflict_username(client: TestClient, db_session: Session):
     assert "username already registered" in response.json()["detail"].lower()
 
 
-def test_update_user_conflict_email(client: TestClient, db_session: Session):
+def test_update_user_conflict_email(client: TestClient, db_session: Session) -> None:
     user_a_info = create_and_login_user(client, "conflict_email_A")
     # User B is now logged in, default password is "testpassword"
     user_b_info = create_and_login_user(client, "conflict_email_B")

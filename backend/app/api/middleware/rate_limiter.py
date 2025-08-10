@@ -7,10 +7,10 @@ import logging
 import os
 import time
 from collections import defaultdict
-from typing import Dict, Tuple
+from typing import Any, Awaitable, Callable, Dict, Tuple
 
 from fastapi import HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
 from ...core.config import settings
 
@@ -23,7 +23,11 @@ class RateLimiter:
     For production use, consider using Redis or a dedicated rate limiting service.
     """
 
-    def __init__(self, requests_per_minute: int = None, requests_per_hour: int = None):
+    def __init__(
+        self,
+        requests_per_minute: int | None = None,
+        requests_per_hour: int | None = None,
+    ) -> None:
         self.requests_per_minute = (
             requests_per_minute or settings.RATE_LIMIT_REQUESTS_PER_MINUTE
         )
@@ -111,7 +115,9 @@ class RateLimiter:
 rate_limiter = RateLimiter()
 
 
-async def rate_limit_middleware(request: Request, call_next):
+async def rate_limit_middleware(
+    request: Request, call_next: Callable[[Request], Awaitable[Response]]
+) -> Response:
     """
     FastAPI middleware for rate limiting.
     """
@@ -120,17 +126,20 @@ async def rate_limit_middleware(request: Request, call_next):
         not settings.ENABLE_RATE_LIMITING
         or os.getenv("ENABLE_RATE_LIMITING", "true").lower() == "false"
     ):
-        return await call_next(request)
+        response = await call_next(request)
+        return response
 
     # Skip rate limiting for health checks and static files
     if request.url.path in ["/", "/health", "/docs", "/openapi.json"]:
-        return await call_next(request)
+        response = await call_next(request)
+        return response
 
     # Check rate limit
     is_limited, reason = rate_limiter.is_rate_limited(request)
 
     if is_limited:
-        logger.warning(f"Rate limit exceeded for {request.client.host}: {reason}")
+        client_ip = request.client.host if request.client else "unknown"
+        logger.warning(f"Rate limit exceeded for {client_ip}: {reason}")
         return JSONResponse(
             status_code=429,
             content={
