@@ -1,11 +1,12 @@
+import os
+import sys
+from pathlib import Path
+
 import pytest
+from dotenv import load_dotenv
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-import os
-from dotenv import load_dotenv
-import sys
-from pathlib import Path
 
 # Add the parent directory to sys.path to make app imports work
 sys.path.append(str(Path(__file__).parent.parent.parent))
@@ -23,6 +24,8 @@ TEST_DATABASE_URL = os.getenv("DATABASE_URL")
 if not TEST_DATABASE_URL:
     print("Warning: DATABASE_URL not found in environment after loading .env.test.")
 
+# Set environment variable to disable rate limiting for tests
+os.environ["ENABLE_RATE_LIMITING"] = "false"
 
 # Create a test-specific settings object that will be used
 # Important: This needs to happen BEFORE any other imports from the app
@@ -32,18 +35,24 @@ from app.core.config import Settings, get_settings
 def get_test_settings():
     # Settings will now be initialized using environment variables
     # loaded from .env.test, including DATABASE_URL
-    return Settings()
+    # Disable rate limiting for tests
+    settings = Settings()
+    settings.ENABLE_RATE_LIMITING = False
+    return settings
 
 
-# Override the settings provider
+# Override the settings provider and clear the cache
 import app.core.config
 
+# Clear the cache to ensure fresh settings
+app.core.config.get_settings.cache_clear()
 app.core.config.get_settings = get_test_settings
+
+from app.db.base import Base
+from app.db.session import get_db
 
 # Only now import the rest of the app
 from app.main import app
-from app.db.base import Base
-from app.db.session import get_db
 
 engine = create_engine(
     TEST_DATABASE_URL  # This engine is for test setup (creating tables, direct test sessions)

@@ -1,21 +1,22 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Response, Body, Query
+from datetime import timedelta
+
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response, status
 from fastapi.responses import RedirectResponse
 from fastapi.security import OAuth2PasswordRequestForm
-from sqlalchemy.orm import Session
-from datetime import timedelta
 from jose import JWTError, jwt
+from sqlalchemy.orm import Session
 
-from app.db.session import get_db
-from app.api.models.user import User as DBUser
-from app.api.schemas.user import UserRead
-from app.api.schemas.auth import NewPassword
 from app.api.dependencies.auth import (
-    verify_password,
     create_access_token,
     get_password_hash,
+    verify_password,
 )
+from app.api.models.user import User as DBUser
+from app.api.schemas.auth import NewPassword
+from app.api.schemas.user import UserRead
 from app.core.config import settings
 from app.core.email import send_email
+from app.db.session import get_db
 
 router = APIRouter()
 

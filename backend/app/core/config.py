@@ -1,7 +1,8 @@
+import os
+from functools import lru_cache
+
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from functools import lru_cache
-import os
 
 
 class Settings(BaseSettings):
@@ -51,6 +52,11 @@ class Settings(BaseSettings):
     SENDGRID_RESET_PASSWORD_TEMPLATE_ID: str
     # Hashing settings
     HASH_ALGORITHM: str = "HS256"
+
+    # Rate limiting settings
+    ENABLE_RATE_LIMITING: bool = True
+    RATE_LIMIT_REQUESTS_PER_MINUTE: int = 60
+    RATE_LIMIT_REQUESTS_PER_HOUR: int = 1000
 
     model_config = SettingsConfigDict(
         env_file=".env", env_file_encoding="utf-8", case_sensitive=True, extra="ignore"

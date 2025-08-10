@@ -1,10 +1,10 @@
-from logging.config import fileConfig
 import os
 import sys
+from logging.config import fileConfig
+
 from dotenv import load_dotenv
-from sqlalchemy import engine_from_config
-from sqlalchemy import pool
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, engine_from_config, pool
+
 from alembic import context
 
 # Add the app directory to Python path so we can import app modules

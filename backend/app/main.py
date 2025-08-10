@@ -1,15 +1,13 @@
+import logging
+import os
+import subprocess
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from .core.config import settings
-from .api.endpoints import auth
-from .api.endpoints import users
-from .api.endpoints import cars
-from .api.endpoints import parts
-from .api.endpoints import build_lists
+
+from .api.endpoints import auth, build_lists, cars, parts, users
 from .api.middleware import rate_limit_middleware
-import subprocess
-import os
-import logging
+from .core.config import settings
 
 # Configure logging for the entire application
 logging.basicConfig(

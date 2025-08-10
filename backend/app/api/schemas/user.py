@@ -1,5 +1,6 @@
-from pydantic import BaseModel, EmailStr, ConfigDict
 from typing import Optional
+
+from pydantic import BaseModel, ConfigDict, EmailStr
 
 
 # Schema for request body when creating a user

@@ -1,12 +1,12 @@
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
-from app.core.config import settings
-from app.api.schemas.user import UserRead
-from app.api.models.user import User as DBUser  # For direct DB manipulation if needed
 
 # Helper to create a user directly in the DB for testing login
 # This is an alternative to calling the /users/ endpoint if you want to bypass API validation for setup
 from app.api.dependencies.auth import get_password_hash
+from app.api.models.user import User as DBUser  # For direct DB manipulation if needed
+from app.api.schemas.user import UserRead
+from app.core.config import settings
 
 
 def create_test_user_direct_db(

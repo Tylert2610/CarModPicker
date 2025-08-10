@@ -1,5 +1,6 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+
 from app.core.config import get_settings
 
 # Get settings using the function (which could be overridden in tests)

@@ -1,7 +1,8 @@
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
+
+from app.api.schemas.part import PartCreate, PartRead, PartUpdate
 from app.core.config import settings
-from app.api.schemas.part import PartRead, PartCreate, PartUpdate
 
 
 # Helper function to create a user and log them in (sets cookie on client)

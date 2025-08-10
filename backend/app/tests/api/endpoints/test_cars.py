@@ -1,7 +1,8 @@
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
+
+from app.api.schemas.car import CarCreate, CarRead, CarUpdate
 from app.core.config import settings
-from app.api.schemas.car import CarRead, CarCreate, CarUpdate
 
 
 # Helper function to create a user and log them in (sets cookie on client)
@@ -227,6 +228,7 @@ def test_delete_car_not_found(client: TestClient, db_session: Session):
 
 # --- Tests for read_cars_by_user ---
 
+
 def test_read_cars_by_user_success(client: TestClient, db_session: Session):
     # Create a user and log them in to create cars
     user_id = create_and_login_user(client, "car_owner_for_list")
@@ -235,11 +237,11 @@ def test_read_cars_by_user_success(client: TestClient, db_session: Session):
     car_data1 = {"make": "Toyota", "model": "Supra", "year": 1998}
     car_data2 = {"make": "Nissan", "model": "Skyline R34", "year": 1999, "trim": "GT-R"}
 
-    response1 = client.post(f"{settings.API_STR}/cars/", json=car_data1) # Uses cookie
+    response1 = client.post(f"{settings.API_STR}/cars/", json=car_data1)  # Uses cookie
     assert response1.status_code == 200
     car_id1 = response1.json()["id"]
 
-    response2 = client.post(f"{settings.API_STR}/cars/", json=car_data2) # Uses cookie
+    response2 = client.post(f"{settings.API_STR}/cars/", json=car_data2)  # Uses cookie
     assert response2.status_code == 200
     car_id2 = response2.json()["id"]
 
@@ -287,7 +289,9 @@ def test_read_cars_by_user_non_existent_user(client: TestClient, db_session: Ses
     # Clear cookies as the endpoint is public
     client.cookies.clear()
     response = client.get(f"{settings.API_STR}/cars/user/{non_existent_user_id}")
-    assert response.status_code == 200, response.text # Endpoint returns 200 and empty list
+    assert (
+        response.status_code == 200
+    ), response.text  # Endpoint returns 200 and empty list
 
     cars_list = response.json()
     assert isinstance(cars_list, list)

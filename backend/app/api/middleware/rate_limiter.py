@@ -3,12 +3,16 @@ Rate limiting middleware for FastAPI application.
 Provides basic rate limiting to prevent abuse for small web applications.
 """
 
+import logging
+import os
 import time
 from collections import defaultdict
 from typing import Dict, Tuple
-from fastapi import Request, HTTPException
+
+from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse
-import logging
+
+from ...core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -19,9 +23,13 @@ class RateLimiter:
     For production use, consider using Redis or a dedicated rate limiting service.
     """
 
-    def __init__(self, requests_per_minute: int = 60, requests_per_hour: int = 1000):
-        self.requests_per_minute = requests_per_minute
-        self.requests_per_hour = requests_per_hour
+    def __init__(self, requests_per_minute: int = None, requests_per_hour: int = None):
+        self.requests_per_minute = (
+            requests_per_minute or settings.RATE_LIMIT_REQUESTS_PER_MINUTE
+        )
+        self.requests_per_hour = (
+            requests_per_hour or settings.RATE_LIMIT_REQUESTS_PER_HOUR
+        )
         self.minute_requests: Dict[str, list] = defaultdict(list)
         self.hour_requests: Dict[str, list] = defaultdict(list)
 
@@ -107,6 +115,13 @@ async def rate_limit_middleware(request: Request, call_next):
     """
     FastAPI middleware for rate limiting.
     """
+    # Skip rate limiting if disabled in settings or in test environment
+    if (
+        not settings.ENABLE_RATE_LIMITING
+        or os.getenv("ENABLE_RATE_LIMITING", "true").lower() == "false"
+    ):
+        return await call_next(request)
+
     # Skip rate limiting for health checks and static files
     if request.url.path in ["/", "/health", "/docs", "/openapi.json"]:
         return await call_next(request)

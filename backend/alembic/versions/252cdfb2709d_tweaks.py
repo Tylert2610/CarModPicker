@@ -5,15 +5,16 @@ Revises: 9fad665febcc
 Create Date: 2025-04-28 20:55:35.972472
 
 """
+
 from typing import Sequence, Union
 
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = '252cdfb2709d'
-down_revision: Union[str, None] = '9fad665febcc'
+revision: str = "252cdfb2709d"
+down_revision: Union[str, None] = "9fad665febcc"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

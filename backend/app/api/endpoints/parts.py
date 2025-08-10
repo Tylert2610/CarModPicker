@@ -1,15 +1,16 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
 import logging
 
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+
+from app.api.dependencies.auth import get_current_user
+from app.api.models.build_list import BuildList as DBBuildList
+from app.api.models.car import Car as DBCar
+from app.api.models.part import Part as DBPart
+from app.api.models.user import User as DBUser
+from app.api.schemas.part import PartCreate, PartRead, PartUpdate
 from app.core.logging import get_logger
 from app.db.session import get_db
-from app.api.models.part import Part as DBPart
-from app.api.models.car import Car as DBCar
-from app.api.models.user import User as DBUser
-from app.api.models.build_list import BuildList as DBBuildList
-from app.api.schemas.part import PartCreate, PartRead, PartUpdate
-from app.api.dependencies.auth import get_current_user
 
 
 # Shared function to verify build list ownership (via car)

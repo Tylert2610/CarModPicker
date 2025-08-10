@@ -1,10 +1,11 @@
+from typing import Dict, Optional
+
+from fastapi import status  # Add this import
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
-from typing import Dict, Optional
-from fastapi import status  # Add this import
 
+from app.api.schemas.user import UserCreate, UserRead, UserUpdate
 from app.core.config import settings
-from app.api.schemas.user import UserRead, UserCreate, UserUpdate
 
 
 # Helper function to create a user and log them in (sets cookie on client)

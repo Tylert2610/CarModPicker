@@ -1,8 +1,8 @@
 from sendgrid import SendGridAPIClient
-from sendgrid.helpers.mail import Mail, From, To
-from app.core.logging import logger
+from sendgrid.helpers.mail import From, Mail, To
 
 from app.core.config import settings
+from app.core.logging import logger
 
 
 def send_email(to_email: str, template_id: str, dynamic_template_data: dict):

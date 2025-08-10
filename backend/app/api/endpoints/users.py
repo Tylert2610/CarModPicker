@@ -1,24 +1,24 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Response
-from sqlalchemy.orm import Session
-from sqlalchemy.exc import IntegrityError
 import logging
 
-from app.core.logging import get_logger
-from app.core.config import settings
-from app.db.session import get_db
+from fastapi import APIRouter, Depends, HTTPException, Response, status
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+
+from app.api.dependencies.auth import (
+    create_access_token,
+    get_current_user,
+    get_password_hash,
+    verify_password,
+)
 from app.api.models.user import User as DBUser
 from app.api.schemas.user import (
     UserCreate,
     UserRead,
     UserUpdate,
 )
-
-from app.api.dependencies.auth import (
-    get_password_hash,
-    get_current_user,
-    verify_password,
-    create_access_token,
-)
+from app.core.config import settings
+from app.core.logging import get_logger
+from app.db.session import get_db
 
 router = APIRouter()
 

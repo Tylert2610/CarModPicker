@@ -1,14 +1,15 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
 import logging
 from typing import List
 
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+
+from app.api.dependencies.auth import get_current_user
+from app.api.models.car import Car as DBCar
+from app.api.models.user import User as DBUser
+from app.api.schemas.car import CarCreate, CarRead, CarUpdate
 from app.core.logging import get_logger
 from app.db.session import get_db
-from app.api.models.car import Car as DBCar
-from app.api.schemas.car import CarCreate, CarRead, CarUpdate
-from app.api.dependencies.auth import get_current_user
-from app.api.models.user import User as DBUser
 
 
 # Helper function to get and verify car ownership

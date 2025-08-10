@@ -1,16 +1,16 @@
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from fastapi import Depends, HTTPException, status, Cookie
+import bcrypt
+from fastapi import Cookie, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
-import bcrypt
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
-from app.db.session import get_db
 from app.api.models.user import User as DBUser
 from app.api.schemas.token import TokenData
+from app.core.config import settings
+from app.db.session import get_db
 
 ALGORITHM = settings.HASH_ALGORITHM
 
