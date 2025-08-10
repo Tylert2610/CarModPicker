@@ -171,8 +171,8 @@ class TestRateLimitMiddleware:
         """Test that middleware adds rate limit headers."""
         client = TestClient(app)
 
-        response = client.get("/api/v1/users")
-        # Since rate limiting is disabled in tests, we expect a 404 for non-existent endpoint
+        response = client.get("/api/v1/users/1")
+        # Since rate limiting is disabled in tests, we expect a 404 for non-existent user
         assert response.status_code == 404
 
         # Since rate limiting is disabled, we won't have rate limit headers
