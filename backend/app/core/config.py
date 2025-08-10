@@ -34,13 +34,21 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
 
     # CORS settings
-    ALLOWED_ORIGINS: list[str] = [
-        "http://localhost",
-        "http://localhost:3000",
-        "http://localhost:5173",
-        "https://carmodpicker.webbpulse.com",
-        "https://api.carmodpicker.webbpulse.com",
-    ]
+    ALLOWED_ORIGINS: str = Field(
+        default="http://localhost,http://localhost:3000,http://localhost:5173,https://carmodpicker.webbpulse.com,https://api.carmodpicker.webbpulse.com",
+        description="Comma-separated list of allowed origins",
+    )
+
+    @property
+    def allowed_origins_list(self) -> list[str]:
+        """Get ALLOWED_ORIGINS as a list."""
+        if not self.ALLOWED_ORIGINS:
+            return []
+        return [
+            origin.strip()
+            for origin in self.ALLOWED_ORIGINS.split(",")
+            if origin.strip()
+        ]
 
     # Railway deployment settings
     PORT: int = 8000

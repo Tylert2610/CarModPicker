@@ -72,6 +72,7 @@ htmlcov/
 .tox/
 .nox/
 .cache
+.mypy_cache/
 
 # Database files
 *.db
