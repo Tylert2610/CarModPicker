@@ -54,7 +54,7 @@ Railway's native Node.js builder:
 2. Installs dependencies with `npm install`
 3. Accepts `VITE_API_URL` as environment variable during build
 4. Builds the React application with `npm run build`
-5. Serves static files using the `serve` package (configured in `railway.toml`)
+5. Serves static files using Vite's preview server or a static file server
 
 ## Environment Variables Reference
 
@@ -84,8 +84,8 @@ See `env.example` for a complete list of environment variables with descriptions
    - Ensure all dependencies are properly specified in `package.json`
 
 3. **Routing Issues**:
-   - The `serve` package automatically handles SPA routing with fallback to `index.html`
-   - If you have routing issues, check the serve configuration in `railway.toml`
+   - Ensure your deployment platform handles SPA routing with fallback to `index.html`
+   - For Railway, this is typically handled automatically by the Node.js builder
 
 ### Logs
 
@@ -102,17 +102,17 @@ Test your deployment by:
 
 ## Railway Configuration
 
-The project includes a `railway.toml` file that configures:
+The project uses Railway's native Node.js builder (NIXPACKS) which:
 
-- **Builder**: Uses Railway's native Node.js builder (NIXPACKS)
-- **Start Command**: Builds the app then serves static files with the `serve` package
+- **Builder**: Automatically detects and builds Node.js projects
+- **Start Command**: Can be configured to serve static files after build
 - **Health Check**: Monitors the root path
 - **Restart Policy**: Automatically restarts on failure
 
 ## Production Considerations
 
 1. **Performance**: Railway's CDN handles static asset delivery
-2. **Caching**: Browser caching is configured by the `serve` package
+2. **Caching**: Browser caching is handled by Railway's CDN and your deployment platform
 3. **Security**: HTTPS is automatically enabled
 4. **Monitoring**: Monitor usage and performance in Railway dashboard
 
