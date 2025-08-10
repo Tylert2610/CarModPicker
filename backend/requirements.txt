@@ -23,3 +23,7 @@ pytest
 httpx
 bcrypt
 sendgrid
+black
+isort
+mypy
+pytest-cov

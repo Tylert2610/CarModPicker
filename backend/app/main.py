@@ -6,6 +6,7 @@ from .api.endpoints import users
 from .api.endpoints import cars
 from .api.endpoints import parts
 from .api.endpoints import build_lists
+from .api.middleware import rate_limit_middleware
 import subprocess
 import os
 import logging
@@ -63,6 +64,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Add rate limiting middleware
+app.middleware("http")(rate_limit_middleware)
+
 app.include_router(users.router, prefix=settings.API_STR + "/users", tags=["users"])
 app.include_router(cars.router, prefix=settings.API_STR + "/cars", tags=["cars"])
 app.include_router(
@@ -75,3 +79,9 @@ app.include_router(auth.router, prefix=settings.API_STR + "/auth", tags=["auth"]
 @app.get("/")
 def read_root():
     return {"Hello": "World"}
+
+
+@app.get("/health")
+def health_check():
+    """Health check endpoint for monitoring."""
+    return {"status": "healthy", "service": "CarModPicker API", "version": "1.0.0"}
