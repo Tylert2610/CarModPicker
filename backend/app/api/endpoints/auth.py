@@ -73,7 +73,12 @@ async def verify_email(
         data={"sub": user.email, "purpose": "verify_email"},
         expires_delta=timedelta(hours=1),
     )
-    verify_url = f"http://localhost:8000/api/auth/verify-email/confirm?token={token}"
+    if settings.DEBUG:
+        verify_url = (
+            f"http://localhost:8000/api/auth/verify-email/confirm?token={token}"
+        )
+    else:
+        verify_url = f"https://api.carmodpicker.webbpulse.com/api/auth/verify-email/confirm?token={token}"
     send_email(
         user.email,
         settings.SENDGRID_VERIFY_EMAIL_TEMPLATE_ID,
@@ -90,7 +95,7 @@ async def verify_email_confirm(
     if settings.DEBUG:
         frontend_base_url = "http://localhost:4000/verify-email/confirm"
     else:
-        frontend_base_url = "http://carmodpicker.webbpulse.com/verify-email/confirm"
+        frontend_base_url = "https://carmodpicker.webbpulse.com/verify-email/confirm"
     try:
         payload = jwt.decode(
             token, settings.SECRET_KEY, algorithms=[settings.HASH_ALGORITHM]

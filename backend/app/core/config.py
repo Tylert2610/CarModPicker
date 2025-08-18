@@ -78,13 +78,7 @@ def get_settings() -> Settings:
     Get cached settings.
     For tests, this can be overridden before the first call.
     """
-    return Settings(
-        SECRET_KEY="test-secret-key",
-        SENDGRID_API_KEY="test-sendgrid-key",
-        EMAIL_FROM="test@example.com",
-        SENDGRID_VERIFY_EMAIL_TEMPLATE_ID="test-verify-template",
-        SENDGRID_RESET_PASSWORD_TEMPLATE_ID="test-reset-template",
-    )
+    return Settings()
 
 
 # Create settings instance for normal usage
