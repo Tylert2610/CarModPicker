@@ -30,7 +30,7 @@ class Settings(BaseSettings):
         return str(v)
 
     # JWT Auth
-    SECRET_KEY: str = Field(...)
+    SECRET_KEY: str = Field(default="")
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
 
     # CORS settings
@@ -55,10 +55,10 @@ class Settings(BaseSettings):
     RAILWAY_ENVIRONMENT: str = "development"
 
     # Email settings
-    SENDGRID_API_KEY: str = Field(...)
-    EMAIL_FROM: str = Field(...)
-    SENDGRID_VERIFY_EMAIL_TEMPLATE_ID: str = Field(...)
-    SENDGRID_RESET_PASSWORD_TEMPLATE_ID: str = Field(...)
+    SENDGRID_API_KEY: str = Field(default="")
+    EMAIL_FROM: str = Field(default="")
+    SENDGRID_VERIFY_EMAIL_TEMPLATE_ID: str = Field(default="")
+    SENDGRID_RESET_PASSWORD_TEMPLATE_ID: str = Field(default="")
     # Hashing settings
     HASH_ALGORITHM: str = "HS256"
 
