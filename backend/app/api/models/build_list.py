@@ -1,4 +1,5 @@
 from typing import List, Optional
+from datetime import datetime
 
 from sqlalchemy import ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -16,8 +17,14 @@ class BuildList(Base):
     car_id: Mapped[int] = mapped_column(ForeignKey("cars.id"), nullable=False)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
 
-    # owner
+    created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    # Relationships
     car: Mapped["Car"] = relationship("Car", back_populates="build_lists")  # type: ignore
     owner: Mapped["User"] = relationship("User")  # type: ignore
-    # children
-    parts: Mapped[List["Part"]] = relationship("Part", back_populates="build_list", cascade="all, delete-orphan")  # type: ignore
+    parts: Mapped[List["BuildListPart"]] = relationship(
+        "BuildListPart", back_populates="build_list"
+    )

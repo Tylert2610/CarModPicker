@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .api.endpoints import (
     auth,
     build_lists,
+    build_list_parts,
     cars,
     parts,
     users,
@@ -80,6 +81,11 @@ app.include_router(
     build_lists.router, prefix=settings.API_STR + "/build-lists", tags=["build_lists"]
 )
 app.include_router(parts.router, prefix=settings.API_STR + "/parts", tags=["parts"])
+app.include_router(
+    build_list_parts.router,
+    prefix=settings.API_STR + "/build-list-parts",
+    tags=["build_list_parts"],
+)
 app.include_router(auth.router, prefix=settings.API_STR + "/auth", tags=["auth"])
 app.include_router(
     subscriptions.router,

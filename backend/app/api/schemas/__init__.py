@@ -4,6 +4,7 @@ from .auth import NewPassword
 from .car import CarRead, CarCreate, CarUpdate
 from .build_list import BuildListRead, BuildListCreate, BuildListUpdate
 from .part import PartRead, PartCreate, PartUpdate
+from .build_list_part import BuildListPartRead, BuildListPartCreate, BuildListPartUpdate
 from .category import CategoryInDB, CategoryCreate, CategoryUpdate, CategoryResponse
 from .subscription import (
     SubscriptionInDB,
@@ -30,6 +31,9 @@ __all__ = [
     "PartRead",
     "PartCreate",
     "PartUpdate",
+    "BuildListPartRead",
+    "BuildListPartCreate",
+    "BuildListPartUpdate",
     "CategoryInDB",
     "CategoryCreate",
     "CategoryUpdate",
