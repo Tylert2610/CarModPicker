@@ -21,7 +21,7 @@ interface PartListProps {
 }
 
 const fetchPartsRequestFn = (buildListId: number) =>
-  apiClient.get<PartRead[]>(`/parts?build_list_id=${buildListId}`);
+  apiClient.get<PartRead[]>(`/parts/build-list/${buildListId}`);
 
 function PartList({
   buildListId,
