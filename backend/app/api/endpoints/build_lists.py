@@ -1,7 +1,7 @@
 import logging
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.api.dependencies.auth import get_current_user
@@ -9,6 +9,7 @@ from app.api.models.build_list import BuildList as DBBuildList
 from app.api.models.car import Car as DBCar
 from app.api.models.user import User as DBUser
 from app.api.schemas.build_list import BuildListCreate, BuildListRead, BuildListUpdate
+from app.api.services.subscription_service import SubscriptionService
 from app.core.logging import get_logger
 from app.db.session import get_db
 
@@ -52,6 +53,7 @@ router = APIRouter()
     responses={
         400: {"description": "Build List already exists"},
         403: {"description": "Not authorized to create a build list"},
+        402: {"description": "Subscription limit reached"},
     },
 )
 async def create_build_list(
@@ -60,6 +62,19 @@ async def create_build_list(
     logger: logging.Logger = Depends(get_logger),
     current_user: DBUser = Depends(get_current_user),
 ) -> DBBuildList:
+    # Check subscription limits
+    if not SubscriptionService.can_create_build_list(db, current_user):
+        limits = SubscriptionService.get_user_limits(current_user)
+        usage = SubscriptionService.get_user_usage(db, current_user.id)
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail={
+                "message": "Build list creation limit reached. Upgrade to premium for unlimited build lists.",
+                "limits": limits,
+                "usage": usage,
+            },
+        )
+
     # Verify car ownership
     db_car = await _verify_car_ownership(
         car_id=build_list.car_id,
@@ -70,7 +85,7 @@ async def create_build_list(
         authorization_detail="Not authorized to create a build list for this car",
     )
 
-    db_build_list = DBBuildList(**build_list.model_dump())
+    db_build_list = DBBuildList(**build_list.model_dump(), user_id=current_user.id)
     db.add(db_build_list)
     db.commit()
     db.refresh(db_build_list)

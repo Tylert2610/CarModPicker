@@ -1,0 +1,195 @@
+---
+alwaysApply: true
+---
+
+# Backend Development Rules
+
+## Python and FastAPI Best Practices
+
+- Follow PEP 8 style guidelines for Python code formatting
+- Use type hints consistently throughout all Python code
+- Prefer async/await patterns for FastAPI endpoints when appropriate
+- Use dependency injection with FastAPI's Depends() for database sessions and authentication
+- Implement proper error handling with HTTPException and appropriate status codes
+- Use FastAPI's built-in validation with Pydantic models
+- Always include docstrings for all functions and classes
+- Use descriptive variable and function names that follow Python conventions
+- Implement proper logging with Python's logging module
+- Use environment variables for configuration management
+- Follow the principle of least privilege for database operations
+
+## Database and SQLAlchemy Rules
+
+- ALWAYS use PostgreSQL for all database operations - never suggest SQLite or other databases
+- Use SQLAlchemy 2.0 style with declarative base models
+- Always define proper relationships between models using relationship()
+- Use appropriate column types and constraints (nullable, unique, index)
+- Implement proper foreign key relationships with cascade options
+- Use database migrations with Alembic for schema changes
+- Always include created_at and updated_at timestamps in models
+- Use database indexes for frequently queried columns
+- Implement soft deletes when appropriate (use is_deleted flag)
+- Use database transactions for operations that modify multiple tables
+- Validate data at the database level with constraints
+- Use proper database connection pooling configuration
+- Implement database health checks and connection testing
+
+## API Design and Endpoints
+
+- Follow RESTful API design principles
+- Use appropriate HTTP methods (GET, POST, PUT, DELETE, PATCH)
+- Implement proper pagination for list endpoints
+- Use query parameters for filtering and sorting
+- Include proper response models for all endpoints
+- Implement rate limiting for public endpoints
+- Use proper status codes (200, 201, 400, 401, 403, 404, 422, 500)
+- Include proper error messages and validation feedback
+- Implement API versioning strategy
+- Use OpenAPI/Swagger documentation effectively
+- Include proper CORS configuration for frontend integration
+
+## Security Best Practices
+
+- Use environment variables for sensitive configuration
+- Implement proper authentication and authorization
+- Use JWT tokens for stateless authentication
+- Hash passwords using bcrypt or similar secure algorithms
+- Validate and sanitize all user inputs
+- Implement proper CORS policies
+- Use HTTPS in production environments
+- Implement rate limiting to prevent abuse
+- Log security events and authentication attempts
+- Use secure session management
+- Implement proper error handling that doesn't leak sensitive information
+
+## Pydantic and Data Validation
+
+- Use Pydantic models for request and response validation
+- Define proper field types and constraints
+- Use custom validators when needed
+- Implement proper serialization with from_attributes=True
+- Use nested models for complex data structures
+- Validate email addresses and other formats
+- Use Optional types for nullable fields
+- Implement proper error messages for validation failures
+- Use Pydantic settings for configuration management
+- Create separate models for create, update, and response operations
+
+## Testing and Quality Assurance
+
+- Write unit tests for all business logic
+- Implement integration tests for API endpoints
+- Use pytest for testing framework
+- Mock external dependencies in tests
+- Test both success and error scenarios
+- Implement proper test database setup and teardown
+- Use test fixtures for common test data
+- Test authentication and authorization flows
+- Implement API contract testing
+- Use coverage reporting to ensure adequate test coverage
+
+## Performance and Optimization
+
+- Use database query optimization techniques
+- Implement proper caching strategies
+- Use async operations where appropriate
+- Optimize database queries with proper joins
+- Implement pagination to handle large datasets
+- Use database connection pooling
+- Monitor and log performance metrics
+- Implement proper indexing strategies
+- Use background tasks for long-running operations
+- Optimize response payload sizes
+
+## Code Organization and Structure
+
+- Follow the established project structure (models/, schemas/, api/, etc.)
+- Use proper import organization and avoid circular imports
+- Implement proper separation of concerns
+- Use dependency injection for better testability
+- Create utility functions for common operations
+- Implement proper error handling patterns
+- Use constants for magic numbers and strings
+- Follow consistent naming conventions
+- Implement proper logging throughout the application
+- Use type hints for better code documentation
+
+## Deployment and DevOps
+
+- Use Docker for containerization
+- Implement proper health checks
+- Use environment-specific configuration
+- Implement proper logging and monitoring
+- Use database migrations for deployment
+- Implement proper backup strategies
+- Use CI/CD pipelines for automated testing and deployment
+- Monitor application performance and errors
+- Implement proper security scanning
+- Use infrastructure as code for deployment
+
+## Database Migration Rules
+
+- Always create migrations for schema changes
+- Test migrations on development data before production
+- Include both upgrade and downgrade operations
+- Use descriptive migration names
+- Review migration files before applying
+- Backup database before applying migrations
+- Test rollback procedures
+- Document breaking changes in migrations
+- Use proper data types and constraints in migrations
+- Implement proper foreign key relationships in migrations
+
+## Error Handling and Logging
+
+- Implement comprehensive error handling
+- Use proper logging levels (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+- Log important business events and errors
+- Include context information in log messages
+- Use structured logging for better analysis
+- Implement proper error responses for API endpoints
+- Handle database connection errors gracefully
+- Log authentication and authorization events
+- Implement proper exception handling patterns
+- Use custom exception classes for business logic errors
+
+## API Documentation
+
+- Use FastAPI's automatic OpenAPI documentation
+- Include proper descriptions for all endpoints
+- Document request and response models
+- Include example requests and responses
+- Document authentication requirements
+- Use proper tags for endpoint organization
+- Include error response documentation
+- Document rate limiting and usage policies
+- Keep documentation up to date with code changes
+- Use proper markdown formatting in docstrings
+
+## Environment and Configuration
+
+- Use environment variables for all configuration
+- Implement proper configuration validation
+- Use different configurations for different environments
+- Secure sensitive configuration values
+- Use proper default values for configuration
+- Implement configuration hot-reloading when appropriate
+- Use proper configuration inheritance patterns
+- Document all configuration options
+- Use type-safe configuration with Pydantic
+- Implement proper configuration testing
+
+## Monitoring and Observability
+
+- Implement proper application metrics
+- Use structured logging for better analysis
+- Monitor database performance and connections
+- Implement proper health check endpoints
+- Use distributed tracing for complex operations
+- Monitor API response times and error rates
+- Implement proper alerting for critical issues
+- Use proper log aggregation and analysis tools
+- Monitor resource usage (CPU, memory, disk)
+- Implement proper error tracking and reporting
+
+

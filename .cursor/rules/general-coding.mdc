@@ -1,0 +1,19 @@
+---
+alwaysApply: true
+---
+
+- Write self-documenting code with clear variable and function names
+- Minimize code duplication through proper abstraction
+- Optimize for performance without sacrificing readability
+- Ensure code is maintainable and extensible
+- Follow the principle of least surprise in API design
+- Write code that is easy to test and debug
+- Prioritize user experience over clever code
+- Use appropriate data structures for the problem at hand
+- Implement proper error handling and edge cases
+- Write code that scales with the application's growth
+- Ensure code follows established patterns and conventions
+- Optimize for both development speed and runtime performance
+- Only use code comments when they explain a relatively non-intuitive code path or when specifically asked to explain certain logic
+- Prioritize code readability where possible
+- Shoot for O(n) time and space complexities or better

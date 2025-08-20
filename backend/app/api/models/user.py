@@ -1,4 +1,5 @@
 from typing import List, Optional
+from datetime import datetime
 
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -16,5 +17,15 @@ class User(Base):
     hashed_password: Mapped[str] = mapped_column(nullable=False)
     disabled: Mapped[bool] = mapped_column(default=False, nullable=False)
 
+    # Subscription fields
+    subscription_tier: Mapped[str] = mapped_column(
+        default="free", nullable=False
+    )  # 'free', 'premium'
+    subscription_expires_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
+    subscription_status: Mapped[str] = mapped_column(
+        default="active", nullable=False
+    )  # 'active', 'cancelled', 'expired'
+
     # children
     cars: Mapped[List["Car"]] = relationship("Car", back_populates="user", cascade="all, delete-orphan")  # type: ignore
+    subscriptions: Mapped[List["Subscription"]] = relationship("Subscription", back_populates="user", cascade="all, delete-orphan")  # type: ignore

@@ -6,7 +6,7 @@ from typing import Any
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .api.endpoints import auth, build_lists, cars, parts, users
+from .api.endpoints import auth, build_lists, cars, parts, users, subscriptions
 from .api.middleware import rate_limit_middleware
 from .core.config import settings
 
@@ -73,6 +73,11 @@ app.include_router(
 )
 app.include_router(parts.router, prefix=settings.API_STR + "/parts", tags=["parts"])
 app.include_router(auth.router, prefix=settings.API_STR + "/auth", tags=["auth"])
+app.include_router(
+    subscriptions.router,
+    prefix=settings.API_STR + "/subscriptions",
+    tags=["subscriptions"],
+)
 
 
 @app.get("/")

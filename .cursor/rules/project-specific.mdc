@@ -1,0 +1,64 @@
+---
+alwaysApply: true
+---
+
+# CarModPicker Project Rules
+
+## Component Structure and Organization
+
+- Follow the established component structure: auth/, buildLists/, cars/, parts/, common/, layout/, buttons/
+- Group related components by domain (authentication, car management, build lists, parts)
+- Use common/ for reusable UI components (Card, Dialog, Input, LoadingSpinner)
+- Use layout/ for page structure components (Header, Footer, PageHeader)
+- Use buttons/ for standardized button components (ActionButton, LinkButton, etc.)
+
+## Design and UX
+
+- Use the dark theme color scheme consistently (bg-gray-900, etc.)
+- Implement smooth animations and transitions for better UX
+- Ensure all forms have proper validation and error handling
+- Implement responsive design with mobile-first approach
+- Use Tailwind CSS for all styling with consistent design tokens
+- Ensure cross-browser compatibility (Chrome, Firefox, Safari, Edge)
+- Optimize for Core Web Vitals and performance metrics
+- Use proper image optimization and lazy loading for car/part images
+
+## CarModPicker Domain Rules
+
+- Car entities must include make, model, year, and image_url fields
+- Build lists represent user collections of car modifications
+- Parts must be associated with specific car makes/models when applicable
+- User authentication is required for creating/editing cars, parts, and build lists
+- All car and part images should have proper alt text for accessibility
+- Implement proper search and filtering for cars and parts catalogs
+- Build lists should support adding/removing cars and parts
+- Maintain referential integrity between users, cars, parts, and build lists
+
+## Development Standards
+
+- Use modern React patterns: hooks, context, and functional components
+- Implement proper TypeScript interfaces for all component props
+- Add proper ARIA labels and keyboard navigation support
+- Ensure accessibility compliance (WCAG 2.1 AA standards)
+- Use semantic HTML elements throughout the application
+- Implement proper loading states and error boundaries
+- Implement proper form validation with user-friendly error messages
+- Use consistent naming conventions for files and components
+- Implement proper state management patterns with React Context
+- Add proper documentation for complex components
+
+## Performance and SEO
+
+- Add proper SEO meta tags and structured data
+- Use proper image optimization and lazy loading
+- Implement proper caching strategies for car/part data
+- Optimize API calls to prevent unnecessary re-fetching
+- Use React.memo() for expensive car/part list components
+- Implement pagination for large car/part catalogs
+
+## Deployment and Infrastructure
+
+- Follow the Kubernetes deployment strategy with separate frontend/backend services
+- Use Docker containerization for both frontend and backend
+- Maintain separate development and production configurations
+- Implement proper health checks and monitoring
