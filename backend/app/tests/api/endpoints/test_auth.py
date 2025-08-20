@@ -5,7 +5,6 @@ from sqlalchemy.orm import Session
 # This is an alternative to calling the /users/ endpoint if you want to bypass API validation for setup
 from app.api.dependencies.auth import get_password_hash
 from app.api.models.user import User as DBUser  # For direct DB manipulation if needed
-from app.api.schemas.user import UserRead
 from app.core.config import settings
 
 

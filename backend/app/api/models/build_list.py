@@ -1,10 +1,15 @@
-from typing import List, Optional
-from datetime import datetime
+from typing import List, Optional, TYPE_CHECKING
+from datetime import datetime, UTC
 
 from sqlalchemy import ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base_class import Base
+
+if TYPE_CHECKING:
+    from .car import Car
+    from .user import User
+    from .build_list_part import BuildListPart
 
 
 class BuildList(Base):
@@ -17,9 +22,9 @@ class BuildList(Base):
     car_id: Mapped[int] = mapped_column(ForeignKey("cars.id"), nullable=False)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
 
-    created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(UTC))
     updated_at: Mapped[datetime] = mapped_column(
-        default=datetime.utcnow, onupdate=datetime.utcnow
+        default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
     )
 
     # Relationships

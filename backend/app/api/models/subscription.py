@@ -1,10 +1,13 @@
-from typing import Optional
-from datetime import datetime
+from typing import Optional, TYPE_CHECKING
+from datetime import datetime, UTC
 
 from sqlalchemy import ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base_class import Base
+
+if TYPE_CHECKING:
+    from .user import User
 
 
 class Subscription(Base):
@@ -17,9 +20,9 @@ class Subscription(Base):
         nullable=False
     )  # 'active', 'cancelled', 'expired'
     expires_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
-    created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(UTC))
     updated_at: Mapped[datetime] = mapped_column(
-        default=datetime.utcnow, onupdate=datetime.utcnow
+        default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
     )
 
     # Relationships

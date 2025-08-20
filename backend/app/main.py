@@ -15,6 +15,8 @@ from .api.endpoints import (
     users,
     subscriptions,
     categories,
+    part_votes,
+    part_reports,
 )
 from .api.middleware import rate_limit_middleware
 from .core.config import settings
@@ -96,6 +98,16 @@ app.include_router(
     categories.router,
     prefix=settings.API_STR + "/categories",
     tags=["categories"],
+)
+app.include_router(
+    part_votes.router,
+    prefix=settings.API_STR + "/part-votes",
+    tags=["part_votes"],
+)
+app.include_router(
+    part_reports.router,
+    prefix=settings.API_STR + "/part-reports",
+    tags=["part_reports"],
 )
 
 

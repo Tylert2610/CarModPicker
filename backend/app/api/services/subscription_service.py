@@ -1,5 +1,5 @@
 from typing import Dict, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, UTC, timedelta
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
 
@@ -85,7 +85,7 @@ class SubscriptionService:
         """Upgrade user to premium subscription"""
         # Set expiration to 30 days from now if not provided
         if expires_at is None:
-            expires_at = datetime.utcnow() + timedelta(days=30)
+            expires_at = datetime.now(UTC) + timedelta(days=30)
 
         user.subscription_tier = "premium"
         user.subscription_status = "active"
@@ -136,7 +136,7 @@ class SubscriptionService:
                 and_(
                     User.subscription_tier == "premium",
                     User.subscription_status == "active",
-                    User.subscription_expires_at < datetime.utcnow(),
+                    User.subscription_expires_at < datetime.now(UTC),
                 )
             )
             .all()

@@ -1,10 +1,9 @@
-from typing import Dict, Optional
+from typing import Optional, Dict
 
 from fastapi import status  # Add this import
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from app.api.schemas.user import UserCreate, UserRead, UserUpdate
 from app.core.config import settings
 
 

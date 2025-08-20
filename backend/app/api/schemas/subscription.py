@@ -1,6 +1,6 @@
 from typing import Optional
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 class SubscriptionBase(BaseModel):
@@ -35,8 +35,7 @@ class SubscriptionInDB(SubscriptionBase):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class SubscriptionResponse(SubscriptionInDB):
@@ -52,8 +51,7 @@ class SubscriptionStatus(BaseModel):
     limits: dict = Field(..., description="Current usage limits")
     usage: dict = Field(..., description="Current usage statistics")
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class UpgradeRequest(BaseModel):

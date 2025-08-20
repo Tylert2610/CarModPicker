@@ -3,11 +3,12 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 
-from app.api.dependencies.auth import get_current_user
+from app.api.dependencies.auth import get_current_user, get_current_active_user_optional
 from app.api.models.part import Part as DBPart
 from app.api.models.user import User as DBUser
-from app.api.schemas.part import PartCreate, PartRead, PartUpdate
+from app.api.schemas.part import PartCreate, PartRead, PartUpdate, PartReadWithVotes
 from app.core.logging import get_logger
 from app.db.session import get_db
 
@@ -76,6 +77,83 @@ async def read_parts(
     parts = query.offset(skip).limit(limit).all()
     logger.info(f"Retrieved {len(parts)} parts")
     return parts
+
+
+@router.get(
+    "/with-votes",
+    response_model=List[PartReadWithVotes],
+    responses={
+        200: {"description": "List of parts with vote data retrieved successfully"},
+    },
+)
+async def read_parts_with_votes(
+    skip: int = Query(0, ge=0, description="Number of parts to skip"),
+    limit: int = Query(
+        100, ge=1, le=1000, description="Maximum number of parts to return"
+    ),
+    category_id: Optional[int] = Query(None, description="Filter by category ID"),
+    search: Optional[str] = Query(
+        None, description="Search in part names and descriptions"
+    ),
+    db: Session = Depends(get_db),
+    logger: logging.Logger = Depends(get_logger),
+    current_user: Optional[DBUser] = Depends(get_current_active_user_optional),
+) -> List[PartReadWithVotes]:
+    """Get all parts with vote data and optional filtering and search."""
+    from app.api.models.part_vote import PartVote as DBPartVote
+
+    query = db.query(DBPart)
+
+    if category_id:
+        query = query.filter(DBPart.category_id == category_id)
+
+    if search:
+        search_term = f"%{search}%"
+        query = query.filter(
+            (DBPart.name.ilike(search_term)) | (DBPart.description.ilike(search_term))
+        )
+
+    parts = query.offset(skip).limit(limit).all()
+
+    # Get vote data for each part
+    parts_with_votes = []
+    for part in parts:
+        # Get vote counts
+        upvotes = (
+            db.query(func.count(DBPartVote.id))
+            .filter(DBPartVote.part_id == part.id, DBPartVote.vote_type == "upvote")
+            .scalar()
+        )
+
+        downvotes = (
+            db.query(func.count(DBPartVote.id))
+            .filter(DBPartVote.part_id == part.id, DBPartVote.vote_type == "downvote")
+            .scalar()
+        )
+
+        # Get user's vote if authenticated
+        user_vote = None
+        if current_user:
+            user_vote_obj = (
+                db.query(DBPartVote)
+                .filter(
+                    DBPartVote.user_id == current_user.id, DBPartVote.part_id == part.id
+                )
+                .first()
+            )
+            user_vote = user_vote_obj.vote_type if user_vote_obj else None
+
+        part_with_votes = PartReadWithVotes(
+            **part.__dict__,
+            upvotes=upvotes,
+            downvotes=downvotes,
+            total_votes=upvotes + downvotes,
+            user_vote=user_vote,
+        )
+        parts_with_votes.append(part_with_votes)
+
+    logger.info(f"Retrieved {len(parts_with_votes)} parts with vote data")
+    return parts_with_votes
 
 
 @router.get(

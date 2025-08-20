@@ -1,7 +1,6 @@
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from app.api.schemas.part import PartCreate, PartRead, PartUpdate
 from app.core.config import settings
 from app.tests.conftest import get_default_category_id
 

@@ -47,3 +47,11 @@ class PartRead(BaseModel):
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+# Schema for response body when reading a part with vote summary
+class PartReadWithVotes(PartRead):
+    upvotes: int = 0
+    downvotes: int = 0
+    total_votes: int = 0
+    user_vote: Optional[str] = None  # 'upvote', 'downvote', or None

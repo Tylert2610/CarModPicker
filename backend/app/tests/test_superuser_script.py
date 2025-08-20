@@ -1,10 +1,12 @@
-import pytest
-from unittest.mock import patch, MagicMock
+import os
+import sys
+from unittest.mock import Mock, patch
+
 from sqlalchemy.orm import Session
 
 from app.api.models.user import User as DBUser
-from app.api.dependencies.auth import get_password_hash
-from app.tests.conftest import db_session
+from app.api.dependencies.auth import verify_password
+from scripts.create_superuser import create_superuser
 
 
 class TestSuperuserCreation:
@@ -12,8 +14,6 @@ class TestSuperuserCreation:
 
     def test_create_superuser_success(self, db_session: Session):
         """Test successful superuser creation."""
-        from scripts.create_superuser import create_superuser
-
         # Test data
         username = "test_superuser"
         email = "test_superuser@example.com"
@@ -44,8 +44,6 @@ class TestSuperuserCreation:
 
     def test_create_admin_user_success(self, db_session: Session):
         """Test successful admin user creation (not superuser)."""
-        from scripts.create_superuser import create_superuser
-
         # Test data
         username = "test_admin"
         email = "test_admin@example.com"
@@ -67,8 +65,6 @@ class TestSuperuserCreation:
 
     def test_create_superuser_duplicate_username(self, db_session: Session):
         """Test that creating superuser with duplicate username returns existing user."""
-        from scripts.create_superuser import create_superuser
-
         # Create first superuser
         username = "duplicate_test"
         email1 = "test1@example.com"
@@ -89,8 +85,6 @@ class TestSuperuserCreation:
 
     def test_create_superuser_duplicate_email(self, db_session: Session):
         """Test that creating superuser with duplicate email returns existing user."""
-        from scripts.create_superuser import create_superuser
-
         # Create first superuser
         username1 = "test1"
         email = "duplicate@example.com"
@@ -111,9 +105,6 @@ class TestSuperuserCreation:
 
     def test_create_superuser_password_hashing(self, db_session: Session):
         """Test that passwords are properly hashed."""
-        from scripts.create_superuser import create_superuser
-        from app.api.dependencies.auth import verify_password
-
         # Test data
         username = "password_test"
         email = "password_test@example.com"
@@ -136,8 +127,6 @@ class TestSuperuserCreation:
 
     def test_create_superuser_default_values(self, db_session: Session):
         """Test that default values are set correctly."""
-        from scripts.create_superuser import create_superuser
-
         # Test data
         username = "default_test"
         email = "default_test@example.com"
@@ -154,8 +143,6 @@ class TestSuperuserCreation:
 
     def test_create_superuser_custom_values(self, db_session: Session):
         """Test that custom values override defaults."""
-        from scripts.create_superuser import create_superuser
-
         # Test data
         username = "custom_test"
         email = "custom_test@example.com"
@@ -174,8 +161,6 @@ class TestSuperuserCreation:
 
     def test_create_superuser_database_rollback(self, db_session: Session):
         """Test that database rollback works on error."""
-        from scripts.create_superuser import create_superuser
-
         # Create a user first
         username1 = "rollback_test1"
         email1 = "rollback_test1@example.com"
@@ -236,7 +221,7 @@ class TestSuperuserCreation:
 
         # Mock the create_superuser function to avoid database operations
         with patch("scripts.create_superuser.create_superuser") as mock_create:
-            mock_user = MagicMock()
+            mock_user = Mock()
             mock_user.username = "test_user"
             mock_user.email = "test@example.com"
             mock_create.return_value = mock_user

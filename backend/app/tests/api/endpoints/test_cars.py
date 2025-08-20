@@ -1,7 +1,6 @@
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from app.api.schemas.car import CarCreate, CarRead, CarUpdate
 from app.core.config import settings
 
 

@@ -3,7 +3,7 @@ from .token import Token, TokenData
 from .auth import NewPassword
 from .car import CarRead, CarCreate, CarUpdate
 from .build_list import BuildListRead, BuildListCreate, BuildListUpdate
-from .part import PartRead, PartCreate, PartUpdate
+from .part import PartRead, PartCreate, PartUpdate, PartReadWithVotes
 from .build_list_part import BuildListPartRead, BuildListPartCreate, BuildListPartUpdate
 from .category import CategoryInDB, CategoryCreate, CategoryUpdate, CategoryResponse
 from .subscription import (
@@ -13,6 +13,13 @@ from .subscription import (
     SubscriptionResponse,
     SubscriptionStatus,
     UpgradeRequest,
+)
+from .part_vote import PartVoteCreate, PartVoteUpdate, PartVoteRead, PartVoteSummary
+from .part_report import (
+    PartReportCreate,
+    PartReportUpdate,
+    PartReportRead,
+    PartReportWithDetails,
 )
 
 __all__ = [
@@ -31,6 +38,7 @@ __all__ = [
     "PartRead",
     "PartCreate",
     "PartUpdate",
+    "PartReadWithVotes",
     "BuildListPartRead",
     "BuildListPartCreate",
     "BuildListPartUpdate",
@@ -44,4 +52,12 @@ __all__ = [
     "SubscriptionResponse",
     "SubscriptionStatus",
     "UpgradeRequest",
+    "PartVoteCreate",
+    "PartVoteUpdate",
+    "PartVoteRead",
+    "PartVoteSummary",
+    "PartReportCreate",
+    "PartReportUpdate",
+    "PartReportRead",
+    "PartReportWithDetails",
 ]

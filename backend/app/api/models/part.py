@@ -1,10 +1,17 @@
-from typing import Optional, Dict
-from datetime import datetime
+from typing import Optional, Dict, TYPE_CHECKING
+from datetime import datetime, UTC
 
 from sqlalchemy import ForeignKey, JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base_class import Base
+
+if TYPE_CHECKING:
+    from .category import Category
+    from .user import User
+    from .build_list_part import BuildListPart
+    from .part_vote import PartVote
+    from .part_report import PartReport
 
 
 class Part(Base):
@@ -34,9 +41,9 @@ class Part(Base):
     )  # 'user_created', 'scraped', 'verified'
     edit_count: Mapped[int] = mapped_column(default=0)
 
-    created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(UTC))
     updated_at: Mapped[datetime] = mapped_column(
-        default=datetime.utcnow, onupdate=datetime.utcnow
+        default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
     )
 
     # Relationships
@@ -44,4 +51,10 @@ class Part(Base):
     creator: Mapped["User"] = relationship("User")
     build_lists: Mapped[list["BuildListPart"]] = relationship(
         "BuildListPart", back_populates="part"
+    )
+    votes: Mapped[list["PartVote"]] = relationship(
+        "PartVote", back_populates="part", cascade="all, delete-orphan"
+    )
+    reports: Mapped[list["PartReport"]] = relationship(
+        "PartReport", back_populates="part", cascade="all, delete-orphan"
     )

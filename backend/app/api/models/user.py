@@ -1,9 +1,15 @@
-from typing import List, Optional
+from typing import List, Optional, TYPE_CHECKING
 from datetime import datetime
 
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base_class import Base
+
+if TYPE_CHECKING:
+    from .car import Car
+    from .subscription import Subscription
+    from .part_vote import PartVote
+    from .part_report import PartReport
 
 
 class User(Base):
@@ -33,3 +39,5 @@ class User(Base):
     # children
     cars: Mapped[List["Car"]] = relationship("Car", back_populates="user", cascade="all, delete-orphan")  # type: ignore
     subscriptions: Mapped[List["Subscription"]] = relationship("Subscription", back_populates="user", cascade="all, delete-orphan")  # type: ignore
+    part_votes: Mapped[List["PartVote"]] = relationship("PartVote", back_populates="user", cascade="all, delete-orphan")  # type: ignore
+    part_reports: Mapped[List["PartReport"]] = relationship("PartReport", foreign_keys="PartReport.user_id", back_populates="reporter", cascade="all, delete-orphan")  # type: ignore

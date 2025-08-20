@@ -6,7 +6,7 @@ import time
 import unittest.mock
 from unittest.mock import Mock
 
-import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from app.api.middleware.rate_limiter import RateLimiter, rate_limit_middleware

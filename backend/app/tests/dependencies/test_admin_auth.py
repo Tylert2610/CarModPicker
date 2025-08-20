@@ -1,11 +1,9 @@
 import pytest
-import pytest_asyncio
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.api.dependencies.auth import get_current_admin_user, get_current_superuser
 from app.api.models.user import User as DBUser
-from app.tests.conftest import db_session
 
 
 class TestAdminAuthentication:
