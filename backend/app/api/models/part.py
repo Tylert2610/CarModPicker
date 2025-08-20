@@ -20,6 +20,10 @@ class Part(Base):
     build_list_id: Mapped[int] = mapped_column(
         ForeignKey("build_lists.id"), nullable=False
     )
+    category_id: Mapped[int] = mapped_column(
+        ForeignKey("categories.id"), nullable=False
+    )
 
     # owner
     build_list: Mapped["BuildList"] = relationship("BuildList", back_populates="parts")  # type: ignore
+    category: Mapped["Category"] = relationship("Category", back_populates="parts")  # type: ignore

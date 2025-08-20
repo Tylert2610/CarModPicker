@@ -58,6 +58,7 @@ app.core.config.get_settings = get_test_settings  # type: ignore
 
 from app.db.base import Base
 from app.db.session import get_db
+from app.api.models.category import Category
 
 # Only now import the rest of the app
 from app.main import app as fastapi_app
@@ -110,3 +111,21 @@ def client(db_session: Session) -> Generator[TestClient, None, None]:
         fastapi_app.dependency_overrides[get_db] = original_override
     else:
         del fastapi_app.dependency_overrides[get_db]
+
+
+def get_default_category_id(db_session: Session) -> int:
+    """Get the default category ID for testing (uses 'other' category)"""
+    category = db_session.query(Category).filter(Category.name == "other").first()
+    if not category:
+        # Create the default category if it doesn't exist
+        category = Category(
+            name="other",
+            display_name="Other",
+            description="Miscellaneous parts and accessories",
+            sort_order=99,
+            is_active=True,
+        )
+        db_session.add(category)
+        db_session.commit()
+        db_session.refresh(category)
+    return category.id

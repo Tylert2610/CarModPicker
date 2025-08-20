@@ -13,6 +13,7 @@ class PartCreate(BaseModel):
     price: Optional[int] = None
     image_url: Optional[str] = None
     build_list_id: int
+    category_id: int
 
 
 # Schema for request body when updating a part (all fields optional)
@@ -25,6 +26,7 @@ class PartUpdate(BaseModel):
     price: Optional[int] = None
     image_url: Optional[str] = None
     build_list_id: Optional[int] = None
+    category_id: Optional[int] = None
 
 
 # Schema for response body when reading a part
@@ -38,5 +40,6 @@ class PartRead(BaseModel):
     price: Optional[int] = None
     image_url: Optional[str] = None
     build_list_id: int
+    category_id: int
 
     model_config = ConfigDict(from_attributes=True)
