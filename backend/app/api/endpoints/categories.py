@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from app.api.models.category import Category as DBCategory
 from app.api.models.part import Part as DBPart
 from app.api.schemas.category import CategoryCreate, CategoryResponse, CategoryUpdate
+from app.api.schemas.part import PartRead
 from app.db.session import get_db
 
 router = APIRouter()
@@ -42,7 +43,7 @@ async def get_category(
     return category
 
 
-@router.get("/{category_id}/parts", response_model=List[Any])
+@router.get("/{category_id}/parts", response_model=List[PartRead])
 async def get_parts_by_category(
     category_id: int,
     skip: int = 0,
