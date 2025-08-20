@@ -2,8 +2,10 @@ from typing import List, Any
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.api.dependencies.auth import get_current_admin_user
 from app.api.models.category import Category as DBCategory
 from app.api.models.part import Part as DBPart
+from app.api.models.user import User as DBUser
 from app.api.schemas.category import CategoryCreate, CategoryResponse, CategoryUpdate
 from app.api.schemas.part import PartRead
 from app.db.session import get_db
@@ -74,6 +76,7 @@ async def get_parts_by_category(
 async def create_category(
     category: CategoryCreate,
     db: Session = Depends(get_db),
+    current_user: DBUser = Depends(get_current_admin_user),
 ) -> DBCategory:
     """
     Create a new category (admin only).
@@ -100,6 +103,7 @@ async def update_category(
     category_id: int,
     category: CategoryUpdate,
     db: Session = Depends(get_db),
+    current_user: DBUser = Depends(get_current_admin_user),
 ) -> DBCategory:
     """
     Update a category (admin only).
@@ -124,6 +128,7 @@ async def update_category(
 async def delete_category(
     category_id: int,
     db: Session = Depends(get_db),
+    current_user: DBUser = Depends(get_current_admin_user),
 ) -> dict[str, str]:
     """
     Delete a category (admin only).

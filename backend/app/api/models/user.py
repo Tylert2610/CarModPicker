@@ -17,6 +17,10 @@ class User(Base):
     hashed_password: Mapped[str] = mapped_column(nullable=False)
     disabled: Mapped[bool] = mapped_column(default=False, nullable=False)
 
+    # Admin/Superuser fields
+    is_superuser: Mapped[bool] = mapped_column(default=False, nullable=False)
+    is_admin: Mapped[bool] = mapped_column(default=False, nullable=False)
+
     # Subscription fields
     subscription_tier: Mapped[str] = mapped_column(
         default="free", nullable=False
