@@ -186,6 +186,71 @@ class TestAdminUserManagement:
         users = response.json()
         assert len(users) >= 1, "Should return at least 1 user (superuser)"
 
+    def test_get_all_users_pagination(self, client: TestClient, db_session: Session):
+        """Test pagination for admin get all users."""
+        # Create multiple test users
+        test_users = []
+        for i in range(5):
+            user = DBUser(
+                username=f"test_user_pagination_{i}",
+                email=f"test_user_pagination_{i}@example.com",
+                hashed_password=get_password_hash("password"),
+                is_admin=False,
+                is_superuser=False,
+                email_verified=True,
+                disabled=False,
+            )
+            test_users.append(user)
+
+        db_session.add_all(test_users)
+        db_session.commit()
+
+        # Create and login admin user
+        admin_user = create_and_login_admin_user(
+            client, db_session, "get_users_pagination"
+        )
+
+        # Test first page (limit=2, skip=0)
+        response = client.get(f"{settings.API_STR}/users/admin/users?limit=2&skip=0")
+        assert (
+            response.status_code == 200
+        ), f"Admin should be able to get users: {response.text}"
+
+        users_page1 = response.json()
+        assert len(users_page1) == 2
+
+        # Test second page (limit=2, skip=2)
+        response = client.get(f"{settings.API_STR}/users/admin/users?limit=2&skip=2")
+        assert (
+            response.status_code == 200
+        ), f"Admin should be able to get users: {response.text}"
+
+        users_page2 = response.json()
+        assert len(users_page2) == 2
+
+        # Test third page (limit=2, skip=4)
+        response = client.get(f"{settings.API_STR}/users/admin/users?limit=2&skip=4")
+        assert (
+            response.status_code == 200
+        ), f"Admin should be able to get users: {response.text}"
+
+        users_page3 = response.json()
+        assert len(users_page3) >= 1  # At least admin user
+
+        # Verify no overlap between pages
+        page1_ids = {user["id"] for user in users_page1}
+        page2_ids = {user["id"] for user in users_page2}
+        page3_ids = {user["id"] for user in users_page3}
+
+        assert page1_ids.isdisjoint(page2_ids)
+        assert page1_ids.isdisjoint(page3_ids)
+        assert page2_ids.isdisjoint(page3_ids)
+
+        # Check that admin fields are included
+        for user in users_page1 + users_page2 + users_page3:
+            assert "is_admin" in user
+            assert "is_superuser" in user
+
     def test_admin_update_user_without_authentication(
         self, client: TestClient, db_session: Session
     ):

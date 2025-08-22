@@ -1,7 +1,7 @@
 import logging
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 
 from app.api.dependencies.auth import get_current_user
@@ -104,13 +104,19 @@ async def read_car(
 )
 async def read_cars_by_user(
     user_id: int,
+    skip: int = Query(0, ge=0, description="Number of cars to skip"),
+    limit: int = Query(
+        100, ge=1, le=1000, description="Maximum number of cars to return"
+    ),
     db: Session = Depends(get_db),
     logger: logging.Logger = Depends(get_logger),
 ) -> List[DBCar]:
     """
-    Retrieve all cars owned by a specific user.
+    Retrieve all cars owned by a specific user with pagination.
     """
-    cars = db.query(DBCar).filter(DBCar.user_id == user_id).all()
+    cars = (
+        db.query(DBCar).filter(DBCar.user_id == user_id).offset(skip).limit(limit).all()
+    )
     if not cars:
         logger.info(f"No cars found for user_id: {user_id}")
     else:

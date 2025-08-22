@@ -35,7 +35,7 @@ class Settings(BaseSettings):
 
     # CORS settings
     ALLOWED_ORIGINS: str = Field(
-        default="http://localhost,http://localhost:3000,http://localhost:5173,https://carmodpicker.webbpulse.com,https://api.carmodpicker.webbpulse.com",
+        default="http://localhost,http://localhost:3000,http://localhost:4000,https://carmodpicker.webbpulse.com,https://api.carmodpicker.webbpulse.com",
         description="Comma-separated list of allowed origins",
     )
 

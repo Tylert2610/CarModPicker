@@ -21,26 +21,33 @@ class TestSuperuserCreation:
         is_superuser = True
         is_admin = True
 
-        # Create superuser
-        result = create_superuser(username, email, password, is_superuser, is_admin)
+        # Patch get_db to return the test database session
+        def mock_get_db():
+            yield db_session
 
-        # Verify the superuser was created
-        assert result is not None
-        assert result.username == username
-        assert result.email == email
-        assert result.is_superuser == is_superuser
-        assert result.is_admin == is_admin
-        assert result.email_verified == True  # Auto-verified for superusers
-        assert result.disabled == False
+        with patch("scripts.create_superuser.get_db", mock_get_db):
+            # Create superuser
+            result = create_superuser(username, email, password, is_superuser, is_admin)
 
-        # Verify password was hashed
-        assert result.hashed_password != password
-        assert result.hashed_password != ""
+            # Verify the superuser was created
+            assert result is not None
+            assert result.username == username
+            assert result.email == email
+            assert result.is_superuser == is_superuser
+            assert result.is_admin == is_admin
+            assert result.email_verified == True  # Auto-verified for superusers
+            assert result.disabled == False
 
-        # Verify user exists in database
-        db_user = db_session.query(DBUser).filter(DBUser.username == username).first()
-        assert db_user is not None
-        assert db_user.id == result.id
+            # Verify password was hashed
+            assert result.hashed_password != password
+            assert result.hashed_password != ""
+
+            # Verify user exists in database
+            db_user = (
+                db_session.query(DBUser).filter(DBUser.username == username).first()
+            )
+            assert db_user is not None
+            assert db_user.id == result.id
 
     def test_create_admin_user_success(self, db_session: Session):
         """Test successful admin user creation (not superuser)."""
@@ -51,57 +58,74 @@ class TestSuperuserCreation:
         is_superuser = False
         is_admin = True
 
-        # Create admin user
-        result = create_superuser(username, email, password, is_superuser, is_admin)
+        # Patch get_db to return the test database session
+        def mock_get_db():
+            yield db_session
 
-        # Verify the admin user was created
-        assert result is not None
-        assert result.username == username
-        assert result.email == email
-        assert result.is_superuser == is_superuser
-        assert result.is_admin == is_admin
-        assert result.email_verified == True
-        assert result.disabled == False
+        with patch("scripts.create_superuser.get_db", mock_get_db):
+            # Create admin user
+            result = create_superuser(username, email, password, is_superuser, is_admin)
+
+            # Verify the admin user was created
+            assert result is not None
+            assert result.username == username
+            assert result.email == email
+            assert result.is_superuser == is_superuser
+            assert result.is_admin == is_admin
+            assert result.email_verified == True
+            assert result.disabled == False
 
     def test_create_superuser_duplicate_username(self, db_session: Session):
         """Test that creating superuser with duplicate username returns existing user."""
-        # Create first superuser
-        username = "duplicate_test"
-        email1 = "test1@example.com"
-        password = "testpassword123"
 
-        user1 = create_superuser(username, email1, password, True, True)
-        assert user1 is not None
+        # Patch get_db to return the test database session
+        def mock_get_db():
+            yield db_session
 
-        # Try to create second superuser with same username
-        email2 = "test2@example.com"
-        user2 = create_superuser(username, email2, password, True, True)
+        with patch("scripts.create_superuser.get_db", mock_get_db):
+            # Create first superuser
+            username = "duplicate_test"
+            email1 = "test1@example.com"
+            password = "testpassword123"
 
-        # Should return the existing user
-        assert user2 is not None
-        assert user2.id == user1.id
-        assert user2.username == user1.username
-        assert user2.email == user1.email  # Should be the original email
+            user1 = create_superuser(username, email1, password, True, True)
+            assert user1 is not None
+
+            # Try to create second superuser with same username
+            email2 = "test2@example.com"
+            user2 = create_superuser(username, email2, password, True, True)
+
+            # Should return the existing user
+            assert user2 is not None
+            assert user2.id == user1.id
+            assert user2.username == user1.username
+            assert user2.email == user1.email  # Should be the original email
 
     def test_create_superuser_duplicate_email(self, db_session: Session):
         """Test that creating superuser with duplicate email returns existing user."""
-        # Create first superuser
-        username1 = "test1"
-        email = "duplicate@example.com"
-        password = "testpassword123"
 
-        user1 = create_superuser(username1, email, password, True, True)
-        assert user1 is not None
+        # Patch get_db to return the test database session
+        def mock_get_db():
+            yield db_session
 
-        # Try to create second superuser with same email
-        username2 = "test2"
-        user2 = create_superuser(username2, email, password, True, True)
+        with patch("scripts.create_superuser.get_db", mock_get_db):
+            # Create first superuser
+            username1 = "test1"
+            email = "duplicate@example.com"
+            password = "testpassword123"
 
-        # Should return the existing user
-        assert user2 is not None
-        assert user2.id == user1.id
-        assert user2.username == user1.username
-        assert user2.email == user1.email
+            user1 = create_superuser(username1, email, password, True, True)
+            assert user1 is not None
+
+            # Try to create second superuser with same email
+            username2 = "test2"
+            user2 = create_superuser(username2, email, password, True, True)
+
+            # Should return the existing user
+            assert user2 is not None
+            assert user2.id == user1.id
+            assert user2.username == user1.username
+            assert user2.email == user1.email
 
     def test_create_superuser_password_hashing(self, db_session: Session):
         """Test that passwords are properly hashed."""
@@ -112,18 +136,23 @@ class TestSuperuserCreation:
         is_superuser = True
         is_admin = True
 
-        # Create superuser
-        result = create_superuser(username, email, password, is_superuser, is_admin)
+        # Patch get_db to return the test database session
+        def mock_get_db():
+            yield db_session
 
-        # Verify password was hashed
-        assert result.hashed_password != password
-        assert len(result.hashed_password) > 0
+        with patch("scripts.create_superuser.get_db", mock_get_db):
+            # Create superuser
+            result = create_superuser(username, email, password, is_superuser, is_admin)
 
-        # Verify password can be verified
-        assert verify_password(password, result.hashed_password) == True
+            # Verify password was hashed
+            assert result.hashed_password != password
+            assert len(result.hashed_password) > 0
 
-        # Verify wrong password fails
-        assert verify_password("wrongpassword", result.hashed_password) == False
+            # Verify password can be verified
+            assert verify_password(password, result.hashed_password) == True
+
+            # Verify wrong password fails
+            assert verify_password("wrongpassword", result.hashed_password) == False
 
     def test_create_superuser_default_values(self, db_session: Session):
         """Test that default values are set correctly."""
@@ -132,14 +161,19 @@ class TestSuperuserCreation:
         email = "default_test@example.com"
         password = "testpassword123"
 
-        # Create superuser with defaults
-        result = create_superuser(username, email, password)
+        # Patch get_db to return the test database session
+        def mock_get_db():
+            yield db_session
 
-        # Verify default values
-        assert result.is_superuser == True  # Default
-        assert result.is_admin == True  # Default
-        assert result.email_verified == True  # Auto-verified for superusers
-        assert result.disabled == False
+        with patch("scripts.create_superuser.get_db", mock_get_db):
+            # Create superuser with defaults
+            result = create_superuser(username, email, password)
+
+            # Verify default values
+            assert result.is_superuser == True  # Default
+            assert result.is_admin == True  # Default
+            assert result.email_verified == True  # Auto-verified for superusers
+            assert result.disabled == False
 
     def test_create_superuser_custom_values(self, db_session: Session):
         """Test that custom values override defaults."""
@@ -150,38 +184,49 @@ class TestSuperuserCreation:
         is_superuser = False
         is_admin = True
 
-        # Create user with custom values
-        result = create_superuser(username, email, password, is_superuser, is_admin)
+        # Patch get_db to return the test database session
+        def mock_get_db():
+            yield db_session
 
-        # Verify custom values were used
-        assert result.is_superuser == is_superuser
-        assert result.is_admin == is_admin
-        assert result.email_verified == True  # Still auto-verified
-        assert result.disabled == False
+        with patch("scripts.create_superuser.get_db", mock_get_db):
+            # Create user with custom values
+            result = create_superuser(username, email, password, is_superuser, is_admin)
+
+            # Verify custom values were used
+            assert result.is_superuser == is_superuser
+            assert result.is_admin == is_admin
+            assert result.email_verified == True  # Still auto-verified
+            assert result.disabled == False
 
     def test_create_superuser_database_rollback(self, db_session: Session):
         """Test that database rollback works on error."""
-        # Create a user first
-        username1 = "rollback_test1"
-        email1 = "rollback_test1@example.com"
-        password = "testpassword123"
 
-        user1 = create_superuser(username1, email1, password, True, True)
-        original_count = db_session.query(DBUser).count()
+        # Patch get_db to return the test database session
+        def mock_get_db():
+            yield db_session
 
-        # Try to create a user with duplicate username (should fail and rollback)
-        username2 = username1  # Duplicate username
-        email2 = "rollback_test2@example.com"
+        with patch("scripts.create_superuser.get_db", mock_get_db):
+            # Create a user first
+            username1 = "rollback_test1"
+            email1 = "rollback_test1@example.com"
+            password = "testpassword123"
 
-        # This should not raise an exception, but return the existing user
-        user2 = create_superuser(username2, email2, password, True, True)
+            user1 = create_superuser(username1, email1, password, True, True)
+            original_count = db_session.query(DBUser).count()
 
-        # Verify no new user was created
-        final_count = db_session.query(DBUser).count()
-        assert final_count == original_count
+            # Try to create a user with duplicate username (should fail and rollback)
+            username2 = username1  # Duplicate username
+            email2 = "rollback_test2@example.com"
 
-        # Verify we got the original user back
-        assert user2.id == user1.id
+            # This should not raise an exception, but return the existing user
+            user2 = create_superuser(username2, email2, password, True, True)
+
+            # Verify no new user was created
+            final_count = db_session.query(DBUser).count()
+            assert final_count == original_count
+
+            # Verify we got the original user back
+            assert user2.id == user1.id
 
     def test_superuser_script_imports(self):
         """Test that the superuser script can be imported without errors."""

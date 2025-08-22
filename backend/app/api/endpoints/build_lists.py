@@ -1,7 +1,7 @@
 import logging
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 
 from app.api.dependencies.auth import get_current_user
@@ -124,13 +124,23 @@ async def read_build_list(
 )
 async def read_build_lists_by_car(
     car_id: int,
+    skip: int = Query(0, ge=0, description="Number of build lists to skip"),
+    limit: int = Query(
+        100, ge=1, le=1000, description="Maximum number of build lists to return"
+    ),
     db: Session = Depends(get_db),
     logger: logging.Logger = Depends(get_logger),
 ) -> List[DBBuildList]:
     """
-    Retrieve all build lists associated with a specific car.
+    Retrieve all build lists associated with a specific car with pagination.
     """
-    build_lists = db.query(DBBuildList).filter(DBBuildList.car_id == car_id).all()
+    build_lists = (
+        db.query(DBBuildList)
+        .filter(DBBuildList.car_id == car_id)
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
     if not build_lists:
         logger.info(f"No Build Lists found for car with id {car_id}")
     else:

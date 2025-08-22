@@ -1,3 +1,5 @@
+import os
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
@@ -6,6 +8,13 @@ from sqlalchemy.orm import Session
 from app.api.dependencies.auth import get_password_hash
 from app.api.models.user import User as DBUser  # For direct DB manipulation if needed
 from app.core.config import settings
+
+
+def get_unique_username(base_name: str) -> str:
+    """Generate a unique username for parallel testing."""
+    worker_id = os.environ.get("PYTEST_XDIST_WORKER", "main")
+    pid = os.getpid()
+    return f"{base_name}_{worker_id}_{pid}"
 
 
 def create_test_user_direct_db(
@@ -24,12 +33,12 @@ def create_test_user_direct_db(
     return db_user
 
 
-def test_login_for_access_token_success(
-    client: TestClient, db_session: Session
-) -> None:
-    username = "auth_test_user_cookie"  # Ensure unique username for test
+def test_login_for_access_token_success(client: TestClient) -> None:
+    username = get_unique_username(
+        "auth_test_user_cookie"
+    )  # Ensure unique username for test
     password = "auth_test_password"
-    email = "auth_test_cookie@example.com"
+    email = f"{username}@example.com"
 
     user_data = {"username": username, "email": email, "password": password}
     # Create user via API
@@ -85,9 +94,11 @@ def test_login_for_access_token_incorrect_username(client: TestClient) -> None:
 def test_login_for_access_token_incorrect_password(
     client: TestClient, db_session: Session
 ) -> None:
-    username = "auth_test_user_wrong_pass_cookie"  # Ensure unique username
+    username = get_unique_username(
+        "auth_test_user_wrong_pass_cookie"
+    )  # Ensure unique username
     password = "correct_password"
-    email = "auth_test_wrong_pass_cookie@example.com"
+    email = f"{username}@example.com"
 
     user_data = {"username": username, "email": email, "password": password}
     create_response = client.post(f"{settings.API_STR}/users/", json=user_data)
@@ -105,9 +116,9 @@ def test_login_for_access_token_incorrect_password(
 def test_login_for_access_token_disabled_user(
     client: TestClient, db_session: Session
 ) -> None:
-    username = "disabled_user_cookie"  # Ensure unique username
+    username = get_unique_username("disabled_user_cookie")  # Ensure unique username
     password = "password123"
-    email = "disabled_cookie@example.com"
+    email = f"{username}@example.com"
 
     user_data = {"username": username, "email": email, "password": password}
     create_response = client.post(f"{settings.API_STR}/users/", json=user_data)

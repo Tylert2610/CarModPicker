@@ -21,6 +21,7 @@ python-jose[cryptography]
 python-multipart
 pytest
 pytest-asyncio
+pytest-xdist
 httpx
 bcrypt
 sendgrid

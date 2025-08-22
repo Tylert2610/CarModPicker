@@ -334,7 +334,7 @@ SECRET_KEY=your-secret-key
 ACCESS_TOKEN_EXPIRE_MINUTES=60
 
 # CORS
-ALLOWED_ORIGINS=http://localhost:3000,http://localhost:5173
+ALLOWED_ORIGINS=http://localhost:3000,http://localhost:4000
 
 # Email (SendGrid)
 SENDGRID_API_KEY=your-sendgrid-key

@@ -1,7 +1,7 @@
 import logging
 from typing import Any, List
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status, Query
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -294,8 +294,10 @@ async def delete_user(
     },
 )
 async def get_all_users(
-    skip: int = 0,
-    limit: int = 100,
+    skip: int = Query(0, ge=0, description="Number of users to skip"),
+    limit: int = Query(
+        100, ge=1, le=1000, description="Maximum number of users to return"
+    ),
     db: Session = Depends(get_db),
     logger: logging.Logger = Depends(get_logger),
     current_user: DBUser = Depends(get_current_admin_user),

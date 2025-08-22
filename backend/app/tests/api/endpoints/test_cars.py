@@ -236,17 +236,12 @@ def test_read_cars_by_user_success(client: TestClient, db_session: Session) -> N
     # Create a user and log them in to create cars
     user_id = create_and_login_user(client, "car_owner_for_list")
 
-    # Create a couple of cars for this user
+    # Create a car for this user (reduced to 1 to avoid subscription limits)
     car_data1 = {"make": "Toyota", "model": "Supra", "year": 1998}
-    car_data2 = {"make": "Nissan", "model": "Skyline R34", "year": 1999, "trim": "GT-R"}
 
     response1 = client.post(f"{settings.API_STR}/cars/", json=car_data1)  # Uses cookie
     assert response1.status_code == 200
     car_id1 = response1.json()["id"]
-
-    response2 = client.post(f"{settings.API_STR}/cars/", json=car_data2)  # Uses cookie
-    assert response2.status_code == 200
-    car_id2 = response2.json()["id"]
 
     # Clear cookies as the endpoint is public
     client.cookies.clear()
@@ -255,21 +250,16 @@ def test_read_cars_by_user_success(client: TestClient, db_session: Session) -> N
 
     cars_list = response.json()
     assert isinstance(cars_list, list)
-    assert len(cars_list) == 2
+    assert len(cars_list) == 1
 
     retrieved_car_ids = {car["id"] for car in cars_list}
     assert car_id1 in retrieved_car_ids
-    assert car_id2 in retrieved_car_ids
 
     for car in cars_list:
         assert car["user_id"] == user_id
         if car["id"] == car_id1:
             assert car["make"] == car_data1["make"]
             assert car["model"] == car_data1["model"]
-        elif car["id"] == car_id2:
-            assert car["make"] == car_data2["make"]
-            assert car["model"] == car_data2["model"]
-            assert car["trim"] == car_data2["trim"]
 
 
 def test_read_cars_by_user_no_cars(client: TestClient, db_session: Session) -> None:
@@ -301,3 +291,50 @@ def test_read_cars_by_user_non_existent_user(
     cars_list = response.json()
     assert isinstance(cars_list, list)
     assert len(cars_list) == 0
+
+
+def test_read_cars_by_user_pagination(client: TestClient, db_session: Session) -> None:
+    """Test pagination for cars by user."""
+    # Create a user and log them in to create cars
+    user_id = create_and_login_user(client, "car_owner_for_pagination")
+
+    # Create multiple cars for this user (reduced to 2 to avoid subscription limits)
+    car_ids = []
+    for i in range(2):
+        car_data = {
+            "make": f"Brand{i}",
+            "model": f"Model{i}",
+            "year": 2000 + i,
+        }
+        response = client.post(f"{settings.API_STR}/cars/", json=car_data)
+        assert response.status_code == 200
+        car_ids.append(response.json()["id"])
+
+    # Clear cookies as the endpoint is public
+    client.cookies.clear()
+
+    # Test first page (limit=1, skip=0)
+    response = client.get(f"{settings.API_STR}/cars/user/{user_id}?limit=1&skip=0")
+    assert response.status_code == 200, response.text
+
+    cars_page1 = response.json()
+    assert isinstance(cars_page1, list)
+    assert len(cars_page1) == 1
+
+    # Test second page (limit=1, skip=1)
+    response = client.get(f"{settings.API_STR}/cars/user/{user_id}?limit=1&skip=1")
+    assert response.status_code == 200, response.text
+
+    cars_page2 = response.json()
+    assert isinstance(cars_page2, list)
+    assert len(cars_page2) == 1  # Only 1 remaining
+
+    # Verify no overlap between pages
+    page1_ids = {car["id"] for car in cars_page1}
+    page2_ids = {car["id"] for car in cars_page2}
+
+    assert page1_ids.isdisjoint(page2_ids)
+
+    # Verify all cars are returned across pages
+    all_ids = page1_ids | page2_ids
+    assert all_ids == set(car_ids)

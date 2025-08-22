@@ -461,3 +461,64 @@ def test_read_build_lists_by_car_car_not_found(
     build_lists = response.json()
     assert isinstance(build_lists, list)
     assert len(build_lists) == 0
+
+
+def test_read_build_lists_by_car_pagination(
+    client: TestClient, db_session: Session
+) -> None:
+    """Test pagination for build lists by car."""
+    user_id = create_and_login_user(client, "owner_for_bls_pagination")
+    car_id = create_car_for_user_cookie_auth(client)
+
+    # Create multiple build lists for this car
+    build_lists = []
+    for i in range(5):
+        build_list_data = {
+            "name": f"Build List {i} for Car",
+            "description": f"Build list number {i}",
+            "car_id": car_id,
+        }
+        create_response = client.post(
+            f"{settings.API_STR}/build-lists/", json=build_list_data
+        )
+        assert create_response.status_code == 200
+        build_lists.append(create_response.json()["id"])
+
+    client.cookies.clear()
+
+    # Test first page (limit=2, skip=0)
+    response = client.get(f"{settings.API_STR}/build-lists/car/{car_id}?limit=2&skip=0")
+    assert response.status_code == 200, response.text
+
+    build_lists_page1 = response.json()
+    assert isinstance(build_lists_page1, list)
+    assert len(build_lists_page1) == 2
+
+    # Test second page (limit=2, skip=2)
+    response = client.get(f"{settings.API_STR}/build-lists/car/{car_id}?limit=2&skip=2")
+    assert response.status_code == 200, response.text
+
+    build_lists_page2 = response.json()
+    assert isinstance(build_lists_page2, list)
+    assert len(build_lists_page2) == 2
+
+    # Test third page (limit=2, skip=4)
+    response = client.get(f"{settings.API_STR}/build-lists/car/{car_id}?limit=2&skip=4")
+    assert response.status_code == 200, response.text
+
+    build_lists_page3 = response.json()
+    assert isinstance(build_lists_page3, list)
+    assert len(build_lists_page3) == 1  # Only 1 remaining
+
+    # Verify no overlap between pages
+    page1_ids = {bl["id"] for bl in build_lists_page1}
+    page2_ids = {bl["id"] for bl in build_lists_page2}
+    page3_ids = {bl["id"] for bl in build_lists_page3}
+
+    assert page1_ids.isdisjoint(page2_ids)
+    assert page1_ids.isdisjoint(page3_ids)
+    assert page2_ids.isdisjoint(page3_ids)
+
+    # Verify all build lists are returned across pages
+    all_ids = page1_ids | page2_ids | page3_ids
+    assert all_ids == set(build_lists)
