@@ -1,6 +1,6 @@
 import logging
 from datetime import datetime, UTC, timedelta
-from typing import List
+from typing import List, Dict
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
@@ -92,7 +92,7 @@ async def remove_vote(
     db: Session = Depends(get_db),
     logger: logging.Logger = Depends(get_logger),
     current_user: DBUser = Depends(get_current_user),
-):
+) -> Dict[str, str]:
     """Remove user's vote on a part."""
     # Check if part exists
     db_part = db.query(DBPart).filter(DBPart.id == part_id).first()

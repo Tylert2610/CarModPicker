@@ -14,14 +14,28 @@ class TestPartReports:
         db_session: Session,
         test_user: User,
         test_category: Category,
-    ):
+    ) -> None:
         """Test successful reporting of a part."""
+        # Create a test part owned by a different user
+        other_user = User(
+            username="otheruser",
+            email="other@example.com",
+            hashed_password="hashed_password",
+            email_verified=True,
+            disabled=False,
+            is_admin=False,
+            is_superuser=False,
+        )
+        db_session.add(other_user)
+        db_session.commit()
+        db_session.refresh(other_user)
+
         # Create a test part
         part = Part(
             name="Test Part",
             description="Test Description",
             category_id=test_category.id,
-            user_id=test_user.id,
+            user_id=other_user.id,  # Owned by other_user, not test_user
         )
         db_session.add(part)
         db_session.commit()
@@ -54,14 +68,28 @@ class TestPartReports:
         db_session: Session,
         test_user: User,
         test_category: Category,
-    ):
+    ) -> None:
         """Test reporting with invalid reason."""
+        # Create a test part owned by a different user
+        other_user = User(
+            username="otheruser2",
+            email="other2@example.com",
+            hashed_password="hashed_password",
+            email_verified=True,
+            disabled=False,
+            is_admin=False,
+            is_superuser=False,
+        )
+        db_session.add(other_user)
+        db_session.commit()
+        db_session.refresh(other_user)
+
         # Create a test part
         part = Part(
             name="Test Part",
             description="Test Description",
             category_id=test_category.id,
-            user_id=test_user.id,
+            user_id=other_user.id,  # Owned by other_user, not test_user
         )
         db_session.add(part)
         db_session.commit()
@@ -81,7 +109,7 @@ class TestPartReports:
         assert response.status_code == 400
         assert "Reason must be one of:" in response.json()["detail"]
 
-    def test_report_nonexistent_part(self, client: TestClient, test_user: User):
+    def test_report_nonexistent_part(self, client: TestClient, test_user: User) -> None:
         """Test reporting a part that doesn't exist."""
         # Login user
         login_response = client.post(
@@ -103,9 +131,58 @@ class TestPartReports:
         db_session: Session,
         test_user: User,
         test_category: Category,
-    ):
-        """Test that a user cannot report the same part twice."""
-        # Create a test part
+    ) -> None:
+        """Test that duplicate reports are not allowed."""
+        # Create a test part owned by a different user
+        other_user = User(
+            username="otheruser3",
+            email="other3@example.com",
+            hashed_password="hashed_password",
+            email_verified=True,
+            disabled=False,
+            is_admin=False,
+            is_superuser=False,
+        )
+        db_session.add(other_user)
+        db_session.commit()
+        db_session.refresh(other_user)
+
+        part = Part(
+            name="Test Part",
+            description="Test Description",
+            category_id=test_category.id,
+            user_id=other_user.id,
+        )
+        db_session.add(part)
+        db_session.commit()
+        db_session.refresh(part)
+
+        # Login user
+        login_response = client.post(
+            "/api/auth/token",
+            data={"username": test_user.username, "password": "testpassword"},
+        )
+        assert login_response.status_code == 200
+
+        # Report the part
+        report_data = {"reason": "inappropriate"}
+        response1 = client.post(f"/api/part-reports/{part.id}/report", json=report_data)
+        assert response1.status_code == 200
+
+        # Try to report the same part again
+        response2 = client.post(f"/api/part-reports/{part.id}/report", json=report_data)
+        assert response2.status_code == 400
+        assert "already reported" in response2.json()["detail"]
+
+    def test_report_own_part(
+        self,
+        client: TestClient,
+        db_session: Session,
+        test_user: User,
+        test_category: Category,
+    ) -> None:
+        """Test that users cannot report their own parts."""
+        # Create a test part owned by the user
         part = Part(
             name="Test Part",
             description="Test Description",
@@ -123,24 +200,16 @@ class TestPartReports:
         )
         assert login_response.status_code == 200
 
-        # First report
+        # Try to report own part
         report_data = {"reason": "inappropriate"}
         response = client.post(f"/api/part-reports/{part.id}/report", json=report_data)
-        assert response.status_code == 200
 
-        # Try to report again
-        response = client.post(f"/api/part-reports/{part.id}/report", json=report_data)
+        assert response.status_code == 400
+        assert "cannot report your own part" in response.json()["detail"]
 
-        assert response.status_code == 409
-        assert "You have already reported this part" in response.json()["detail"]
-
-    def test_report_unauthorized(
-        self,
-        client: TestClient,
-        db_session: Session,
-        test_category: Category,
-        test_user: User,
-    ):
+    def test_report_part_unauthorized(
+        self, client: TestClient, test_user: User, test_category: Category
+    ) -> None:
         """Test reporting without authentication."""
         # Create a test part
         part = Part(
@@ -149,9 +218,6 @@ class TestPartReports:
             category_id=test_category.id,
             user_id=test_user.id,
         )
-        db_session.add(part)
-        db_session.commit()
-        db_session.refresh(part)
 
         # Try to report without login
         report_data = {"reason": "inappropriate"}
@@ -168,14 +234,28 @@ class TestPartReportsAdmin:
         admin_user: User,
         test_user: User,
         test_category: Category,
-    ):
+    ) -> None:
         """Test admin getting all reports."""
+        # Create a test part owned by a different user
+        other_user = User(
+            username="otheruser4",
+            email="other4@example.com",
+            hashed_password="hashed_password",
+            email_verified=True,
+            disabled=False,
+            is_admin=False,
+            is_superuser=False,
+        )
+        db_session.add(other_user)
+        db_session.commit()
+        db_session.refresh(other_user)
+
         # Create a test part
         part = Part(
             name="Test Part",
             description="Test Description",
             category_id=test_category.id,
-            user_id=test_user.id,
+            user_id=other_user.id,  # Owned by other_user, not test_user
         )
         db_session.add(part)
         db_session.commit()
@@ -189,7 +269,10 @@ class TestPartReportsAdmin:
         assert login_response.status_code == 200
 
         report_data = {"reason": "inappropriate"}
-        client.post(f"/api/part-reports/{part.id}/report", json=report_data)
+        report_response = client.post(
+            f"/api/part-reports/{part.id}/report", json=report_data
+        )
+        assert report_response.status_code == 200
 
         # Login as admin
         admin_login_response = client.post(
@@ -208,7 +291,7 @@ class TestPartReportsAdmin:
         assert data[0]["reporter_username"] == test_user.username
         assert data[0]["part_name"] == part.name
 
-    def test_get_reports_non_admin(self, client: TestClient, test_user: User):
+    def test_get_reports_non_admin(self, client: TestClient, test_user: User) -> None:
         """Test that non-admin users cannot get reports."""
         # Login as regular user
         login_response = client.post(
@@ -221,7 +304,7 @@ class TestPartReportsAdmin:
         response = client.get("/api/part-reports/reports")
 
         assert response.status_code == 403
-        assert "Admin privileges required" in response.json()["detail"]
+        assert "Admin access required" in response.json()["detail"]
 
     def test_get_specific_report_admin(
         self,
@@ -230,14 +313,28 @@ class TestPartReportsAdmin:
         admin_user: User,
         test_user: User,
         test_category: Category,
-    ):
+    ) -> None:
         """Test admin getting a specific report."""
+        # Create a test part owned by a different user
+        other_user = User(
+            username="otheruser5",
+            email="other5@example.com",
+            hashed_password="hashed_password",
+            email_verified=True,
+            disabled=False,
+            is_admin=False,
+            is_superuser=False,
+        )
+        db_session.add(other_user)
+        db_session.commit()
+        db_session.refresh(other_user)
+
         # Create a test part
         part = Part(
             name="Test Part",
             description="Test Description",
             category_id=test_category.id,
-            user_id=test_user.id,
+            user_id=other_user.id,  # Owned by other_user, not test_user
         )
         db_session.add(part)
         db_session.commit()
@@ -254,6 +351,7 @@ class TestPartReportsAdmin:
         report_response = client.post(
             f"/api/part-reports/{part.id}/report", json=report_data
         )
+        assert report_response.status_code == 200
         report_id = report_response.json()["id"]
 
         # Login as admin
@@ -273,21 +371,34 @@ class TestPartReportsAdmin:
         assert data["reporter_username"] == test_user.username
         assert data["part_name"] == part.name
 
-    def test_update_report_admin(
+    def test_get_report_admin_only(
         self,
         client: TestClient,
         db_session: Session,
-        admin_user: User,
         test_user: User,
         test_category: Category,
-    ):
-        """Test admin updating a report status."""
+    ) -> None:
+        """Test that only admins can get specific reports."""
+        # Create a test part owned by a different user
+        other_user = User(
+            username="otheruser6",
+            email="other6@example.com",
+            hashed_password="hashed_password",
+            email_verified=True,
+            disabled=False,
+            is_admin=False,
+            is_superuser=False,
+        )
+        db_session.add(other_user)
+        db_session.commit()
+        db_session.refresh(other_user)
+
         # Create a test part
         part = Part(
             name="Test Part",
             description="Test Description",
             category_id=test_category.id,
-            user_id=test_user.id,
+            user_id=other_user.id,
         )
         db_session.add(part)
         db_session.commit()
@@ -304,6 +415,61 @@ class TestPartReportsAdmin:
         report_response = client.post(
             f"/api/part-reports/{part.id}/report", json=report_data
         )
+        assert report_response.status_code == 200
+        report_id = report_response.json()["id"]
+
+        # Try to get report as regular user
+        response = client.get(f"/api/part-reports/reports/{report_id}")
+
+        assert response.status_code == 403
+        assert "Admin access required" in response.json()["detail"]
+
+    def test_update_report_admin(
+        self,
+        client: TestClient,
+        db_session: Session,
+        admin_user: User,
+        test_user: User,
+        test_category: Category,
+    ) -> None:
+        """Test admin updating a report status."""
+        # Create a test part owned by a different user
+        other_user = User(
+            username="otheruser7",
+            email="other7@example.com",
+            hashed_password="hashed_password",
+            email_verified=True,
+            disabled=False,
+            is_admin=False,
+            is_superuser=False,
+        )
+        db_session.add(other_user)
+        db_session.commit()
+        db_session.refresh(other_user)
+
+        # Create a test part
+        part = Part(
+            name="Test Part",
+            description="Test Description",
+            category_id=test_category.id,
+            user_id=other_user.id,  # Owned by other_user, not test_user
+        )
+        db_session.add(part)
+        db_session.commit()
+        db_session.refresh(part)
+
+        # Login as regular user and create a report
+        login_response = client.post(
+            "/api/auth/token",
+            data={"username": test_user.username, "password": "testpassword"},
+        )
+        assert login_response.status_code == 200
+
+        report_data = {"reason": "inappropriate"}
+        report_response = client.post(
+            f"/api/part-reports/{part.id}/report", json=report_data
+        )
+        assert report_response.status_code == 200
         report_id = report_response.json()["id"]
 
         # Login as admin
@@ -314,7 +480,7 @@ class TestPartReportsAdmin:
         assert admin_login_response.status_code == 200
 
         # Update report
-        update_data = {"status": "resolved", "admin_notes": "Issue has been resolved"}
+        update_data = {"status": "resolved", "admin_notes": "Issue resolved"}
         response = client.put(
             f"/api/part-reports/reports/{report_id}", json=update_data
         )
@@ -322,24 +488,37 @@ class TestPartReportsAdmin:
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "resolved"
-        assert data["admin_notes"] == "Issue has been resolved"
+        assert data["admin_notes"] == "Issue resolved"
         assert data["reviewed_by"] == admin_user.id
 
-    def test_update_report_invalid_status(
+    def test_update_report_admin_only(
         self,
         client: TestClient,
         db_session: Session,
-        admin_user: User,
         test_user: User,
         test_category: Category,
-    ):
-        """Test admin updating a report with invalid status."""
+    ) -> None:
+        """Test that only admins can update reports."""
+        # Create a test part owned by a different user
+        other_user = User(
+            username="otheruser8",
+            email="other8@example.com",
+            hashed_password="hashed_password",
+            email_verified=True,
+            disabled=False,
+            is_admin=False,
+            is_superuser=False,
+        )
+        db_session.add(other_user)
+        db_session.commit()
+        db_session.refresh(other_user)
+
         # Create a test part
         part = Part(
             name="Test Part",
             description="Test Description",
             category_id=test_category.id,
-            user_id=test_user.id,
+            user_id=other_user.id,
         )
         db_session.add(part)
         db_session.commit()
@@ -356,6 +535,64 @@ class TestPartReportsAdmin:
         report_response = client.post(
             f"/api/part-reports/{part.id}/report", json=report_data
         )
+        assert report_response.status_code == 200
+        report_id = report_response.json()["id"]
+
+        # Try to update report as regular user
+        update_data = {"status": "resolved"}
+        response = client.put(
+            f"/api/part-reports/reports/{report_id}", json=update_data
+        )
+
+        assert response.status_code == 403
+        assert "Admin access required" in response.json()["detail"]
+
+    def test_update_report_invalid_status(
+        self,
+        client: TestClient,
+        db_session: Session,
+        admin_user: User,
+        test_user: User,
+        test_category: Category,
+    ) -> None:
+        """Test admin updating a report with invalid status."""
+        # Create a test part owned by a different user
+        other_user = User(
+            username="otheruser9",
+            email="other9@example.com",
+            hashed_password="hashed_password",
+            email_verified=True,
+            disabled=False,
+            is_admin=False,
+            is_superuser=False,
+        )
+        db_session.add(other_user)
+        db_session.commit()
+        db_session.refresh(other_user)
+
+        # Create a test part
+        part = Part(
+            name="Test Part",
+            description="Test Description",
+            category_id=test_category.id,
+            user_id=other_user.id,  # Owned by other_user, not test_user
+        )
+        db_session.add(part)
+        db_session.commit()
+        db_session.refresh(part)
+
+        # Login as regular user and create a report
+        login_response = client.post(
+            "/api/auth/token",
+            data={"username": test_user.username, "password": "testpassword"},
+        )
+        assert login_response.status_code == 200
+
+        report_data = {"reason": "inappropriate"}
+        report_response = client.post(
+            f"/api/part-reports/{part.id}/report", json=report_data
+        )
+        assert report_response.status_code == 200
         report_id = report_response.json()["id"]
 
         # Login as admin
@@ -381,14 +618,28 @@ class TestPartReportsAdmin:
         admin_user: User,
         test_user: User,
         test_category: Category,
-    ):
+    ) -> None:
         """Test admin getting pending reports count."""
+        # Create a test part owned by a different user
+        other_user = User(
+            username="otheruser10",
+            email="other10@example.com",
+            hashed_password="hashed_password",
+            email_verified=True,
+            disabled=False,
+            is_admin=False,
+            is_superuser=False,
+        )
+        db_session.add(other_user)
+        db_session.commit()
+        db_session.refresh(other_user)
+
         # Create a test part
         part = Part(
             name="Test Part",
             description="Test Description",
             category_id=test_category.id,
-            user_id=test_user.id,
+            user_id=other_user.id,  # Owned by other_user, not test_user
         )
         db_session.add(part)
         db_session.commit()
@@ -402,7 +653,10 @@ class TestPartReportsAdmin:
         assert login_response.status_code == 200
 
         report_data = {"reason": "inappropriate"}
-        client.post(f"/api/part-reports/{part.id}/report", json=report_data)
+        report_response = client.post(
+            f"/api/part-reports/{part.id}/report", json=report_data
+        )
+        assert report_response.status_code == 200
 
         # Login as admin
         admin_login_response = client.post(
@@ -417,3 +671,20 @@ class TestPartReportsAdmin:
         assert response.status_code == 200
         data = response.json()
         assert data["pending_count"] == 1
+
+    def test_get_pending_count_admin_only(
+        self, client: TestClient, test_user: User
+    ) -> None:
+        """Test that only admins can get pending reports count."""
+        # Login as regular user
+        login_response = client.post(
+            "/api/auth/token",
+            data={"username": test_user.username, "password": "testpassword"},
+        )
+        assert login_response.status_code == 200
+
+        # Try to get pending count
+        response = client.get("/api/part-reports/reports/pending/count")
+
+        assert response.status_code == 403
+        assert "Admin access required" in response.json()["detail"]

@@ -1,5 +1,5 @@
 import os
-from typing import Generator, Dict
+from typing import Generator, Dict, Optional, Any
 from unittest.mock import patch
 
 import pytest
@@ -21,7 +21,7 @@ from app.main import app as fastapi_app
 
 
 # Get worker ID for parallel testing
-def get_worker_id():
+def get_worker_id() -> Optional[str]:
     """Get the worker ID for parallel testing, or None if not in parallel mode."""
     worker_id = os.environ.get("PYTEST_XDIST_WORKER")
     if worker_id:
@@ -30,7 +30,7 @@ def get_worker_id():
     return None
 
 
-def get_test_database_url():
+def get_test_database_url() -> str:
     """Get the test database URL - use SQLite in-memory for simplicity and speed."""
     worker_id = get_worker_id()
     pid = os.getpid()
@@ -44,10 +44,10 @@ def get_test_database_url():
 
 
 # Global session factory for testing
-TestingSessionLocal = None
+TestingSessionLocal: Optional[sessionmaker] = None
 
 
-def get_test_session_factory():
+def get_test_session_factory() -> sessionmaker:
     """Get the test session factory, creating it if needed."""
     global TestingSessionLocal
     # Always create a fresh session factory for each test
@@ -77,7 +77,7 @@ def get_test_session_factory():
 
 
 @pytest.fixture(scope="session")
-def engine():
+def engine() -> Generator[Any, None, None]:
     """Create a test database engine."""
     database_url = get_test_database_url()
 
@@ -101,7 +101,7 @@ def engine():
 
 
 @pytest.fixture(scope="session", autouse=True)
-def cleanup_test_databases():
+def cleanup_test_databases() -> Generator[None, None, None]:
     """Clean up SQLite test database files after all tests complete."""
     yield
 
@@ -127,7 +127,7 @@ def cleanup_test_databases():
                 print(f"Warning: Could not remove {file_path}: {e}")
 
 
-def override_get_db():
+def override_get_db() -> Generator[Session, None, None]:
     """Override the database dependency for testing."""
     session_factory = get_test_session_factory()
     try:
@@ -161,7 +161,7 @@ def client(db_session: Session) -> Generator[TestClient, None, None]:
     """Create a test client with a fresh database session."""
 
     # Override the database dependency to use the same session as the test
-    def override_get_db_for_test():
+    def override_get_db_for_test() -> Generator[Session, None, None]:
         try:
             yield db_session
         finally:
@@ -277,7 +277,10 @@ def create_and_login_user(client: TestClient, username: str) -> int:
     }
     response = client.post(f"{settings.API_STR}/auth/register", json=user_data)
     assert response.status_code == 200
-    user_id = response.json()["id"]
+    user_data_response = response.json()
+    assert isinstance(user_data_response, dict)
+    user_id = user_data_response["id"]
+    assert isinstance(user_id, int)
 
     # Login
     login_data = {"username": username, "password": "testpassword"}
@@ -298,7 +301,11 @@ def create_car_for_user_cookie_auth(client: TestClient) -> int:
     }
     response = client.post(f"{settings.API_STR}/cars/", json=car_data)
     assert response.status_code == 200
-    return response.json()["id"]
+    car_data_response = response.json()
+    assert isinstance(car_data_response, dict)
+    car_id = car_data_response["id"]
+    assert isinstance(car_id, int)
+    return car_id
 
 
 def create_and_login_admin_user(client: TestClient, username: str) -> User:
@@ -313,18 +320,32 @@ def create_and_login_admin_user(client: TestClient, username: str) -> User:
     }
     response = client.post(f"{settings.API_STR}/auth/register", json=user_data)
     assert response.status_code == 200
-    admin_user = response.json()
+    admin_user_data = response.json()
+    assert isinstance(admin_user_data, dict)
 
     # Login
     login_data = {"username": username, "password": "testpassword"}
     response = client.post(f"{settings.API_STR}/auth/login", data=login_data)
     assert response.status_code == 200
 
-    return admin_user
+    # Return a mock User object since we can't easily construct one from the response
+    # This is a test utility function, so this is acceptable
+    from app.api.models.user import User
+
+    return User(
+        id=admin_user_data.get("id", 0),
+        username=admin_user_data.get("username", ""),
+        email=admin_user_data.get("email", ""),
+        hashed_password="",
+        email_verified=True,
+        disabled=False,
+        is_admin=True,
+        is_superuser=False,
+    )
 
 
 # Pytest hooks for cleanup
-def pytest_sessionfinish(session, exitstatus):
+def pytest_sessionfinish(session: Any, exitstatus: Any) -> None:
     """Clean up SQLite test database files after pytest session finishes."""
     import glob
 
@@ -353,7 +374,7 @@ def pytest_sessionfinish(session, exitstatus):
         )
 
 
-def pytest_unconfigure(config):
+def pytest_unconfigure(config: Any) -> None:
     """Additional cleanup when pytest is unconfigured."""
     # This hook runs after all tests and cleanup
     pass

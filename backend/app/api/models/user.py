@@ -37,7 +37,18 @@ class User(Base):
     )  # 'active', 'cancelled', 'expired'
 
     # children
-    cars: Mapped[List["Car"]] = relationship("Car", back_populates="user", cascade="all, delete-orphan")  # type: ignore
-    subscriptions: Mapped[List["Subscription"]] = relationship("Subscription", back_populates="user", cascade="all, delete-orphan")  # type: ignore
-    part_votes: Mapped[List["PartVote"]] = relationship("PartVote", back_populates="user", cascade="all, delete-orphan")  # type: ignore
-    part_reports: Mapped[List["PartReport"]] = relationship("PartReport", foreign_keys="PartReport.user_id", back_populates="reporter", cascade="all, delete-orphan")  # type: ignore
+    cars: Mapped[List["Car"]] = relationship(
+        "Car", back_populates="user", cascade="all, delete-orphan"
+    )
+    subscriptions: Mapped[List["Subscription"]] = relationship(
+        "Subscription", back_populates="user", cascade="all, delete-orphan"
+    )
+    part_votes: Mapped[List["PartVote"]] = relationship(
+        "PartVote", back_populates="user", cascade="all, delete-orphan"
+    )
+    part_reports: Mapped[List["PartReport"]] = relationship(
+        "PartReport",
+        foreign_keys="PartReport.user_id",
+        back_populates="reporter",
+        cascade="all, delete-orphan",
+    )

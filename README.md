@@ -9,8 +9,11 @@ A comprehensive web application for car enthusiasts to manage their vehicles, tr
 - **User Authentication**: Secure registration, login, and email verification
 - **Car Management**: Add, edit, and organize your vehicle collection
 - **Build Lists**: Create custom modification plans for specific cars
-- **Parts Catalog**: Track parts, prices, and compatibility
+- **Parts Catalog**: Track parts, prices, and compatibility with categories
+- **Part Voting**: Community-driven part recommendations and ratings
+- **Part Reporting**: Report inappropriate or incorrect parts
 - **User Profiles**: Share your builds and view other enthusiasts' work
+- **Subscription Tiers**: Free and premium user features
 - **Search & Filter**: Find cars and parts with advanced filtering options
 
 ### Technical Features
@@ -18,7 +21,7 @@ A comprehensive web application for car enthusiasts to manage their vehicles, tr
 - **Modern Web Stack**: React frontend with FastAPI backend
 - **Real-time Updates**: Live data synchronization
 - **Responsive Design**: Works seamlessly on desktop and mobile
-- **Secure API**: JWT authentication with rate limiting
+- **Secure API**: JWT authentication with comprehensive rate limiting
 - **Database Management**: PostgreSQL with automated migrations
 - **Docker Support**: Easy deployment and development setup
 
@@ -35,8 +38,8 @@ CarModPicker/
 
 ### Frontend (React + TypeScript)
 
-- **Framework**: React 19 with TypeScript
-- **Styling**: Tailwind CSS for responsive design
+- **Framework**: React 19.1.0 with TypeScript
+- **Styling**: Tailwind CSS 4.1.7 for responsive design
 - **Routing**: React Router for navigation
 - **State Management**: React Context for authentication
 - **Testing**: Vitest with React Testing Library
@@ -55,7 +58,7 @@ CarModPicker/
 
 ### Prerequisites
 
-- Node.js 18+ and npm
+- Node.js 18+ and npm (see .nvmrc for exact version)
 - Python 3.11+
 - PostgreSQL 16+
 - Docker (optional, for database)
@@ -65,7 +68,7 @@ CarModPicker/
 1. **Clone the repository**
 
    ```bash
-   git clone https://github.com/yourusername/CarModPicker.git
+   git clone https://github.com/tylerwebb/CarModPicker.git
    cd CarModPicker
    ```
 
@@ -102,7 +105,7 @@ CarModPicker/
    ```
 
 4. **Access the application**
-   - Frontend: http://localhost:4000
+   - Frontend: http://localhost:5173 (Vite default)
    - Backend API: http://localhost:8000
    - API Documentation: http://localhost:8000/docs
 
@@ -117,10 +120,13 @@ backend/
 │   │   ├── endpoints/     # API route handlers
 │   │   ├── models/        # SQLAlchemy database models
 │   │   ├── schemas/       # Pydantic request/response models
-│   │   └── dependencies/  # FastAPI dependencies
+│   │   ├── dependencies/  # FastAPI dependencies
+│   │   ├── services/      # Business logic services
+│   │   ├── utils/         # Utility functions
+│   │   └── middleware/    # Custom middleware (rate limiting)
 │   ├── core/              # Configuration and utilities
 │   ├── db/                # Database setup and sessions
-│   └── tests/             # Test suite
+│   └── tests/             # Comprehensive test suite
 ├── alembic/               # Database migrations
 └── requirements.txt       # Python dependencies
 ```
@@ -148,10 +154,14 @@ frontend/
 
 The application uses a relational database with the following core entities:
 
-- **Users**: Authentication and profile information
+- **Users**: Authentication and profile information with subscription tiers
 - **Cars**: Vehicle information (make, model, year, VIN)
 - **Build Lists**: Custom modification plans linked to cars
 - **Parts**: Individual components with pricing and compatibility
+- **Categories**: Organized part categorization system
+- **Part Votes**: Community voting on part quality and relevance
+- **Part Reports**: User reporting system for inappropriate content
+- **Subscriptions**: Premium user features and billing
 
 ## 🔧 Development
 
@@ -165,6 +175,12 @@ pytest
 # Frontend tests
 cd frontend
 npm test
+
+# Frontend tests with UI
+npm run test:ui
+
+# Frontend test coverage
+npm run test:coverage
 ```
 
 ### Code Quality
@@ -176,9 +192,10 @@ black .
 isort .
 mypy .
 
-# Frontend linting
+# Frontend linting and type checking
 cd frontend
 npm run lint
+npm run type-check
 ```
 
 ### Database Migrations
@@ -241,13 +258,8 @@ For support and questions:
 
 - Create an issue on GitHub
 - Check the API documentation at `/docs` when running locally
-- Review the individual README files in `frontend/` and `backend/` directories
-
-## 🔮 Roadmap
-
-- [ ] Advanced search and filtering
-- [ ] Social features (likes, comments, sharing)
-- [ ] Mobile app development
-- [ ] Integration with parts suppliers
-- [ ] Build cost tracking and budgeting
-- [ ] Performance analytics and recommendations
+- Review the detailed documentation:
+  - Frontend: [`docs/frontendREADME.md`](docs/frontendREADME.md)
+  - Backend: [`docs/backendREADME.md`](docs/backendREADME.md)
+  - Testing: [`backend/docs/PARALLEL_TESTING.md`](backend/docs/PARALLEL_TESTING.md)
+  - Deployment: [`frontend/RAILWAY_DEPLOYMENT.md`](frontend/RAILWAY_DEPLOYMENT.md)

@@ -125,7 +125,9 @@ def create_build_list_for_car_cookie_auth(
 class TestCategories:
     """Test cases for category endpoints."""
 
-    def test_get_categories_success(self, client: TestClient, db_session: Session):
+    def test_get_categories_success(
+        self, client: TestClient, db_session: Session
+    ) -> None:
         """Test getting all active categories."""
         # Create a default category if none exist
         if db_session.query(Category).count() == 0:
@@ -151,7 +153,9 @@ class TestCategories:
         for category in categories:
             assert category["is_active"] is True
 
-    def test_get_category_success(self, client: TestClient, db_session: Session):
+    def test_get_category_success(
+        self, client: TestClient, db_session: Session
+    ) -> None:
         """Test getting a specific category."""
         # Get a category ID from the database
         category_id = get_default_category_id(db_session)
@@ -164,7 +168,9 @@ class TestCategories:
         assert "name" in category
         assert "display_name" in category
 
-    def test_get_category_not_found(self, client: TestClient, db_session: Session):
+    def test_get_category_not_found(
+        self, client: TestClient, db_session: Session
+    ) -> None:
         """Test getting a non-existent category."""
         response = client.get("/api/categories/99999")
         assert response.status_code == 404
@@ -172,7 +178,7 @@ class TestCategories:
 
     def test_get_parts_by_category_success(
         self, client: TestClient, db_session: Session
-    ):
+    ) -> None:
         """Test getting parts by category."""
         # Get a category ID from the database
         category_id = get_default_category_id(db_session)
@@ -185,7 +191,7 @@ class TestCategories:
 
     def test_get_parts_by_category_with_pagination(
         self, client: TestClient, db_session: Session
-    ):
+    ) -> None:
         """Test getting parts by category with pagination."""
         # Get a category ID from the database
         category_id = get_default_category_id(db_session)
@@ -218,7 +224,9 @@ class TestCategories:
         assert isinstance(parts, list)
         assert len(parts) <= 2
 
-    def test_get_parts_by_category_empty(self, client: TestClient, db_session: Session):
+    def test_get_parts_by_category_empty(
+        self, client: TestClient, db_session: Session
+    ) -> None:
         """Test getting parts by category when no parts exist."""
         # Get a category ID from the database
         category_id = get_default_category_id(db_session)
@@ -230,7 +238,9 @@ class TestCategories:
         assert isinstance(parts, list)
         # Note: This might not be empty if there are existing parts in the test database
 
-    def test_create_category_success(self, client: TestClient, db_session: Session):
+    def test_create_category_success(
+        self, client: TestClient, db_session: Session
+    ) -> None:
         """Test creating a new category."""
         # Create and login as admin user
         _ = create_and_login_admin_user(client, db_session, "create_cat")
@@ -257,7 +267,7 @@ class TestCategories:
 
     def test_create_category_duplicate_name(
         self, client: TestClient, db_session: Session
-    ):
+    ) -> None:
         """Test creating a category with duplicate name."""
         # Create and login as admin user
         _ = create_and_login_admin_user(client, db_session, "duplicate_cat")
@@ -279,7 +289,9 @@ class TestCategories:
         assert response.status_code == 400
         assert "already exists" in response.json()["detail"]
 
-    def test_update_category_success(self, client: TestClient, db_session: Session):
+    def test_update_category_success(
+        self, client: TestClient, db_session: Session
+    ) -> None:
         """Test updating a category."""
         # Create and login as admin user
         _ = create_and_login_admin_user(client, db_session, "update_cat")
@@ -315,7 +327,9 @@ class TestCategories:
         assert category["name"] == category_data["name"]
         assert category["is_active"] == category_data["is_active"]
 
-    def test_update_category_not_found(self, client: TestClient, db_session: Session):
+    def test_update_category_not_found(
+        self, client: TestClient, db_session: Session
+    ) -> None:
         """Test updating a non-existent category."""
         # Create and login as admin user
         _ = create_and_login_admin_user(client, db_session, "update_not_found")
@@ -326,7 +340,9 @@ class TestCategories:
         assert response.status_code == 404
         assert "Category not found" in response.json()["detail"]
 
-    def test_delete_category_success(self, client: TestClient, db_session: Session):
+    def test_delete_category_success(
+        self, client: TestClient, db_session: Session
+    ) -> None:
         """Test deleting a category."""
         # Create and login as admin user
         _ = create_and_login_admin_user(client, db_session, "delete_cat")
@@ -352,7 +368,9 @@ class TestCategories:
         get_response = client.get(f"/api/categories/{category_id}")
         assert get_response.status_code == 404
 
-    def test_delete_category_not_found(self, client: TestClient, db_session: Session):
+    def test_delete_category_not_found(
+        self, client: TestClient, db_session: Session
+    ) -> None:
         """Test deleting a non-existent category."""
         # Create and login as admin user
         _ = create_and_login_admin_user(client, db_session, "delete_not_found")
@@ -361,7 +379,9 @@ class TestCategories:
         assert response.status_code == 404
         assert "Category not found" in response.json()["detail"]
 
-    def test_delete_category_with_parts(self, client: TestClient, db_session: Session):
+    def test_delete_category_with_parts(
+        self, client: TestClient, db_session: Session
+    ) -> None:
         """Test deleting a category that has parts (should fail)."""
         # Create and login as admin user
         _ = create_and_login_admin_user(client, db_session, "delete_with_parts")

@@ -1,7 +1,9 @@
 import os
 import sys
+from typing import Generator
 from unittest.mock import Mock, patch
 
+import pytest
 from sqlalchemy.orm import Session
 
 from app.api.models.user import User as DBUser
@@ -12,7 +14,7 @@ from scripts.create_superuser import create_superuser
 class TestSuperuserCreation:
     """Test cases for superuser creation functionality."""
 
-    def test_create_superuser_success(self, db_session: Session):
+    def test_create_superuser_success(self, db_session: Session) -> None:
         """Test successful superuser creation."""
         # Test data
         username = "test_superuser"
@@ -22,7 +24,7 @@ class TestSuperuserCreation:
         is_admin = True
 
         # Patch get_db to return the test database session
-        def mock_get_db():
+        def mock_get_db() -> Generator[Session, None, None]:
             yield db_session
 
         with patch("scripts.create_superuser.get_db", mock_get_db):
@@ -49,7 +51,7 @@ class TestSuperuserCreation:
             assert db_user is not None
             assert db_user.id == result.id
 
-    def test_create_admin_user_success(self, db_session: Session):
+    def test_create_admin_user_success(self, db_session: Session) -> None:
         """Test successful admin user creation (not superuser)."""
         # Test data
         username = "test_admin"
@@ -59,7 +61,7 @@ class TestSuperuserCreation:
         is_admin = True
 
         # Patch get_db to return the test database session
-        def mock_get_db():
+        def mock_get_db() -> Generator[Session, None, None]:
             yield db_session
 
         with patch("scripts.create_superuser.get_db", mock_get_db):
@@ -75,11 +77,11 @@ class TestSuperuserCreation:
             assert result.email_verified == True
             assert result.disabled == False
 
-    def test_create_superuser_duplicate_username(self, db_session: Session):
+    def test_create_superuser_duplicate_username(self, db_session: Session) -> None:
         """Test that creating superuser with duplicate username returns existing user."""
 
         # Patch get_db to return the test database session
-        def mock_get_db():
+        def mock_get_db() -> Generator[Session, None, None]:
             yield db_session
 
         with patch("scripts.create_superuser.get_db", mock_get_db):
@@ -101,11 +103,11 @@ class TestSuperuserCreation:
             assert user2.username == user1.username
             assert user2.email == user1.email  # Should be the original email
 
-    def test_create_superuser_duplicate_email(self, db_session: Session):
+    def test_create_superuser_duplicate_email(self, db_session: Session) -> None:
         """Test that creating superuser with duplicate email returns existing user."""
 
         # Patch get_db to return the test database session
-        def mock_get_db():
+        def mock_get_db() -> Generator[Session, None, None]:
             yield db_session
 
         with patch("scripts.create_superuser.get_db", mock_get_db):
@@ -127,7 +129,7 @@ class TestSuperuserCreation:
             assert user2.username == user1.username
             assert user2.email == user1.email
 
-    def test_create_superuser_password_hashing(self, db_session: Session):
+    def test_create_superuser_password_hashing(self, db_session: Session) -> None:
         """Test that passwords are properly hashed."""
         # Test data
         username = "password_test"
@@ -137,7 +139,7 @@ class TestSuperuserCreation:
         is_admin = True
 
         # Patch get_db to return the test database session
-        def mock_get_db():
+        def mock_get_db() -> Generator[Session, None, None]:
             yield db_session
 
         with patch("scripts.create_superuser.get_db", mock_get_db):
@@ -154,7 +156,7 @@ class TestSuperuserCreation:
             # Verify wrong password fails
             assert verify_password("wrongpassword", result.hashed_password) == False
 
-    def test_create_superuser_default_values(self, db_session: Session):
+    def test_create_superuser_default_values(self, db_session: Session) -> None:
         """Test that default values are set correctly."""
         # Test data
         username = "default_test"
@@ -162,7 +164,7 @@ class TestSuperuserCreation:
         password = "testpassword123"
 
         # Patch get_db to return the test database session
-        def mock_get_db():
+        def mock_get_db() -> Generator[Session, None, None]:
             yield db_session
 
         with patch("scripts.create_superuser.get_db", mock_get_db):
@@ -175,7 +177,7 @@ class TestSuperuserCreation:
             assert result.email_verified == True  # Auto-verified for superusers
             assert result.disabled == False
 
-    def test_create_superuser_custom_values(self, db_session: Session):
+    def test_create_superuser_custom_values(self, db_session: Session) -> None:
         """Test that custom values override defaults."""
         # Test data
         username = "custom_test"
@@ -185,7 +187,7 @@ class TestSuperuserCreation:
         is_admin = True
 
         # Patch get_db to return the test database session
-        def mock_get_db():
+        def mock_get_db() -> Generator[Session, None, None]:
             yield db_session
 
         with patch("scripts.create_superuser.get_db", mock_get_db):
@@ -198,11 +200,11 @@ class TestSuperuserCreation:
             assert result.email_verified == True  # Still auto-verified
             assert result.disabled == False
 
-    def test_create_superuser_database_rollback(self, db_session: Session):
+    def test_create_superuser_database_rollback(self, db_session: Session) -> None:
         """Test that database rollback works on error."""
 
         # Patch get_db to return the test database session
-        def mock_get_db():
+        def mock_get_db() -> Generator[Session, None, None]:
             yield db_session
 
         with patch("scripts.create_superuser.get_db", mock_get_db):
@@ -228,7 +230,7 @@ class TestSuperuserCreation:
             # Verify we got the original user back
             assert user2.id == user1.id
 
-    def test_superuser_script_imports(self):
+    def test_superuser_script_imports(self) -> None:
         """Test that the superuser script can be imported without errors."""
         try:
             import scripts.create_superuser
@@ -237,7 +239,7 @@ class TestSuperuserCreation:
         except ImportError as e:
             pytest.fail(f"Failed to import superuser script: {e}")
 
-    def test_superuser_script_functions_exist(self):
+    def test_superuser_script_functions_exist(self) -> None:
         """Test that required functions exist in the superuser script."""
         import scripts.create_superuser
 
@@ -249,7 +251,9 @@ class TestSuperuserCreation:
 
     @patch("builtins.input")
     @patch("builtins.print")
-    def test_superuser_script_main_function(self, mock_print, mock_input):
+    def test_superuser_script_main_function(
+        self, mock_print: Mock, mock_input: Mock
+    ) -> None:
         """Test the main function of the superuser script."""
         from scripts.create_superuser import main
 
@@ -281,7 +285,9 @@ class TestSuperuserCreation:
 
     @patch("builtins.input")
     @patch("builtins.print")
-    def test_superuser_script_main_function_cancelled(self, mock_print, mock_input):
+    def test_superuser_script_main_function_cancelled(
+        self, mock_print: Mock, mock_input: Mock
+    ) -> None:
         """Test that main function can be cancelled."""
         from scripts.create_superuser import main
 
@@ -307,8 +313,8 @@ class TestSuperuserCreation:
     @patch("builtins.input")
     @patch("builtins.print")
     def test_superuser_script_main_function_password_mismatch(
-        self, mock_print, mock_input
-    ):
+        self, mock_print: Mock, mock_input: Mock
+    ) -> None:
         """Test that main function handles password mismatch."""
         from scripts.create_superuser import main
 
@@ -330,7 +336,9 @@ class TestSuperuserCreation:
 
     @patch("builtins.input")
     @patch("builtins.print")
-    def test_superuser_script_main_function_no_privileges(self, mock_print, mock_input):
+    def test_superuser_script_main_function_no_privileges(
+        self, mock_print: Mock, mock_input: Mock
+    ) -> None:
         """Test that main function requires at least admin privileges."""
         from scripts.create_superuser import main
 

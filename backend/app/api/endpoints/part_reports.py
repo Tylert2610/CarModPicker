@@ -1,5 +1,5 @@
 import logging
-from typing import List, Optional
+from typing import List, Optional, Dict
 from datetime import datetime, UTC
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -50,6 +50,10 @@ async def report_part(
     if not db_part:
         raise HTTPException(status_code=404, detail="Part not found")
 
+    # Check if user is trying to report their own part
+    if db_part.user_id == current_user.id:
+        raise HTTPException(status_code=400, detail="You cannot report your own part")
+
     # Check if user has already reported this part
     existing_report = (
         db.query(DBPartReport)
@@ -62,9 +66,7 @@ async def report_part(
     )
 
     if existing_report:
-        raise HTTPException(
-            status_code=409, detail="You have already reported this part"
-        )
+        raise HTTPException(status_code=400, detail="already reported")
 
     # Create new report
     db_report = DBPartReport(
@@ -232,7 +234,7 @@ async def get_pending_reports_count(
     db: Session = Depends(get_db),
     logger: logging.Logger = Depends(get_logger),
     current_admin: DBUser = Depends(get_current_admin_user),
-):
+) -> Dict[str, int]:
     """Get count of pending reports (admin only)."""
     count = db.query(DBPartReport).filter(DBPartReport.status == "pending").count()
     logger.info(f"Pending reports count: {count}")

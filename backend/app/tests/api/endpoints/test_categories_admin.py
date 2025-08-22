@@ -78,7 +78,7 @@ class TestCategoriesAdminAuthentication:
 
     def test_create_category_without_authentication(
         self, client: TestClient, db_session: Session
-    ):
+    ) -> None:
         """Test that creating a category without authentication fails."""
         category_data = {
             "name": "test_category",
@@ -94,7 +94,7 @@ class TestCategoriesAdminAuthentication:
 
     def test_create_category_with_regular_user(
         self, client: TestClient, db_session: Session
-    ):
+    ) -> None:
         """Test that regular users cannot create categories."""
         # Create and login regular user
         regular_user = create_and_login_regular_user(client, db_session, "create_cat")
@@ -111,11 +111,11 @@ class TestCategoriesAdminAuthentication:
         assert (
             response.status_code == 403
         ), "Regular users should not be able to create categories"
-        assert "Admin privileges required" in response.text
+        assert "Admin access required" in response.text
 
     def test_create_category_with_admin_user(
         self, client: TestClient, db_session: Session
-    ):
+    ) -> None:
         """Test that admin users can create categories."""
         # Create and login admin user
         admin_user = create_and_login_admin_user(client, db_session, "create_cat")
@@ -140,7 +140,7 @@ class TestCategoriesAdminAuthentication:
 
     def test_create_category_with_superuser(
         self, client: TestClient, db_session: Session
-    ):
+    ) -> None:
         """Test that superusers can create categories."""
         # Create superuser directly in database
         username = "superuser_test_create"
@@ -182,7 +182,7 @@ class TestCategoriesAdminAuthentication:
 
     def test_update_category_without_authentication(
         self, client: TestClient, db_session: Session
-    ):
+    ) -> None:
         """Test that updating a category without authentication fails."""
         # Create a category first
         category = DBCategory(
@@ -208,7 +208,7 @@ class TestCategoriesAdminAuthentication:
 
     def test_update_category_with_regular_user(
         self, client: TestClient, db_session: Session
-    ):
+    ) -> None:
         """Test that regular users cannot update categories."""
         # Create a category first
         category = DBCategory(
@@ -236,11 +236,11 @@ class TestCategoriesAdminAuthentication:
         assert (
             response.status_code == 403
         ), "Regular users should not be able to update categories"
-        assert "Admin privileges required" in response.text
+        assert "Admin access required" in response.text
 
     def test_update_category_with_admin_user(
         self, client: TestClient, db_session: Session
-    ):
+    ) -> None:
         """Test that admin users can update categories."""
         # Create a category first
         category = DBCategory(
@@ -277,7 +277,7 @@ class TestCategoriesAdminAuthentication:
 
     def test_delete_category_without_authentication(
         self, client: TestClient, db_session: Session
-    ):
+    ) -> None:
         """Test that deleting a category without authentication fails."""
         # Create a category first
         category = DBCategory(
@@ -296,7 +296,7 @@ class TestCategoriesAdminAuthentication:
 
     def test_delete_category_with_regular_user(
         self, client: TestClient, db_session: Session
-    ):
+    ) -> None:
         """Test that regular users cannot delete categories."""
         # Create a category first
         category = DBCategory(
@@ -317,11 +317,11 @@ class TestCategoriesAdminAuthentication:
         assert (
             response.status_code == 403
         ), "Regular users should not be able to delete categories"
-        assert "Admin privileges required" in response.text
+        assert "Admin access required" in response.text
 
     def test_delete_category_with_admin_user(
         self, client: TestClient, db_session: Session
-    ):
+    ) -> None:
         """Test that admin users can delete categories."""
         # Create a category first
         category = DBCategory(
@@ -349,7 +349,7 @@ class TestCategoriesAdminAuthentication:
 
     def test_delete_category_with_parts_fails(
         self, client: TestClient, db_session: Session
-    ):
+    ) -> None:
         """Test that deleting a category with parts fails."""
         from app.api.models.part import Part as DBPart
 
@@ -400,7 +400,7 @@ class TestCategoriesAdminAuthentication:
 
     def test_public_category_endpoints_remain_public(
         self, client: TestClient, db_session: Session
-    ):
+    ) -> None:
         """Test that public category endpoints remain accessible without authentication."""
         # Create a category first
         category = DBCategory(
@@ -437,7 +437,7 @@ class TestCategoriesAdminAuthentication:
 
     def test_duplicate_category_name_fails(
         self, client: TestClient, db_session: Session
-    ):
+    ) -> None:
         """Test that creating a category with duplicate name fails."""
         # Create and login admin user
         admin_user = create_and_login_admin_user(client, db_session, "duplicate_cat")

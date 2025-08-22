@@ -98,7 +98,7 @@ def upgrade() -> None:
     op.alter_column("parts", "user_id", nullable=False)
 
     op.drop_constraint(op.f("parts_build_list_id_fkey"), "parts", type_="foreignkey")
-    op.create_foreign_key(None, "parts", "users", ["user_id"], ["id"])
+    op.create_foreign_key("fk_parts_user_id", "parts", "users", ["user_id"], ["id"])
     op.drop_column("parts", "build_list_id")
     op.drop_column("parts", "manufacturer")
     op.drop_column("parts", "part_type")
@@ -120,7 +120,7 @@ def downgrade() -> None:
         "parts",
         sa.Column("build_list_id", sa.INTEGER(), autoincrement=False, nullable=False),
     )
-    op.drop_constraint(None, "parts", type_="foreignkey")
+    op.drop_constraint("fk_parts_user_id", "parts", type_="foreignkey")
     op.create_foreign_key(
         op.f("parts_build_list_id_fkey"),
         "parts",

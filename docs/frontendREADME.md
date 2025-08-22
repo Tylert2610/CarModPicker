@@ -31,7 +31,7 @@ frontend/
 
 ### Prerequisites
 
-- Node.js 18+
+- Node.js 18+ (see .nvmrc for exact version)
 - npm or yarn
 - Backend API running (see backend README)
 
@@ -63,7 +63,7 @@ frontend/
    ```
 
 5. **Access the application**
-   - Frontend: http://localhost:4000
+   - Frontend: http://localhost:5173 (Vite default)
    - Backend API: http://localhost:8000 (should be running)
 
 ## 🧩 Component Architecture
@@ -195,6 +195,10 @@ const apiClient = axios.create({
 - Cars: `/api/cars/*`
 - Parts: `/api/parts/*`
 - Build Lists: `/api/build-lists/*`
+- Categories: `/api/categories/*`
+- Part Votes: `/api/part-votes/*`
+- Part Reports: `/api/part-reports/*`
+- Subscriptions: `/api/subscriptions/*`
 
 ### Error Handling
 
@@ -205,9 +209,9 @@ const apiClient = axios.create({
 
 ## 🎨 Styling & Design
 
-### Tailwind CSS
+### Tailwind CSS 4.1.7
 
-The application uses Tailwind CSS for styling with:
+The application uses Tailwind CSS 4.1.7 for styling with:
 
 - Responsive design utilities
 - Dark theme support

@@ -84,7 +84,7 @@ def create_superuser(
         db.close()
 
 
-def main():
+def main() -> None:
     """Main function to run the superuser creation script."""
     print("🚀 CarModPicker Superuser Creation Script")
     print("=" * 50)

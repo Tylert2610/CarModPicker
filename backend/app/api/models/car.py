@@ -23,6 +23,8 @@ class Car(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
 
     # owner
-    user: Mapped["User"] = relationship("User", back_populates="cars")  # type: ignore
+    user: Mapped["User"] = relationship("User", back_populates="cars")
     # children
-    build_lists: Mapped[List["BuildList"]] = relationship("BuildList", back_populates="car", cascade="all, delete-orphan")  # type: ignore
+    build_lists: Mapped[List["BuildList"]] = relationship(
+        "BuildList", back_populates="car", cascade="all, delete-orphan"
+    )

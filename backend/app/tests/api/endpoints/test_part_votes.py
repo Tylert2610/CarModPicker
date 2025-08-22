@@ -1,6 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
+from typing import Optional
 
 from app.api.models.part import Part
 from app.api.models.part_vote import PartVote
@@ -14,7 +15,7 @@ from app.tests.conftest import get_default_category_id
 
 # Helper function to create a user and log them in
 def create_and_login_user(
-    client: TestClient, username_suffix: str, db_session: Session = None
+    client: TestClient, username_suffix: str, db_session: Optional[Session] = None
 ) -> int:
     username = f"vote_test_user_{username_suffix}"
     email = f"vote_test_user_{username_suffix}@example.com"
@@ -120,7 +121,9 @@ def create_and_login_admin_user(
 
 
 class TestPartVotes:
-    def test_vote_on_part_success(self, client: TestClient, db_session: Session):
+    def test_vote_on_part_success(
+        self, client: TestClient, db_session: Session
+    ) -> None:
         """Test successful voting on a part."""
         # Create and login user
         user_id = create_and_login_user(client, "vote_success", db_session)
@@ -149,7 +152,9 @@ class TestPartVotes:
         assert data["part_id"] == part.id
         assert data["user_id"] == user_id
 
-    def test_vote_on_part_invalid_type(self, client: TestClient, db_session: Session):
+    def test_vote_on_part_invalid_type(
+        self, client: TestClient, db_session: Session
+    ) -> None:
         """Test voting with invalid vote type."""
         # Create and login user
         user_id = create_and_login_user(client, "vote_invalid", db_session)
@@ -175,7 +180,9 @@ class TestPartVotes:
         assert response.status_code == 400
         assert "Vote type must be 'upvote' or 'downvote'" in response.json()["detail"]
 
-    def test_vote_on_nonexistent_part(self, client: TestClient, db_session: Session):
+    def test_vote_on_nonexistent_part(
+        self, client: TestClient, db_session: Session
+    ) -> None:
         """Test voting on a part that doesn't exist."""
         # Create and login user
         create_and_login_user(client, "vote_nonexistent", db_session)
@@ -187,7 +194,9 @@ class TestPartVotes:
         assert response.status_code == 404
         assert "Part not found" in response.json()["detail"]
 
-    def test_update_existing_vote(self, client: TestClient, db_session: Session):
+    def test_update_existing_vote(
+        self, client: TestClient, db_session: Session
+    ) -> None:
         """Test updating an existing vote."""
         # Create and login user
         user_id = create_and_login_user(client, "vote_update", db_session)
@@ -219,7 +228,7 @@ class TestPartVotes:
         data = response.json()
         assert data["vote_type"] == "downvote"
 
-    def test_remove_vote(self, client: TestClient, db_session: Session):
+    def test_remove_vote(self, client: TestClient, db_session: Session) -> None:
         """Test removing a vote."""
         # Create and login user
         user_id = create_and_login_user(client, "vote_remove", db_session)
@@ -249,7 +258,9 @@ class TestPartVotes:
         assert response.status_code == 200
         assert "Vote removed successfully" in response.json()["message"]
 
-    def test_remove_nonexistent_vote(self, client: TestClient, db_session: Session):
+    def test_remove_nonexistent_vote(
+        self, client: TestClient, db_session: Session
+    ) -> None:
         """Test removing a vote that doesn't exist."""
         # Create and login user
         user_id = create_and_login_user(client, "vote_remove_nonexistent", db_session)
@@ -274,7 +285,7 @@ class TestPartVotes:
         assert response.status_code == 404
         assert "No vote found for this part" in response.json()["detail"]
 
-    def test_get_vote_summary(self, client: TestClient, db_session: Session):
+    def test_get_vote_summary(self, client: TestClient, db_session: Session) -> None:
         """Test getting vote summary for a part."""
         # Create and login user
         user_id = create_and_login_user(client, "vote_summary", db_session)
@@ -310,7 +321,7 @@ class TestPartVotes:
 
     def test_get_vote_summaries_multiple_parts(
         self, client: TestClient, db_session: Session
-    ):
+    ) -> None:
         """Test getting vote summaries for multiple parts."""
         # Create and login user
         user_id = create_and_login_user(client, "vote_summaries", db_session)
@@ -361,7 +372,7 @@ class TestPartVotes:
         db_session: Session,
         test_user: User,
         test_category: Category,
-    ):
+    ) -> None:
         """Test voting without authentication."""
         # Create a test part
         part = Part(
@@ -380,7 +391,9 @@ class TestPartVotes:
 
         assert response.status_code == 401
 
-    def test_get_flagged_parts_success(self, client: TestClient, db_session: Session):
+    def test_get_flagged_parts_success(
+        self, client: TestClient, db_session: Session
+    ) -> None:
         """Test successful retrieval of flagged parts by admin."""
         # Create admin user
         admin_id = create_and_login_admin_user(client, "flagged_success", db_session)
@@ -447,7 +460,7 @@ class TestPartVotes:
 
     def test_get_flagged_parts_with_custom_thresholds(
         self, client: TestClient, db_session: Session
-    ):
+    ) -> None:
         """Test flagged parts with custom threshold parameters."""
         # Create admin user
         admin_id = create_and_login_admin_user(client, "flagged_custom", db_session)
@@ -494,7 +507,7 @@ class TestPartVotes:
 
     def test_get_flagged_parts_with_reports(
         self, client: TestClient, db_session: Session
-    ):
+    ) -> None:
         """Test flagged parts that also have pending reports."""
         # Create admin user
         admin_id = create_and_login_admin_user(client, "flagged_reports", db_session)
@@ -549,7 +562,7 @@ class TestPartVotes:
 
     def test_get_flagged_parts_unauthorized(
         self, client: TestClient, db_session: Session
-    ):
+    ) -> None:
         """Test that non-admin users cannot access flagged parts."""
         # Create regular user (not admin)
         create_and_login_user(client, "not_admin", db_session)
@@ -558,9 +571,9 @@ class TestPartVotes:
         response = client.get("/api/part-votes/flagged-parts")
 
         assert response.status_code == 403
-        assert "Admin privileges required" in response.json()["detail"]
+        assert "Admin access required" in response.json()["detail"]
 
-    def test_get_flagged_parts_no_login(self, client: TestClient):
+    def test_get_flagged_parts_no_login(self, client: TestClient) -> None:
         """Test that unauthenticated users cannot access flagged parts."""
         # Try to access without login
         response = client.get("/api/part-votes/flagged-parts")
@@ -569,7 +582,7 @@ class TestPartVotes:
 
     def test_get_flagged_parts_empty_result(
         self, client: TestClient, db_session: Session
-    ):
+    ) -> None:
         """Test flagged parts when no parts meet the criteria."""
         # Create admin user
         admin_id = create_and_login_admin_user(client, "flagged_empty", db_session)
@@ -610,7 +623,7 @@ class TestPartVotes:
 
     def test_get_flagged_parts_pagination(
         self, client: TestClient, db_session: Session
-    ):
+    ) -> None:
         """Test pagination parameters for flagged parts."""
         # Create admin user
         admin_id = create_and_login_admin_user(client, "flagged_pagination", db_session)

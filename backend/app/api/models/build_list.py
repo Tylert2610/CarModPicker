@@ -28,8 +28,8 @@ class BuildList(Base):
     )
 
     # Relationships
-    car: Mapped["Car"] = relationship("Car", back_populates="build_lists")  # type: ignore
-    owner: Mapped["User"] = relationship("User")  # type: ignore
+    car: Mapped["Car"] = relationship("Car", back_populates="build_lists")
+    owner: Mapped["User"] = relationship("User")
     parts: Mapped[List["BuildListPart"]] = relationship(
         "BuildListPart", back_populates="build_list"
     )

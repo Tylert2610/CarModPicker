@@ -14,12 +14,12 @@ class SubscriptionService:
     """Service for handling subscription-related business logic"""
 
     # Subscription limits
-    FREE_TIER_LIMITS = {
+    FREE_TIER_LIMITS: Dict[str, Optional[int]] = {
         "cars": 3,
         "build_lists": 5,
     }
 
-    PREMIUM_TIER_LIMITS = {
+    PREMIUM_TIER_LIMITS: Dict[str, Optional[int]] = {
         "cars": None,  # Unlimited
         "build_lists": None,  # Unlimited
     }

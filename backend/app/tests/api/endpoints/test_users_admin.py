@@ -110,7 +110,7 @@ class TestAdminUserManagement:
 
     def test_get_all_users_without_authentication(
         self, client: TestClient, db_session: Session
-    ):
+    ) -> None:
         """Test that getting all users without authentication fails."""
         response = client.get(f"{settings.API_STR}/users/admin/users")
         assert response.status_code == 401, "Should require authentication"
@@ -118,7 +118,7 @@ class TestAdminUserManagement:
 
     def test_get_all_users_with_regular_user(
         self, client: TestClient, db_session: Session
-    ):
+    ) -> None:
         """Test that regular users cannot get all users."""
         # Create and login regular user
         regular_user = create_and_login_regular_user(client, db_session, "get_users")
@@ -127,11 +127,11 @@ class TestAdminUserManagement:
         assert (
             response.status_code == 403
         ), "Regular users should not be able to get all users"
-        assert "Admin privileges required" in response.text
+        assert "Admin access required" in response.text
 
     def test_get_all_users_with_admin_user(
         self, client: TestClient, db_session: Session
-    ):
+    ) -> None:
         """Test that admin users can get all users."""
         # Create some test users first
         user1 = DBUser(
@@ -173,7 +173,7 @@ class TestAdminUserManagement:
 
     def test_get_all_users_with_superuser(
         self, client: TestClient, db_session: Session
-    ):
+    ) -> None:
         """Test that superusers can get all users."""
         # Create and login superuser
         superuser = create_and_login_superuser(client, db_session, "get_users")
@@ -186,7 +186,9 @@ class TestAdminUserManagement:
         users = response.json()
         assert len(users) >= 1, "Should return at least 1 user (superuser)"
 
-    def test_get_all_users_pagination(self, client: TestClient, db_session: Session):
+    def test_get_all_users_pagination(
+        self, client: TestClient, db_session: Session
+    ) -> None:
         """Test pagination for admin get all users."""
         # Create multiple test users
         test_users = []
@@ -253,7 +255,7 @@ class TestAdminUserManagement:
 
     def test_admin_update_user_without_authentication(
         self, client: TestClient, db_session: Session
-    ):
+    ) -> None:
         """Test that updating a user without authentication fails."""
         # Create a test user
         test_user = DBUser(
@@ -281,7 +283,7 @@ class TestAdminUserManagement:
 
     def test_admin_update_user_with_regular_user(
         self, client: TestClient, db_session: Session
-    ):
+    ) -> None:
         """Test that regular users cannot update other users."""
         # Create a test user
         test_user = DBUser(
@@ -311,11 +313,11 @@ class TestAdminUserManagement:
         assert (
             response.status_code == 403
         ), "Regular users should not be able to update other users"
-        assert "Admin privileges required" in response.text
+        assert "Admin access required" in response.text
 
     def test_admin_update_user_with_admin_user(
         self, client: TestClient, db_session: Session
-    ):
+    ) -> None:
         """Test that admin users can update other users."""
         # Create a test user
         test_user = DBUser(
@@ -356,7 +358,7 @@ class TestAdminUserManagement:
 
     def test_admin_update_user_with_superuser(
         self, client: TestClient, db_session: Session
-    ):
+    ) -> None:
         """Test that superusers can update other users."""
         # Create a test user
         test_user = DBUser(
@@ -393,7 +395,9 @@ class TestAdminUserManagement:
         assert updated_user["email"] == update_data["email"]
         assert updated_user["is_superuser"] == update_data["is_superuser"]
 
-    def test_admin_update_user_password(self, client: TestClient, db_session: Session):
+    def test_admin_update_user_password(
+        self, client: TestClient, db_session: Session
+    ) -> None:
         """Test that admin can update user password."""
         # Create a test user
         test_user = DBUser(
@@ -432,7 +436,7 @@ class TestAdminUserManagement:
 
     def test_admin_cannot_remove_own_admin_privileges(
         self, client: TestClient, db_session: Session
-    ):
+    ) -> None:
         """Test that admin cannot remove their own admin privileges."""
         # Create and login admin user
         admin_user = create_and_login_admin_user(
@@ -453,7 +457,7 @@ class TestAdminUserManagement:
 
     def test_admin_delete_user_without_authentication(
         self, client: TestClient, db_session: Session
-    ):
+    ) -> None:
         """Test that deleting a user without authentication fails."""
         # Create a test user
         test_user = DBUser(
@@ -474,7 +478,7 @@ class TestAdminUserManagement:
 
     def test_admin_delete_user_with_regular_user(
         self, client: TestClient, db_session: Session
-    ):
+    ) -> None:
         """Test that regular users cannot delete other users."""
         # Create a test user
         test_user = DBUser(
@@ -497,11 +501,11 @@ class TestAdminUserManagement:
         assert (
             response.status_code == 403
         ), "Regular users should not be able to delete other users"
-        assert "Admin privileges required" in response.text
+        assert "Admin access required" in response.text
 
     def test_admin_delete_user_with_admin_user(
         self, client: TestClient, db_session: Session
-    ):
+    ) -> None:
         """Test that admin users can delete other users."""
         # Create a test user
         test_user = DBUser(
@@ -531,7 +535,7 @@ class TestAdminUserManagement:
 
     def test_admin_cannot_delete_themselves(
         self, client: TestClient, db_session: Session
-    ):
+    ) -> None:
         """Test that admin cannot delete themselves."""
         # Create and login admin user
         admin_user = create_and_login_admin_user(client, db_session, "delete_self")
@@ -546,7 +550,7 @@ class TestAdminUserManagement:
 
     def test_admin_update_nonexistent_user(
         self, client: TestClient, db_session: Session
-    ):
+    ) -> None:
         """Test that updating a nonexistent user fails."""
         # Create and login admin user
         admin_user = create_and_login_admin_user(
@@ -565,7 +569,7 @@ class TestAdminUserManagement:
 
     def test_admin_delete_nonexistent_user(
         self, client: TestClient, db_session: Session
-    ):
+    ) -> None:
         """Test that deleting a nonexistent user fails."""
         # Create and login admin user
         admin_user = create_and_login_admin_user(
@@ -578,7 +582,7 @@ class TestAdminUserManagement:
 
     def test_admin_update_user_with_duplicate_username(
         self, client: TestClient, db_session: Session
-    ):
+    ) -> None:
         """Test that updating user with duplicate username fails."""
         # Create two test users
         user1 = DBUser(
@@ -622,7 +626,7 @@ class TestAdminUserManagement:
 
     def test_admin_update_user_with_duplicate_email(
         self, client: TestClient, db_session: Session
-    ):
+    ) -> None:
         """Test that updating user with duplicate email fails."""
         # Create two test users
         user1 = DBUser(

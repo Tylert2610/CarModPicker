@@ -14,7 +14,9 @@ backend/
 │   │   ├── models/          # SQLAlchemy ORM models
 │   │   ├── schemas/         # Pydantic validation schemas
 │   │   ├── dependencies/    # FastAPI dependencies
-│   │   └── middleware/      # Custom middleware
+│   │   ├── services/        # Business logic services
+│   │   ├── utils/           # Utility functions
+│   │   └── middleware/      # Custom middleware (rate limiting)
 │   ├── core/               # Core configuration
 │   ├── db/                 # Database setup
 │   └── tests/              # Test suite
@@ -26,7 +28,7 @@ backend/
 
 ### Prerequisites
 
-- Python 3.11+
+- Python 3.11+ (see runtime.txt for exact version)
 - PostgreSQL 16+
 - Docker (optional, for database)
 
@@ -49,6 +51,7 @@ backend/
 
    ```bash
    pip install -r requirements.txt
+   # See requirements.txt for complete dependency list
    ```
 
 4. **Environment configuration**
@@ -155,6 +158,66 @@ class Part(Base):
     build_list: BuildList (Many-to-One)
 ```
 
+#### Category Model
+
+```python
+class Category(Base):
+    id: int (Primary Key)
+    name: str (Unique, Indexed)
+    display_name: str (Indexed)
+    description: Optional[str]
+    icon: Optional[str]
+    is_active: bool (Default: True)
+    sort_order: int (Default: 0)
+    
+    # Relationships
+    parts: List[Part] (One-to-Many)
+```
+
+#### Part Vote Model
+
+```python
+class PartVote(Base):
+    id: int (Primary Key)
+    user_id: int (Foreign Key to User)
+    part_id: int (Foreign Key to Part)
+    vote_type: str ("up" or "down")
+    
+    # Relationships
+    user: User (Many-to-One)
+    part: Part (Many-to-One)
+```
+
+#### Part Report Model
+
+```python
+class PartReport(Base):
+    id: int (Primary Key)
+    part_id: int (Foreign Key to Part)
+    reporter_id: int (Foreign Key to User)
+    reason: str (Indexed)
+    description: Optional[str]
+    status: str ("pending", "resolved", "dismissed")
+    
+    # Relationships
+    part: Part (Many-to-One)
+    reporter: User (Many-to-One)
+```
+
+#### Subscription Model
+
+```python
+class Subscription(Base):
+    id: int (Primary Key)
+    user_id: int (Foreign Key to User)
+    tier: str ("free", "premium")
+    status: str ("active", "cancelled", "expired")
+    expires_at: Optional[datetime]
+    
+    # Relationships
+    user: User (Many-to-One)
+```
+
 ## 🔌 API Endpoints
 
 ### Authentication (`/api/auth`)
@@ -183,6 +246,14 @@ class Part(Base):
 - `DELETE /{car_id}` - Delete car
 - `GET /search` - Search cars by make, model, year
 
+### Categories (`/api/categories`)
+
+- `GET /` - List all categories
+- `GET /{category_id}` - Get category details
+- `POST /` - Create new category (admin only)
+- `PUT /{category_id}` - Update category (admin only)
+- `DELETE /{category_id}` - Delete category (admin only)
+
 ### Build Lists (`/api/build-lists`)
 
 - `GET /` - List build lists (with pagination)
@@ -200,6 +271,24 @@ class Part(Base):
 - `DELETE /{part_id}` - Delete part
 - `GET /by-build-list/{build_list_id}` - Get parts by build list
 
+### Part Votes (`/api/part-votes`)
+
+- `POST /` - Vote on a part
+- `GET /part/{part_id}` - Get votes for a part
+- `DELETE /{vote_id}` - Remove user's vote
+
+### Part Reports (`/api/part-reports`)
+
+- `POST /` - Report a part
+- `GET /` - List reports (admin only)
+- `PUT /{report_id}/status` - Update report status (admin only)
+
+### Subscriptions (`/api/subscriptions`)
+
+- `GET /status` - Get subscription status
+- `POST /upgrade` - Upgrade to premium
+- `POST /cancel` - Cancel subscription
+
 ## 🔐 Authentication & Authorization
 
 ### JWT Token Authentication
@@ -214,7 +303,9 @@ class Part(Base):
 - Users can only access their own cars, build lists, and parts
 - Public read access for user profiles and public builds
 - Email verification required for full access
-- Rate limiting on all endpoints
+- Premium features require active subscription
+- Admin users can manage categories and handle reports
+- Rate limiting on all endpoints with configurable limits
 
 ## 🛡️ Security Features
 
