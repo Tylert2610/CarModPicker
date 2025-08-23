@@ -9,7 +9,7 @@ import VerifyEmail from './pages/authentication/VerifyEmail.tsx';
 import VerifyEmailConfirm from './pages/authentication/VerifyEmailConfirm.tsx';
 import Profile from './pages/Profile.tsx';
 import Builder from './pages/builder/Builder.tsx';
-import ViewCar from './pages/builder/ViewCar.tsx'; 
+import ViewCar from './pages/builder/ViewCar.tsx';
 
 import ViewUser from './pages/ViewUser.tsx';
 
@@ -24,6 +24,7 @@ import EmailVerifiedRoute from './components/routes/EmailVerifiedRoute.tsx';
 import GuestRoute from './components/routes/GuestRoute';
 import ViewBuildList from './pages/builder/ViewBuildlist.tsx';
 import ViewPart from './pages/builder/ViewPart.tsx';
+import PartsCatalog from './pages/parts/PartsCatalog.tsx';
 
 function App() {
   return (
@@ -56,18 +57,15 @@ function App() {
             element={<ForgotPasswordConfirm />}
           />
           <Route path="/cars/:carId" element={<ViewCar />} />{' '}
-          <Route
-                path="/build-lists/:buildListId"
-                element={<ViewBuildList />}
-              />{' '}
+          <Route path="/build-lists/:buildListId" element={<ViewBuildList />} />{' '}
           <Route path="/parts/:partId" element={<ViewPart />} />
+          <Route path="/parts" element={<PartsCatalog />} />
           {/* Protected Routes */}
           <Route element={<ProtectedRoute />}>
             <Route path="/verify-email" element={<VerifyEmail />} />
             <Route element={<EmailVerifiedRoute />}>
               <Route path="/profile" element={<Profile />} />
               <Route path="/builder" element={<Builder />} />
-              
             </Route>
           </Route>
         </Routes>
