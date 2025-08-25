@@ -12,7 +12,7 @@ import sys
 import time
 import requests
 from pathlib import Path
-from typing import Optional, Set
+from typing import Any, Optional, Set
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
@@ -26,7 +26,7 @@ class FastAPIChangeHandler(FileSystemEventHandler):
         self.last_update = 0
         self.update_cooldown = 2  # Minimum seconds between updates
 
-    def on_modified(self, event):
+    def on_modified(self, event: Any) -> None:
         """Handle file modification events."""
         if event.is_directory:
             return
@@ -40,7 +40,7 @@ class FastAPIChangeHandler(FileSystemEventHandler):
             return
 
         # Rate limiting to avoid too many updates
-        current_time = time.time()
+        current_time = int(time.time())
         if current_time - self.last_update < self.update_cooldown:
             return
 
@@ -48,7 +48,7 @@ class FastAPIChangeHandler(FileSystemEventHandler):
         self.update_openapi_schema()
         self.last_update = current_time
 
-    def update_openapi_schema(self):
+    def update_openapi_schema(self) -> None:
         """Update the OpenAPI schema."""
         try:
             # Wait a moment for the server to reload
@@ -74,12 +74,12 @@ def check_server_running(server_url: str) -> bool:
     """Check if the FastAPI server is running."""
     try:
         response = requests.get(f"{server_url}/health", timeout=5)
-        return response.status_code == 200
-    except:
+        return response.status_code == 200  # type: ignore
+    except Exception:
         return False
 
 
-def main():
+def main() -> None:
     """Main function to watch for changes and update OpenAPI schema."""
     # Get the project root directory
     script_dir = Path(__file__).parent

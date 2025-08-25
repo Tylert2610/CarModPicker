@@ -4,10 +4,10 @@ from sqlalchemy.orm import Session
 
 from app.api.dependencies.auth import get_current_admin_user
 from app.api.models.category import Category as DBCategory
-from app.api.models.part import Part as DBPart
+from app.api.models.global_part import GlobalPart as DBGlobalPart
 from app.api.models.user import User as DBUser
 from app.api.schemas.category import CategoryCreate, CategoryResponse, CategoryUpdate
-from app.api.schemas.part import PartRead
+from app.api.schemas.global_part import GlobalPartRead
 from app.db.session import get_db
 
 router = APIRouter()
@@ -45,15 +45,15 @@ async def get_category(
     return category
 
 
-@router.get("/{category_id}/parts", response_model=List[PartRead])
-async def get_parts_by_category(
+@router.get("/{category_id}/global-parts", response_model=List[GlobalPartRead])
+async def get_global_parts_by_category(
     category_id: int,
     skip: int = 0,
     limit: int = 100,
     db: Session = Depends(get_db),
-) -> List[DBPart]:
+) -> List[DBGlobalPart]:
     """
-    Get parts by category with pagination.
+    Get global parts by category with pagination.
     """
     # First verify the category exists
     category = db.query(DBCategory).filter(DBCategory.id == category_id).first()
@@ -63,8 +63,8 @@ async def get_parts_by_category(
         )
 
     parts = (
-        db.query(DBPart)
-        .filter(DBPart.category_id == category_id)
+        db.query(DBGlobalPart)
+        .filter(DBGlobalPart.category_id == category_id)
         .offset(skip)
         .limit(limit)
         .all()
@@ -140,7 +140,9 @@ async def delete_category(
         )
 
     # Check if there are any parts using this category
-    parts_count = db.query(DBPart).filter(DBPart.category_id == category_id).count()
+    parts_count = (
+        db.query(DBGlobalPart).filter(DBGlobalPart.category_id == category_id).count()
+    )
     if parts_count > 0:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

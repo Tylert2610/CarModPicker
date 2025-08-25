@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import apiClient from '../../services/Api';
 import useApiRequest from '../../hooks/UseApiRequest';
@@ -18,8 +18,8 @@ import ParentNavigationLink from '../../components/common/ParentNavigationLink';
 import ImageWithPlaceholder from '../../components/common/ImageWithPlaceholder';
 import DeleteConfirmationDialog from '../../components/common/DeleteConfirmationDialog';
 import EditBuildListForm from '../../components/buildLists/EditBuildListForm';
-import PartList from '../../components/parts/PartList';
-import CreatePartForm from '../../components/parts/CreatePartForm';
+import CreateBuildListPartForm from '../../components/buildListParts/CreateBuildListPartForm';
+import BuildListParts from '../../components/buildListParts/BuildListParts';
 
 const fetchBuildListRequestFn = (buildListId: string) =>
   apiClient.get<BuildListRead>(`/build-lists/${buildListId}`);
@@ -32,7 +32,7 @@ const fetchUserRequestFn = (userId: number) =>
   apiClient.get<UserRead>(`/users/${userId}`);
 
 const deleteBuildListRequestFn = (buildListId: string) =>
-  apiClient.delete(`/build-lists/${buildListId}`);
+  apiClient.delete<Record<string, string>>(`/build-lists/${buildListId}`);
 
 function ViewBuildList() {
   const { buildListId } = useParams<{ buildListId: string }>();
@@ -40,11 +40,12 @@ function ViewBuildList() {
   const navigate = useNavigate();
 
   const [isEditBuildListFormOpen, setIsEditBuildListFormOpen] = useState(false);
-  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] =
+    useState<boolean>(false);
   const [associatedCar, setAssociatedCar] = useState<CarRead | null>(null);
   const [carOwner, setCarOwner] = useState<UserRead | null>(null);
-  const [partsRefreshTrigger, setPartsRefreshTrigger] = useState(0); 
-  const [isCreatePartFormOpen, setIsCreatePartFormOpen] = useState(false); 
+  const [partsRefreshTrigger, setPartsRefreshTrigger] = useState<number>(0);
+  const [isCreatePartFormOpen, setIsCreatePartFormOpen] = useState(false);
 
   const {
     data: buildList,
@@ -72,7 +73,7 @@ function ViewBuildList() {
     error: deleteBuildListError,
     executeRequest: executeDeleteBuildList,
     setError: setDeleteBuildListError,
-  } = useApiRequest<void, string>(deleteBuildListRequestFn);
+  } = useApiRequest(deleteBuildListRequestFn);
 
   useEffect(() => {
     if (buildListId) {
@@ -135,10 +136,9 @@ function ViewBuildList() {
   };
 
   // Handlers for Part creation
-  const handlePartCreated = () => {
-    setPartsRefreshTrigger((prev) => prev + 1); // Trigger PartList refresh
+  const handlePartAdded = () => {
+    setPartsRefreshTrigger(partsRefreshTrigger + 1); // Trigger BuildListParts refresh
     setIsCreatePartFormOpen(false); // Close dialog
-   
   };
 
   const openCreatePartDialog = () => setIsCreatePartFormOpen(true);
@@ -288,18 +288,19 @@ function ViewBuildList() {
         <Dialog
           isOpen={isCreatePartFormOpen}
           onClose={closeCreatePartDialog}
-          title={`Add Part to ${buildList.name}`}
+          title="Add Part to Build List"
         >
-          <CreatePartForm
+          <CreateBuildListPartForm
             buildListId={buildList.id}
-            onPartCreated={handlePartCreated}
+            onPartAdded={handlePartAdded}
+            onCancel={closeCreatePartDialog}
           />
         </Dialog>
       )}
 
       {/* Parts Section */}
       {buildList && (
-        <PartList
+        <BuildListParts
           buildListId={buildList.id}
           canManageParts={canManage || false}
           refreshKey={partsRefreshTrigger}

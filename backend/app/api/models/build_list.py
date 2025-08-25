@@ -29,7 +29,7 @@ class BuildList(Base):
 
     # Relationships
     car: Mapped["Car"] = relationship("Car", back_populates="build_lists")
-    owner: Mapped["User"] = relationship("User")
-    parts: Mapped[List["BuildListPart"]] = relationship(
+    owner: Mapped["User"] = relationship("User", back_populates="build_lists")
+    build_list_parts: Mapped[List["BuildListPart"]] = relationship(
         "BuildListPart", back_populates="build_list"
     )

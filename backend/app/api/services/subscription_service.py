@@ -65,6 +65,13 @@ class SubscriptionService:
         return current_usage["build_lists"] < limits["build_lists"]
 
     @staticmethod
+    def can_create_global_part(db: Session, user: User) -> bool:
+        """Check if user can create a new global part"""
+        # For now, all users can create global parts
+        # This could be extended with limits in the future
+        return True
+
+    @staticmethod
     def get_subscription_status(db: Session, user: User) -> SubscriptionStatus:
         """Get comprehensive subscription status for a user"""
         limits = SubscriptionService.get_user_limits(user)

@@ -87,7 +87,7 @@ alwaysApply: true
 - Test authentication and authorization flows
 - Implement API contract testing
 - Use coverage reporting to ensure adequate test coverage
-- run all tests multithreaded
+- prefer multithreaded testing when possible
 
 ## Performance and Optimization
 

@@ -6,6 +6,7 @@ import HeaderSeparator from './HeaderSeparator';
 import { BsTools } from 'react-icons/bs';
 import { GrDocumentText } from 'react-icons/gr';
 import { GiRaceCar } from 'react-icons/gi';
+import { FaCogs } from 'react-icons/fa';
 
 function Header() {
   const { isAuthenticated, logout, isLoading, user } = useAuth();
@@ -66,6 +67,18 @@ function Header() {
             </li>
             <HeaderSeparator />
             <li>
+              <HeaderNavLink to="/global-parts" icon={<FaCogs />}>
+                Global Parts Catalog
+              </HeaderNavLink>
+            </li>
+            <HeaderSeparator />
+            <li>
+              <HeaderNavLink to="/my-global-parts" icon={<FaCogs />}>
+                Parts I Created
+              </HeaderNavLink>
+            </li>
+            <HeaderSeparator />
+            <li>
               <HeaderNavLink to="/guides" icon={<GrDocumentText />}>
                 Guides
               </HeaderNavLink>
@@ -76,6 +89,16 @@ function Header() {
                 My Builds
               </HeaderNavLink>
             </li>
+            {user?.is_admin && (
+              <>
+                <HeaderSeparator />
+                <li>
+                  <HeaderNavLink to="/admin" icon={<FaCogs />}>
+                    Admin
+                  </HeaderNavLink>
+                </li>
+              </>
+            )}
             <HeaderSeparator />
           </ul>
         </div>
