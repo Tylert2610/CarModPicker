@@ -91,7 +91,11 @@ async def get_current_user(
         raise credentials_exception
     if user.disabled:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Inactive user"
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Inactive user"
+        )
+    if not user.email_verified:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Email not verified"
         )
     return user
 

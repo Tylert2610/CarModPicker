@@ -40,12 +40,6 @@ async def vote_on_part(
     current_user: DBUser = Depends(get_current_user),
 ) -> DBGlobalPartVote:
     """Vote on a part (upvote or downvote)."""
-    # Validate vote type
-    if vote.vote_type not in ["upvote", "downvote"]:
-        raise HTTPException(
-            status_code=400, detail="Vote type must be 'upvote' or 'downvote'"
-        )
-
     # Check if part exists
     db_part = db.query(DBGlobalPart).filter(DBGlobalPart.id == part_id).first()
     if not db_part:
@@ -63,7 +57,7 @@ async def vote_on_part(
 
     if existing_vote:
         # Update existing vote
-        existing_vote.vote_type = vote.vote_type
+        existing_vote.vote_type = vote.vote_type.value
         db.commit()
         db.refresh(existing_vote)
         logger.info(
@@ -73,7 +67,9 @@ async def vote_on_part(
     else:
         # Create new vote
         db_vote = DBGlobalPartVote(
-            user_id=current_user.id, global_part_id=part_id, vote_type=vote.vote_type
+            user_id=current_user.id,
+            global_part_id=part_id,
+            vote_type=vote.vote_type.value,
         )
         db.add(db_vote)
         db.commit()
@@ -124,25 +120,65 @@ async def remove_vote(
 
 
 @router.get(
-    "/{part_id}/vote-summary",
-    response_model=GlobalPartVoteSummary,
+    "/{part_id}/vote",
+    response_model=GlobalPartVoteRead,
     responses={
-        404: {"description": "Part not found"},
+        404: {"description": "Part not found or no vote exists"},
+        401: {"description": "Authentication required"},
     },
 )
-async def get_vote_summary(
+async def get_vote(
     part_id: int,
     db: Session = Depends(get_db),
     logger: logging.Logger = Depends(get_logger),
     current_user: DBUser = Depends(get_current_user),
-) -> GlobalPartVoteSummary:
-    """Get vote summary for a part including user's vote."""
+) -> GlobalPartVoteRead:
+    """Get the current user's vote on a specific part."""
     # Check if part exists
     db_part = db.query(DBGlobalPart).filter(DBGlobalPart.id == part_id).first()
     if not db_part:
         raise HTTPException(status_code=404, detail="Part not found")
 
-    # Get vote counts
+    # Get user's vote on this part
+    db_vote = (
+        db.query(DBGlobalPartVote)
+        .filter(
+            DBGlobalPartVote.user_id == current_user.id,
+            DBGlobalPartVote.global_part_id == part_id,
+        )
+        .first()
+    )
+
+    if not db_vote:
+        raise HTTPException(status_code=404, detail="No vote found for this part")
+
+    logger.info(
+        f"Retrieved vote {db_vote.id} for user {current_user.id} on part {part_id}"
+    )
+    return GlobalPartVoteRead.model_validate(db_vote)
+
+
+@router.get(
+    "/{part_id}/vote-stats",
+    response_model=GlobalPartVoteSummary,
+    responses={
+        404: {"description": "Part not found"},
+        401: {"description": "Authentication required"},
+    },
+)
+async def get_vote_stats(
+    part_id: int,
+    db: Session = Depends(get_db),
+    logger: logging.Logger = Depends(get_logger),
+    current_user: DBUser = Depends(get_current_user),
+) -> GlobalPartVoteSummary:
+    """Get vote statistics for a specific part."""
+    # Check if part exists
+    db_part = db.query(DBGlobalPart).filter(DBGlobalPart.id == part_id).first()
+    if not db_part:
+        raise HTTPException(status_code=404, detail="Part not found")
+
+    # Get vote statistics
     upvotes = (
         db.query(func.count(DBGlobalPartVote.id))
         .filter(
@@ -161,7 +197,10 @@ async def get_vote_summary(
         .scalar()
     )
 
-    # Get user's vote
+    total_votes = upvotes + downvotes
+    vote_score = upvotes - downvotes
+
+    # Get user's vote if it exists
     user_vote = (
         db.query(DBGlobalPartVote)
         .filter(
@@ -171,15 +210,18 @@ async def get_vote_summary(
         .first()
     )
 
+    user_vote_type = user_vote.vote_type if user_vote else None
+
     vote_summary = GlobalPartVoteSummary(
-        part_id=part_id,
+        global_part_id=part_id,
         upvotes=upvotes,
         downvotes=downvotes,
-        total_votes=upvotes + downvotes,
-        user_vote=user_vote.vote_type if user_vote else None,
+        total_votes=total_votes,
+        vote_score=vote_score,
+        user_vote=user_vote_type,
     )
 
-    logger.info(f"Vote summary retrieved for part {part_id}")
+    logger.info(f"Retrieved vote stats for part {part_id}: {vote_summary}")
     return vote_summary
 
 
@@ -243,10 +285,11 @@ async def get_vote_summaries(
         )
 
         vote_summary = GlobalPartVoteSummary(
-            part_id=part_id,
+            global_part_id=part_id,
             upvotes=upvotes,
             downvotes=downvotes,
             total_votes=upvotes + downvotes,
+            vote_score=upvotes - downvotes,
             user_vote=user_vote.vote_type if user_vote else None,
         )
         vote_summaries.append(vote_summary)
@@ -259,7 +302,8 @@ async def get_vote_summaries(
     "/flagged-parts",
     response_model=List[FlaggedGlobalPartSummary],
     responses={
-        403: {"description": "Admin privileges required"},
+        401: {"description": "Authentication required"},
+        403: {"description": "Admin access required"},
     },
 )
 async def get_flagged_parts(

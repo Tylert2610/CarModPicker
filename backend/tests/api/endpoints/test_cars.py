@@ -7,7 +7,7 @@ from app.core.config import settings
 # Helper function to create a user and log them in (sets cookie on client)
 # This function is similar to the one in test_build_lists.py
 def create_and_login_user(
-    client: TestClient, username_suffix: str
+    client: TestClient, username_suffix: str, db_session: Session | None = None
 ) -> int:  # Returns user_id
     username = f"car_test_user_{username_suffix}"
     email = f"car_test_user_{username_suffix}@example.com"
@@ -21,7 +21,17 @@ def create_and_login_user(
     response = client.post(f"{settings.API_STR}/users/", json=user_data)
     user_id = -1
     if response.status_code == 200:
-        user_id = response.json()["id"]
+        user_info = response.json()
+        user_id = user_info["id"]
+
+        # Manually verify the email for testing purposes
+        from app.api.models.user import User
+
+        if db_session:
+            user = db_session.query(User).filter(User.username == username).first()
+            if user:
+                user.email_verified = True
+                db_session.commit()
     elif response.status_code == 400 and "already registered" in response.json().get(
         "detail", ""
     ):
@@ -56,7 +66,9 @@ def create_and_login_user(
 
 
 def test_create_car_success(client: TestClient, db_session: Session) -> None:
-    _ = create_and_login_user(client, "creator_car")  # Logs in user, client gets cookie
+    _ = create_and_login_user(
+        client, "creator_car", db_session
+    )  # Logs in user, client gets cookie
 
     car_data = {"make": "Honda", "model": "Civic", "year": 2022, "trim": "Sport"}
     response = client.post(
@@ -78,7 +90,9 @@ def test_create_car_unauthenticated(client: TestClient, db_session: Session) -> 
 
 
 def test_read_car_success(client: TestClient, db_session: Session) -> None:
-    user_id = create_and_login_user(client, "reader_car")
+    user_id = create_and_login_user(
+        client, "reader_car", db_session
+    )  # Returns user_id directly
     car_data_payload = {"make": "Mazda", "model": "3", "year": 2020}
     create_response = client.post(f"{settings.API_STR}/cars/", json=car_data_payload)
     assert create_response.status_code == 200
@@ -102,7 +116,9 @@ def test_read_car_not_found(client: TestClient, db_session: Session) -> None:
 
 
 def test_update_own_car_success(client: TestClient, db_session: Session) -> None:
-    _ = create_and_login_user(client, "updater_car")  # Logs in, client gets cookie
+    _ = create_and_login_user(
+        client, "updater_car", db_session
+    )  # Logs in, client gets cookie
 
     initial_car_data = {"make": "Nissan", "model": "Altima", "year": 2019}
     create_response = client.post(f"{settings.API_STR}/cars/", json=initial_car_data)
@@ -121,7 +137,7 @@ def test_update_own_car_success(client: TestClient, db_session: Session) -> None
 
 
 def test_update_car_unauthenticated(client: TestClient, db_session: Session) -> None:
-    _ = create_and_login_user(client, "owner_for_update_unauth_car")
+    _ = create_and_login_user(client, "owner_for_update_unauth_car", db_session)
     car_data = {"make": "Subaru", "model": "WRX", "year": 2021}
     create_response = client.post(f"{settings.API_STR}/cars/", json=car_data)
     assert create_response.status_code == 200
@@ -137,7 +153,9 @@ def test_update_other_users_car_forbidden(
     client: TestClient, db_session: Session
 ) -> None:
     # User A creates a car
-    _ = create_and_login_user(client, "userA_car_owner")  # Client has User A's cookie
+    _ = create_and_login_user(
+        client, "userA_car_owner", db_session
+    )  # Client has User A's cookie
     car_data_a = {"make": "Ford", "model": "Focus", "year": 2018}
     create_response_a = client.post(f"{settings.API_STR}/cars/", json=car_data_a)
     assert create_response_a.status_code == 200
@@ -145,7 +163,7 @@ def test_update_other_users_car_forbidden(
 
     # User B logs in (client now has User B's cookie)
     client.cookies.clear()
-    _ = create_and_login_user(client, "userB_car_attacker")
+    _ = create_and_login_user(client, "userB_car_attacker", db_session)
 
     update_payload = {"year": 2023}
     response = client.put(
@@ -156,7 +174,9 @@ def test_update_other_users_car_forbidden(
 
 
 def test_delete_own_car_success(client: TestClient, db_session: Session) -> None:
-    _ = create_and_login_user(client, "deleter_car")  # Logs in, client gets cookie
+    _ = create_and_login_user(
+        client, "deleter_car", db_session
+    )  # Logs in, client gets cookie
     car_data = {"make": "Kia", "model": "Stinger", "year": 2020}
     create_response = client.post(f"{settings.API_STR}/cars/", json=car_data)
     assert create_response.status_code == 200
@@ -174,7 +194,7 @@ def test_delete_own_car_success(client: TestClient, db_session: Session) -> None
 
 
 def test_delete_car_unauthenticated(client: TestClient, db_session: Session) -> None:
-    _ = create_and_login_user(client, "owner_for_delete_unauth_car")
+    _ = create_and_login_user(client, "owner_for_delete_unauth_car", db_session)
     car_data = {"make": "Hyundai", "model": "Elantra", "year": 2019}
     create_response = client.post(f"{settings.API_STR}/cars/", json=car_data)
     assert create_response.status_code == 200
@@ -190,7 +210,7 @@ def test_delete_other_users_car_forbidden(
 ) -> None:
     # User A creates a car
     _ = create_and_login_user(
-        client, "userA_car_owner_del"
+        client, "userA_car_owner_del", db_session
     )  # Client has User A's cookie
     car_data_a = {"make": "BMW", "model": "M3", "year": 2021}
     create_response_a = client.post(f"{settings.API_STR}/cars/", json=car_data_a)
@@ -200,7 +220,7 @@ def test_delete_other_users_car_forbidden(
     # User B logs in
     client.cookies.clear()
     _ = create_and_login_user(
-        client, "userB_car_deleter_attacker"
+        client, "userB_car_deleter_attacker", db_session
     )  # Client has User B's cookie
 
     response = client.delete(
@@ -211,7 +231,7 @@ def test_delete_other_users_car_forbidden(
 
 
 def test_update_car_not_found(client: TestClient, db_session: Session) -> None:
-    _ = create_and_login_user(client, "updater_car_notfound")  # Sets cookie
+    _ = create_and_login_user(client, "updater_car_notfound", db_session)  # Sets cookie
     update_payload = {"make": "NonExistent"}
     response = client.put(
         f"{settings.API_STR}/cars/888888", json=update_payload
@@ -221,7 +241,7 @@ def test_update_car_not_found(client: TestClient, db_session: Session) -> None:
 
 
 def test_delete_car_not_found(client: TestClient, db_session: Session) -> None:
-    _ = create_and_login_user(client, "deleter_car_notfound")  # Sets cookie
+    _ = create_and_login_user(client, "deleter_car_notfound", db_session)  # Sets cookie
     response = client.delete(
         f"{settings.API_STR}/cars/777777"
     )  # Uses cookie, Non-existent ID
@@ -234,7 +254,9 @@ def test_delete_car_not_found(client: TestClient, db_session: Session) -> None:
 
 def test_read_cars_by_user_success(client: TestClient, db_session: Session) -> None:
     # Create a user and log them in to create cars
-    user_id = create_and_login_user(client, "car_owner_for_list")
+    user_id = create_and_login_user(
+        client, "car_owner_for_list", db_session
+    )  # Returns user_id directly
 
     # Create a car for this user (reduced to 1 to avoid subscription limits)
     car_data1 = {"make": "Toyota", "model": "Supra", "year": 1998}
@@ -264,7 +286,9 @@ def test_read_cars_by_user_success(client: TestClient, db_session: Session) -> N
 
 def test_read_cars_by_user_no_cars(client: TestClient, db_session: Session) -> None:
     # Create a user but no cars for them
-    user_id = create_and_login_user(client, "car_owner_no_cars")
+    user_id = create_and_login_user(
+        client, "car_owner_no_cars", db_session
+    )  # Returns user_id directly
 
     # Clear cookies as the endpoint is public
     client.cookies.clear()
@@ -296,7 +320,9 @@ def test_read_cars_by_user_non_existent_user(
 def test_read_cars_by_user_pagination(client: TestClient, db_session: Session) -> None:
     """Test pagination for cars by user."""
     # Create a user and log them in to create cars
-    user_id = create_and_login_user(client, "car_owner_for_pagination")
+    user_id = create_and_login_user(
+        client, "car_owner_for_pagination", db_session
+    )  # Returns user_id directly
 
     # Create multiple cars for this user (reduced to 2 to avoid subscription limits)
     car_ids = []

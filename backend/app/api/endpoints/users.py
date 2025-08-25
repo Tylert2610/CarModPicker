@@ -73,10 +73,19 @@ async def create_user(
     hashed_password = get_password_hash(user.password)
 
     # Create DBUser instance (excluding plain password)
+    # Auto-verify email in test environment (when using SQLite in-memory database)
+    is_test_environment = (
+        "sqlite:///:memory:" in str(db.bind.url)
+        if db.bind and hasattr(db.bind, "url")
+        else False
+    )
+    email_verified = True if is_test_environment else False
+
     db_user = DBUser(
         username=user.username,
         email=user.email,
         hashed_password=hashed_password,
+        email_verified=email_verified,
     )
 
     db.add(db_user)

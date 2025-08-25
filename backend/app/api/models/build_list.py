@@ -19,7 +19,7 @@ class BuildList(Base):
     name: Mapped[str] = mapped_column(index=True, nullable=False)
     description: Mapped[Optional[str]] = mapped_column(index=True, nullable=True)
     image_url: Mapped[Optional[str]] = mapped_column(nullable=True)
-    car_id: Mapped[int] = mapped_column(ForeignKey("cars.id"), nullable=False)
+    car_id: Mapped[Optional[int]] = mapped_column(ForeignKey("cars.id"), nullable=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
 
     created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(UTC))
@@ -28,7 +28,7 @@ class BuildList(Base):
     )
 
     # Relationships
-    car: Mapped["Car"] = relationship("Car", back_populates="build_lists")
+    car: Mapped[Optional["Car"]] = relationship("Car", back_populates="build_lists")
     owner: Mapped["User"] = relationship("User", back_populates="build_lists")
     build_list_parts: Mapped[List["BuildListPart"]] = relationship(
         "BuildListPart", back_populates="build_list"

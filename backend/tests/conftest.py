@@ -223,29 +223,51 @@ def get_default_category_id(db_session: Session) -> int:
     return category.id
 
 
-def create_and_login_user(client: TestClient, username: str) -> int:
-    """Create a user and log them in, returning the user ID."""
+def login_user(
+    client: TestClient, username: str, password: str = "testpassword"
+) -> None:
+    """Login a user and set the authentication cookie for subsequent requests."""
+    from app.core.config import settings
+
+    login_data = {"username": username, "password": password}
+    response = client.post(f"{settings.API_STR}/auth/token", data=login_data)
+    assert response.status_code == 200
+    # The cookie is automatically set by the response
+
+
+def create_and_login_user(
+    client: TestClient, username: str, password_override: str = "testpassword"
+) -> dict:
+    """Create a user and log them in, returning the user info."""
     from app.core.config import settings
 
     # Create user
     user_data = {
         "username": username,
         "email": f"{username}@example.com",
-        "password": "testpassword",
+        "password": password_override,
     }
-    response = client.post(f"{settings.API_STR}/auth/register", json=user_data)
+    response = client.post(f"{settings.API_STR}/users/", json=user_data)
     assert response.status_code == 200
     user_data_response = response.json()
     assert isinstance(user_data_response, dict)
-    user_id = user_data_response["id"]
-    assert isinstance(user_id, int)
+
+    # Manually verify the email for testing purposes
+    from app.api.models.user import User
+    from app.db.session import get_db
+
+    # Get the database session from the test client
+    db = next(get_db())
+    user = db.query(User).filter(User.username == username).first()
+    if user:
+        user.email_verified = True
+        db.commit()
+        db.close()
 
     # Login
-    login_data = {"username": username, "password": "testpassword"}
-    response = client.post(f"{settings.API_STR}/auth/login", data=login_data)
-    assert response.status_code == 200
+    login_user(client, username, password_override)
 
-    return user_id
+    return user_data_response
 
 
 def create_car_for_user_cookie_auth(client: TestClient) -> int:
@@ -282,9 +304,7 @@ def create_and_login_admin_user(client: TestClient, username: str) -> User:
     assert isinstance(admin_user_data, dict)
 
     # Login
-    login_data = {"username": username, "password": "testpassword"}
-    response = client.post(f"{settings.API_STR}/auth/login", data=login_data)
-    assert response.status_code == 200
+    login_user(client, username)
 
     # Return a mock User object since we can't easily construct one from the response
     # This is a test utility function, so this is acceptable

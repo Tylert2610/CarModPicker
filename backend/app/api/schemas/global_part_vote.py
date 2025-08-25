@@ -1,13 +1,19 @@
 from datetime import datetime
+from enum import Enum
 from pydantic import BaseModel, ConfigDict
 
 
+class VoteType(str, Enum):
+    UPVOTE = "upvote"
+    DOWNVOTE = "downvote"
+
+
 class GlobalPartVoteCreate(BaseModel):
-    vote_type: str  # 'upvote' or 'downvote'
+    vote_type: VoteType
 
 
 class GlobalPartVoteUpdate(BaseModel):
-    vote_type: str  # 'upvote' or 'downvote'
+    vote_type: VoteType
 
 
 class GlobalPartVoteRead(BaseModel):
@@ -22,10 +28,11 @@ class GlobalPartVoteRead(BaseModel):
 
 
 class GlobalPartVoteSummary(BaseModel):
-    part_id: int
+    global_part_id: int
     upvotes: int
     downvotes: int
     total_votes: int
+    vote_score: int
     user_vote: str | None  # 'upvote', 'downvote', or None if user hasn't voted
 
     model_config = ConfigDict(from_attributes=True)

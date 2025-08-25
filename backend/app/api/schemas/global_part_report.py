@@ -1,15 +1,31 @@
 from typing import Optional
 from datetime import datetime
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
+from enum import Enum
+
+
+class ReportReason(str, Enum):
+    INAPPROPRIATE_CONTENT = "inappropriate_content"
+    SPAM = "spam"
+    INACCURATE = "inaccurate"
+    DUPLICATE = "duplicate"
+    OTHER = "other"
+
+
+class ReportStatus(str, Enum):
+    PENDING = "pending"
+    REVIEWED = "reviewed"
+    RESOLVED = "resolved"
+    DISMISSED = "dismissed"
 
 
 class GlobalPartReportCreate(BaseModel):
-    reason: str  # 'inappropriate', 'spam', 'inaccurate', 'duplicate', 'other'
+    reason: ReportReason
     description: Optional[str] = None
 
 
 class GlobalPartReportUpdate(BaseModel):
-    status: str  # 'pending', 'reviewed', 'resolved', 'dismissed'
+    status: ReportStatus
     admin_notes: Optional[str] = None
 
 

@@ -38,13 +38,6 @@ async def report_part(
     current_user: DBUser = Depends(get_current_user),
 ) -> DBGlobalPartReport:
     """Report a part for admin review."""
-    # Validate reason
-    valid_reasons = ["inappropriate", "spam", "inaccurate", "duplicate", "other"]
-    if report.reason not in valid_reasons:
-        raise HTTPException(
-            status_code=400, detail=f"Reason must be one of: {', '.join(valid_reasons)}"
-        )
-
     # Check if part exists
     db_global_part = db.query(DBGlobalPart).filter(DBGlobalPart.id == part_id).first()
     if not db_global_part:
@@ -72,7 +65,7 @@ async def report_part(
     db_report = DBGlobalPartReport(
         user_id=current_user.id,
         global_part_id=part_id,
-        reason=report.reason,
+        reason=report.reason.value,
         description=report.description,
     )
     db.add(db_report)
@@ -83,6 +76,51 @@ async def report_part(
         f"Part reported: {db_report.id} by user {current_user.id} on part {part_id}"
     )
     return db_report
+
+
+@router.get(
+    "/",
+    response_model=List[GlobalPartReportRead],
+    responses={
+        401: {"description": "Authentication required"},
+        403: {"description": "Admin access required"},
+    },
+)
+async def list_reports(
+    status: Optional[str] = Query(None, description="Filter by status"),
+    reason: Optional[str] = Query(None, description="Filter by reason"),
+    skip: int = Query(0, ge=0, description="Number of reports to skip"),
+    limit: int = Query(
+        100, ge=1, le=1000, description="Maximum number of reports to return"
+    ),
+    db: Session = Depends(get_db),
+    logger: logging.Logger = Depends(get_logger),
+    current_user: DBUser = Depends(get_current_user),
+) -> List[GlobalPartReportRead]:
+    """List all reports with optional filtering (admin only)."""
+    # Check if user is admin
+    if not current_user.is_admin and not current_user.is_superuser:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    # Build query
+    query = db.query(DBGlobalPartReport)
+
+    # Apply filters
+    if status:
+        query = query.filter(DBGlobalPartReport.status == status)
+    if reason:
+        query = query.filter(DBGlobalPartReport.reason == reason)
+
+    # Apply pagination
+    reports = (
+        query.order_by(DBGlobalPartReport.created_at.desc())
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
+
+    logger.info(f"Retrieved {len(reports)} reports for admin user {current_user.id}")
+    return [GlobalPartReportRead.model_validate(report) for report in reports]
 
 
 @router.get(
@@ -249,11 +287,12 @@ async def get_report(
 
 
 @router.put(
-    "/{report_id}/status",
+    "/{report_id}",
     response_model=GlobalPartReportRead,
     responses={
-        403: {"description": "Admin access required"},
         404: {"description": "Report not found"},
+        401: {"description": "Authentication required"},
+        403: {"description": "Admin access required"},
     },
 )
 async def update_report_status(
@@ -261,77 +300,68 @@ async def update_report_status(
     report_update: GlobalPartReportUpdate,
     db: Session = Depends(get_db),
     logger: logging.Logger = Depends(get_logger),
-    current_admin: DBUser = Depends(get_current_admin_user),
-) -> DBGlobalPartReport:
+    current_user: DBUser = Depends(get_current_user),
+) -> GlobalPartReportRead:
     """Update a report status (admin only)."""
-    report = (
+    # Check if user is admin
+    if not current_user.is_admin and not current_user.is_superuser:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    # Get the report
+    db_report = (
         db.query(DBGlobalPartReport).filter(DBGlobalPartReport.id == report_id).first()
     )
-    if not report:
+    if not db_report:
         raise HTTPException(status_code=404, detail="Report not found")
 
-    # Validate status
-    valid_statuses = ["pending", "reviewed", "resolved", "dismissed"]
-    if report_update.status not in valid_statuses:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Status must be one of: {', '.join(valid_statuses)}",
-        )
-
-    # Update report
-    report.status = report_update.status
-    report.admin_notes = report_update.admin_notes
-    report.reviewed_by = current_admin.id
-    report.reviewed_at = datetime.now(UTC)
+    # Update the report
+    db_report.status = report_update.status.value
+    if report_update.admin_notes is not None:
+        db_report.admin_notes = report_update.admin_notes
+    db_report.reviewed_by = current_user.id
+    db_report.reviewed_at = datetime.now(UTC)
 
     db.commit()
-    db.refresh(report)
+    db.refresh(db_report)
 
-    logger.info(f"Report updated: {report_id} by admin {current_admin.id}")
-    return report
+    logger.info(
+        f"Report {report_id} status updated to {report_update.status.value} by admin {current_user.id}"
+    )
+    return GlobalPartReportRead.model_validate(db_report)
 
 
-@router.put(
-    "/reports/{report_id}",
-    response_model=GlobalPartReportRead,
+@router.delete(
+    "/{report_id}",
     responses={
-        403: {"description": "Admin access required"},
         404: {"description": "Report not found"},
+        401: {"description": "Authentication required"},
+        403: {"description": "Admin access required"},
     },
 )
-async def update_report(
+async def delete_report(
     report_id: int,
-    report_update: GlobalPartReportUpdate,
     db: Session = Depends(get_db),
     logger: logging.Logger = Depends(get_logger),
-    current_admin: DBUser = Depends(get_current_admin_user),
-) -> DBGlobalPartReport:
-    """Update a report status (admin only)."""
-    report = (
+    current_user: DBUser = Depends(get_current_user),
+) -> Dict[str, str]:
+    """Delete a report (admin only)."""
+    # Check if user is admin
+    if not current_user.is_admin and not current_user.is_superuser:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    # Get the report
+    db_report = (
         db.query(DBGlobalPartReport).filter(DBGlobalPartReport.id == report_id).first()
     )
-    if not report:
+    if not db_report:
         raise HTTPException(status_code=404, detail="Report not found")
 
-    # Validate status
-    valid_statuses = ["pending", "reviewed", "resolved", "dismissed"]
-    if report_update.status not in valid_statuses:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Status must be one of: {', '.join(valid_statuses)}",
-        )
-
-    # Update report
-    report.status = report_update.status
-    report.admin_notes = report_update.admin_notes
-    report.reviewed_by = current_admin.id
-    report.reviewed_at = datetime.now(UTC)
-
+    # Delete the report
+    db.delete(db_report)
     db.commit()
-    db.refresh(report)
 
-    logger.info(f"Report updated: {report_id} by admin {current_admin.id}")
-    return report
+    logger.info(f"Report {report_id} deleted by admin {current_user.id}")
+    return {"message": "Report deleted successfully"}
 
 
 @router.get(

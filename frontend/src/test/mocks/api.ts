@@ -160,7 +160,7 @@ export const setupApiMocks = () => {
     return Promise.resolve(response);
   });
 
-  mockApiClient.delete.mockImplementation((url: string) => {
+  mockApiClient.delete.mockImplementation((_url: string) => {
     return Promise.resolve({ data: { message: 'Deleted successfully' } });
   });
 

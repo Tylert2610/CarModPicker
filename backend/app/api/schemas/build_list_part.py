@@ -1,18 +1,21 @@
 from typing import Optional
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from .global_part import GlobalPartRead
 
 
 # Schema for request body when adding a part to a build list
 class BuildListPartCreate(BaseModel):
+    global_part_id: Optional[int] = None
+    quantity: int = Field(1, ge=1, description="Quantity of the part")
     notes: Optional[str] = None
 
 
 # Schema for request body when updating a part in a build list
 class BuildListPartUpdate(BaseModel):
+    quantity: Optional[int] = Field(None, ge=1, description="Quantity of the part")
     notes: Optional[str] = None
 
 
@@ -22,6 +25,7 @@ class BuildListPartRead(BaseModel):
     build_list_id: int
     global_part_id: int
     added_by: int
+    quantity: int
     notes: Optional[str] = None
     added_at: datetime
 
@@ -34,6 +38,7 @@ class BuildListPartReadWithGlobalPart(BaseModel):
     build_list_id: int
     global_part_id: int
     added_by: int
+    quantity: int
     notes: Optional[str] = None
     added_at: datetime
     global_part: GlobalPartRead
