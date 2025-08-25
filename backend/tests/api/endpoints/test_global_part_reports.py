@@ -446,7 +446,9 @@ class TestGlobalPartReports:
     ) -> None:
         """Test listing all reports (admin only)."""
         # Create a second user to report the part
-        user_info = create_and_login_user(client, "reporter_user")
+        user_info = create_and_login_user(
+            client, "reporter_user", db_session=db_session
+        )
 
         # Create a global part with the admin user
         login_data = {"username": test_admin_user.username, "password": "testpassword"}
@@ -514,7 +516,9 @@ class TestGlobalPartReports:
     ) -> None:
         """Test listing reports with filters (admin only)."""
         # Create a second user to report the part
-        user_info = create_and_login_user(client, "reporter_user")
+        user_info = create_and_login_user(
+            client, "reporter_user", db_session=db_session
+        )
 
         # Create a global part with the admin user
         login_data = {"username": test_admin_user.username, "password": "testpassword"}
@@ -570,7 +574,9 @@ class TestGlobalPartReports:
     ) -> None:
         """Test updating a report status."""
         # Create a second user to report the part
-        user_info = create_and_login_user(client, "reporter_user")
+        user_info = create_and_login_user(
+            client, "reporter_user", db_session=db_session
+        )
 
         # Create a global part with the admin user
         login_data = {"username": test_admin_user.username, "password": "testpassword"}
@@ -656,7 +662,9 @@ class TestGlobalPartReports:
     ) -> None:
         """Test updating a report with an invalid status."""
         # Create a second user to report the part
-        user_info = create_and_login_user(client, "reporter_user")
+        user_info = create_and_login_user(
+            client, "reporter_user", db_session=db_session
+        )
 
         # Create a global part with the first user
         login_data = {"username": test_user.username, "password": "testpassword"}
@@ -706,7 +714,9 @@ class TestGlobalPartReports:
     ) -> None:
         """Test deleting a report."""
         # Create a second user to report the part
-        user_info = create_and_login_user(client, "reporter_user")
+        user_info = create_and_login_user(
+            client, "reporter_user", db_session=db_session
+        )
 
         # Create a global part with the admin user
         login_data = {"username": test_admin_user.username, "password": "testpassword"}
@@ -785,7 +795,9 @@ class TestGlobalPartReports:
     ) -> None:
         """Test creating a report with extra fields in the request."""
         # Create a second user to report the part
-        user_info = create_and_login_user(client, "reporter_user")
+        user_info = create_and_login_user(
+            client, "reporter_user", db_session=db_session
+        )
 
         # Create a global part with the first user
         login_data = {"username": test_user.username, "password": "testpassword"}

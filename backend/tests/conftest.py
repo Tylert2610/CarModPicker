@@ -279,7 +279,10 @@ def login_user(
 
 
 def create_and_login_user(
-    client: TestClient, username: str, password_override: str = "testpassword"
+    client: TestClient,
+    username: str,
+    password_override: str = "testpassword",
+    db_session: Session = None,
 ) -> dict:
     """Create a user and log them in, returning the user info."""
     from app.core.config import settings
@@ -297,15 +300,25 @@ def create_and_login_user(
 
     # Manually verify the email for testing purposes
     from app.api.models.user import User
-    from app.db.session import get_db
 
-    # Get the database session from the test client
-    db = next(get_db())
-    user = db.query(User).filter(User.username == username).first()
-    if user:
-        user.email_verified = True
-        db.commit()
-        db.close()
+    # Use the provided database session or get one from the test client
+    if db_session is None:
+        from app.db.session import get_db
+
+        db = next(get_db())
+        try:
+            user = db.query(User).filter(User.username == username).first()
+            if user:
+                user.email_verified = True
+                db.commit()
+        finally:
+            db.close()
+    else:
+        # Use the provided session
+        user = db_session.query(User).filter(User.username == username).first()
+        if user:
+            user.email_verified = True
+            db_session.commit()
 
     # Login
     login_user(client, username, password_override)
