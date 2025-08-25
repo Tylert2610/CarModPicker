@@ -13,11 +13,11 @@ interface ReportDialogProps {
 }
 
 const REPORT_REASONS = [
-  'Inappropriate content',
-  'Spam or misleading information',
-  'Incorrect specifications',
-  'Duplicate part',
-  'Other',
+  { display: 'Inappropriate content', value: 'inappropriate' },
+  { display: 'Spam or misleading information', value: 'spam' },
+  { display: 'Incorrect specifications', value: 'inaccurate' },
+  { display: 'Duplicate part', value: 'duplicate' },
+  { display: 'Other', value: 'other' },
 ];
 
 const ReportDialog: React.FC<ReportDialogProps> = ({
@@ -89,8 +89,8 @@ const ReportDialog: React.FC<ReportDialogProps> = ({
           >
             <option value="">Select a reason</option>
             {REPORT_REASONS.map((reportReason) => (
-              <option key={reportReason} value={reportReason}>
-                {reportReason}
+              <option key={reportReason.value} value={reportReason.value}>
+                {reportReason.display}
               </option>
             ))}
           </select>

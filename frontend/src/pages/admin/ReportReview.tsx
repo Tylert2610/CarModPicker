@@ -21,7 +21,7 @@ const fetchReportsRequestFn = (params?: {
   skip?: number;
   limit?: number;
 }) =>
-  apiClient.get<GlobalPartReportWithDetails[]>('/global-part-reports/reports', {
+  apiClient.get<GlobalPartReportWithDetails[]>('/global-part-reports/', {
     params,
   });
 const updateReportRequestFn = (payload: {

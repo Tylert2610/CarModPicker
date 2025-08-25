@@ -257,12 +257,9 @@ export const globalPartReportsApi = {
       data
     ),
   getReports: (params?: { status?: string; skip?: number; limit?: number }) =>
-    apiClient.get<GlobalPartReportWithDetails[]>(
-      '/global-part-reports/reports',
-      {
-        params,
-      }
-    ),
+    apiClient.get<GlobalPartReportWithDetails[]>('/global-part-reports/', {
+      params,
+    }),
   getReport: (reportId: number) =>
     apiClient.get<GlobalPartReportWithDetails>(
       `/global-part-reports/reports/${reportId}`

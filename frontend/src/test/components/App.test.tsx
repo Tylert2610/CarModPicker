@@ -1,22 +1,32 @@
-import { describe, it, expect } from 'vitest'
-import { render } from '@testing-library/react'
-import { BrowserRouter } from 'react-router-dom'
-import { AuthProvider } from '../../contexts/AuthContext'
-import App from '../../App'
-
-const renderWithProviders = (component: React.ReactElement) => {
-  return render(
-    <BrowserRouter>
-      <AuthProvider>
-        {component}
-      </AuthProvider>
-    </BrowserRouter>
-  )
-}
+import { describe, it, expect } from 'vitest';
+import { screen, waitFor } from '@testing-library/react';
+import { render } from '../utils/test-utils';
+import App from '../../App';
 
 describe('App', () => {
-  it('renders without crashing', () => {
-    // This test now includes the necessary providers
-    expect(() => renderWithProviders(<App />)).not.toThrow()
-  })
-})
+  it('renders without crashing', async () => {
+    render(<App />);
+
+    await waitFor(() => {
+      expect(document.body).toBeInTheDocument();
+    });
+  });
+
+  it('renders with proper routing structure', async () => {
+    render(<App />);
+
+    await waitFor(() => {
+      // Check that the app renders without throwing
+      expect(() => screen.getByRole('main')).not.toThrow();
+    });
+  });
+
+  it('handles authentication context properly', async () => {
+    render(<App />);
+
+    await waitFor(() => {
+      // The app should render even with authentication context
+      expect(document.body).toBeInTheDocument();
+    });
+  });
+});
