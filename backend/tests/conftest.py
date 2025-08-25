@@ -1,4 +1,5 @@
 import os
+import gc
 from typing import Generator, Dict, Optional, Any
 from unittest.mock import patch
 
@@ -39,26 +40,49 @@ def get_test_database_url() -> str:
 
 # Global session factory for testing
 TestingSessionLocal: Optional[sessionmaker] = None
+_test_engine: Optional[Any] = None
 
 
 def get_test_session_factory() -> sessionmaker:
     """Get the test session factory, creating it if needed."""
-    global TestingSessionLocal
+    global TestingSessionLocal, _test_engine
+
     # Always create a fresh session factory for each test
     # Create engine for session factory
     database_url = get_test_database_url()
 
-    engine = create_engine(
+    _test_engine = create_engine(
         database_url,
         poolclass=StaticPool,
         connect_args={"check_same_thread": False},
     )
 
     # Create all tables
-    Base.metadata.create_all(bind=engine)
+    Base.metadata.create_all(bind=_test_engine)
 
-    TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    TestingSessionLocal = sessionmaker(
+        autocommit=False, autoflush=False, bind=_test_engine
+    )
     return TestingSessionLocal
+
+
+def cleanup_test_engine():
+    """Clean up the test engine and force garbage collection."""
+    global TestingSessionLocal, _test_engine
+
+    if TestingSessionLocal:
+        # Use the recommended method instead of the deprecated close_all()
+        from sqlalchemy.orm import close_all_sessions
+
+        close_all_sessions()
+        TestingSessionLocal = None
+
+    if _test_engine:
+        _test_engine.dispose()
+        _test_engine = None
+
+    # Force garbage collection to clean up any remaining connections
+    gc.collect()
 
 
 @pytest.fixture(scope="session")
@@ -84,16 +108,21 @@ def engine() -> Generator[Any, None, None]:
     # Close the engine to release file handles
     engine.dispose()
 
+    # Force garbage collection
+    gc.collect()
+
 
 def override_get_db() -> Generator[Session, None, None]:
     """Override the database dependency for testing."""
     session_factory = get_test_session_factory()
+    db = None
     try:
         db = session_factory()
         yield db
     finally:
-        db.rollback()
-        db.close()
+        if db:
+            db.rollback()
+            db.close()
 
 
 # Override the dependency
@@ -112,6 +141,20 @@ def db_session() -> Generator[Session, None, None]:
         # Clean up all data from the session
         session.rollback()
         session.close()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def cleanup_after_session():
+    """Clean up database connections after all tests complete."""
+    yield
+    cleanup_test_engine()
+
+
+@pytest.fixture(autouse=True)
+def cleanup_after_test():
+    """Clean up database connections after each test."""
+    yield
+    cleanup_test_engine()
 
 
 @pytest.fixture

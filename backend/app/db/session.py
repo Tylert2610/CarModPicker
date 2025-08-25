@@ -10,6 +10,8 @@ settings = get_settings()
 
 engine = create_engine(
     settings.DATABASE_URL,
+    pool_pre_ping=True,  # Enable connection health checks
+    pool_recycle=3600,  # Recycle connections after 1 hour
 )
 
 
@@ -20,5 +22,8 @@ def get_db() -> Generator[Session, None, None]:
     db = SessionLocal()
     try:
         yield db
+    except Exception:
+        db.rollback()
+        raise
     finally:
         db.close()
