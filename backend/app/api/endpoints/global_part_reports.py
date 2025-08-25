@@ -98,12 +98,14 @@ async def get_my_reports(
     current_user: DBUser = Depends(get_current_user),
 ) -> List[GlobalPartReportRead]:
     """Get reports created by the current user."""
-    reports = (
+    db_reports = (
         db.query(DBGlobalPartReport)
         .filter(DBGlobalPartReport.user_id == current_user.id)
         .order_by(DBGlobalPartReport.created_at.desc())
         .all()
     )
+
+    reports = [GlobalPartReportRead.model_validate(report) for report in db_reports]
 
     logger.info(f"Retrieved {len(reports)} reports for user {current_user.id}")
     return reports

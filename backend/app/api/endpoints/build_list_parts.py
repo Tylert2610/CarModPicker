@@ -1,5 +1,5 @@
 import logging
-from typing import List
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, joinedload
@@ -47,7 +47,7 @@ class CreateGlobalPartAndAddToBuildListRequest(BaseModel):
 
     @field_validator("price")
     @classmethod
-    def validate_price(cls, v):
+    def validate_price(cls, v: Optional[int]) -> Optional[int]:
         if v is not None and (v < 0 or v > 2147483647):
             raise ValueError(
                 "Price must be between 0 and 2,147,483,647 (max PostgreSQL integer)"
@@ -238,12 +238,17 @@ async def get_global_parts_in_build_list(
             status_code=403, detail="Not authorized to access this build list"
         )
 
-    build_list_parts = (
+    db_build_list_parts = (
         db.query(DBBuildListPart)
         .options(joinedload(DBBuildListPart.global_part))
         .filter(DBBuildListPart.build_list_id == build_list_id)
         .all()
     )
+
+    build_list_parts = [
+        BuildListPartReadWithGlobalPart.model_validate(part)
+        for part in db_build_list_parts
+    ]
 
     logger.info(
         f"Retrieved {len(build_list_parts)} build list parts from build list {build_list_id}"

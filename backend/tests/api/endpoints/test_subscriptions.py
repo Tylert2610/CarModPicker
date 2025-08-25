@@ -1,9 +1,11 @@
 import os
 import pytest
+from typing import Any
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.api.models.user import User
 
 
 def get_unique_name(base_name: str) -> str:
@@ -16,7 +18,7 @@ def get_unique_name(base_name: str) -> str:
 class TestSubscriptions:
     """Test cases for subscriptions endpoints."""
 
-    def test_get_subscription_status(self, client: TestClient, test_user):
+    def test_get_subscription_status(self, client: TestClient, test_user: User) -> None:
         """Test retrieving subscription status for the current user."""
         # Login as test user
         login_data = {"username": test_user.username, "password": "testpassword"}
@@ -33,12 +35,14 @@ class TestSubscriptions:
         assert "limits" in data
         assert "usage" in data
 
-    def test_get_subscription_status_unauthorized(self, client: TestClient):
+    def test_get_subscription_status_unauthorized(self, client: TestClient) -> None:
         """Test retrieving subscription status without authentication."""
         response = client.get(f"{settings.API_STR}/subscriptions/status")
         assert response.status_code == 401
 
-    def test_upgrade_subscription_success(self, client: TestClient, test_user):
+    def test_upgrade_subscription_success(
+        self, client: TestClient, test_user: User
+    ) -> None:
         """Test successfully upgrading to premium subscription."""
         # Login as test user
         login_data = {"username": test_user.username, "password": "testpassword"}
@@ -60,7 +64,7 @@ class TestSubscriptions:
         assert "tier" in data
         assert "status" in data
 
-    def test_upgrade_subscription_unauthorized(self, client: TestClient):
+    def test_upgrade_subscription_unauthorized(self, client: TestClient) -> None:
         """Test upgrading subscription without authentication."""
         upgrade_data = {
             "tier": "premium",
@@ -71,7 +75,9 @@ class TestSubscriptions:
         )
         assert response.status_code == 401
 
-    def test_upgrade_subscription_invalid_tier(self, client: TestClient, test_user):
+    def test_upgrade_subscription_invalid_tier(
+        self, client: TestClient, test_user: User
+    ) -> None:
         """Test upgrading to an invalid subscription tier."""
         # Login as test user
         login_data = {"username": test_user.username, "password": "testpassword"}
@@ -88,7 +94,9 @@ class TestSubscriptions:
         )
         assert response.status_code == 400
 
-    def test_upgrade_subscription_already_premium(self, client: TestClient, test_user):
+    def test_upgrade_subscription_already_premium(
+        self, client: TestClient, test_user: User
+    ) -> None:
         """Test upgrading when user already has premium subscription."""
         # Login as test user
         login_data = {"username": test_user.username, "password": "testpassword"}
@@ -111,7 +119,9 @@ class TestSubscriptions:
         )
         assert response.status_code == 400
 
-    def test_cancel_subscription_success(self, client: TestClient, test_user):
+    def test_cancel_subscription_success(
+        self, client: TestClient, test_user: Any
+    ) -> None:
         """Test successfully canceling premium subscription."""
         # Login as test user
         login_data = {"username": test_user.username, "password": "testpassword"}
@@ -137,12 +147,14 @@ class TestSubscriptions:
         assert "tier" in data
         assert "status" in data
 
-    def test_cancel_subscription_unauthorized(self, client: TestClient):
+    def test_cancel_subscription_unauthorized(self, client: TestClient) -> None:
         """Test canceling subscription without authentication."""
         response = client.post(f"{settings.API_STR}/subscriptions/cancel")
         assert response.status_code == 401
 
-    def test_cancel_subscription_not_premium(self, client: TestClient, test_user):
+    def test_cancel_subscription_not_premium(
+        self, client: TestClient, test_user: Any
+    ) -> None:
         """Test canceling subscription when user doesn't have premium."""
         # Login as test user
         login_data = {"username": test_user.username, "password": "testpassword"}
@@ -153,7 +165,9 @@ class TestSubscriptions:
         response = client.post(f"{settings.API_STR}/subscriptions/cancel")
         assert response.status_code == 400
 
-    def test_subscription_limits_and_usage(self, client: TestClient, test_user):
+    def test_subscription_limits_and_usage(
+        self, client: TestClient, test_user: User
+    ) -> None:
         """Test that subscription status includes limits and usage information."""
         # Login as test user
         login_data = {"username": test_user.username, "password": "testpassword"}
@@ -182,7 +196,9 @@ class TestSubscriptions:
         assert isinstance(usage["build_lists"], int)
         assert isinstance(usage["cars"], int)
 
-    def test_subscription_tier_transitions(self, client: TestClient, test_user):
+    def test_subscription_tier_transitions(
+        self, client: TestClient, test_user: User
+    ) -> None:
         """Test subscription tier transitions (free -> premium -> canceled)."""
         # Login as test user
         login_data = {"username": test_user.username, "password": "testpassword"}
@@ -223,7 +239,9 @@ class TestSubscriptions:
         assert canceled_data["tier"] == "premium"
         assert canceled_data["status"] == "cancelled"
 
-    def test_subscription_service_integration(self, client: TestClient, test_user):
+    def test_subscription_service_integration(
+        self, client: TestClient, test_user: User
+    ) -> None:
         """Test that subscription service properly integrates with user limits."""
         # Login as test user
         login_data = {"username": test_user.username, "password": "testpassword"}

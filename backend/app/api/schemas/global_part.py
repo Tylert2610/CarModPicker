@@ -19,7 +19,7 @@ class GlobalPartCreate(BaseModel):
 
     @field_validator("price")
     @classmethod
-    def validate_price(cls, v):
+    def validate_price(cls, v: Optional[int]) -> Optional[int]:
         if v is not None and (v < 0 or v > 2147483647):
             raise ValueError(
                 "Price must be between 0 and 2,147,483,647 (max PostgreSQL integer)"
@@ -42,7 +42,7 @@ class GlobalPartUpdate(BaseModel):
 
     @field_validator("price")
     @classmethod
-    def validate_price(cls, v):
+    def validate_price(cls, v: Optional[int]) -> Optional[int]:
         if v is not None and (v < 0 or v > 2147483647):
             raise ValueError(
                 "Price must be between 0 and 2,147,483,647 (max PostgreSQL integer)"

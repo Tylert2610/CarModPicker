@@ -12,10 +12,12 @@ import os
 import sys
 import requests
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Any
 
 
-def get_openapi_schema(base_url: str = "http://localhost:8000") -> Optional[dict]:
+def get_openapi_schema(
+    base_url: str = "http://localhost:8000",
+) -> Optional[dict[str, Any]]:
     """
     Fetch OpenAPI schema from FastAPI server.
 
@@ -29,13 +31,13 @@ def get_openapi_schema(base_url: str = "http://localhost:8000") -> Optional[dict
         # Try the API-prefixed OpenAPI endpoint
         response = requests.get(f"{base_url}/api/openapi.json", timeout=10)
         response.raise_for_status()
-        return response.json()
+        return response.json()  # type: ignore
     except requests.RequestException as e:
         print(f"Failed to fetch OpenAPI schema from {base_url}/api/openapi.json: {e}")
         return None
 
 
-def save_openapi_schema(schema: dict, output_path: str) -> bool:
+def save_openapi_schema(schema: dict[str, Any], output_path: str) -> bool:
     """
     Save OpenAPI schema to file.
 
@@ -61,7 +63,7 @@ def save_openapi_schema(schema: dict, output_path: str) -> bool:
         return False
 
 
-def main():
+def main() -> None:
     """Main function to generate and save OpenAPI schema."""
     # Get the project root directory (two levels up from this script)
     script_dir = Path(__file__).parent
