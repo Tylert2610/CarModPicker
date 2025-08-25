@@ -66,7 +66,7 @@ def get_test_session_factory() -> sessionmaker:
     return TestingSessionLocal
 
 
-def cleanup_test_engine():
+def cleanup_test_engine() -> None:
     """Clean up the test engine and force garbage collection."""
     global TestingSessionLocal, _test_engine
 
@@ -144,14 +144,14 @@ def db_session() -> Generator[Session, None, None]:
 
 
 @pytest.fixture(scope="session", autouse=True)
-def cleanup_after_session():
+def cleanup_after_session() -> Generator[None, None, None]:
     """Clean up database connections after all tests complete."""
     yield
     cleanup_test_engine()
 
 
 @pytest.fixture(autouse=True)
-def cleanup_after_test():
+def cleanup_after_test() -> Generator[None, None, None]:
     """Clean up database connections after each test."""
     yield
     cleanup_test_engine()
