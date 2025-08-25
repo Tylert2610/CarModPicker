@@ -141,7 +141,7 @@ class TestCategories:
             db_session.add(default_category)
             db_session.commit()
 
-        response = client.get("/api/categories/")
+        response = client.get(f"{settings.API_STR}/categories/")
         assert response.status_code == 200
 
         categories = response.json()
@@ -160,7 +160,7 @@ class TestCategories:
         # Get a category ID from the database
         category_id = get_default_category_id(db_session)
 
-        response = client.get(f"/api/categories/{category_id}")
+        response = client.get(f"{settings.API_STR}/categories/{category_id}")
         assert response.status_code == 200
 
         category = response.json()
@@ -172,7 +172,7 @@ class TestCategories:
         self, client: TestClient, db_session: Session
     ) -> None:
         """Test getting a non-existent category."""
-        response = client.get("/api/categories/99999")
+        response = client.get(f"{settings.API_STR}/categories/99999")
         assert response.status_code == 404
         assert "Category not found" in response.json()["detail"]
 
@@ -183,7 +183,9 @@ class TestCategories:
         # Get a category ID from the database
         category_id = get_default_category_id(db_session)
 
-        response = client.get(f"/api/categories/{category_id}/global-parts")
+        response = client.get(
+            f"{settings.API_STR}/categories/{category_id}/global-parts"
+        )
         assert response.status_code == 200
 
         parts = response.json()
@@ -218,7 +220,7 @@ class TestCategories:
             assert response.status_code == 200
 
         response = client.get(
-            f"/api/categories/{category_id}/global-parts?skip=2&limit=2"
+            f"{settings.API_STR}/categories/{category_id}/global-parts?skip=2&limit=2"
         )
         assert response.status_code == 200
 
@@ -233,7 +235,9 @@ class TestCategories:
         # Get a category ID from the database
         category_id = get_default_category_id(db_session)
 
-        response = client.get(f"/api/categories/{category_id}/global-parts")
+        response = client.get(
+            f"{settings.API_STR}/categories/{category_id}/global-parts"
+        )
         assert response.status_code == 200
 
         parts = response.json()
@@ -256,7 +260,7 @@ class TestCategories:
             "sort_order": 50,
         }
 
-        response = client.post("/api/categories/", json=category_data)
+        response = client.post(f"{settings.API_STR}/categories/", json=category_data)
         assert response.status_code == 200
 
         category = response.json()
@@ -283,11 +287,11 @@ class TestCategories:
             "sort_order": 50,
         }
 
-        response = client.post("/api/categories/", json=category_data)
+        response = client.post(f"{settings.API_STR}/categories/", json=category_data)
         assert response.status_code == 200
 
         # Try to create another category with the same name
-        response = client.post("/api/categories/", json=category_data)
+        response = client.post(f"{settings.API_STR}/categories/", json=category_data)
         assert response.status_code == 400
         assert "already exists" in response.json()["detail"]
 
@@ -307,7 +311,7 @@ class TestCategories:
             "sort_order": 50,
         }
 
-        response = client.post("/api/categories/", json=category_data)
+        response = client.post(f"{settings.API_STR}/categories/", json=category_data)
         assert response.status_code == 200
         category_id = response.json()["id"]
 
@@ -318,7 +322,9 @@ class TestCategories:
             "sort_order": 60,
         }
 
-        response = client.put(f"/api/categories/{category_id}", json=update_data)
+        response = client.put(
+            f"{settings.API_STR}/categories/{category_id}", json=update_data
+        )
         assert response.status_code == 200
 
         category = response.json()
@@ -338,7 +344,7 @@ class TestCategories:
 
         update_data = {"display_name": "Updated Test Category"}
 
-        response = client.put("/api/categories/99999", json=update_data)
+        response = client.put(f"{settings.API_STR}/categories/99999", json=update_data)
         assert response.status_code == 404
         assert "Category not found" in response.json()["detail"]
 
@@ -358,16 +364,16 @@ class TestCategories:
             "sort_order": 50,
         }
 
-        response = client.post("/api/categories/", json=category_data)
+        response = client.post(f"{settings.API_STR}/categories/", json=category_data)
         assert response.status_code == 200
         category_id = response.json()["id"]
 
         # Delete the category
-        response = client.delete(f"/api/categories/{category_id}")
+        response = client.delete(f"{settings.API_STR}/categories/{category_id}")
         assert response.status_code == 200
 
         # Verify the category is deleted
-        get_response = client.get(f"/api/categories/{category_id}")
+        get_response = client.get(f"{settings.API_STR}/categories/{category_id}")
         assert get_response.status_code == 404
 
     def test_delete_category_not_found(
@@ -377,7 +383,7 @@ class TestCategories:
         # Create and login as admin user
         _ = create_and_login_admin_user(client, db_session, "delete_not_found")
 
-        response = client.delete("/api/categories/99999")
+        response = client.delete(f"{settings.API_STR}/categories/99999")
         assert response.status_code == 404
         assert "Category not found" in response.json()["detail"]
 
@@ -415,6 +421,6 @@ class TestCategories:
         _ = create_and_login_admin_user(client, db_session, "delete_with_parts_admin")
 
         # Try to delete the category
-        response = client.delete(f"/api/categories/{category_id}")
+        response = client.delete(f"{settings.API_STR}/categories/{category_id}")
         assert response.status_code == 400
         assert "parts are using this category" in response.json()["detail"]

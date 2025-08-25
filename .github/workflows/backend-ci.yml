@@ -50,7 +50,7 @@ jobs:
           ALLOWED_ORIGINS: http://localhost:3000,http://localhost:4000
           DEBUG: true
           PROJECT_NAME: CarModPicker API
-          API_STR: /api/v1
+          API_STR: /api
           SENDGRID_API_KEY: test-key
           EMAIL_FROM: test@example.com
           SENDGRID_VERIFY_EMAIL_TEMPLATE_ID: test-verify-template
@@ -58,10 +58,3 @@ jobs:
         run: |
           cd backend
           python -m pytest
-
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v3
-        with:
-          file: ./backend/coverage.xml
-          flags: backend
-          name: backend-coverage
