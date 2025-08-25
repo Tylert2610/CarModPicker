@@ -1,9 +1,13 @@
-from typing import List, Optional
+from typing import List, Optional, TYPE_CHECKING
 
 from sqlalchemy import ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base_class import Base
+
+if TYPE_CHECKING:
+    from .user import User
+    from .build_list import BuildList
 
 
 class Car(Base):
@@ -19,6 +23,8 @@ class Car(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
 
     # owner
-    user: Mapped["User"] = relationship("User", back_populates="cars")  # type: ignore
+    user: Mapped["User"] = relationship("User", back_populates="cars")
     # children
-    build_lists: Mapped[List["BuildList"]] = relationship("BuildList", back_populates="car", cascade="all, delete-orphan")  # type: ignore
+    build_lists: Mapped[List["BuildList"]] = relationship(
+        "BuildList", back_populates="car", cascade="all, delete-orphan"
+    )

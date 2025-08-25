@@ -9,7 +9,7 @@ import VerifyEmail from './pages/authentication/VerifyEmail.tsx';
 import VerifyEmailConfirm from './pages/authentication/VerifyEmailConfirm.tsx';
 import Profile from './pages/Profile.tsx';
 import Builder from './pages/builder/Builder.tsx';
-import ViewCar from './pages/builder/ViewCar.tsx'; 
+import ViewCar from './pages/builder/ViewCar.tsx';
 
 import ViewUser from './pages/ViewUser.tsx';
 
@@ -23,7 +23,13 @@ import ProtectedRoute from './components/routes/ProtectedRoute';
 import EmailVerifiedRoute from './components/routes/EmailVerifiedRoute.tsx';
 import GuestRoute from './components/routes/GuestRoute';
 import ViewBuildList from './pages/builder/ViewBuildlist.tsx';
-import ViewPart from './pages/builder/ViewPart.tsx';
+import ViewGlobalPart from './pages/builder/ViewGlobalPart.tsx';
+import GlobalPartsCatalog from './pages/globalParts/GlobalPartsCatalog.tsx';
+import UserGlobalParts from './pages/globalParts/UserGlobalParts.tsx';
+import AdminDashboard from './pages/admin/AdminDashboard.tsx';
+import CategoryManagement from './pages/admin/CategoryManagement.tsx';
+import ReportReview from './pages/admin/ReportReview.tsx';
+import SubscriptionManagement from './pages/subscription/SubscriptionManagement.tsx';
 
 function App() {
   return (
@@ -56,20 +62,26 @@ function App() {
             element={<ForgotPasswordConfirm />}
           />
           <Route path="/cars/:carId" element={<ViewCar />} />{' '}
-          <Route
-                path="/build-lists/:buildListId"
-                element={<ViewBuildList />}
-              />{' '}
-          <Route path="/parts/:partId" element={<ViewPart />} />
+          <Route path="/build-lists/:buildListId" element={<ViewBuildList />} />{' '}
+          <Route path="/global-parts/:partId" element={<ViewGlobalPart />} />
+          <Route path="/global-parts" element={<GlobalPartsCatalog />} />
           {/* Protected Routes */}
           <Route element={<ProtectedRoute />}>
             <Route path="/verify-email" element={<VerifyEmail />} />
             <Route element={<EmailVerifiedRoute />}>
               <Route path="/profile" element={<Profile />} />
               <Route path="/builder" element={<Builder />} />
-              
+              <Route
+                path="/subscription"
+                element={<SubscriptionManagement />}
+              />
+              <Route path="/my-global-parts" element={<UserGlobalParts />} />
             </Route>
           </Route>
+          {/* Admin Routes */}
+          <Route path="/admin" element={<AdminDashboard />} />
+          <Route path="/admin/categories" element={<CategoryManagement />} />
+          <Route path="/admin/reports" element={<ReportReview />} />
         </Routes>
       </main>
       <Footer />

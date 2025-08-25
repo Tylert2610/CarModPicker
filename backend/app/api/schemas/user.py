@@ -20,6 +20,18 @@ class UserUpdate(BaseModel):
     current_password: str
 
 
+# Schema for admin operations when updating a user
+class AdminUserUpdate(BaseModel):
+    username: Optional[str] = None
+    email: Optional[EmailStr] = None
+    disabled: Optional[bool] = None
+    password: Optional[str] = None
+    image_url: Optional[str] = None
+    is_superuser: Optional[bool] = None
+    is_admin: Optional[bool] = None
+    email_verified: Optional[bool] = None
+
+
 # Schema for response body when reading a user (DO NOT include hashed password)
 class UserRead(BaseModel):
     id: int
@@ -28,5 +40,7 @@ class UserRead(BaseModel):
     disabled: bool
     email_verified: bool
     image_url: Optional[str] = None
+    is_superuser: bool
+    is_admin: bool
 
     model_config = ConfigDict(from_attributes=True)

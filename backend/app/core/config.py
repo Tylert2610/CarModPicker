@@ -35,7 +35,7 @@ class Settings(BaseSettings):
 
     # CORS settings
     ALLOWED_ORIGINS: str = Field(
-        default="http://localhost,http://localhost:3000,http://localhost:5173,https://carmodpicker.webbpulse.com,https://api.carmodpicker.webbpulse.com",
+        default="http://localhost,http://localhost:3000,http://localhost:4000,https://carmodpicker.webbpulse.com,https://api.carmodpicker.webbpulse.com",
         description="Comma-separated list of allowed origins",
     )
 
@@ -66,6 +66,14 @@ class Settings(BaseSettings):
     ENABLE_RATE_LIMITING: bool = True
     RATE_LIMIT_REQUESTS_PER_MINUTE: int = 60
     RATE_LIMIT_REQUESTS_PER_HOUR: int = 1000
+
+    # Sophisticated rate limiting settings
+    RATE_LIMIT_GET_REQUESTS_PER_MINUTE: int = 200
+    RATE_LIMIT_GET_REQUESTS_PER_HOUR: int = 20000
+    RATE_LIMIT_AUTH_REQUESTS_PER_MINUTE: int = 10
+    RATE_LIMIT_AUTH_REQUESTS_PER_HOUR: int = 100
+    RATE_LIMIT_ADMIN_REQUESTS_PER_MINUTE: int = 30
+    RATE_LIMIT_ADMIN_REQUESTS_PER_HOUR: int = 300
 
     model_config = SettingsConfigDict(
         env_file=".env", env_file_encoding="utf-8", case_sensitive=True, extra="ignore"

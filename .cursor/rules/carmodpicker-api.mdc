@@ -1,0 +1,82 @@
+---
+alwaysApply: true
+---
+
+# CarModPicker API and Backend Rules
+
+## Data Models and Relationships
+
+- User model: id, username, email, hashed_password, email_verified, created_at, updated_at
+- Car model: id, make, model, year, image_url, user_id (owner), created_at, updated_at
+- Part model: id, name, description, price, image_url, category, compatible_cars, user_id (creator), created_at, updated_at
+- BuildList model: id, name, description, user_id (owner), cars[], parts[], created_at, updated_at
+- Maintain proper foreign key relationships and cascade deletes
+
+## API Endpoint Patterns
+
+- Use RESTful patterns: GET /cars, POST /cars, GET /cars/{id}, PUT /cars/{id}, DELETE /cars/{id}
+- Implement proper pagination for list endpoints (?page=1&limit=20)
+- Use query parameters for filtering: GET /cars?make=Toyota&year=2020
+- Include search functionality: GET /cars?search=civic&make=Honda
+- Implement proper authentication middleware for protected endpoints
+
+## Authentication and Authorization
+
+- Require authentication for creating/editing cars, parts, and build lists
+- Users can only edit their own cars, parts, and build lists
+- Implement proper JWT token validation
+- Use password hashing with bcrypt
+- Implement email verification for new user accounts
+- Provide password reset functionality
+
+## Data Validation and Serialization
+
+- Use Pydantic models for request/response validation
+- Validate car years (reasonable range: 1900-current year + 1)
+- Validate email addresses and usernames
+- Ensure proper image URL format validation
+- Implement proper error messages for validation failures
+- Use separate schemas for create, update, and response operations
+
+## Search and Filtering
+
+- Implement full-text search for cars (make, model, year)
+- Implement full-text search for parts (name, description, category)
+- Support filtering by multiple criteria simultaneously
+- Implement case-insensitive search
+- Add proper database indexes for search performance
+- Support sorting by relevance, date, name, price
+
+## Image and File Handling
+
+- Validate image URLs before storing
+- Implement image upload functionality (if applicable)
+- Generate placeholder images for missing car/part images
+- Optimize image loading and caching
+- Support multiple image formats (JPEG, PNG, WebP)
+
+## Performance and Caching
+
+- Implement proper database indexes for frequently queried fields
+- Use database connection pooling
+- Implement caching for frequently accessed data
+- Optimize database queries with proper joins
+- Implement pagination to handle large datasets
+- Use async operations for better performance
+
+## Error Handling
+
+- Implement proper HTTP status codes (404 for not found, 403 for unauthorized, etc.)
+- Provide clear error messages for validation failures
+- Handle database constraint violations gracefully
+- Implement proper logging for errors and security events
+- Return consistent error response format
+
+## Testing
+
+- Write unit tests for all API endpoints
+- Test authentication and authorization flows
+- Test data validation and error scenarios
+- Implement integration tests for complex workflows
+- Test search and filtering functionality
+- Mock external dependencies in tests

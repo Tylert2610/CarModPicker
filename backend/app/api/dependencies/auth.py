@@ -91,7 +91,11 @@ async def get_current_user(
         raise credentials_exception
     if user.disabled:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Inactive user"
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Inactive user"
+        )
+    if not user.email_verified:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Email not verified"
         )
     return user
 
@@ -125,3 +129,34 @@ async def get_current_active_user_optional(
         return None  # User is inactive, so not considered an "active user"
 
     return user
+
+
+# --- Admin/Superuser Dependencies ---
+
+
+async def get_current_admin_user(
+    current_user: DBUser = Depends(get_current_user),
+) -> DBUser:
+    """
+    Dependency that requires the current user to be an admin.
+    """
+    if not current_user.is_admin and not current_user.is_superuser:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required",
+        )
+    return current_user
+
+
+async def get_current_superuser(
+    current_user: DBUser = Depends(get_current_user),
+) -> DBUser:
+    """
+    Dependency that requires the current user to be a superuser.
+    """
+    if not current_user.is_superuser:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Superuser privileges required",
+        )
+    return current_user

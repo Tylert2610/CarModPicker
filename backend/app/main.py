@@ -6,7 +6,18 @@ from typing import Any
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .api.endpoints import auth, build_lists, cars, parts, users
+from .api.endpoints import (
+    auth,
+    build_lists,
+    build_list_parts,
+    cars,
+    global_parts,
+    users,
+    subscriptions,
+    categories,
+    global_part_votes,
+    global_part_reports,
+)
 from .api.middleware import rate_limit_middleware
 from .core.config import settings
 
@@ -71,8 +82,37 @@ app.include_router(cars.router, prefix=settings.API_STR + "/cars", tags=["cars"]
 app.include_router(
     build_lists.router, prefix=settings.API_STR + "/build-lists", tags=["build_lists"]
 )
-app.include_router(parts.router, prefix=settings.API_STR + "/parts", tags=["parts"])
+app.include_router(
+    global_parts.router,
+    prefix=settings.API_STR + "/global-parts",
+    tags=["global_parts"],
+)
+app.include_router(
+    build_list_parts.router,
+    prefix=settings.API_STR + "/build-list-parts",
+    tags=["build_list_parts"],
+)
 app.include_router(auth.router, prefix=settings.API_STR + "/auth", tags=["auth"])
+app.include_router(
+    subscriptions.router,
+    prefix=settings.API_STR + "/subscriptions",
+    tags=["subscriptions"],
+)
+app.include_router(
+    categories.router,
+    prefix=settings.API_STR + "/categories",
+    tags=["categories"],
+)
+app.include_router(
+    global_part_votes.router,
+    prefix=settings.API_STR + "/global-part-votes",
+    tags=["global_part_votes"],
+)
+app.include_router(
+    global_part_reports.router,
+    prefix=settings.API_STR + "/global-part-reports",
+    tags=["global_part_reports"],
+)
 
 
 @app.get("/")

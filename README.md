@@ -1,222 +1,265 @@
 # CarModPicker
 
-A full-stack application for car enthusiasts to browse cars, discover parts, and build custom modification lists.
+A comprehensive web application for car enthusiasts to manage their vehicles, track modifications, and build custom part lists. CarModPicker provides a modern, user-friendly interface for organizing car builds and sharing them with the community.
 
-## Project Overview
+## 🚗 Features
 
-CarModPicker consists of two main components:
+### Core Functionality
 
-- **Backend**: FastAPI-based REST API with PostgreSQL database
-- **Frontend**: React/TypeScript SPA with Vite build system
+- **User Authentication**: Secure registration, login, and email verification
+- **Car Management**: Add, edit, and organize your vehicle collection
+- **Build Lists**: Create custom modification plans for specific cars
+- **Parts Catalog**: Track parts, prices, and compatibility with categories
+- **Part Voting**: Community-driven part recommendations and ratings
+- **Part Reporting**: Report inappropriate or incorrect parts
+- **User Profiles**: Share your builds and view other enthusiasts' work
+- **Subscription Tiers**: Free and premium user features
+- **Search & Filter**: Find cars and parts with advanced filtering options
 
-## Quick Start
+### Technical Features
 
-### Prerequisites
+- **Modern Web Stack**: React frontend with FastAPI backend
+- **Real-time Updates**: Live data synchronization
+- **Responsive Design**: Works seamlessly on desktop and mobile
+- **Secure API**: JWT authentication with comprehensive rate limiting
+- **Database Management**: PostgreSQL with automated migrations
+- **Docker Support**: Easy deployment and development setup
 
-- **Python 3.12+** (for backend)
-- **Node.js 18+** (for frontend)
-- **Docker & Docker Compose** (for database only)
-- **Git** (for version control)
+## 🏗️ Architecture
 
-### 1. Clone the Repository
-
-```bash
-git clone <repository-url>
-cd CarModPicker
-```
-
-### 2. Backend Setup
-
-```bash
-cd Backend
-
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Create environment file
-cp env.example .env  # Edit with your values
-
-# Start database
-docker-compose up -d
-
-# Run migrations
-alembic upgrade head
-
-# Start backend
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-```
-
-Backend will be available at: http://localhost:8000
-
-### 3. Frontend Setup
-
-```bash
-cd ../Frontend
-
-# Install dependencies
-npm install
-
-# Start development server
-npm run dev
-```
-
-Frontend will be available at: http://localhost:5173
-
-## Development Workflow
-
-### Daily Development
-
-1. **Start database**: `cd Backend && docker-compose up -d`
-2. **Start backend**: `cd Backend && uvicorn app.main:app --reload`
-3. **Start frontend**: `cd Frontend && npm run dev`
-4. **Develop**: Both services support hot reload
-5. **Stop database**: `cd Backend && docker-compose down`
-
-### Key Features
-
-- **User Authentication**: JWT-based with email verification
-- **Car Management**: Browse and manage car information
-- **Parts Catalog**: Discover and manage car parts
-- **Build Lists**: Create custom modification lists
-- **Responsive Design**: Mobile-friendly interface
-
-## Project Structure
+CarModPicker follows a modern microservices architecture with clear separation of concerns:
 
 ```
 CarModPicker/
-├── Backend/                # FastAPI backend
-│   ├── app/               # Application code
-│   ├── alembic/           # Database migrations
-│   ├── docker-compose.yml # Database services
-│   ├── Dockerfile         # Railway deployment
-│   └── requirements.txt   # Python dependencies
-├── Frontend/              # React frontend
-│   ├── src/              # Source code
-│   ├── public/           # Static assets
-│   ├── Dockerfile        # Railway deployment
-│   └── package.json      # Node dependencies
-└── README.md             # This file
+├── frontend/          # React TypeScript application
+├── backend/           # FastAPI Python application
+└── scripts/           # Development and deployment utilities
 ```
 
-## Technology Stack
+### Frontend (React + TypeScript)
 
-### Backend
+- **Framework**: React 19.1.0 with TypeScript
+- **Styling**: Tailwind CSS 4.1.7 for responsive design
+- **Routing**: React Router for navigation
+- **State Management**: React Context for authentication
+- **Testing**: Vitest with React Testing Library
+- **Build Tool**: Vite for fast development
 
-- **FastAPI** - Modern Python web framework
-- **PostgreSQL** - Relational database
-- **SQLAlchemy** - ORM and database toolkit
-- **Alembic** - Database migration tool
-- **Pydantic** - Data validation
-- **JWT** - Authentication tokens
+### Backend (FastAPI + Python)
 
-### Frontend
+- **Framework**: FastAPI with async support
+- **Database**: PostgreSQL with SQLAlchemy ORM
+- **Authentication**: JWT tokens with bcrypt password hashing
+- **API Documentation**: Automatic OpenAPI/Swagger generation
+- **Testing**: Pytest with comprehensive test coverage
+- **Migrations**: Alembic for database schema management
 
-- **React 18** - UI framework
-- **TypeScript** - Type safety
-- **Vite** - Build tool and dev server
-- **Tailwind CSS** - Utility-first CSS
-- **React Router** - Client-side routing
-- **Axios** - HTTP client
+## 🚀 Quick Start
 
-### Development Tools
+### Prerequisites
 
-- **Docker** - Database containerization
-- **ESLint/Prettier** - Code formatting
-- **Pytest** - Backend testing
-- **Hot Reload** - Development efficiency
+- Node.js 18+ and npm (see .nvmrc for exact version)
+- Python 3.11+
+- PostgreSQL 16+
+- Docker (optional, for database)
 
-## API Documentation
+### Development Setup
 
-When the backend is running, visit:
+1. **Clone the repository**
 
-- **Swagger UI**: http://localhost:8000/docs
-- **ReDoc**: http://localhost:8000/redoc
+   ```bash
+   git clone https://github.com/tylerwebb/CarModPicker.git
+   cd CarModPicker
+   ```
 
-## Railway Deployment
+2. **Backend Setup**
 
-Both backend and frontend are configured for Railway deployment:
+   ```bash
+   cd backend
+   python -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   pip install -r requirements.txt
 
-- **Backend**: See `Backend/RAILWAY_DEPLOYMENT.md`
-- **Frontend**: See `Frontend/RAILWAY_DEPLOYMENT.md`
+   # Set up environment variables
+   cp .env.example .env
+   # Edit .env with your database and API settings
 
-## Development Guidelines
+   # Start PostgreSQL (using Docker)
+   docker-compose up -d
 
-### Backend
+   # Run migrations
+   alembic upgrade head
 
-- Follow PEP 8 style guidelines
-- Use type hints consistently
-- Write tests for all endpoints
-- Use async/await patterns
-- Implement proper error handling
+   # Start the backend server
+   uvicorn app.main:app --reload
+   ```
 
-### Frontend
+3. **Frontend Setup**
 
-- Use TypeScript for all components
-- Follow React hooks patterns
-- Implement responsive design
-- Use Tailwind CSS for styling
-- Write meaningful component names
+   ```bash
+   cd frontend
+   npm install
 
-## Testing
+   # Start the development server
+   npm run dev
+   ```
 
-### Backend Testing
+4. **Access the application**
+   - Frontend: http://localhost:5173 (Vite default)
+   - Backend API: http://localhost:8000
+   - API Documentation: http://localhost:8000/docs
+
+## 📁 Project Structure
+
+### Backend Structure
+
+```
+backend/
+├── app/
+│   ├── api/
+│   │   ├── endpoints/     # API route handlers
+│   │   ├── models/        # SQLAlchemy database models
+│   │   ├── schemas/       # Pydantic request/response models
+│   │   ├── dependencies/  # FastAPI dependencies
+│   │   ├── services/      # Business logic services
+│   │   ├── utils/         # Utility functions
+│   │   └── middleware/    # Custom middleware (rate limiting)
+│   ├── core/              # Configuration and utilities
+│   ├── db/                # Database setup and sessions
+│   └── tests/             # Comprehensive test suite
+├── alembic/               # Database migrations
+└── requirements.txt       # Python dependencies
+```
+
+### Frontend Structure
+
+```
+frontend/
+├── src/
+│   ├── components/        # Reusable UI components
+│   │   ├── auth/         # Authentication components
+│   │   ├── cars/         # Car management components
+│   │   ├── parts/        # Parts catalog components
+│   │   ├── buildLists/   # Build list components
+│   │   └── common/       # Shared UI components
+│   ├── pages/            # Page components
+│   ├── contexts/         # React context providers
+│   ├── services/         # API service layer
+│   └── types/            # TypeScript type definitions
+├── public/               # Static assets
+└── package.json          # Node.js dependencies
+```
+
+## 🗄️ Database Schema
+
+The application uses a relational database with the following core entities:
+
+- **Users**: Authentication and profile information with subscription tiers
+- **Cars**: Vehicle information (make, model, year, VIN)
+- **Build Lists**: Custom modification plans linked to cars
+- **Parts**: Individual components with pricing and compatibility
+- **Categories**: Organized part categorization system
+- **Part Votes**: Community voting on part quality and relevance
+- **Part Reports**: User reporting system for inappropriate content
+- **Subscriptions**: Premium user features and billing
+
+## 🔧 Development
+
+### Running Tests
 
 ```bash
-cd Backend
-pytest                    # Run all tests
-pytest --cov=app         # Run with coverage
+# Backend tests
+cd backend
+pytest
+
+# Frontend tests
+cd frontend
+npm test
+
+# Frontend tests with UI
+npm run test:ui
+
+# Frontend test coverage
+npm run test:coverage
 ```
 
-### Frontend Testing
+### Code Quality
 
 ```bash
-cd Frontend
-npm run lint             # Check code style
-npm run type-check       # Check TypeScript
-npm run build            # Test build process
+# Backend linting and formatting
+cd backend
+black .
+isort .
+mypy .
+
+# Frontend linting and type checking
+cd frontend
+npm run lint
+npm run type-check
 ```
 
-## Contributing
-
-1. Create a feature branch
-2. Make your changes
-3. Test thoroughly
-4. Submit a pull request
-
-## Common Issues
-
-### Database Connection
+### Database Migrations
 
 ```bash
-# Check if database is running
-cd Backend && docker-compose ps
+cd backend
+# Create a new migration
+alembic revision --autogenerate -m "Description of changes"
 
-# Reset database
-cd Backend && docker-compose down -v && docker-compose up -d
+# Apply migrations
+alembic upgrade head
+
+# Rollback migrations
+alembic downgrade -1
 ```
 
-### Port Conflicts
+## 🚀 Deployment
 
-- Backend uses port 8000
-- Frontend uses port 5173
-- Database uses port 5432
+### Production Deployment
+
+The application is designed for deployment on Railway with:
+
+- Automatic database provisioning
+- Environment variable management
+- SSL certificate handling
+- Health check endpoints
 
 ### Environment Variables
 
-- Backend: Copy `Backend/env.example` to `Backend/.env`
-- Frontend: Copy `Frontend/env.example` to `Frontend/.env.local` (optional)
+Key environment variables for production:
 
-## Getting Help
+- `DATABASE_URL`: PostgreSQL connection string
+- `SECRET_KEY`: JWT signing secret
+- `ALLOWED_ORIGINS`: CORS allowed origins
+- `SENDGRID_API_KEY`: Email service configuration
 
-1. Check the individual README files in Backend/ and Frontend/
-2. Review the API documentation at http://localhost:8000/docs
-3. Check the troubleshooting sections in component READMEs
-4. Create an issue on the project repository
+## 🤝 Contributing
 
-## License
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
 
-See [LICENSE](./LICENSE) file for details.
+### Development Guidelines
+
+- Follow the established code style and conventions
+- Write tests for new features
+- Update documentation as needed
+- Use conventional commit messages
+- Ensure all tests pass before submitting PRs
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 🆘 Support
+
+For support and questions:
+
+- Create an issue on GitHub
+- Check the API documentation at `/docs` when running locally
+- Review the detailed documentation:
+  - Frontend: [`docs/frontendREADME.md`](docs/frontendREADME.md)
+  - Backend: [`docs/backendREADME.md`](docs/backendREADME.md)
+  - Testing: [`backend/docs/PARALLEL_TESTING.md`](backend/docs/PARALLEL_TESTING.md)
+  - Deployment: [`frontend/RAILWAY_DEPLOYMENT.md`](frontend/RAILWAY_DEPLOYMENT.md)

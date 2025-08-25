@@ -180,7 +180,6 @@ function Profile() {
         message: 'Profile updated successfully!',
       });
     }
-   
   };
 
   if (authIsLoading) {
@@ -270,7 +269,10 @@ function Profile() {
             </ActionButton>
           </>
         ) : (
-          <form onSubmit={(e) => void handleSubmit(e)} className="space-y-6 mb-6">
+          <form
+            onSubmit={(e) => void handleSubmit(e)}
+            className="space-y-6 mb-6"
+          >
             <Input
               label="Username"
               id="username"
@@ -354,21 +356,38 @@ function Profile() {
 
         <Divider />
         <ActionButton
-          onClick={() => void (async () => {
-            setStatusMessage(null);
-            setUpdateApiError(null);
-            await checkAuthStatus();
-            setStatusMessage({
-              type: 'success',
-              message: 'Profile data refreshed.',
-            });
-          })()}
+          onClick={() =>
+            void (async () => {
+              setStatusMessage(null);
+              setUpdateApiError(null);
+              await checkAuthStatus();
+              setStatusMessage({
+                type: 'success',
+                message: 'Profile data refreshed.',
+              });
+            })()
+          }
           disabled={authIsLoading || isUpdating}
         >
           {authIsLoading || isUpdating
             ? 'Refreshing...'
             : 'Refresh Profile Data'}
         </ActionButton>
+
+        <div className="mt-4 space-y-2">
+          <ActionButton
+            onClick={() => (window.location.href = '/subscription')}
+            className="bg-yellow-600 hover:bg-yellow-700 w-full"
+          >
+            Manage Subscription
+          </ActionButton>
+          <ActionButton
+            onClick={() => (window.location.href = '/my-global-parts')}
+            className="bg-blue-600 hover:bg-blue-700 w-full"
+          >
+            Manage My Global Parts
+          </ActionButton>
+        </div>
       </Card>
 
       <Divider />

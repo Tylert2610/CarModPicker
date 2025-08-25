@@ -6,7 +6,7 @@ interface UseApiRequestReturn<TData, TPayload> {
   data: TData | null;
   error: string | null;
   isLoading: boolean;
-  executeRequest: (payload: TPayload) => Promise<TData | null>;
+  executeRequest: (payload?: TPayload) => Promise<TData | null>;
   setError: (message: string | null) => void;
 }
 
@@ -43,12 +43,14 @@ function useApiRequest<TData, TPayload = unknown>(
   const [isLoading, setIsLoading] = useState<boolean>(false);
 
   const executeRequest = useCallback(
-    async (payload: TPayload): Promise<TData | null> => {
+    async (payload?: TPayload): Promise<TData | null> => {
       setIsLoading(true);
       setErrorState(null);
       setData(null);
       try {
-        const response = await requestFn(payload);
+        // Use empty object as default payload if none provided
+        const actualPayload = (payload ?? {}) as TPayload;
+        const response = await requestFn(actualPayload);
         setData(response.data);
         setIsLoading(false);
         return response.data;

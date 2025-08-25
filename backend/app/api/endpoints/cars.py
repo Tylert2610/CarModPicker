@@ -1,13 +1,14 @@
 import logging
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 
 from app.api.dependencies.auth import get_current_user
 from app.api.models.car import Car as DBCar
 from app.api.models.user import User as DBUser
 from app.api.schemas.car import CarCreate, CarRead, CarUpdate
+from app.api.services.subscription_service import SubscriptionService
 from app.core.logging import get_logger
 from app.db.session import get_db
 
@@ -44,6 +45,7 @@ router = APIRouter()
     responses={
         400: {"description": "Car already exists"},
         403: {"description": "Not authorized to create a car"},
+        402: {"description": "Subscription limit reached"},
     },
 )
 async def create_car(
@@ -52,6 +54,19 @@ async def create_car(
     logger: logging.Logger = Depends(get_logger),
     current_user: DBUser = Depends(get_current_user),
 ) -> DBCar:
+    # Check subscription limits
+    if not SubscriptionService.can_create_car(db, current_user):
+        limits = SubscriptionService.get_user_limits(current_user)
+        usage = SubscriptionService.get_user_usage(db, current_user.id)
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail={
+                "message": "Car creation limit reached. Upgrade to premium for unlimited cars.",
+                "limits": limits,
+                "usage": usage,
+            },
+        )
+
     db_car = DBCar(**car.model_dump(), user_id=current_user.id)
     db.add(db_car)
     db.commit()
@@ -89,13 +104,19 @@ async def read_car(
 )
 async def read_cars_by_user(
     user_id: int,
+    skip: int = Query(0, ge=0, description="Number of cars to skip"),
+    limit: int = Query(
+        100, ge=1, le=1000, description="Maximum number of cars to return"
+    ),
     db: Session = Depends(get_db),
     logger: logging.Logger = Depends(get_logger),
 ) -> List[DBCar]:
     """
-    Retrieve all cars owned by a specific user.
+    Retrieve all cars owned by a specific user with pagination.
     """
-    cars = db.query(DBCar).filter(DBCar.user_id == user_id).all()
+    cars = (
+        db.query(DBCar).filter(DBCar.user_id == user_id).offset(skip).limit(limit).all()
+    )
     if not cars:
         logger.info(f"No cars found for user_id: {user_id}")
     else:
