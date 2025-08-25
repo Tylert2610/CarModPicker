@@ -2,7 +2,7 @@
 # imported by Alembic
 from app.api.models.build_list import BuildList
 from app.api.models.car import Car
-from app.api.models.part import Part
+from app.api.models.global_part import GlobalPart
 
 # actual models
 from app.api.models.user import User

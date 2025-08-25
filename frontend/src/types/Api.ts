@@ -97,7 +97,7 @@ export interface BuildListUpdate {
 }
 
 // Updated Part interfaces to match new backend schema
-export interface PartCreate {
+export interface GlobalPartCreate {
   name: string;
   description?: string | null;
   price?: number | null;
@@ -105,10 +105,10 @@ export interface PartCreate {
   category_id: number;
   brand?: string | null;
   part_number?: string | null;
-  specifications?: Record<string, any> | null;
+  specifications?: Record<string, string | number | boolean> | null;
 }
 
-export interface PartRead {
+export interface GlobalPartRead {
   id: number;
   name: string;
   description?: string | null;
@@ -118,7 +118,7 @@ export interface PartRead {
   user_id: number;
   brand?: string | null;
   part_number?: string | null;
-  specifications?: Record<string, any> | null;
+  specifications?: Record<string, string | number | boolean> | null;
   is_verified: boolean;
   source: string;
   edit_count: number;
@@ -126,14 +126,14 @@ export interface PartRead {
   updated_at: string;
 }
 
-export interface PartReadWithVotes extends PartRead {
+export interface GlobalPartReadWithVotes extends GlobalPartRead {
   upvotes: number;
   downvotes: number;
   total_votes: number;
   user_vote?: 'upvote' | 'downvote' | null;
 }
 
-export interface PartUpdate {
+export interface GlobalPartUpdate {
   name?: string | null;
   description?: string | null;
   price?: number | null;
@@ -141,7 +141,7 @@ export interface PartUpdate {
   category_id?: number | null;
   brand?: string | null;
   part_number?: string | null;
-  specifications?: Record<string, any> | null;
+  specifications?: Record<string, string | number | boolean> | null;
 }
 
 // New interfaces for categories
@@ -176,11 +176,11 @@ export interface CategoryUpdate {
 }
 
 // New interfaces for voting system
-export interface PartVoteCreate {
+export interface GlobalPartVoteCreate {
   vote_type: 'upvote' | 'downvote';
 }
 
-export interface PartVoteRead {
+export interface GlobalPartVoteRead {
   id: number;
   user_id: number;
   part_id: number;
@@ -189,7 +189,7 @@ export interface PartVoteRead {
   updated_at: string;
 }
 
-export interface PartVoteSummary {
+export interface GlobalPartVoteSummary {
   part_id: number;
   upvotes: number;
   downvotes: number;
@@ -197,7 +197,7 @@ export interface PartVoteSummary {
   user_vote?: 'upvote' | 'downvote' | null;
 }
 
-export interface FlaggedPartSummary {
+export interface FlaggedGlobalPartSummary {
   part_id: number;
   part_name: string;
   part_brand?: string | null;
@@ -214,12 +214,12 @@ export interface FlaggedPartSummary {
 }
 
 // New interfaces for reporting system
-export interface PartReportCreate {
+export interface GlobalPartReportCreate {
   reason: string;
   description?: string | null;
 }
 
-export interface PartReportRead {
+export interface GlobalPartReportRead {
   id: number;
   user_id: number;
   part_id: number;
@@ -233,13 +233,14 @@ export interface PartReportRead {
   updated_at: string;
 }
 
-export interface PartReportWithDetails extends PartReportRead {
+export interface GlobalPartReportWithDetails extends GlobalPartReportRead {
   reporter_username: string;
   part_name: string;
+  part_brand?: string | null;
   reviewer_username?: string | null;
 }
 
-export interface PartReportUpdate {
+export interface GlobalPartReportUpdate {
   status: 'pending' | 'resolved' | 'dismissed';
   admin_notes?: string | null;
 }
@@ -249,8 +250,8 @@ export interface SubscriptionStatus {
   tier: 'free' | 'premium';
   status: 'active' | 'cancelled' | 'expired';
   expires_at?: string | null;
-  limits: Record<string, any>;
-  usage: Record<string, any>;
+  limits: Record<string, number>;
+  usage: Record<string, number>;
 }
 
 export interface SubscriptionResponse {
@@ -276,10 +277,14 @@ export interface BuildListPartCreate {
 export interface BuildListPartRead {
   id: number;
   build_list_id: number;
-  part_id: number;
+  global_part_id: number;
   added_by: number;
   notes?: string | null;
   added_at: string;
+}
+
+export interface BuildListPartReadWithGlobalPart extends BuildListPartRead {
+  global_part: GlobalPartRead;
 }
 
 export interface BuildListPartUpdate {

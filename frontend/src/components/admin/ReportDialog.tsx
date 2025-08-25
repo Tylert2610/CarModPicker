@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
-import { partReportsApi } from '../../services/Api';
+import { globalPartReportsApi } from '../../services/Api';
 import Dialog from '../common/Dialog';
-import Input from '../common/Input';
 import ActionButton from '../buttons/ActionButton';
 import SecondaryButton from '../buttons/SecondaryButton';
 
@@ -37,7 +36,7 @@ const ReportDialog: React.FC<ReportDialogProps> = ({
 
     try {
       setIsSubmitting(true);
-      await partReportsApi.reportPart(partId, {
+      await globalPartReportsApi.reportGlobalPart(partId, {
         reason: reason.trim(),
         description: description.trim() || undefined,
       });
@@ -116,11 +115,10 @@ const ReportDialog: React.FC<ReportDialogProps> = ({
             Cancel
           </SecondaryButton>
           <ActionButton
-            onClick={handleSubmit}
+            onClick={() => void handleSubmit()}
             disabled={!reason.trim() || isSubmitting}
-            loading={isSubmitting}
           >
-            Submit Report
+            {isSubmitting ? 'Submitting...' : 'Submit Report'}
           </ActionButton>
         </div>
       </div>

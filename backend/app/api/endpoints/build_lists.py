@@ -99,18 +99,30 @@ async def create_build_list(
     responses={
         404: {"description": "Build List not found"},
         403: {"description": "Not authorized to access this build list"},
+        401: {"description": "Not authenticated"},
     },
 )
 async def read_build_list(
     build_list_id: int,
     db: Session = Depends(get_db),
     logger: logging.Logger = Depends(get_logger),
+    current_user: DBUser = Depends(get_current_user),
 ) -> DBBuildList:
     db_build_list = (
         db.query(DBBuildList).filter(DBBuildList.id == build_list_id).first()
     )  # Query the database
     if db_build_list is None:
         raise HTTPException(status_code=404, detail="Build List not found")
+
+    # Check authorization - users can only access their own build lists, or admins can access any
+    if (
+        current_user.id != db_build_list.user_id
+        and not current_user.is_admin
+        and not current_user.is_superuser
+    ):
+        raise HTTPException(
+            status_code=403, detail="Not authorized to access this build list"
+        )
 
     logger.info(msg=f"Build List retrieved from database: {db_build_list}")
     return db_build_list
@@ -120,7 +132,10 @@ async def read_build_list(
     "/car/{car_id}",
     response_model=list[BuildListRead],
     tags=["build_lists"],
-    responses={},
+    responses={
+        401: {"description": "Not authenticated"},
+        403: {"description": "Not authorized to access this car's build lists"},
+    },
 )
 async def read_build_lists_by_car(
     car_id: int,
@@ -130,10 +145,29 @@ async def read_build_lists_by_car(
     ),
     db: Session = Depends(get_db),
     logger: logging.Logger = Depends(get_logger),
+    current_user: DBUser = Depends(get_current_user),
 ) -> List[DBBuildList]:
     """
     Retrieve all build lists associated with a specific car with pagination.
+    Users can only access build lists for cars they own, or admins can access any car's build lists.
     """
+    # First check if the car exists and get its owner
+    from app.api.models.car import Car as DBCar
+
+    db_car = db.query(DBCar).filter(DBCar.id == car_id).first()
+    if not db_car:
+        raise HTTPException(status_code=404, detail="Car not found")
+
+    # Check authorization - users can only access build lists for cars they own, or admins can access any
+    if (
+        current_user.id != db_car.user_id
+        and not current_user.is_admin
+        and not current_user.is_superuser
+    ):
+        raise HTTPException(
+            status_code=403, detail="Not authorized to access this car's build lists"
+        )
+
     build_lists = (
         db.query(DBBuildList)
         .filter(DBBuildList.car_id == car_id)
@@ -145,6 +179,88 @@ async def read_build_lists_by_car(
         logger.info(f"No Build Lists found for car with id {car_id}")
     else:
         logger.info(msg=f"Build Lists retrieved for car {car_id}: {build_lists}")
+    return build_lists
+
+
+@router.get(
+    "/user/me",
+    response_model=list[BuildListRead],
+    tags=["build_lists"],
+    responses={
+        401: {"description": "Not authenticated"},
+    },
+)
+async def read_my_build_lists(
+    skip: int = Query(0, ge=0, description="Number of build lists to skip"),
+    limit: int = Query(
+        100, ge=1, le=1000, description="Maximum number of build lists to return"
+    ),
+    db: Session = Depends(get_db),
+    logger: logging.Logger = Depends(get_logger),
+    current_user: DBUser = Depends(get_current_user),
+) -> List[DBBuildList]:
+    """
+    Retrieve all build lists owned by the current user with pagination.
+    """
+    build_lists = (
+        db.query(DBBuildList)
+        .filter(DBBuildList.user_id == current_user.id)
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
+    if not build_lists:
+        logger.info(f"No Build Lists found for user with id {current_user.id}")
+    else:
+        logger.info(
+            msg=f"Build Lists retrieved for user {current_user.id}: {build_lists}"
+        )
+    return build_lists
+
+
+@router.get(
+    "/user/{user_id}",
+    response_model=list[BuildListRead],
+    tags=["build_lists"],
+    responses={
+        403: {"description": "Not authorized to access this user's build lists"},
+    },
+)
+async def read_build_lists_by_user(
+    user_id: int,
+    skip: int = Query(0, ge=0, description="Number of build lists to skip"),
+    limit: int = Query(
+        100, ge=1, le=1000, description="Maximum number of build lists to return"
+    ),
+    db: Session = Depends(get_db),
+    logger: logging.Logger = Depends(get_logger),
+    current_user: DBUser = Depends(get_current_user),
+) -> List[DBBuildList]:
+    """
+    Retrieve all build lists owned by a specific user with pagination.
+    Users can only access their own build lists, or admins can access any user's build lists.
+    """
+    # Check authorization - users can only access their own build lists, or admins can access any
+    if (
+        current_user.id != user_id
+        and not current_user.is_admin
+        and not current_user.is_superuser
+    ):
+        raise HTTPException(
+            status_code=403, detail="Not authorized to access this user's build lists"
+        )
+
+    build_lists = (
+        db.query(DBBuildList)
+        .filter(DBBuildList.user_id == user_id)
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
+    if not build_lists:
+        logger.info(f"No Build Lists found for user with id {user_id}")
+    else:
+        logger.info(msg=f"Build Lists retrieved for user {user_id}: {build_lists}")
     return build_lists
 
 

@@ -67,8 +67,14 @@ function Header() {
             </li>
             <HeaderSeparator />
             <li>
-              <HeaderNavLink to="/parts" icon={<FaCogs />}>
-                Parts Catalog
+              <HeaderNavLink to="/global-parts" icon={<FaCogs />}>
+                Global Parts Catalog
+              </HeaderNavLink>
+            </li>
+            <HeaderSeparator />
+            <li>
+              <HeaderNavLink to="/my-global-parts" icon={<FaCogs />}>
+                Parts I Created
               </HeaderNavLink>
             </li>
             <HeaderSeparator />
@@ -83,6 +89,16 @@ function Header() {
                 My Builds
               </HeaderNavLink>
             </li>
+            {user?.is_admin && (
+              <>
+                <HeaderSeparator />
+                <li>
+                  <HeaderNavLink to="/admin" icon={<FaCogs />}>
+                    Admin
+                  </HeaderNavLink>
+                </li>
+              </>
+            )}
             <HeaderSeparator />
           </ul>
         </div>

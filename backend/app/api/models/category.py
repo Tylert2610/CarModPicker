@@ -6,7 +6,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base_class import Base
 
 if TYPE_CHECKING:
-    from .part import Part
+    from .global_part import GlobalPart
 
 
 class Category(Base):
@@ -27,4 +27,6 @@ class Category(Base):
     )
 
     # Relationships
-    parts: Mapped[list["Part"]] = relationship("Part", back_populates="category")
+    global_parts: Mapped[list["GlobalPart"]] = relationship(
+        "GlobalPart", back_populates="category"
+    )

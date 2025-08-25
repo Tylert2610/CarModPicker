@@ -10,26 +10,27 @@ import type {
   BuildListRead,
   BuildListCreate,
   BuildListUpdate,
-  PartRead,
-  PartReadWithVotes,
-  PartCreate,
-  PartUpdate,
+  GlobalPartRead,
+  GlobalPartReadWithVotes,
+  GlobalPartCreate,
+  GlobalPartUpdate,
   CategoryResponse,
   CategoryCreate,
   CategoryUpdate,
-  PartVoteCreate,
-  PartVoteRead,
-  PartVoteSummary,
-  FlaggedPartSummary,
-  PartReportCreate,
-  PartReportRead,
-  PartReportWithDetails,
-  PartReportUpdate,
+  GlobalPartVoteCreate,
+  GlobalPartVoteRead,
+  GlobalPartVoteSummary,
+  FlaggedGlobalPartSummary,
+  GlobalPartReportCreate,
+  GlobalPartReportRead,
+  GlobalPartReportWithDetails,
+  GlobalPartReportUpdate,
   SubscriptionStatus,
   SubscriptionResponse,
   UpgradeRequest,
   BuildListPartCreate,
   BuildListPartRead,
+  BuildListPartReadWithGlobalPart,
   BuildListPartUpdate,
   NewPassword,
   BodyLoginForAccessToken,
@@ -141,45 +142,56 @@ export const buildListsApi = {
     carId: number,
     params?: { skip?: number; limit?: number }
   ) => apiClient.get<BuildListRead[]>(`/build-lists/car/${carId}`, { params }),
-};
-
-// Parts API - Updated for global parts system
-export const partsApi = {
-  // Get all parts with filtering
-  getParts: (params?: {
-    skip?: number;
-    limit?: number;
-    category_id?: number;
-    search?: string;
-  }) => apiClient.get<PartRead[]>('/parts/', { params }),
-
-  // Get parts with vote data
-  getPartsWithVotes: (params?: {
-    skip?: number;
-    limit?: number;
-    category_id?: number;
-    search?: string;
-  }) => apiClient.get<PartReadWithVotes[]>('/parts/with-votes', { params }),
-
-  // Create a new part
-  createPart: (data: PartCreate) => apiClient.post<PartRead>('/parts/', data),
-
-  // Get specific part
-  getPart: (partId: number) => apiClient.get<PartRead>(`/parts/${partId}`),
-
-  // Update part
-  updatePart: (partId: number, data: PartUpdate) =>
-    apiClient.put<PartRead>(`/parts/${partId}`, data),
-
-  // Delete part
-  deletePart: (partId: number) =>
-    apiClient.delete<PartRead>(`/parts/${partId}`),
-
-  // Get parts by user
-  getPartsByUser: (
+  getBuildListsByUser: (
     userId: number,
     params?: { skip?: number; limit?: number }
-  ) => apiClient.get<PartRead[]>(`/parts/user/${userId}`, { params }),
+  ) =>
+    apiClient.get<BuildListRead[]>(`/build-lists/user/${userId}`, { params }),
+};
+
+// Global Parts API (Global shared parts in the catalog)
+export const globalPartsApi = {
+  // Get all global parts with filtering
+  getGlobalParts: (params?: {
+    skip?: number;
+    limit?: number;
+    category_id?: number;
+    search?: string;
+  }) => apiClient.get<GlobalPartRead[]>('/global-parts/', { params }),
+
+  // Get global parts with vote data
+  getGlobalPartsWithVotes: (params?: {
+    skip?: number;
+    limit?: number;
+    category_id?: number;
+    search?: string;
+  }) =>
+    apiClient.get<GlobalPartReadWithVotes[]>('/global-parts/with-votes', {
+      params,
+    }),
+
+  // Create a new global part
+  createGlobalPart: (data: GlobalPartCreate) =>
+    apiClient.post<GlobalPartRead>('/global-parts/', data),
+
+  // Get specific global part
+  getGlobalPart: (partId: number) =>
+    apiClient.get<GlobalPartRead>(`/global-parts/${partId}`),
+
+  // Update global part
+  updateGlobalPart: (partId: number, data: GlobalPartUpdate) =>
+    apiClient.put<GlobalPartRead>(`/global-parts/${partId}`, data),
+
+  // Delete global part
+  deleteGlobalPart: (partId: number) =>
+    apiClient.delete<GlobalPartRead>(`/global-parts/${partId}`),
+
+  // Get global parts by user
+  getGlobalPartsByUser: (
+    userId: number,
+    params?: { skip?: number; limit?: number }
+  ) =>
+    apiClient.get<GlobalPartRead[]>(`/global-parts/user/${userId}`, { params }),
 };
 
 // Categories API
@@ -196,19 +208,29 @@ export const categoriesApi = {
   getPartsByCategory: (
     categoryId: number,
     params?: { skip?: number; limit?: number }
-  ) => apiClient.get<PartRead[]>(`/categories/${categoryId}/parts`, { params }),
+  ) =>
+    apiClient.get<GlobalPartRead[]>(`/categories/${categoryId}/global-parts`, {
+      params,
+    }),
 };
 
-// Part Votes API
-export const partVotesApi = {
-  voteOnPart: (partId: number, data: PartVoteCreate) =>
-    apiClient.post<PartVoteRead>(`/part-votes/${partId}/vote`, data),
+// Global Part Votes API
+export const globalPartVotesApi = {
+  voteOnGlobalPart: (partId: number, data: GlobalPartVoteCreate) =>
+    apiClient.post<GlobalPartVoteRead>(
+      `/global-part-votes/${partId}/vote`,
+      data
+    ),
   removeVote: (partId: number) =>
-    apiClient.delete<Record<string, string>>(`/part-votes/${partId}/vote`),
+    apiClient.delete<Record<string, string>>(
+      `/global-part-votes/${partId}/vote`
+    ),
   getVoteSummary: (partId: number) =>
-    apiClient.get<PartVoteSummary>(`/part-votes/${partId}/vote-summary`),
+    apiClient.get<GlobalPartVoteSummary>(
+      `/global-part-votes/${partId}/vote-summary`
+    ),
   getVoteSummaries: (partIds: string) =>
-    apiClient.get<PartVoteSummary[]>('/part-votes/', {
+    apiClient.get<GlobalPartVoteSummary[]>('/global-part-votes/', {
       params: { part_ids: partIds },
     }),
   getFlaggedParts: (params?: {
@@ -219,54 +241,94 @@ export const partVotesApi = {
     skip?: number;
     limit?: number;
   }) =>
-    apiClient.get<FlaggedPartSummary[]>('/part-votes/flagged-parts', {
-      params,
-    }),
-};
-
-// Part Reports API
-export const partReportsApi = {
-  reportPart: (partId: number, data: PartReportCreate) =>
-    apiClient.post<PartReportRead>(`/part-reports/${partId}/report`, data),
-  getReports: (params?: { status?: string; skip?: number; limit?: number }) =>
-    apiClient.get<PartReportWithDetails[]>('/part-reports/reports', { params }),
-  getReport: (reportId: number) =>
-    apiClient.get<PartReportWithDetails>(`/part-reports/reports/${reportId}`),
-  updateReport: (reportId: number, data: PartReportUpdate) =>
-    apiClient.put<PartReportRead>(`/part-reports/reports/${reportId}`, data),
-  getPendingReportsCount: () =>
-    apiClient.get<Record<string, number>>(
-      '/part-reports/reports/pending/count'
+    apiClient.get<FlaggedGlobalPartSummary[]>(
+      '/global-part-votes/flagged-parts',
+      {
+        params,
+      }
     ),
 };
 
-// Build List Parts API
+// Global Part Reports API
+export const globalPartReportsApi = {
+  reportGlobalPart: (partId: number, data: GlobalPartReportCreate) =>
+    apiClient.post<GlobalPartReportRead>(
+      `/global-part-reports/${partId}/report`,
+      data
+    ),
+  getReports: (params?: { status?: string; skip?: number; limit?: number }) =>
+    apiClient.get<GlobalPartReportWithDetails[]>(
+      '/global-part-reports/reports',
+      {
+        params,
+      }
+    ),
+  getReport: (reportId: number) =>
+    apiClient.get<GlobalPartReportWithDetails>(
+      `/global-part-reports/reports/${reportId}`
+    ),
+  updateReport: (reportId: number, data: GlobalPartReportUpdate) =>
+    apiClient.put<GlobalPartReportRead>(
+      `/global-part-reports/reports/${reportId}`,
+      data
+    ),
+  getPendingReportsCount: () =>
+    apiClient.get<Record<string, number>>(
+      '/global-part-reports/reports/pending/count'
+    ),
+};
+
+// Build List Parts API (Relationships between global parts and build lists)
 export const buildListPartsApi = {
-  addPartToBuildList: (
+  // Create a new global part and add it to a build list as a build list part
+  createGlobalPartAndAddToBuildList: (
     buildListId: number,
-    partId: number,
+    globalPartData: GlobalPartCreate,
+    buildListPartData: BuildListPartCreate
+  ) =>
+    apiClient.post<BuildListPartReadWithGlobalPart>(
+      `/build-list-parts/${buildListId}/create-and-add-part`,
+      {
+        name: globalPartData.name,
+        description: globalPartData.description,
+        price: globalPartData.price,
+        image_url: globalPartData.image_url,
+        category_id: globalPartData.category_id,
+        brand: globalPartData.brand,
+        part_number: globalPartData.part_number,
+        specifications: globalPartData.specifications,
+        notes: buildListPartData.notes,
+      }
+    ),
+  // Add an existing global part to a build list as a build list part
+  addGlobalPartToBuildList: (
+    buildListId: number,
+    globalPartId: number,
     data: BuildListPartCreate
   ) =>
     apiClient.post<BuildListPartRead>(
-      `/build-list-parts/build-lists/${buildListId}/parts/${partId}`,
+      `/build-list-parts/${buildListId}/global-parts/${globalPartId}`,
       data
     ),
-  updatePartInBuildList: (
+  // Update a build list part (notes, etc.) in a build list
+  updateBuildListPart: (
     buildListId: number,
-    partId: number,
+    globalPartId: number,
     data: BuildListPartUpdate
   ) =>
     apiClient.put<BuildListPartRead>(
-      `/build-list-parts/build-lists/${buildListId}/parts/${partId}`,
+      `/build-list-parts/${buildListId}/global-parts/${globalPartId}`,
       data
     ),
-  removePartFromBuildList: (buildListId: number, partId: number) =>
+  // Remove a build list part from a build list (doesn't delete the global part)
+  removeBuildListPart: (buildListId: number, globalPartId: number) =>
     apiClient.delete<BuildListPartRead>(
-      `/build-list-parts/build-lists/${buildListId}/parts/${partId}`
+      `/build-list-parts/${buildListId}/global-parts/${globalPartId}`
     ),
-  getPartsInBuildList: (buildListId: number) =>
-    apiClient.get<BuildListPartRead[]>(
-      `/build-list-parts/build-lists/${buildListId}/parts`
+  // Get all build list parts in a build list (with global part details)
+  getBuildListParts: (buildListId: number) =>
+    apiClient.get<BuildListPartReadWithGlobalPart[]>(
+      `/build-list-parts/${buildListId}/global-parts`
     ),
 };
 
@@ -282,7 +344,7 @@ export const subscriptionsApi = {
   cancel: () =>
     apiClient.post<SubscriptionResponse>('/subscriptions/subscriptions/cancel'),
   checkCreationLimits: (resourceType: string) =>
-    apiClient.get<Record<string, any>>(
+    apiClient.get<Record<string, number>>(
       '/subscriptions/subscriptions/limits/check',
       {
         params: { resource_type: resourceType },
@@ -299,7 +361,7 @@ export const authApi = {
   verifyEmail: (data: BodyVerifyEmail) =>
     apiClient.post<Record<string, string>>('/auth/verify-email', data),
   verifyEmailConfirm: (token: string) =>
-    apiClient.get<Record<string, any>>('/auth/verify-email/confirm', {
+    apiClient.get<Record<string, string>>('/auth/verify-email/confirm', {
       params: { token },
     }),
   forgotPassword: (data: BodyResetPassword) =>

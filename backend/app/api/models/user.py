@@ -8,8 +8,11 @@ from app.db.base_class import Base
 if TYPE_CHECKING:
     from .car import Car
     from .subscription import Subscription
-    from .part_vote import PartVote
-    from .part_report import PartReport
+    from .global_part_vote import GlobalPartVote
+    from .global_part_report import GlobalPartReport
+    from .global_part import GlobalPart
+    from .build_list import BuildList
+    from .build_list_part import BuildListPart
 
 
 class User(Base):
@@ -36,19 +39,28 @@ class User(Base):
         default="active", nullable=False
     )  # 'active', 'cancelled', 'expired'
 
-    # children
+    # Relationships
     cars: Mapped[List["Car"]] = relationship(
         "Car", back_populates="user", cascade="all, delete-orphan"
+    )
+    build_lists: Mapped[List["BuildList"]] = relationship(
+        "BuildList", back_populates="owner", cascade="all, delete-orphan"
+    )
+    global_parts: Mapped[List["GlobalPart"]] = relationship(
+        "GlobalPart", back_populates="creator", cascade="all, delete-orphan"
+    )
+    build_list_parts: Mapped[List["BuildListPart"]] = relationship(
+        "BuildListPart", back_populates="user", cascade="all, delete-orphan"
     )
     subscriptions: Mapped[List["Subscription"]] = relationship(
         "Subscription", back_populates="user", cascade="all, delete-orphan"
     )
-    part_votes: Mapped[List["PartVote"]] = relationship(
-        "PartVote", back_populates="user", cascade="all, delete-orphan"
+    global_part_votes: Mapped[List["GlobalPartVote"]] = relationship(
+        "GlobalPartVote", back_populates="user", cascade="all, delete-orphan"
     )
-    part_reports: Mapped[List["PartReport"]] = relationship(
-        "PartReport",
-        foreign_keys="PartReport.user_id",
+    global_part_reports: Mapped[List["GlobalPartReport"]] = relationship(
+        "GlobalPartReport",
+        foreign_keys="GlobalPartReport.user_id",
         back_populates="reporter",
         cascade="all, delete-orphan",
     )

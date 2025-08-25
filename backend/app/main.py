@@ -11,12 +11,12 @@ from .api.endpoints import (
     build_lists,
     build_list_parts,
     cars,
-    parts,
+    global_parts,
     users,
     subscriptions,
     categories,
-    part_votes,
-    part_reports,
+    global_part_votes,
+    global_part_reports,
 )
 from .api.middleware import rate_limit_middleware
 from .core.config import settings
@@ -82,7 +82,11 @@ app.include_router(cars.router, prefix=settings.API_STR + "/cars", tags=["cars"]
 app.include_router(
     build_lists.router, prefix=settings.API_STR + "/build-lists", tags=["build_lists"]
 )
-app.include_router(parts.router, prefix=settings.API_STR + "/parts", tags=["parts"])
+app.include_router(
+    global_parts.router,
+    prefix=settings.API_STR + "/global-parts",
+    tags=["global_parts"],
+)
 app.include_router(
     build_list_parts.router,
     prefix=settings.API_STR + "/build-list-parts",
@@ -100,14 +104,14 @@ app.include_router(
     tags=["categories"],
 )
 app.include_router(
-    part_votes.router,
-    prefix=settings.API_STR + "/part-votes",
-    tags=["part_votes"],
+    global_part_votes.router,
+    prefix=settings.API_STR + "/global-part-votes",
+    tags=["global_part_votes"],
 )
 app.include_router(
-    part_reports.router,
-    prefix=settings.API_STR + "/part-reports",
-    tags=["part_reports"],
+    global_part_reports.router,
+    prefix=settings.API_STR + "/global-part-reports",
+    tags=["global_part_reports"],
 )
 
 

@@ -16,7 +16,7 @@ from app.api.models.subscription import Subscription
 router = APIRouter()
 
 
-@router.get("/subscriptions/status", response_model=SubscriptionStatus)
+@router.get("/status", response_model=SubscriptionStatus)
 async def get_subscription_status(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -27,7 +27,7 @@ async def get_subscription_status(
     return SubscriptionService.get_subscription_status(db, current_user)
 
 
-@router.post("/subscriptions/upgrade", response_model=SubscriptionResponse)
+@router.post("/upgrade", response_model=SubscriptionResponse)
 async def upgrade_subscription(
     upgrade_data: UpgradeRequest,
     current_user: User = Depends(get_current_user),
@@ -67,7 +67,7 @@ async def upgrade_subscription(
     return subscription
 
 
-@router.post("/subscriptions/cancel", response_model=SubscriptionResponse)
+@router.post("/cancel", response_model=SubscriptionResponse)
 async def cancel_subscription(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -100,7 +100,7 @@ async def cancel_subscription(
     return subscription
 
 
-@router.get("/subscriptions/limits/check")
+@router.get("/limits/check")
 async def check_creation_limits(
     resource_type: str,  # 'car' or 'build_list'
     current_user: User = Depends(get_current_user),
@@ -119,12 +119,16 @@ async def check_creation_limits(
             detail="Invalid resource type. Must be 'car' or 'build_list'",
         )
 
-    limits = SubscriptionService.get_user_limits(current_user)
-    usage = SubscriptionService.get_user_usage(db, current_user.id)
+    return {"can_create": can_create}
 
-    return {
-        "can_create": can_create,
-        "limits": limits,
-        "usage": usage,
-        "resource_type": resource_type,
-    }
+
+@router.get("/limits/check/global-part")
+async def check_global_part_creation_limit(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Any:
+    """
+    Check if user can create a global part.
+    """
+    can_create = SubscriptionService.can_create_global_part(db, current_user)
+    return {"can_create": can_create}
