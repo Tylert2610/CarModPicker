@@ -47,18 +47,18 @@ def upgrade() -> None:
     op.create_index(
         op.f("ix_build_list_parts_id"), "build_list_parts", ["id"], unique=False
     )
-    op.add_column("build_lists", sa.Column("created_at", sa.DateTime(), nullable=False))
-    op.add_column("build_lists", sa.Column("updated_at", sa.DateTime(), nullable=False))
+    op.add_column("build_lists", sa.Column("created_at", sa.DateTime(), nullable=True))
+    op.add_column("build_lists", sa.Column("updated_at", sa.DateTime(), nullable=True))
     op.add_column(
         "parts", sa.Column("user_id", sa.Integer(), nullable=True)
     )  # Temporarily nullable for migration
     op.add_column("parts", sa.Column("brand", sa.String(), nullable=True))
     op.add_column("parts", sa.Column("specifications", sa.JSON(), nullable=True))
-    op.add_column("parts", sa.Column("is_verified", sa.Boolean(), nullable=False))
-    op.add_column("parts", sa.Column("source", sa.String(), nullable=False))
-    op.add_column("parts", sa.Column("edit_count", sa.Integer(), nullable=False))
-    op.add_column("parts", sa.Column("created_at", sa.DateTime(), nullable=False))
-    op.add_column("parts", sa.Column("updated_at", sa.DateTime(), nullable=False))
+    op.add_column("parts", sa.Column("is_verified", sa.Boolean(), nullable=True))
+    op.add_column("parts", sa.Column("source", sa.String(), nullable=True))
+    op.add_column("parts", sa.Column("edit_count", sa.Integer(), nullable=True))
+    op.add_column("parts", sa.Column("created_at", sa.DateTime(), nullable=True))
+    op.add_column("parts", sa.Column("updated_at", sa.DateTime(), nullable=True))
     op.drop_index(op.f("ix_parts_description"), table_name="parts")
     op.drop_index(op.f("ix_parts_manufacturer"), table_name="parts")
     op.drop_index(op.f("ix_parts_part_number"), table_name="parts")
@@ -94,7 +94,14 @@ def upgrade() -> None:
     op.execute("UPDATE build_lists SET created_at = NOW() WHERE created_at IS NULL")
     op.execute("UPDATE build_lists SET updated_at = NOW() WHERE updated_at IS NULL")
 
-    # Now make user_id non-nullable
+    # Now make columns non-nullable
+    op.alter_column("build_lists", "created_at", nullable=False)
+    op.alter_column("build_lists", "updated_at", nullable=False)
+    op.alter_column("parts", "created_at", nullable=False)
+    op.alter_column("parts", "updated_at", nullable=False)
+    op.alter_column("parts", "is_verified", nullable=False)
+    op.alter_column("parts", "source", nullable=False)
+    op.alter_column("parts", "edit_count", nullable=False)
     op.alter_column("parts", "user_id", nullable=False)
 
     op.drop_constraint(op.f("parts_build_list_id_fkey"), "parts", type_="foreignkey")
