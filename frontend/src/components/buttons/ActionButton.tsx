@@ -14,7 +14,7 @@ const ActionButton: React.FC<ActionButtonProps> = ({
     <button
       type="button"
       {...props}
-      className={`px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md text-sm font-medium focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 focus:ring-offset-gray-800 ${className}`}
+            className={`px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-md text-sm font-medium focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 focus:ring-offset-gray-800 ${className}`}
     >
       {children}
     </button>

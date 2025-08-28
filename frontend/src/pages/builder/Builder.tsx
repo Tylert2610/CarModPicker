@@ -26,7 +26,7 @@ function Builder() {
   };
 
   return (
-    <div>
+    <div className="container mx-auto px-4 py-8">
       <PageHeader
         title="Builder"
         subtitle="Manage your cars and build lists."

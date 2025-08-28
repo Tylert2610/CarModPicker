@@ -184,7 +184,7 @@ function ViewBuildList() {
   const canManage = currentUser && carOwner && currentUser.id === carOwner.id;
 
   return (
-    <div>
+    <div className="container mx-auto px-4 py-8">
       <PageHeader
         title={buildList.name}
         subtitle={`For car: ${associatedCar ? `${associatedCar.year} ${associatedCar.make} ${associatedCar.model}` : 'Loading...'}`}

@@ -23,7 +23,6 @@ const GlobalPartsCatalog: React.FC = () => {
     useState<GlobalPartReadWithVotes | null>(null);
   const [isAddToBuildListDialogOpen, setIsAddToBuildListDialogOpen] =
     useState(false);
-
   const loadCategories = useCallback(async () => {
     try {
       const response = await categoriesApi.getCategories();
@@ -42,12 +41,9 @@ const GlobalPartsCatalog: React.FC = () => {
     setCurrentPage(1);
   }, [searchTerm, selectedCategory]);
 
-  const handleVoteUpdate = (
-    partId: number,
-    newVote: 'upvote' | 'downvote' | null
-  ) => {
-    // This will be handled by the GlobalPartList component internally
-    console.log('Vote updated:', partId, newVote);
+  const handleVoteUpdate = () => {
+    // Do nothing - let the VoteButtons component handle optimistic updates
+    // This prevents the entire catalog from re-rendering
   };
 
   const handleAddToBuildList = (globalPart: GlobalPartReadWithVotes) => {
@@ -84,10 +80,8 @@ const GlobalPartsCatalog: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white">
+    <div className="container mx-auto px-4 py-8">
       <PageHeader title="Parts Catalog" />
-
-      <div className="container mx-auto px-4 py-8">
         {/* Information Panel */}
         <Card className="mb-6">
           <div className="p-4">
@@ -151,9 +145,10 @@ const GlobalPartsCatalog: React.FC = () => {
         <div className="mb-8 space-y-4">
           <div className="flex flex-col md:flex-row gap-4">
             <div className="flex-1">
+              <label htmlFor="search-parts" className="block text-sm font-medium text-gray-300 mb-2">
+                Search
+              </label>
               <Input
-                label="Search"
-                id="search-parts"
                 type="text"
                 placeholder="Search parts..."
                 value={searchTerm}
@@ -195,7 +190,6 @@ const GlobalPartsCatalog: React.FC = () => {
           onPartAdded={handlePartAdded}
         />
       </div>
-    </div>
   );
 };
 

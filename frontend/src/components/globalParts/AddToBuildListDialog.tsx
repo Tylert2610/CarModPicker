@@ -126,13 +126,13 @@ function AddToBuildListDialog({
 
         {/* Global Part Preview */}
         <Card>
-          <div className="mb-3">
-            <div className="flex items-center gap-2 mb-2">
-              <span className="text-xs bg-green-600 text-white px-2 py-1 rounded-full">
+          <div className="mb-4">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-xs bg-gradient-to-r from-green-600 to-green-700 text-white px-3 py-1 rounded-full font-medium">
                 Global Part
               </span>
             </div>
-            <p className="text-sm text-gray-400">
+            <p className="text-sm text-neutral-400">
               This will create a personal copy in your build list that you can
               customize.
             </p>
@@ -170,7 +170,7 @@ function AddToBuildListDialog({
 
         {/* Build List Selection */}
         <div className="space-y-4">
-          <h3 className="text-lg font-semibold text-gray-200">
+          <h3 className="text-lg font-semibold text-neutral-200">
             Select Build List
           </h3>
 
@@ -183,10 +183,10 @@ function AddToBuildListDialog({
               {buildLists.map((buildList: BuildListRead) => (
                 <Card
                   key={buildList.id}
-                  className={`cursor-pointer transition-colors ${
+                  className={`cursor-pointer transition-all duration-300 ${
                     selectedBuildListId === buildList.id
-                      ? 'border-blue-500 bg-blue-900/20'
-                      : 'hover:bg-gray-800'
+                      ? 'border-primary-500 bg-primary-500/20 shadow-lg'
+                      : 'hover:bg-white/5 hover:scale-105'
                   }`}
                   onClick={() => setSelectedBuildListId(buildList.id)}
                 >
@@ -204,9 +204,9 @@ function AddToBuildListDialog({
               ))}
             </div>
           ) : (
-            <div className="text-center py-4 text-gray-400">
+            <div className="text-center py-6 text-neutral-400">
               <p>No build lists found.</p>
-              <p className="text-sm mt-1">
+              <p className="text-sm mt-2">
                 Create a build list first to add parts to it.
               </p>
             </div>
@@ -215,21 +215,24 @@ function AddToBuildListDialog({
 
         {/* Notes Field */}
         <div className="space-y-4">
-          <h3 className="text-lg font-semibold text-gray-200">
+          <h3 className="text-lg font-semibold text-neutral-200">
             📝 Build List Notes (Optional)
           </h3>
-          <p className="text-sm text-gray-400">
+          <p className="text-sm text-neutral-400">
             Add personal notes to your build list copy. These notes are only
             visible to you.
           </p>
-          <Input
-            label="Notes"
-            id="build-list-notes"
-            type="text"
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            placeholder="Add notes about this part in your build list"
-          />
+          <div>
+            <label htmlFor="build-list-notes" className="block text-sm font-medium text-neutral-300 mb-2">
+              Notes
+            </label>
+            <Input
+              type="text"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Add notes about this part in your build list"
+            />
+          </div>
         </div>
 
         <div className="flex justify-end space-x-3 pt-4">

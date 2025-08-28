@@ -30,7 +30,7 @@ describe('AuthCard', () => {
     render(
       <AuthCard title="Test Auth">
         <div data-testid="auth-content">Auth content</div>
-        <button>Submit</button>
+        <button type="button">Submit</button>
       </AuthCard>
     );
 

@@ -11,7 +11,7 @@ interface GlobalPartListItemProps {
 const GlobalPartListItem: React.FC<GlobalPartListItemProps> = ({ part }) => {
   return (
     <Link to={`/global-parts/${part.id}`} className="block hover:no-underline">
-      <Card className="flex flex-row items-start gap-4 p-4 hover:border-indigo-500 border-2 border-transparent transition-colors w-full">
+      <Card className="flex flex-row items-start gap-4 p-4 border-2 border-transparent w-full">
         <ImageWithPlaceholder
           srcUrl={part.image_url}
           altText={part.name}
@@ -20,7 +20,7 @@ const GlobalPartListItem: React.FC<GlobalPartListItemProps> = ({ part }) => {
           fallbackText="No image"
         />
         <div className="flex-grow flex flex-col justify-start">
-          <h3 className="text-xl font-semibold text-indigo-400 mb-1 truncate">
+          <h3 className="text-xl font-semibold text-gray-200 mb-1 truncate">
             {part.name}
           </h3>
           {part.brand && (

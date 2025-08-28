@@ -70,17 +70,8 @@ const EditBuildListForm: React.FC<EditBuildListFormProps> = ({
      
     };
 
-    // Check if any data actually changed
-    let hasChanges = false;
-    if (payload.name !== buildList.name) hasChanges = true;
-    if (payload.description !== (buildList.description || null))
-      hasChanges = true;
-    if (payload.image_url !== (buildList.image_url || null)) hasChanges = true;
-
-    if (!hasChanges) {
-      setFormMessage({ type: 'error', text: 'No changes detected.' });
-      return;
-    }
+    // Always submit the data, even if no changes detected
+    // This provides better UX and allows users to "save" without making changes
 
     const result = await executeUpdateBuildList({
       buildListId: buildList.id,
@@ -97,37 +88,43 @@ const EditBuildListForm: React.FC<EditBuildListFormProps> = ({
   };
 
   return (
-    <div className="p-1">
-      <form onSubmit={(e) => void handleSubmit(e)} className="space-y-4">
-        <Input
-          label="Build List Name"
-          id="edit-buildlist-name"
-          name="name"
-          type="text"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          required
-          disabled={isLoading}
-        />
-        <Input
-          label="Description (Optional)"
-          id="edit-buildlist-description"
-          name="description"
-          type="text" 
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          disabled={isLoading}
-        />
-        <Input
-          label="Image URL (Optional)"
-          id="edit-buildlist-image_url"
-          name="image_url"
-          type="url"
-          value={imageUrl}
-          onChange={(e) => setImageUrl(e.target.value)}
-          disabled={isLoading}
-          placeholder="https://example.com/buildlist-image.png"
-        />
+    <div className="p-4">
+      <form onSubmit={(e) => void handleSubmit(e)} className="space-y-6">
+        <div>
+          <label htmlFor="edit-buildlist-name" className="block text-sm font-medium text-neutral-300 mb-2">
+            Build List Name
+          </label>
+          <Input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            required
+            disabled={isLoading}
+          />
+        </div>
+        <div>
+          <label htmlFor="edit-buildlist-description" className="block text-sm font-medium text-neutral-300 mb-2">
+            Description (Optional)
+          </label>
+          <Input
+            type="text" 
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            disabled={isLoading}
+          />
+        </div>
+        <div>
+          <label htmlFor="edit-buildlist-image_url" className="block text-sm font-medium text-neutral-300 mb-2">
+            Image URL (Optional)
+          </label>
+          <Input
+            type="url"
+            value={imageUrl}
+            onChange={(e) => setImageUrl(e.target.value)}
+            disabled={isLoading}
+            placeholder="https://example.com/buildlist-image.png"
+          />
+        </div>
         {formMessage?.type === 'success' && (
           <ConfirmationAlert message={formMessage.text} />
         )}

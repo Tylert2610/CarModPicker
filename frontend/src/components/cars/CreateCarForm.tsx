@@ -5,7 +5,6 @@ import type { CarCreate, CarRead } from '../../types/Api';
 import Input from '../common/Input';
 import ButtonStretch from '../buttons/StretchButton';
 import { ErrorAlert, ConfirmationAlert } from '../common/Alerts';
-import SectionHeader from '../layout/SectionHeader';
 import Card from '../common/Card';
 
 interface CreateCarFormProps {
@@ -83,9 +82,8 @@ const CreateCarForm: React.FC<CreateCarFormProps> = ({ onCarCreated }) => {
   };
 
   return (
-    <Card className="mb-6">
-      <SectionHeader title="Add a New Car" />
-      <form onSubmit={(e) => void handleSubmit(e)} className="space-y-4">
+    <Card className="p-4">
+      <form onSubmit={(e) => void handleSubmit(e)} className="space-y-6">
         <Input
           label="Make"
           id="make"
@@ -112,9 +110,7 @@ const CreateCarForm: React.FC<CreateCarFormProps> = ({ onCarCreated }) => {
           name="year"
           type="number"
           value={year}
-          onChange={(e) =>
-            setYear(e.target.value === '' ? '' : parseInt(e.target.value, 10))
-          }
+          onChange={(e) => setYear(e.target.value === '' ? '' : Number(e.target.value))}
           required
           disabled={isLoading}
         />

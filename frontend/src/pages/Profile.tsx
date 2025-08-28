@@ -196,7 +196,7 @@ function Profile() {
   }
 
   return (
-    <div>
+    <div className="container mx-auto px-4 py-8">
       <PageHeader
         title="Profile"
         subtitle={`Manage your account details, ${user.username}.`}

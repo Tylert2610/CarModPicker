@@ -46,7 +46,7 @@ const ImageWithPlaceholder: React.FC<ImageWithPlaceholderProps> = ({
   if (showFallback || !imageSrc) {
     return (
       <div
-        className={`${containerClassName} flex items-center justify-center border border-gray-400 p-2`}
+        className={`${containerClassName} flex items-center justify-center border border-gray-600 bg-gray-800/50 p-2`}
       >
         <p className={fallbackTextClassName}>{fallbackText}</p>
       </div>

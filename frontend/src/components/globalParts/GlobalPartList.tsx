@@ -111,7 +111,7 @@ function GlobalPartList({
                     fallbackText="No image"
                   />
                 </div>
-                <h3 className="text-lg font-semibold text-white group-hover:text-blue-400 transition-colors duration-200 mb-2">
+                <h3 className="text-lg font-semibold text-gray-200 mb-2">
                   {globalPart.name}
                 </h3>
                 {globalPart.brand && (

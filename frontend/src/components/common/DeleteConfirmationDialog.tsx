@@ -27,19 +27,19 @@ const DeleteConfirmationDialog: React.FC<DeleteConfirmationDialogProps> = ({
 
   return (
     <Dialog isOpen={isOpen} onClose={onClose} title={`Confirm Deletion`}>
-      <div className="text-gray-300">
-        <p className="mb-4">
-          Are you sure you want to delete the {itemType} "{itemName}"? This
+      <div className="text-neutral-300">
+        <p className="mb-6 text-lg leading-relaxed">
+          Are you sure you want to delete the {itemType} <span className="font-semibold text-white">"{itemName}"</span>? This
           action cannot be undone.
         </p>
         {error && (
           <ErrorAlert message={`Failed to delete ${itemType}: ${error}`} />
         )}
-        <div className="flex justify-end space-x-3 mt-6">
+        <div className="flex justify-end space-x-3 mt-8">
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 border border-gray-600 rounded-md text-gray-300 hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500"
+            className="glass-button px-6 py-3 rounded-xl text-neutral-300 hover:text-white transition-all duration-300"
             disabled={isProcessing}
           >
             Cancel
@@ -47,7 +47,7 @@ const DeleteConfirmationDialog: React.FC<DeleteConfirmationDialogProps> = ({
           <button
             type="button"
             onClick={onConfirm}
-            className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-opacity-50"
+            className="px-6 py-3 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 text-white rounded-xl font-semibold transition-all duration-300 hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
             disabled={isProcessing}
           >
             {isProcessing ? 'Deleting...' : 'Confirm Delete'}

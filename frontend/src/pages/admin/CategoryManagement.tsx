@@ -93,7 +93,7 @@ function CategoryManagement() {
 
   if (!user) {
     return (
-      <div>
+      <div className="container mx-auto px-4 py-8">
         <PageHeader title="Category Management" />
         <Card>
           <ErrorAlert message="Please log in to access category management." />
@@ -209,7 +209,7 @@ function CategoryManagement() {
   }
 
   return (
-    <div>
+    <div className="container mx-auto px-4 py-8">
       <PageHeader
         title="Category Management"
         subtitle="Create and manage part categories"

@@ -17,8 +17,8 @@ describe('ActionButton', () => {
     expect(button).toHaveClass(
       'px-4',
       'py-2',
-      'bg-indigo-600',
-      'hover:bg-indigo-700',
+      'bg-gray-600',
+      'hover:bg-gray-700',
       'text-white',
       'rounded-md',
       'text-sm',
@@ -26,7 +26,7 @@ describe('ActionButton', () => {
       'focus:outline-none',
       'focus:ring-2',
       'focus:ring-offset-2',
-      'focus:ring-indigo-500',
+      'focus:ring-gray-500',
       'focus:ring-offset-gray-800'
     )
   })
