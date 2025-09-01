@@ -21,7 +21,6 @@ interface InputProps {
   helperText?: string;
   autoComplete?: string;
   ref?: React.Ref<HTMLInputElement>;
-  // Additional HTML input attributes
   step?: string;
   min?: string;
   max?: string;

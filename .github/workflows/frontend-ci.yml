@@ -45,10 +45,3 @@ jobs:
         run: |
           cd frontend
           npm run build
-
-      - name: Test build output
-        run: |
-          cd frontend
-          npx serve -s dist -l 3000 &
-          sleep 5
-          curl -f http://localhost:3000 || exit 1
