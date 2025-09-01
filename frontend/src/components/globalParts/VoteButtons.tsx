@@ -19,6 +19,9 @@ const VoteButtons: React.FC<VoteButtonsProps> = ({
   size = 'md',
 }) => {
   const [isVoting, setIsVoting] = useState(false);
+  const [localUpvotes, setLocalUpvotes] = useState(upvotes);
+  const [localDownvotes, setLocalDownvotes] = useState(downvotes);
+  const [localUserVote, setLocalUserVote] = useState(userVote);
 
   const handleVote = async (voteType: 'upvote' | 'downvote') => {
     if (isVoting) return;
@@ -26,12 +29,41 @@ const VoteButtons: React.FC<VoteButtonsProps> = ({
     try {
       setIsVoting(true);
 
+      // Optimistic update - immediately update the UI
+      let newUpvotes = localUpvotes;
+      let newDownvotes = localDownvotes;
+      let newUserVote: 'upvote' | 'downvote' | null = localUserVote || null;
+
+      // Remove previous vote if it exists
+      if (localUserVote === 'upvote') {
+        newUpvotes -= 1;
+      } else if (localUserVote === 'downvote') {
+        newDownvotes -= 1;
+      }
+
       // If user already voted the same way, remove the vote
-      if (userVote === voteType) {
+      if (localUserVote === voteType) {
+        newUserVote = null;
+      } else {
+        // Otherwise, vote or change vote
+        newUserVote = voteType;
+        if (voteType === 'upvote') {
+          newUpvotes += 1;
+        } else {
+          newDownvotes += 1;
+        }
+      }
+
+      // Update local state immediately
+      setLocalUpvotes(newUpvotes);
+      setLocalDownvotes(newDownvotes);
+      setLocalUserVote(newUserVote);
+
+      // Make the API call
+      if (localUserVote === voteType) {
         await globalPartVotesApi.removeVote(partId);
         onVoteUpdate(partId, null);
       } else {
-        // Otherwise, vote or change vote
         await globalPartVotesApi.voteOnGlobalPart(partId, {
           vote_type: voteType,
         });
@@ -39,6 +71,10 @@ const VoteButtons: React.FC<VoteButtonsProps> = ({
       }
     } catch (error) {
       console.error('Failed to vote:', error);
+      // Revert optimistic update on error
+      setLocalUpvotes(upvotes);
+      setLocalDownvotes(downvotes);
+      setLocalUserVote(userVote);
       // You might want to show a toast notification here
     } finally {
       setIsVoting(false);
@@ -67,7 +103,7 @@ const VoteButtons: React.FC<VoteButtonsProps> = ({
     }
   };
 
-  const totalVotes = upvotes - downvotes;
+  const totalVotes = localUpvotes - localDownvotes;
 
   return (
     <div className={`flex items-center space-x-2 ${getSizeClasses()}`}>
@@ -82,7 +118,7 @@ const VoteButtons: React.FC<VoteButtonsProps> = ({
           ${getButtonSizeClasses()}
           rounded-lg transition-colors duration-200
           ${
-            userVote === 'upvote'
+            localUserVote === 'upvote'
               ? 'bg-green-600 text-white hover:bg-green-700'
               : 'bg-gray-700 text-gray-300 hover:bg-gray-600 hover:text-white'
           }
@@ -126,7 +162,7 @@ const VoteButtons: React.FC<VoteButtonsProps> = ({
           ${getButtonSizeClasses()}
           rounded-lg transition-colors duration-200
           ${
-            userVote === 'downvote'
+            localUserVote === 'downvote'
               ? 'bg-red-600 text-white hover:bg-red-700'
               : 'bg-gray-700 text-gray-300 hover:bg-gray-600 hover:text-white'
           }
@@ -150,7 +186,7 @@ const VoteButtons: React.FC<VoteButtonsProps> = ({
 
       {/* Total Votes */}
       <span className="text-gray-500 text-xs">
-        ({upvotes + downvotes} votes)
+        ({localUpvotes + localDownvotes} votes)
       </span>
     </div>
   );

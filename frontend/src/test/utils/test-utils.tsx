@@ -1,13 +1,14 @@
-import React, { type ReactElement } from 'react';
+import { type ReactElement } from 'react';
 import {
   render,
   type RenderOptions,
   type Screen,
 } from '@testing-library/react';
-import { BrowserRouter } from 'react-router-dom';
 import { setupApiMocks } from '../mocks/api';
 import { expect, vi } from 'vitest';
 import type { UserRead } from '../../types/Api';
+import { mockUseAuth } from './test-mocks';
+import { AllTheProviders } from './TestWrapper';
 
 // Custom render function that includes providers
 interface CustomRenderOptions extends Omit<RenderOptions, 'wrapper'> {
@@ -34,30 +35,11 @@ vi.mock('../../services/Api', () => ({
 }));
 
 // Mock the useAuth hook
-const mockUseAuth = vi.fn();
 vi.mock('../../hooks/useAuth', () => ({
   useAuth: () => mockUseAuth(),
 }));
 
-const AllTheProviders = ({
-  children,
-  initialAuthState = { isAuthenticated: false, isLoading: false },
-}: {
-  children: React.ReactNode;
-  initialAuthState?: CustomRenderOptions['initialAuthState'];
-}) => {
-  // Set up the mock useAuth hook to return the initial state
-  mockUseAuth.mockReturnValue({
-    isAuthenticated: initialAuthState.isAuthenticated,
-    user: initialAuthState.user,
-    isLoading: initialAuthState.isLoading,
-    login: vi.fn(),
-    logout: vi.fn(),
-    checkAuthStatus: vi.fn(),
-  });
 
-  return <BrowserRouter>{children}</BrowserRouter>;
-};
 
 const customRender = (ui: ReactElement, options: CustomRenderOptions = {}) => {
   const { route = '/', initialAuthState, ...renderOptions } = options;

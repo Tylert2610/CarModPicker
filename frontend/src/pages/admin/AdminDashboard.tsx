@@ -69,7 +69,7 @@ function AdminDashboard() {
   ];
 
   return (
-    <div>
+    <div className="container mx-auto px-4 py-8">
       <PageHeader
         title="Admin Dashboard"
         subtitle="Manage CarModPicker system settings and content"

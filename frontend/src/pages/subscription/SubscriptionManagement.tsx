@@ -161,7 +161,7 @@ function SubscriptionManagement() {
   }
 
   return (
-    <div>
+    <div className="container mx-auto px-4 py-8">
       <PageHeader
         title="Subscription Management"
         subtitle="Manage your CarModPicker subscription"

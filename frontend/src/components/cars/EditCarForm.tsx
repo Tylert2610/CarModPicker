@@ -80,19 +80,8 @@ const EditCarForm: React.FC<EditCarFormProps> = ({
       image_url: imageUrl.trim() || null,
     };
 
-    // Check if any data actually changed
-    let hasChanges = false;
-    if (payload.make !== car.make) hasChanges = true;
-    if (payload.model !== car.model) hasChanges = true;
-    if (payload.year !== car.year) hasChanges = true;
-    if (payload.trim !== (car.trim || null)) hasChanges = true;
-    if (payload.vin !== (car.vin || null)) hasChanges = true;
-    if (payload.image_url !== (car.image_url || null)) hasChanges = true;
-
-    if (!hasChanges) {
-      setFormMessage({ type: 'error', text: 'No changes detected.' });
-      return;
-    }
+    // Always submit the data, even if no changes detected
+    // This provides better UX and allows users to "save" without making changes
 
     const result = await executeUpdateCar({ carId: car.id, data: payload });
 
@@ -103,83 +92,95 @@ const EditCarForm: React.FC<EditCarFormProps> = ({
   };
 
   return (
-    <div className="p-1">
-      <form onSubmit={(e) => void handleSubmit(e)} className="space-y-4">
-        <Input
-          label="Make"
-          id="edit-make"
-          name="make"
-          type="text"
-          value={make}
-          onChange={(e) => setMake(e.target.value)}
-          required
-          disabled={isLoading}
-        />
-        <Input
-          label="Model"
-          id="edit-model"
-          name="model"
-          type="text"
-          value={model}
-          onChange={(e) => setModel(e.target.value)}
-          required
-          disabled={isLoading}
-        />
-        <Input
-          label="Year"
-          id="edit-year"
-          name="year"
-          type="number"
-          value={year}
-          onChange={(e) =>
-            setYear(e.target.value === '' ? '' : parseInt(e.target.value, 10))
-          }
-          required
-          disabled={isLoading}
-        />
-        <Input
-          label="Trim (Optional)"
-          id="edit-trim"
-          name="trim"
-          type="text"
-          value={trim}
-          onChange={(e) => setTrim(e.target.value)}
-          disabled={isLoading}
-        />
-        <Input
-          label="VIN (Optional)"
-          id="edit-vin"
-          name="vin"
-          type="text"
-          value={vin}
-          onChange={(e) => setVin(e.target.value)}
-          disabled={isLoading}
-        />
-        <Input
-          label="Image URL (Optional)"
-          id="edit-image_url"
-          name="image_url"
-          type="url"
-          value={imageUrl}
-          onChange={(e) => setImageUrl(e.target.value)}
-          disabled={isLoading}
-          placeholder="https://example.com/car-image.png"
-        />
+    <div className="p-4">
+      <form onSubmit={(e) => void handleSubmit(e)} className="space-y-6">
+        <div>
+          <label htmlFor="edit-make" className="block text-sm font-medium text-neutral-300 mb-2">
+            Make
+          </label>
+          <Input
+            type="text"
+            value={make}
+            onChange={(e) => setMake(e.target.value)}
+            required
+            disabled={isLoading}
+          />
+        </div>
+        <div>
+          <label htmlFor="edit-model" className="block text-sm font-medium text-neutral-300 mb-2">
+            Model
+          </label>
+          <Input
+            type="text"
+            value={model}
+            onChange={(e) => setModel(e.target.value)}
+            required
+            disabled={isLoading}
+          />
+        </div>
+        <div>
+          <label htmlFor="edit-year" className="block text-sm font-medium text-neutral-300 mb-2">
+            Year
+          </label>
+          <Input
+            type="number"
+            value={year.toString()}
+            onChange={(e) =>
+              setYear(e.target.value === '' ? '' : parseInt(e.target.value, 10))
+            }
+            required
+            disabled={isLoading}
+          />
+        </div>
+        <div>
+          <label htmlFor="edit-trim" className="block text-sm font-medium text-neutral-300 mb-2">
+            Trim (Optional)
+          </label>
+          <Input
+            type="text"
+            value={trim}
+            onChange={(e) => setTrim(e.target.value)}
+            disabled={isLoading}
+          />
+        </div>
+        <div>
+          <label htmlFor="edit-vin" className="block text-sm font-medium text-neutral-300 mb-2">
+            VIN (Optional)
+          </label>
+          <Input
+            type="text"
+            value={vin}
+            onChange={(e) => setVin(e.target.value)}
+            disabled={isLoading}
+          />
+        </div>
+        <div>
+          <label htmlFor="edit-image_url" className="block text-sm font-medium text-neutral-300 mb-2">
+            Image URL (Optional)
+          </label>
+          <Input
+            type="url"
+            value={imageUrl}
+            onChange={(e) => setImageUrl(e.target.value)}
+            disabled={isLoading}
+            placeholder="https://example.com/car-image.png"
+          />
+        </div>
         {formMessage?.type === 'success' && (
           <ConfirmationAlert message={formMessage.text} />
         )}
         {(apiError || formMessage?.type === 'error') && (
           <ErrorAlert message={apiError || formMessage?.text || null} />
         )}
-        <div className="flex space-x-2 pt-2">
-          <ButtonStretch type="submit" disabled={isLoading}>
+        <div className="flex space-x-3 pt-4">
+          <ButtonStretch type="submit" disabled={isLoading} className="flex-1">
             {isLoading ? 'Saving...' : 'Save Changes'}
           </ButtonStretch>
           <SecondaryButton
             type="button"
             onClick={onCancel}
             disabled={isLoading}
-            className="w-full"
+            className="flex-1"
           >
             Cancel
           </SecondaryButton>

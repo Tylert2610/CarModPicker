@@ -87,7 +87,7 @@ function UserGlobalParts() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="container mx-auto px-4 py-8">
       <PageHeader title="Parts I Created in Global Catalog" />
 
       <Card>
@@ -151,7 +151,7 @@ function UserGlobalParts() {
                       fallbackText="No image"
                     />
                   </div>
-                  <h3 className="text-lg font-semibold text-white group-hover:text-blue-400 transition-colors duration-200 mb-2">
+                  <h3 className="text-lg font-semibold text-gray-200 mb-2">
                     {globalPart.name}
                   </h3>
                   {globalPart.brand && (

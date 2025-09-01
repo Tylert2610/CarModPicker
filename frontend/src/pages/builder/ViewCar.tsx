@@ -159,7 +159,7 @@ function ViewCar() {
   }
 
   return (
-    <div>
+    <div className="container mx-auto px-4 py-8">
       <PageHeader title={`${car.year} ${car.make} ${car.model}`} />
       <Card>
         <div className="flex justify-between items-center mb-4">
