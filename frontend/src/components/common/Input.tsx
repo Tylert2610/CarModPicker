@@ -21,6 +21,17 @@ interface InputProps {
   helperText?: string;
   autoComplete?: string;
   ref?: React.Ref<HTMLInputElement>;
+  // Additional HTML input attributes
+  step?: string;
+  min?: string;
+  max?: string;
+  pattern?: string;
+  readOnly?: boolean;
+  size?: number;
+  maxLength?: number;
+  minLength?: number;
+  multiple?: boolean;
+  accept?: string;
 }
 
 const Input: React.FC<InputProps> = ({
@@ -43,7 +54,18 @@ const Input: React.FC<InputProps> = ({
   variant,
   helperText,
   autoComplete,
-  ref
+  ref,
+  // Additional HTML input attributes
+  step,
+  min,
+  max,
+  pattern,
+  readOnly,
+  size,
+  maxLength,
+  minLength,
+  multiple,
+  accept
 }) => {
   const baseClasses = 'w-full transition-all duration-300 ease-out focus:outline-none';
   
@@ -114,6 +136,16 @@ const Input: React.FC<InputProps> = ({
           disabled={disabled}
           required={required}
           autoComplete={autoComplete}
+          step={step}
+          min={min}
+          max={max}
+          pattern={pattern}
+          readOnly={readOnly}
+          size={size}
+          maxLength={maxLength}
+          minLength={minLength}
+          multiple={multiple}
+          accept={accept}
           className={`
             ${baseClasses}
             ${variantClasses}
