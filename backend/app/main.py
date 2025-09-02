@@ -17,8 +17,14 @@ from .api.endpoints import (
     categories,
     global_part_votes,
     global_part_reports,
+    car_votes,
+    car_reports,
+    build_list_votes,
+    build_list_reports,
 )
 from .api.middleware import rate_limit_middleware
+from .api.middleware.error_handler import register_error_handlers
+from .api.utils.endpoint_registry import EndpointRegistry
 from .core.config import settings
 
 # Configure logging for the entire application
@@ -77,42 +83,98 @@ app.add_middleware(
 # Add rate limiting middleware
 app.middleware("http")(rate_limit_middleware)
 
-app.include_router(users.router, prefix=settings.API_STR + "/users", tags=["users"])
-app.include_router(cars.router, prefix=settings.API_STR + "/cars", tags=["cars"])
-app.include_router(
-    build_lists.router, prefix=settings.API_STR + "/build-lists", tags=["build_lists"]
+# Register error handlers for standardized error responses
+register_error_handlers(app)
+
+# Create endpoint registry for standardized registration
+endpoint_registry = EndpointRegistry(app)
+
+# Register all endpoints using the registry
+# Core CRUD endpoints
+endpoint_registry.register_crud_endpoint(
+    users.router, entity_name="users", description="User management operations"
 )
-app.include_router(
+
+endpoint_registry.register_crud_endpoint(
+    cars.router, entity_name="cars", description="Car management operations"
+)
+
+endpoint_registry.register_crud_endpoint(
+    build_lists.router,
+    entity_name="build-lists",
+    description="Build list management operations",
+)
+
+endpoint_registry.register_crud_endpoint(
     global_parts.router,
-    prefix=settings.API_STR + "/global-parts",
-    tags=["global_parts"],
+    entity_name="global-parts",
+    description="Global part catalog operations",
 )
-app.include_router(
+
+endpoint_registry.register_crud_endpoint(
     build_list_parts.router,
-    prefix=settings.API_STR + "/build-list-parts",
-    tags=["build_list_parts"],
+    entity_name="build-list-parts",
+    description="Build list part management operations",
 )
-app.include_router(auth.router, prefix=settings.API_STR + "/auth", tags=["auth"])
-app.include_router(
-    subscriptions.router,
-    prefix=settings.API_STR + "/subscriptions",
-    tags=["subscriptions"],
-)
-app.include_router(
+
+endpoint_registry.register_crud_endpoint(
     categories.router,
-    prefix=settings.API_STR + "/categories",
-    tags=["categories"],
+    entity_name="categories",
+    description="Category management operations",
 )
-app.include_router(
+
+# Authentication endpoint
+endpoint_registry.register_endpoint(
+    auth.router,
+    prefix="/auth",
+    tags=["authentication"],
+    description="User authentication and authorization",
+)
+
+# Subscription endpoint
+endpoint_registry.register_endpoint(
+    subscriptions.router,
+    prefix="/subscriptions",
+    tags=["subscriptions"],
+    description="Subscription and billing operations",
+)
+
+# Vote endpoints
+endpoint_registry.register_vote_endpoint(
+    car_votes.router, entity_name="cars", description="Car voting operations"
+)
+
+endpoint_registry.register_vote_endpoint(
     global_part_votes.router,
-    prefix=settings.API_STR + "/global-part-votes",
-    tags=["global_part_votes"],
+    entity_name="global-parts",
+    description="Global part voting operations",
 )
-app.include_router(
+
+endpoint_registry.register_vote_endpoint(
+    build_list_votes.router,
+    entity_name="build-lists",
+    description="Build list voting operations",
+)
+
+# Report endpoints
+endpoint_registry.register_report_endpoint(
+    car_reports.router, entity_name="car", description="Car reporting operations"
+)
+
+endpoint_registry.register_report_endpoint(
     global_part_reports.router,
-    prefix=settings.API_STR + "/global-part-reports",
-    tags=["global_part_reports"],
+    entity_name="global-parts",
+    description="Global part reporting operations",
 )
+
+endpoint_registry.register_report_endpoint(
+    build_list_reports.router,
+    entity_name="build-lists",
+    description="Build list reporting operations",
+)
+
+# Print registration summary
+endpoint_registry.print_registration_summary()
 
 
 @app.get("/")

@@ -10,6 +10,8 @@ if TYPE_CHECKING:
     from .car import Car
     from .user import User
     from .build_list_part import BuildListPart
+    from .build_list_vote import BuildListVote
+    from .build_list_report import BuildListReport
 
 
 class BuildList(Base):
@@ -32,4 +34,11 @@ class BuildList(Base):
     owner: Mapped["User"] = relationship("User", back_populates="build_lists")
     build_list_parts: Mapped[List["BuildListPart"]] = relationship(
         "BuildListPart", back_populates="build_list"
+    )
+    # votes and reports
+    votes: Mapped[List["BuildListVote"]] = relationship(
+        "BuildListVote", back_populates="build_list", cascade="all, delete-orphan"
+    )
+    reports: Mapped[List["BuildListReport"]] = relationship(
+        "BuildListReport", back_populates="build_list", cascade="all, delete-orphan"
     )

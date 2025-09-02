@@ -1,5 +1,5 @@
 from typing import List, Optional, TYPE_CHECKING
-from datetime import datetime
+from datetime import datetime, UTC
 
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -13,6 +13,10 @@ if TYPE_CHECKING:
     from .global_part import GlobalPart
     from .build_list import BuildList
     from .build_list_part import BuildListPart
+    from .car_vote import CarVote
+    from .car_report import CarReport
+    from .build_list_vote import BuildListVote
+    from .build_list_report import BuildListReport
 
 
 class User(Base):
@@ -25,6 +29,10 @@ class User(Base):
     email_verified: Mapped[bool] = mapped_column(default=False, nullable=False)
     hashed_password: Mapped[str] = mapped_column(nullable=False)
     disabled: Mapped[bool] = mapped_column(default=False, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime] = mapped_column(
+        default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
+    )
 
     # Admin/Superuser fields
     is_superuser: Mapped[bool] = mapped_column(default=False, nullable=False)
@@ -61,6 +69,26 @@ class User(Base):
     global_part_reports: Mapped[List["GlobalPartReport"]] = relationship(
         "GlobalPartReport",
         foreign_keys="GlobalPartReport.user_id",
+        back_populates="reporter",
+        cascade="all, delete-orphan",
+    )
+    # Car votes and reports
+    car_votes: Mapped[List["CarVote"]] = relationship(
+        "CarVote", back_populates="user", cascade="all, delete-orphan"
+    )
+    car_reports: Mapped[List["CarReport"]] = relationship(
+        "CarReport",
+        foreign_keys="CarReport.user_id",
+        back_populates="reporter",
+        cascade="all, delete-orphan",
+    )
+    # Build list votes and reports
+    build_list_votes: Mapped[List["BuildListVote"]] = relationship(
+        "BuildListVote", back_populates="user", cascade="all, delete-orphan"
+    )
+    build_list_reports: Mapped[List["BuildListReport"]] = relationship(
+        "BuildListReport",
+        foreign_keys="BuildListReport.user_id",
         back_populates="reporter",
         cascade="all, delete-orphan",
     )

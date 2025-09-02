@@ -1,8 +1,8 @@
 """
-Refactored global part reports endpoint using base classes to eliminate redundancy.
+Refactored build list reports endpoint using base classes to eliminate redundancy.
 
 This endpoint now uses the BaseEndpointRouter to provide common CRUD operations
-while maintaining global part report-specific functionality.
+while maintaining build list report-specific functionality.
 """
 
 import logging
@@ -13,14 +13,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.api.dependencies.auth import get_current_user, get_current_admin_user
-from app.api.models.global_part import GlobalPart as DBGlobalPart
-from app.api.models.global_part_report import GlobalPartReport as DBGlobalPartReport
+from app.api.models.build_list import BuildList as DBBuildList
+from app.api.models.build_list_report import BuildListReport as DBBuildListReport
 from app.api.models.user import User as DBUser
-from app.api.schemas.global_part_report import (
-    GlobalPartReportCreate,
-    GlobalPartReportRead,
-    GlobalPartReportUpdate,
-    GlobalPartReportWithDetails,
+from app.api.schemas.build_list_report import (
+    BuildListReportCreate,
+    BuildListReportRead,
+    BuildListReportUpdate,
+    BuildListReportWithDetails,
 )
 from app.api.services.base_crud_service import BaseCRUDService
 from app.api.utils.base_endpoint_router import BaseEndpointRouter
@@ -43,31 +43,31 @@ router = APIRouter()
 
 
 # Create base CRUD service
-class GlobalPartReportService(
+class BuildListReportService(
     BaseCRUDService[
-        DBGlobalPartReport,
-        GlobalPartReportCreate,
-        GlobalPartReportRead,
-        GlobalPartReportUpdate,
+        DBBuildListReport,
+        BuildListReportCreate,
+        BuildListReportRead,
+        BuildListReportUpdate,
     ]
 ):
-    """Global part report service that extends the base CRUD service."""
+    """Build list report service that extends the base CRUD service."""
 
     def __init__(self):
         super().__init__(
-            model=DBGlobalPartReport,
-            entity_name="global part report",
+            model=DBBuildListReport,
+            entity_name="build list report",
             subscription_check_method=None,  # Reports don't count against subscription
         )
 
 
-global_part_report_service = GlobalPartReportService()
+build_list_report_service = BuildListReportService()
 
 # Create base endpoint router
 base_router = BaseEndpointRouter(
-    service=global_part_report_service,
+    service=build_list_report_service,
     router=router,
-    entity_name="global part report",
+    entity_name="build list report",
     allow_public_read=False,  # Reports are private
     additional_create_data={},  # No additional data needed
     disable_endpoints=["list", "update", "delete"],  # Custom implementations for these
@@ -75,37 +75,39 @@ base_router = BaseEndpointRouter(
 
 
 @router.post(
-    "/{part_id}/report",
-    response_model=GlobalPartReportRead,
+    "/{build_list_id}/report",
+    response_model=BuildListReportRead,
     responses=standard_responses(
-        success_description="Part reported successfully",
+        success_description="Build list reported successfully",
         validation_error=True,
         not_found=True,
         conflict=True,
     ),
 )
-async def report_part(
-    part_id: int,
-    report: GlobalPartReportCreate,
+async def report_build_list(
+    build_list_id: int,
+    report: BuildListReportCreate,
     db: Session = Depends(get_db),
     logger: logging.Logger = Depends(get_logger),
     current_user: DBUser = Depends(get_current_user),
-) -> GlobalPartReportRead:
-    """Report a part for admin review."""
-    # Check if part exists
-    db_global_part = get_entity_or_404(db, DBGlobalPart, part_id, "global part")
+) -> BuildListReportRead:
+    """Report a build list for admin review."""
+    # Check if build list exists
+    db_build_list = get_entity_or_404(db, DBBuildList, build_list_id, "build list")
 
-    # Check if user is trying to report their own part
-    if db_global_part.user_id == current_user.id:
-        raise HTTPException(status_code=400, detail="You cannot report your own part")
+    # Check if user is trying to report their own build list
+    if db_build_list.user_id == current_user.id:
+        raise HTTPException(
+            status_code=400, detail="You cannot report your own build list"
+        )
 
-    # Check if user has already reported this part
+    # Check if user has already reported this build list
     existing_report = (
-        db.query(DBGlobalPartReport)
+        db.query(DBBuildListReport)
         .filter(
-            DBGlobalPartReport.user_id == current_user.id,
-            DBGlobalPartReport.global_part_id == part_id,
-            DBGlobalPartReport.status == "pending",
+            DBBuildListReport.user_id == current_user.id,
+            DBBuildListReport.build_list_id == build_list_id,
+            DBBuildListReport.status == "pending",
         )
         .first()
     )
@@ -114,9 +116,9 @@ async def report_part(
         raise HTTPException(status_code=400, detail="Already reported")
 
     # Create new report
-    db_report = DBGlobalPartReport(
+    db_report = DBBuildListReport(
         user_id=current_user.id,
-        global_part_id=part_id,
+        build_list_id=build_list_id,
         reason=report.reason.value,
         description=report.description,
     )
@@ -125,16 +127,16 @@ async def report_part(
     db.refresh(db_report)
 
     logger.info(
-        f"Part reported: {db_report.id} by user {current_user.id} on part {part_id}"
+        f"Build list reported: {db_report.id} by user {current_user.id} on build list {build_list_id}"
     )
-    return GlobalPartReportRead.model_validate(db_report)
+    return BuildListReportRead.model_validate(db_report)
 
 
 @router.get(
     "/admin/list",
-    response_model=List[GlobalPartReportRead],
+    response_model=List[BuildListReportRead],
     responses=standard_responses(
-        success_description="Part reports retrieved successfully",
+        success_description="Build list reports retrieved successfully",
         unauthorized=True,
         forbidden=True,
     ),
@@ -149,7 +151,7 @@ async def list_reports_admin(
     db: Session = Depends(get_db),
     logger: logging.Logger = Depends(get_logger),
     current_user: DBUser = Depends(get_current_user),
-) -> List[GlobalPartReportRead]:
+) -> List[BuildListReportRead]:
     """List all reports with optional filtering (admin only)."""
     # Check if user is admin
     if not current_user.is_admin and not current_user.is_superuser:
@@ -158,29 +160,29 @@ async def list_reports_admin(
     skip, limit = validate_pagination_params(skip, limit)
 
     # Build query
-    query = db.query(DBGlobalPartReport)
+    query = db.query(DBBuildListReport)
 
     # Apply filters
     if status:
-        query = query.filter(DBGlobalPartReport.status == status)
+        query = query.filter(DBBuildListReport.status == status)
     if reason:
-        query = query.filter(DBGlobalPartReport.reason == reason)
+        query = query.filter(DBBuildListReport.reason == reason)
 
     # Apply pagination
     reports = (
-        query.order_by(DBGlobalPartReport.created_at.desc())
+        query.order_by(DBBuildListReport.created_at.desc())
         .offset(skip)
         .limit(limit)
         .all()
     )
 
     logger.info(f"Retrieved {len(reports)} reports for admin user {current_user.id}")
-    return [GlobalPartReportRead.model_validate(report) for report in reports]
+    return [BuildListReportRead.model_validate(report) for report in reports]
 
 
 @router.get(
     "/my-reports",
-    response_model=List[GlobalPartReportRead],
+    response_model=List[BuildListReportRead],
     responses=standard_responses(
         success_description="User reports retrieved successfully", unauthorized=True
     ),
@@ -189,16 +191,16 @@ async def get_my_reports(
     db: Session = Depends(get_db),
     logger: logging.Logger = Depends(get_logger),
     current_user: DBUser = Depends(get_current_user),
-) -> List[GlobalPartReportRead]:
+) -> List[BuildListReportRead]:
     """Get reports created by the current user."""
     db_reports = (
-        db.query(DBGlobalPartReport)
-        .filter(DBGlobalPartReport.user_id == current_user.id)
-        .order_by(DBGlobalPartReport.created_at.desc())
+        db.query(DBBuildListReport)
+        .filter(DBBuildListReport.user_id == current_user.id)
+        .order_by(DBBuildListReport.created_at.desc())
         .all()
     )
 
-    reports = [GlobalPartReportRead.model_validate(report) for report in db_reports]
+    reports = [BuildListReportRead.model_validate(report) for report in db_reports]
 
     logger.info(f"Retrieved {len(reports)} reports for user {current_user.id}")
     return reports
@@ -206,10 +208,11 @@ async def get_my_reports(
 
 @router.get(
     "/{report_id}",
-    response_model=GlobalPartReportRead,
+    response_model=BuildListReportRead,
     responses=standard_responses(
         success_description="Report retrieved successfully",
         unauthorized=True,
+        forbidden=True,
         not_found=True,
     ),
 )
@@ -218,27 +221,25 @@ async def get_report_by_id(
     db: Session = Depends(get_db),
     logger: logging.Logger = Depends(get_logger),
     current_user: DBUser = Depends(get_current_user),
-) -> GlobalPartReportRead:
+) -> BuildListReportRead:
     """Get a specific report by ID (user can only see their own reports)."""
     report = (
-        db.query(DBGlobalPartReport)
-        .filter(
-            DBGlobalPartReport.id == report_id,
-            DBGlobalPartReport.user_id == current_user.id,
-        )
-        .first()
+        db.query(DBBuildListReport).filter(DBBuildListReport.id == report_id).first()
     )
-
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
 
+    # Users can only see their own reports unless they're admin
+    if not current_user.is_admin and report.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Report not found")
+
     logger.info(f"Report retrieved: {report_id} by user {current_user.id}")
-    return GlobalPartReportRead.model_validate(report)
+    return BuildListReportRead.model_validate(report)
 
 
 @router.get(
     "/admin/{report_id}",
-    response_model=GlobalPartReportWithDetails,
+    response_model=BuildListReportWithDetails,
     responses=standard_responses(
         success_description="Report details retrieved successfully",
         forbidden=True,
@@ -250,19 +251,20 @@ async def get_report_admin(
     db: Session = Depends(get_db),
     logger: logging.Logger = Depends(get_logger),
     current_admin: DBUser = Depends(get_current_admin_user),
-) -> GlobalPartReportWithDetails:
+) -> BuildListReportWithDetails:
     """Get a specific report with details (admin only)."""
-    report = get_entity_or_404(db, DBGlobalPartReport, report_id, "report")
+    report = get_entity_or_404(db, DBBuildListReport, report_id, "report")
 
     # Get reporter username
     reporter = db.query(DBUser).filter(DBUser.id == report.user_id).first()
     reporter_username = reporter.username if reporter else "Unknown"
 
-    # Get part name
-    part = (
-        db.query(DBGlobalPart).filter(DBGlobalPart.id == report.global_part_id).first()
+    # Get build list details
+    build_list = (
+        db.query(DBBuildList).filter(DBBuildList.id == report.build_list_id).first()
     )
-    part_name = part.name if part else "Unknown Part"
+    build_list_name = build_list.name if build_list else "Unknown"
+    build_list_description = build_list.description if build_list else None
 
     # Get reviewer username
     reviewer_username = None
@@ -270,20 +272,23 @@ async def get_report_admin(
         reviewer = db.query(DBUser).filter(DBUser.id == report.reviewed_by).first()
         reviewer_username = reviewer.username if reviewer else "Unknown"
 
-    report_detail = GlobalPartReportWithDetails(
+    report_detail = BuildListReportWithDetails(
         **report.__dict__,
         reporter_username=reporter_username,
-        part_name=part_name,
+        build_list_name=build_list_name,
+        build_list_description=build_list_description,
         reviewer_username=reviewer_username,
     )
 
-    logger.info(f"Report retrieved: {report_id}")
+    logger.info(
+        f"Report with details retrieved: {report_id} by admin {current_admin.id}"
+    )
     return report_detail
 
 
 @router.put(
     "/{report_id}",
-    response_model=GlobalPartReportRead,
+    response_model=BuildListReportRead,
     responses=standard_responses(
         success_description="Report status updated successfully",
         unauthorized=True,
@@ -293,18 +298,18 @@ async def get_report_admin(
 )
 async def update_report_status(
     report_id: int,
-    report_update: GlobalPartReportUpdate,
+    report_update: BuildListReportUpdate,
     db: Session = Depends(get_db),
     logger: logging.Logger = Depends(get_logger),
     current_user: DBUser = Depends(get_current_user),
-) -> GlobalPartReportRead:
+) -> BuildListReportRead:
     """Update a report status (admin only)."""
     # Check if user is admin
     if not current_user.is_admin and not current_user.is_superuser:
         raise HTTPException(status_code=403, detail="Admin access required")
 
     # Get the report
-    db_report = get_entity_or_404(db, DBGlobalPartReport, report_id, "report")
+    db_report = get_entity_or_404(db, DBBuildListReport, report_id, "report")
 
     # Update the report
     db_report.status = report_update.status.value
@@ -319,7 +324,7 @@ async def update_report_status(
     logger.info(
         f"Report {report_id} status updated to {report_update.status.value} by admin {current_user.id}"
     )
-    return GlobalPartReportRead.model_validate(db_report)
+    return BuildListReportRead.model_validate(db_report)
 
 
 @router.delete(
@@ -344,7 +349,7 @@ async def delete_report(
         raise HTTPException(status_code=403, detail="Admin access required")
 
     # Get the report
-    db_report = get_entity_or_404(db, DBGlobalPartReport, report_id, "report")
+    db_report = get_entity_or_404(db, DBBuildListReport, report_id, "report")
 
     # Delete the report
     db.delete(db_report)
@@ -369,8 +374,8 @@ async def get_pending_reports_count(
 ) -> Dict[str, int]:
     """Get count of pending reports (admin only)."""
     count = (
-        db.query(DBGlobalPartReport)
-        .filter(DBGlobalPartReport.status == "pending")
+        db.query(DBBuildListReport)
+        .filter(DBBuildListReport.status == "pending")
         .count()
     )
     logger.info(f"Pending reports count: {count}")

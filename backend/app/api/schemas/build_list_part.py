@@ -1,7 +1,7 @@
 from typing import Optional
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .global_part import GlobalPartRead
 
@@ -44,3 +44,31 @@ class BuildListPartReadWithGlobalPart(BaseModel):
     global_part: GlobalPartRead
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class CreateGlobalPartAndAddToBuildListRequest(BaseModel):
+    """Request model for creating a global part and adding it to a build list."""
+
+    # Global part fields
+    name: str
+    description: str | None = None
+    price: int | None = Field(
+        None, ge=0, le=2147483647, description="Price in cents (max 21,474,836.47)"
+    )
+    image_url: str | None = None
+    category_id: int
+    brand: str | None = None
+    part_number: str | None = None
+    specifications: dict | None = None
+
+    # Build list part fields
+    notes: str | None = None
+
+    @field_validator("price")
+    @classmethod
+    def validate_price(cls, v: Optional[int]) -> Optional[int]:
+        if v is not None and (v < 0 or v > 2147483647):
+            raise ValueError(
+                "Price must be between 0 and 2,147,483,647 (max PostgreSQL integer)"
+            )
+        return v

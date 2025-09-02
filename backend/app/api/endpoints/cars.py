@@ -1,191 +1,209 @@
-import logging
-from typing import List
+"""
+Refactored cars endpoint using common patterns to eliminate redundancy.
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
-from sqlalchemy.orm import Session
+This endpoint now uses standardized patterns for pagination, error handling,
+and response documentation while maintaining car-specific functionality.
+"""
+
+from typing import List, Optional
+from fastapi import APIRouter, Depends, Query
 
 from app.api.dependencies.auth import get_current_user
 from app.api.models.car import Car as DBCar
 from app.api.models.user import User as DBUser
 from app.api.schemas.car import CarCreate, CarRead, CarUpdate
-from app.api.services.subscription_service import SubscriptionService
+from app.api.services.car_service import CarService
+from app.api.utils.base_endpoint_router import BaseEndpointRouter
+from app.api.utils.common_patterns import (
+    get_standard_pagination_params,
+    validate_pagination_params,
+    get_standard_public_endpoint_dependencies,
+    get_paginated_response,
+    apply_standard_filters,
+)
+from app.api.utils.endpoint_decorators import (
+    pagination_responses,
+    search_responses,
+    crud_responses,
+    standard_responses,
+)
+from app.api.utils.response_patterns import ResponsePatterns
 from app.core.logging import get_logger
 from app.db.session import get_db
 
-
-# Helper function to get and verify car ownership
-async def _verify_car_ownership(
-    car_id: int,
-    db: Session,
-    current_user: DBUser,
-    logger: logging.Logger,
-    not_found_detail: str = "Car not found",
-    authorization_detail: str = "Not authorized to perform this action on this car",
-) -> DBCar:
-    db_car = db.query(DBCar).filter(DBCar.id == car_id).first()
-    if not db_car:
-        logger.warning(f"Car with id {car_id} not found. User: {current_user.id}")
-        raise HTTPException(status_code=404, detail=not_found_detail)
-
-    if db_car.user_id != current_user.id:
-        logger.warning(
-            f"Authorization failed for car id {car_id}. User: {current_user.id}, Car Owner: {db_car.user_id}"
-        )
-        raise HTTPException(status_code=403, detail=authorization_detail)
-
-    return db_car
-
-
+# Create router
 router = APIRouter()
 
+# Create service
+car_service = CarService()
 
-@router.post(
-    "/",
-    response_model=CarRead,
-    responses={
-        400: {"description": "Car already exists"},
-        403: {"description": "Not authorized to create a car"},
-        402: {"description": "Subscription limit reached"},
-    },
+# Create base endpoint router
+base_router = BaseEndpointRouter(
+    service=car_service,
+    router=router,
+    entity_name="car",
+    allow_public_read=True,  # Cars can be viewed publicly
+    additional_create_data={},  # No additional data needed for cars
 )
-async def create_car(
-    car: CarCreate,
-    db: Session = Depends(get_db),
-    logger: logging.Logger = Depends(get_logger),
-    current_user: DBUser = Depends(get_current_user),
-) -> DBCar:
-    # Check subscription limits
-    if not SubscriptionService.can_create_car(db, current_user):
-        limits = SubscriptionService.get_user_limits(current_user)
-        usage = SubscriptionService.get_user_usage(db, current_user.id)
-        raise HTTPException(
-            status_code=status.HTTP_402_PAYMENT_REQUIRED,
-            detail={
-                "message": "Car creation limit reached. Upgrade to premium for unlimited cars.",
-                "limits": limits,
-                "usage": usage,
-            },
-        )
 
-    db_car = DBCar(**car.model_dump(), user_id=current_user.id)
-    db.add(db_car)
-    db.commit()
-    db.refresh(db_car)
-    logger.info(msg=f"Car added to database: {db_car}")
-    return db_car
+# Override search fields for cars
+base_router._get_search_fields = lambda: ["make", "model"]
+
+
+# Add custom endpoints specific to cars
+@router.get(
+    "/make/{make}",
+    response_model=List[CarRead],
+    responses=pagination_responses("car", allow_public_read=True),
+)
+async def get_cars_by_make(
+    make: str,
+    skip: int = Query(0, ge=0, description="Number of cars to skip"),
+    limit: int = Query(
+        100, ge=1, le=1000, description="Maximum number of cars to return"
+    ),
+    deps: dict = Depends(get_standard_public_endpoint_dependencies),
+) -> List[CarRead]:
+    """Get cars by make with pagination."""
+    db = deps["db"]
+    logger = deps["logger"]
+
+    skip, limit = validate_pagination_params(skip, limit)
+    cars = car_service.get_cars_by_make_and_year(
+        db=db, make=make, skip=skip, limit=limit, logger=logger
+    )
+    return [CarRead.model_validate(car) for car in cars]
 
 
 @router.get(
-    "/{car_id}",
-    response_model=CarRead,
-    responses={
-        404: {"description": "Car not found"},
-        403: {"description": "Not authorized to access this car"},
-    },
+    "/year/{year}",
+    response_model=List[CarRead],
+    responses=pagination_responses("car", allow_public_read=True),
 )
-async def read_car(
-    car_id: int,
-    db: Session = Depends(get_db),
-    logger: logging.Logger = Depends(get_logger),
-) -> DBCar:
+async def get_cars_by_year(
+    year: int,
+    skip: int = Query(0, ge=0, description="Number of cars to skip"),
+    limit: int = Query(
+        100, ge=1, le=1000, description="Maximum number of cars to return"
+    ),
+    deps: dict = Depends(get_standard_public_endpoint_dependencies),
+) -> List[CarRead]:
+    """Get cars by year with pagination."""
+    db = deps["db"]
+    logger = deps["logger"]
 
-    db_car = db.query(DBCar).filter(DBCar.id == car_id).first()
-    if db_car is None:
-        raise HTTPException(status_code=404, detail="Car not found")
+    skip, limit = validate_pagination_params(skip, limit)
+    cars = car_service.get_cars_by_make_and_year(
+        db=db, year=year, skip=skip, limit=limit, logger=logger
+    )
+    return [CarRead.model_validate(car) for car in cars]
 
-    logger.info(msg=f"Car retrieved from database: {db_car}")
-    return db_car
+
+@router.get(
+    "/search",
+    response_model=List[CarRead],
+    responses=search_responses("car", allow_public_read=True),
+)
+async def search_cars(
+    q: str = Query(..., description="Search term for car make or model"),
+    skip: int = Query(0, ge=0, description="Number of cars to skip"),
+    limit: int = Query(
+        100, ge=1, le=1000, description="Maximum number of cars to return"
+    ),
+    deps: dict = Depends(get_standard_public_endpoint_dependencies),
+) -> List[CarRead]:
+    """Search cars by make or model with pagination."""
+    db = deps["db"]
+    logger = deps["logger"]
+
+    skip, limit = validate_pagination_params(skip, limit)
+    cars = car_service.search_cars(
+        db=db, search_term=q, skip=skip, limit=limit, logger=logger
+    )
+    return [CarRead.model_validate(car) for car in cars]
 
 
 @router.get(
     "/user/{user_id}",
     response_model=List[CarRead],
-    tags=["cars"],
+    responses=pagination_responses("car", allow_public_read=False),
 )
-async def read_cars_by_user(
+async def get_cars_by_user(
     user_id: int,
     skip: int = Query(0, ge=0, description="Number of cars to skip"),
     limit: int = Query(
         100, ge=1, le=1000, description="Maximum number of cars to return"
     ),
-    db: Session = Depends(get_db),
-    logger: logging.Logger = Depends(get_logger),
-) -> List[DBCar]:
-    """
-    Retrieve all cars owned by a specific user with pagination.
-    """
-    cars = (
-        db.query(DBCar).filter(DBCar.user_id == user_id).offset(skip).limit(limit).all()
-    )
-    if not cars:
-        logger.info(f"No cars found for user_id: {user_id}")
-    else:
-        logger.info(f"Retrieved {len(cars)} cars for user_id: {user_id}")
-    return cars
-
-
-@router.put(
-    "/{car_id}",
-    response_model=CarRead,
-    responses={
-        404: {"description": "Car not found"},
-        403: {"description": "Not authorized to update this car"},
-    },
-)
-async def update_car(
-    car_id: int,
-    car: CarUpdate,
-    db: Session = Depends(get_db),
-    logger: logging.Logger = Depends(get_logger),
+    deps: dict = Depends(get_standard_public_endpoint_dependencies),
     current_user: DBUser = Depends(get_current_user),
-) -> DBCar:
-    db_car = await _verify_car_ownership(
-        car_id=car_id,
-        db=db,
-        current_user=current_user,
-        logger=logger,
-        authorization_detail="Not authorized to update this car",
+) -> List[CarRead]:
+    """Get cars by user ID with pagination."""
+    # Users can only see their own cars
+    if current_user.id != user_id:
+        ResponsePatterns.raise_forbidden("Not authorized to view other users' cars")
+
+    skip, limit = validate_pagination_params(skip, limit)
+    cars = car_service.get_cars_by_user(
+        db=deps["db"], user_id=user_id, skip=skip, limit=limit, logger=deps["logger"]
     )
-
-    # Update model fields
-    update_data = car.model_dump(exclude_unset=True)
-    for key, value in update_data.items():
-        setattr(db_car, key, value)
-
-    db.add(db_car)
-    db.commit()
-    db.refresh(db_car)
-    logger.info(msg=f"Car updated in database: {db_car}")
-    return db_car
+    return [CarRead.model_validate(car) for car in cars]
 
 
-@router.delete(
-    "/{car_id}",
-    response_model=CarRead,
-    responses={
-        404: {"description": "Car not found"},
-        403: {"description": "Not authorized to delete this car"},
-    },
+@router.get(
+    "/stats/makes",
+    response_model=dict[str, int],
+    responses=standard_responses(
+        success_description="Car make statistics retrieved successfully"
+    ),
 )
-async def delete_car(
-    car_id: int,
-    db: Session = Depends(get_db),
-    logger: logging.Logger = Depends(get_logger),
-    current_user: DBUser = Depends(get_current_user),
-) -> CarRead:
-    db_car = await _verify_car_ownership(
-        car_id=car_id,
-        db=db,
-        current_user=current_user,
-        logger=logger,
-        authorization_detail="Not authorized to delete this car",
+async def get_car_make_stats(
+    deps: dict = Depends(get_standard_public_endpoint_dependencies),
+) -> dict[str, int]:
+    """Get statistics of cars by make."""
+    from sqlalchemy import func
+
+    db = deps["db"]
+    logger = deps["logger"]
+
+    stats = (
+        db.query(DBCar.make, func.count(DBCar.id).label("count"))
+        .group_by(DBCar.make)
+        .order_by(func.count(DBCar.id).desc())
+        .all()
     )
 
-    # Convert the SQLAlchemy model to the Pydantic model *before* deleting
-    deleted_car_data = CarRead.model_validate(db_car)
+    result = {make: count for make, count in stats}
+    logger.info(f"Retrieved car make statistics: {len(result)} makes")
+    return result
 
-    db.delete(db_car)
-    db.commit()
-    # Log the deleted car data
-    logger.info(msg=f"car deleted from database: {deleted_car_data}")
-    return deleted_car_data
+
+@router.get(
+    "/stats/years",
+    response_model=dict[str, int],
+    responses=standard_responses(
+        success_description="Car year statistics retrieved successfully"
+    ),
+)
+async def get_car_year_stats(
+    deps: dict = Depends(get_standard_public_endpoint_dependencies),
+) -> dict[str, int]:
+    """Get statistics of cars by year."""
+    from sqlalchemy import func
+
+    db = deps["db"]
+    logger = deps["logger"]
+
+    stats = (
+        db.query(DBCar.year, func.count(DBCar.id).label("count"))
+        .group_by(DBCar.year)
+        .order_by(DBCar.year.desc())
+        .all()
+    )
+
+    result = {str(year): count for year, count in stats}
+    logger.info(f"Retrieved car year statistics: {len(result)} years")
+    return result
+
+
+# Add count endpoint
+base_router.add_count_endpoint()

@@ -1,8 +1,8 @@
 """
-Refactored global part votes endpoint using base classes to eliminate redundancy.
+Refactored build list votes endpoint using base classes to eliminate redundancy.
 
 This endpoint now uses the BaseVoteRouter to provide common voting operations
-while maintaining global part-specific functionality.
+while maintaining build list-specific functionality.
 """
 
 import logging
@@ -11,16 +11,16 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.api.dependencies.auth import get_current_user, get_current_admin_user
-from app.api.models.global_part import GlobalPart as DBGlobalPart
-from app.api.models.global_part_vote import GlobalPartVote as DBGlobalPartVote
+from app.api.models.build_list import BuildList as DBBuildList
+from app.api.models.build_list_vote import BuildListVote as DBBuildListVote
 from app.api.models.user import User as DBUser
-from app.api.schemas.global_part_vote import (
-    GlobalPartVoteCreate,
-    GlobalPartVoteRead,
-    GlobalPartVoteSummary,
-    FlaggedGlobalPartSummary,
+from app.api.schemas.build_list_vote import (
+    BuildListVoteCreate,
+    BuildListVoteRead,
+    BuildListVoteSummary,
+    FlaggedBuildListSummary,
 )
-from app.api.services.global_part_vote_service import GlobalPartVoteService
+from app.api.services.build_list_vote_service import BuildListVoteService
 from app.api.utils.base_vote_router import BaseVoteRouter
 from app.api.utils.endpoint_decorators import standard_responses
 from app.api.utils.common_patterns import get_standard_public_endpoint_dependencies
@@ -31,61 +31,61 @@ from app.db.session import get_db
 router = APIRouter()
 
 # Create service
-global_part_vote_service = GlobalPartVoteService()
+build_list_vote_service = BuildListVoteService()
 
 # Create base vote router
 base_vote_router = BaseVoteRouter(
-    service=global_part_vote_service,
+    service=build_list_vote_service,
     router=router,
-    entity_name="global part",
-    vote_entity_id_param="part_id",
+    entity_name="build list",
+    vote_entity_id_param="build_list_id",
 )
 
 
-# Add custom global part-specific endpoints
+# Add custom build list-specific endpoints
 @router.get(
-    "/{part_id}/vote-summary",
-    response_model=GlobalPartVoteSummary,
+    "/{build_list_id}/vote-summary",
+    response_model=BuildListVoteSummary,
     responses=standard_responses(
-        success_description="Vote summary for part retrieved successfully",
+        success_description="Vote summary for build list retrieved successfully",
         not_found=True,
     ),
 )
-async def get_part_vote_summary(
-    part_id: int,
+async def get_build_list_vote_summary(
+    build_list_id: int,
     deps: dict = Depends(get_standard_public_endpoint_dependencies),
-) -> GlobalPartVoteSummary:
-    """Get vote summary for a global part."""
+) -> BuildListVoteSummary:
+    """Get vote summary for a build list."""
     db = deps["db"]
     logger = deps["logger"]
 
-    return global_part_vote_service.get_vote_summary(
+    return build_list_vote_service.get_vote_summary(
         db=db,
-        part_id=part_id,
+        build_list_id=build_list_id,
         logger=logger,
     )
 
 
 @router.get(
-    "/{part_id}/my-vote",
-    response_model=GlobalPartVoteRead,
+    "/{build_list_id}/my-vote",
+    response_model=BuildListVoteRead,
     responses=standard_responses(
-        success_description="User vote on part retrieved successfully",
+        success_description="User vote on build list retrieved successfully",
         not_found=True,
     ),
 )
-async def get_my_vote_on_part(
-    part_id: int,
+async def get_my_vote_on_build_list(
+    build_list_id: int,
     deps: dict = Depends(get_standard_public_endpoint_dependencies),
     current_user: DBUser = Depends(get_current_user),
-) -> GlobalPartVoteRead:
-    """Get the current user's vote on a specific part."""
+) -> BuildListVoteRead:
+    """Get the current user's vote on a specific build list."""
     db = deps["db"]
     logger = deps["logger"]
 
-    vote = global_part_vote_service.get_user_vote(
+    vote = build_list_vote_service.get_user_vote(
         db=db,
-        part_id=part_id,
+        build_list_id=build_list_id,
         user_id=current_user.id,
     )
     if not vote:
@@ -97,24 +97,24 @@ async def get_my_vote_on_part(
 
 @router.get(
     "/admin/flagged",
-    response_model=List[FlaggedGlobalPartSummary],
+    response_model=List[FlaggedBuildListSummary],
     responses=standard_responses(
-        success_description="Flagged parts retrieved successfully", forbidden=True
+        success_description="Flagged build lists retrieved successfully", forbidden=True
     ),
 )
-async def get_flagged_parts(
+async def get_flagged_build_lists(
     days: int = Query(30, ge=1, le=365, description="Number of days to look back"),
     min_downvotes: int = Query(
         5, ge=1, le=100, description="Minimum downvotes to consider flagged"
     ),
     deps: dict = Depends(get_standard_public_endpoint_dependencies),
     current_user: DBUser = Depends(get_current_admin_user),
-) -> List[FlaggedGlobalPartSummary]:
-    """Get parts flagged for review based on downvotes and reports (admin only)."""
+) -> List[FlaggedBuildListSummary]:
+    """Get build lists flagged for review based on downvotes and reports (admin only)."""
     db = deps["db"]
     logger = deps["logger"]
 
-    return global_part_vote_service.get_flagged_parts(
+    return build_list_vote_service.get_flagged_build_lists(
         db=db,
         days=days,
         min_downvotes=min_downvotes,
@@ -126,10 +126,10 @@ async def get_flagged_parts(
     "/admin/flagged/count",
     response_model=Dict[str, int],
     responses=standard_responses(
-        success_description="Count of flagged parts", forbidden=True
+        success_description="Count of flagged build lists", forbidden=True
     ),
 )
-async def get_flagged_parts_count(
+async def get_flagged_build_lists_count(
     days: int = Query(30, ge=1, le=365, description="Number of days to look back"),
     min_downvotes: int = Query(
         5, ge=1, le=100, description="Minimum downvotes to consider flagged"
@@ -137,70 +137,70 @@ async def get_flagged_parts_count(
     deps: dict = Depends(get_standard_public_endpoint_dependencies),
     current_user: DBUser = Depends(get_current_admin_user),
 ) -> Dict[str, int]:
-    """Get count of flagged parts (admin only)."""
+    """Get count of flagged build lists (admin only)."""
     db = deps["db"]
     logger = deps["logger"]
 
-    flagged_parts = global_part_vote_service.get_flagged_parts(
+    flagged_build_lists = build_list_vote_service.get_flagged_build_lists(
         db=db,
         days=days,
         min_downvotes=min_downvotes,
         logger=logger,
     )
-    return {"count": len(flagged_parts)}
+    return {"count": len(flagged_build_lists)}
 
 
 @router.get(
     "/top/upvoted",
-    response_model=List[GlobalPartVoteRead],
+    response_model=List[BuildListVoteRead],
     responses=standard_responses(
-        success_description="Top upvoted parts retrieved successfully"
+        success_description="Top upvoted build lists retrieved successfully"
     ),
 )
-async def get_top_upvoted_parts(
-    skip: int = Query(0, ge=0, description="Number of parts to skip"),
+async def get_top_upvoted_build_lists(
+    skip: int = Query(0, ge=0, description="Number of build lists to skip"),
     limit: int = Query(
-        20, ge=1, le=100, description="Maximum number of parts to return"
+        20, ge=1, le=100, description="Maximum number of build lists to return"
     ),
     deps: dict = Depends(get_standard_public_endpoint_dependencies),
-) -> List[GlobalPartVoteRead]:
-    """Get top upvoted parts."""
+) -> List[BuildListVoteRead]:
+    """Get top upvoted build lists."""
     db = deps["db"]
     logger = deps["logger"]
 
-    parts = global_part_vote_service.get_parts_by_vote_type(
+    build_lists = build_list_vote_service.get_build_lists_by_vote_type(
         db=db,
         vote_type="upvote",
         skip=skip,
         limit=limit,
         logger=logger,
     )
-    return [GlobalPartVoteRead.model_validate(part) for part in parts]
+    return [BuildListVoteRead.model_validate(build_list) for build_list in build_lists]
 
 
 @router.get(
     "/top/downvoted",
-    response_model=List[GlobalPartVoteRead],
+    response_model=List[BuildListVoteRead],
     responses=standard_responses(
-        success_description="Top downvoted parts retrieved successfully"
+        success_description="Top downvoted build lists retrieved successfully"
     ),
 )
-async def get_top_downvoted_parts(
-    skip: int = Query(0, ge=0, description="Number of parts to skip"),
+async def get_top_downvoted_build_lists(
+    skip: int = Query(0, ge=0, description="Number of build lists to skip"),
     limit: int = Query(
-        20, ge=1, le=100, description="Maximum number of parts to return"
+        20, ge=1, le=100, description="Maximum number of build lists to return"
     ),
     deps: dict = Depends(get_standard_public_endpoint_dependencies),
-) -> List[GlobalPartVoteRead]:
-    """Get top downvoted parts."""
+) -> List[BuildListVoteRead]:
+    """Get top downvoted build lists."""
     db = deps["db"]
     logger = deps["logger"]
 
-    parts = global_part_vote_service.get_parts_by_vote_type(
+    build_lists = build_list_vote_service.get_build_lists_by_vote_type(
         db=db,
         vote_type="downvote",
         skip=skip,
         limit=limit,
         logger=logger,
     )
-    return [GlobalPartVoteRead.model_validate(part) for part in parts]
+    return [BuildListVoteRead.model_validate(build_list) for build_list in build_lists]
