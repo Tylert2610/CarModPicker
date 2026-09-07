@@ -13,8 +13,3 @@ module "dynamodb" {
   deletion_protection    = var.environment == "production"
   name_tag               = true
 }
-
-moved {
-  from = aws_dynamodb_table.tables
-  to   = module.dynamodb.aws_dynamodb_table.this
-}

@@ -31,10 +31,8 @@ resource "aws_sesv2_configuration_set" "transactional" {
 # ---------------------------------------------------------------------------
 # SES Domain Identity
 # carmodpicker.com is already verified in AWS. The three Easy DKIM CNAME
-# records are already managed in route53.tf. Importing this resource into
-# Terraform state lets us keep the identity in sync and associate it with
-# the config set above.
-# Import: terraform import aws_sesv2_email_identity.domain carmodpicker.com
+# records are already managed in route53.tf. Keeping the identity in Terraform
+# keeps it in sync and associates it with the config set above.
 # ---------------------------------------------------------------------------
 resource "aws_sesv2_email_identity" "domain" {
   count = local.custom_domain ? 1 : 0
@@ -47,11 +45,6 @@ resource "aws_sesv2_email_identity" "domain" {
   }
 
   tags = { Name = "${local.prefix}-ses-domain" }
-}
-
-moved {
-  from = aws_sesv2_email_identity.domain
-  to   = aws_sesv2_email_identity.domain[0]
 }
 
 resource "aws_sesv2_email_identity" "sender" {
@@ -77,11 +70,6 @@ resource "aws_sesv2_email_identity_mail_from_attributes" "domain" {
   behavior_on_mx_failure = "USE_DEFAULT_VALUE"
 }
 
-moved {
-  from = aws_sesv2_email_identity_mail_from_attributes.domain
-  to   = aws_sesv2_email_identity_mail_from_attributes.domain[0]
-}
-
 # ---------------------------------------------------------------------------
 # Feedback forwarding — disabled; SNS event destination handles this instead.
 # ---------------------------------------------------------------------------
@@ -90,11 +78,6 @@ resource "aws_sesv2_email_identity_feedback_attributes" "domain" {
 
   email_identity           = aws_sesv2_email_identity.domain[0].email_identity
   email_forwarding_enabled = false
-}
-
-moved {
-  from = aws_sesv2_email_identity_feedback_attributes.domain
-  to   = aws_sesv2_email_identity_feedback_attributes.domain[0]
 }
 
 # ---------------------------------------------------------------------------
@@ -146,7 +129,6 @@ resource "aws_sesv2_configuration_set_event_destination" "sns" {
 
 # ---------------------------------------------------------------------------
 # Account-level VDM attributes (engagement metrics + optimised delivery).
-# Import: terraform import aws_sesv2_account_vdm_attributes.main aws_sesv2_account_vdm_attributes
 # ---------------------------------------------------------------------------
 resource "aws_sesv2_account_vdm_attributes" "main" {
   vdm_enabled = "ENABLED"
