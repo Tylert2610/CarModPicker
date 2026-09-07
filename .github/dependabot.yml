@@ -9,6 +9,11 @@
 #       any dependency not matched by a group — no `ignore` block needed.
 #       (RESEARCH Pitfall 6: `ignore` SUPPRESSES majors; do NOT use it.)
 # D-31: This file at .github/dependabot.yml (not under workflows/).
+# D-32: target-branch is "staging" on every update block. The release flow is
+#       staging first, then a promotion PR to main, so dependency PRs must land
+#       on staging and bake there. Without target-branch Dependabot defaults to
+#       the default branch (main), and a merge there deploys straight to the
+#       production environment.
 #
 # Source (schema v2 + groups + multi-directory npm):
 #   https://docs.github.com/en/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
@@ -19,6 +24,7 @@ updates:
   # Backend Python dependencies (backend/requirements.txt)
   - package-ecosystem: "pip"
     directory: "/backend"
+    target-branch: "staging"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -36,6 +42,7 @@ updates:
     directories:
       - "/frontend"
       - "/chrome-extension"
+    target-branch: "staging"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -49,6 +56,7 @@ updates:
   # GitHub Actions (all workflow files under .github/workflows/)
   - package-ecosystem: "github-actions"
     directory: "/"
+    target-branch: "staging"
     schedule:
       interval: "weekly"
       day: "monday"
