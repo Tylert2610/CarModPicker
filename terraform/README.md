@@ -39,6 +39,8 @@ These inputs decide what a workspace builds. Every other resource is uncondition
 | `parent_route53_zone_id` | `null` | Staging only: hosted zone id of `domain_name` in the production account, where the NS delegation for `staging.<domain_name>` is written. Required when staging has a custom domain. |
 | `route53_write_role_arn` | `null` | Staging only: role in the production account, scoped to that one NS record, assumed by the `aws.parent_dns` provider alias. Required when staging has a custom domain. |
 | `email_from` | `null` → `no-reply@<served domain>` with a custom domain, `no-reply@<domain_name>` without | Sender address for transactional mail; must belong to the SES identity the environment verifies. |
+| `staging_access_gate` | `false` | Staging only, pushed by WebbPulse-Platform. With `staging_profile = full`, puts the site and API behind the shared staging access gate (see below). Production never receives it. |
+| `staging_access_users` | `[]` | Staging only, pushed by WebbPulse-Platform. Email addresses allowed through the gate; each becomes an invited Cognito user. |
 
 ### Staging profiles
 
@@ -47,7 +49,19 @@ These inputs decide what a workspace builds. Every other resource is uncondition
 - **`full`** (intended): everything `reduced` builds plus real DNS. The staging account owns a hosted zone for `staging.carmodpicker.com`; in the same apply the `aws.parent_dns` provider assumes `route53_write_role_arn` in the production account and writes the `NS` delegation for `staging.carmodpicker.com` into `parent_route53_zone_id` (the `carmodpicker.com` zone owned by the production workspace). Both ACM validations `depends_on` that record so validation does not start before the child zone is reachable. Hostnames: `staging.carmodpicker.com` (CloudFront alias, 301 → www), `www.staging.carmodpicker.com` (SPA), `api.staging.carmodpicker.com` (HTTP API custom domain), `bounce.staging.carmodpicker.com` (SES MAIL FROM). SES uses the domain identity exactly as production does; `email_from` defaults to `no-reply@staging.carmodpicker.com`. Both variables are pushed to the workspace by WebbPulse-Platform; until they are, the profile must stay `reduced`.
 - **`reduced`** (fallback): DynamoDB + Lambda + HTTP API + CloudFront + S3 + SES, no custom domain. The frontend is served from the CloudFront hostname, the API from the `execute-api` endpoint, and SES sends from a mailbox identity (`email_from`, defaulting to `no-reply@carmodpicker.com`) instead of a domain identity. Outputs `frontend_url` and `api_url` carry the generated hostnames.
 
-Switching `reduced` → `full` changes `frontend_url` and `api_url`, so `VITE_API_URL` on the `staging` GitHub Environment has to be re-copied from `api_url` afterwards.
+Switching `reduced` → `full` changes `frontend_url` and `api_url`, and turning the access gate on changes `frontend_api_base_url`, so `VITE_API_URL` on the `staging` GitHub Environment has to be re-copied from `frontend_api_base_url` afterwards.
+
+### Staging access gate
+
+When WebbPulse-Platform sets `staging_access_gate = true` (and the profile is `full`), `staging_access_gate.tf` instantiates `app.terraform.io/WebbPulse/platform-modules/aws//modules/staging-access-gate` as `carmodpicker-staging` and the rest of the configuration wires it in, every edit gated on `local.staging_gate_enabled` so the production plan is a no-op:
+
+- **CloudFront**: two extra origins (the gate's login Lambda function URL, and `api.staging.carmodpicker.com` with the `x-origin-verify` header), `trusted_key_groups` on the default behavior, and ordered behaviors for `/_auth/*` (login origin), `/api/*` (API origin, signed cookies required) and `/index.html` (S3, no key group, so the 403/404 SPA fallback still works). The viewer-request association switches from `frontend_uri_rewrite` to the gate's function, which runs the same `appHandler` from `cloudfront_functions/app_handler.js.tftpl` before its session check.
+- **HTTP API**: `disable_execute_api_endpoint = true` and the `$default` route uses the module's REQUEST authorizer, so the API host only answers requests carrying the header CloudFront adds.
+- **Deploy role**: `ssm:GetParameter` on `/carmodpicker-staging/access-gate/origin-verify`, for any pipeline step that must call `api.staging.carmodpicker.com` directly (send the value as `x-origin-verify`; read it with `aws ssm get-parameter --with-decryption` and mask it).
+- **Frontend**: API calls must go through the site origin so the cookies travel with them. Set `VITE_API_URL` on the `staging` GitHub Environment to the `frontend_api_base_url` output (`https://www.staging.carmodpicker.com`; the frontend appends `/api`). `/health` and `/ready` stay at the API root and are reached at `https://api.staging.carmodpicker.com/health` with the header.
+- **Chrome extension**: the extension talks to `api.staging.carmodpicker.com/api` directly and cannot complete the hosted UI flow, so it does not work against a gated staging without the header.
+
+Outputs: `staging_access_gate_hosted_ui`, `staging_access_gate_user_pool_id`, `frontend_api_base_url`.
 
 ### Production cutover (completed 2026-09-06)
 
@@ -70,12 +84,13 @@ Production ran App Runner + RDS PostgreSQL alongside Lambda + DynamoDB until the
 | `apigateway.tf` | HTTP API with a `$default` Lambda proxy route, `$default` stage with throttling + JSON access logs, invoke permission, custom domain + mapping when `local.custom_domain`. |
 | `s3.tf` | `user-images` (private), `crawl-data` (private), `lambda-artifacts` (versioned, 30-day noncurrent expiry), `frontend` (private + OAC). |
 | `cloudfront.tf` | Distribution for the frontend, managed cache/origin/headers policies, SPA 403/404 fallback. Aliases and the ACM cert apply only with a custom domain. |
-| `cloudfront_function.tf` | Viewer-request function, rendered from `cloudfront_functions/uri_rewrite.js.tftpl` with the served domain: apex → www 301 and `/foo` → `/foo/index.html` rewrite for prerendered routes. |
+| `cloudfront_function.tf` | Viewer-request function `frontend_uri_rewrite`: `cloudfront_functions/app_handler.js.tftpl` (apex → www 301 and `/foo` → `/foo/index.html` rewrite for prerendered routes, as `appHandler`) wrapped by `uri_rewrite.js.tftpl` as `handler`. Unused on staging while the access gate is on. |
+| `staging_access_gate.tf` | `module "staging_access_gate"` (count 0 or 1): Cognito user pool, login Lambda, CloudFront key group and function, HTTP API authorizer, SSM secrets. See "Staging access gate". |
 | `acm.tf` | Wildcard cert for the served domain in `us-east-1` (CloudFront) and a regional cert for `api.<domain>` (HTTP API), both DNS-validated; validation waits on the staging delegation record. |
 | `route53.tf` | Hosted zone for the served domain, staging NS delegation into the parent zone (`aws.parent_dns`), apex/`www`/`api` records, SES DKIM/MAIL-FROM/DMARC. `api` is an alias to the HTTP API custom domain. |
 | `ses.tf` | SESv2 configuration set, domain identity (custom domain) or mailbox identity (`email_from`), custom MAIL FROM, SNS topic + subscription for bounces/complaints, account-level VDM. |
 | `secretsmanager.tf` | `<prefix>/app` JSON secret (`SECRET_KEY`, `SENTRY_DSN`) read by the Lambda at import, plus the standalone `secret-key` / `sentry-dsn` secrets. |
-| `iam_github_actions.tf` | GitHub OIDC provider + `github-actions-deploy` role: Lambda code updates, artifacts upload, frontend sync, invalidation. |
+| `iam_github_actions.tf` | GitHub OIDC provider + `github-actions-deploy` role: Lambda code updates, artifacts upload, frontend sync, invalidation, and (gate on) reading the origin-verify SSM parameter. |
 | `monitoring.tf` | Alarms SNS topic; Lambda errors/throttles, HTTP API 5xx and p99 integration latency, per-table DynamoDB throttle events. |
 | `management.tf` | Tag-based Resource Group, Cost Explorer anomaly monitor + daily email subscription, monthly cost budgets. |
 
@@ -93,6 +108,7 @@ Set per workspace, not in `.tfvars`:
 
 - `environment` and `staging_profile` — pushed from the WebbPulse-Platform repo.
 - `parent_route53_zone_id` and `route53_write_role_arn` — staging only, pushed from the WebbPulse-Platform repo; required once the profile is `full`.
+- `staging_access_gate` and `staging_access_users` — staging only, pushed from the WebbPulse-Platform repo; turn on the staging access gate.
 - `secret_key`, `sentry_dsn` — sensitive, set by hand.
 - `custom_domain_enabled`, `domain_name`, `email_from` — optional, see above.
 
@@ -110,7 +126,7 @@ The deploy workflows select the `production` or `staging` GitHub Environment fro
 | `LAMBDA_ARTIFACTS_BUCKET` | `lambda_artifacts_bucket` |
 | `FRONTEND_S3_BUCKET` | `frontend_bucket` |
 | `CLOUDFRONT_DISTRIBUTION_ID` | `cloudfront_distribution_id` |
-| `VITE_API_URL` | `api_url` (`https://api.carmodpicker.com` / `https://api.staging.carmodpicker.com` with a custom domain, the `execute-api` endpoint without) |
+| `VITE_API_URL` | `frontend_api_base_url` (`https://api.carmodpicker.com` in production; `https://www.staging.carmodpicker.com` on staging while the access gate is on, otherwise `api_url`) |
 | `CWS_EXTENSION_ID` | Chrome Web Store extension id |
 
 Secret: `TFC_API_TOKEN`.

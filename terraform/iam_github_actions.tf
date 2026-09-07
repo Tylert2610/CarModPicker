@@ -75,6 +75,17 @@ locals {
       Resource = aws_cloudfront_distribution.frontend.arn
     },
   ]
+
+  # Staging access gate: let the deploy role read the origin-verify header value, so a pipeline
+  # step that must call api.staging.<domain> directly (smoke test, health check) can get past the
+  # API authorizer. Production adds nothing here.
+  github_actions_staging_gate_statements = local.staging_gate_enabled ? [
+    {
+      Effect   = "Allow"
+      Action   = ["ssm:GetParameter"]
+      Resource = module.staging_access_gate[0].origin_verify_ssm_parameter_arn
+    },
+  ] : []
 }
 
 resource "aws_iam_role_policy" "github_actions_deploy" {
@@ -83,6 +94,6 @@ resource "aws_iam_role_policy" "github_actions_deploy" {
 
   policy = jsonencode({
     Version   = "2012-10-17"
-    Statement = local.github_actions_statements
+    Statement = concat(local.github_actions_statements, local.github_actions_staging_gate_statements)
   })
 }

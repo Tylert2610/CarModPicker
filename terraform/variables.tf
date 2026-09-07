@@ -114,3 +114,24 @@ variable "staging_profile" {
     error_message = "Refusing to plan: staging_profile is 'none', so this environment is switched off and no resources should be created in it. To stand this environment up, change staging_profile to 'reduced' or 'full' on the workspace in WebbPulse-Organization/bootstrap/locals.tf."
   }
 }
+
+# ---------------------------------------------------------------------------
+# Staging access gate (platform-modules/aws//modules/staging-access-gate)
+# ---------------------------------------------------------------------------
+
+variable "staging_access_gate" {
+  description = "Put the staging site and API behind the shared staging access gate (Cognito sign-in plus CloudFront signed cookies). WebbPulse-Platform sets this on staging workspaces only; production never receives it and every gate resource is skipped there."
+  type        = bool
+  default     = false
+}
+
+variable "staging_access_users" {
+  description = "Email addresses allowed through the staging access gate; each becomes an invited Cognito user. WebbPulse-Platform sets this on staging workspaces only; production never receives it."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = !var.staging_access_gate || length(var.staging_access_users) > 0
+    error_message = "staging_access_users must list at least one email when staging_access_gate is true. An empty list is a gate nobody can open."
+  }
+}

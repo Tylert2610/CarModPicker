@@ -49,13 +49,28 @@ output "github_actions_role_arn" {
 }
 
 output "api_invoke_url" {
-  description = "HTTP API default endpoint"
+  description = "HTTP API default execute-api endpoint (disabled while the staging access gate is on)"
   value       = aws_apigatewayv2_api.api.api_endpoint
 }
 
 output "api_url" {
-  description = "Public API origin the frontend should call (VITE_API_URL)"
+  description = "Public API origin (custom domain, or the execute-api endpoint without one). Use frontend_api_base_url for VITE_API_URL."
   value       = local.api_url
+}
+
+output "frontend_api_base_url" {
+  description = "Value for VITE_API_URL on the matching GitHub Environment: the site origin while the staging access gate is on (API calls go through CloudFront as /api/*), otherwise api_url"
+  value       = local.frontend_api_base_url
+}
+
+output "staging_access_gate_hosted_ui" {
+  description = "Cognito hosted UI base URL of the staging access gate (null when the gate is off)"
+  value       = one(module.staging_access_gate[*].hosted_ui_domain)
+}
+
+output "staging_access_gate_user_pool_id" {
+  description = "Cognito user pool id of the staging access gate (null when the gate is off)"
+  value       = one(module.staging_access_gate[*].user_pool_id)
 }
 
 output "lambda_function_name" {
