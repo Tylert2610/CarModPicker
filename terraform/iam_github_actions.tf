@@ -1,108 +1,65 @@
-# GitHub Actions OIDC provider and deploy role. Still hand-written: the shared
-# platform-modules/aws//modules/github-actions-role cannot take these statements as of 1.3.1.
-# Its sid-uniqueness validation on policy_statements calls coalesce(s.sid, ""), and Terraform's
-# coalesce rejects empty strings, so a statement without a sid fails the variable with
-# "Call to function coalesce failed: no non-null, non-empty-string arguments". Every statement
-# here is sid-less, and giving them sids to work around it would add Sid keys to the rendered
-# policy, which is a real change to the stored document rather than a state move. Adopt the
-# module once that validation is fixed upstream (compact + try, or s.sid == null ? "" : s.sid).
+# GitHub Actions OIDC provider and deploy role, from the shared github-actions-role module. The
+# provider is separate from the HCP Terraform one (app.terraform.io) that this workspace's own
+# dynamic credentials use; this one lets GitHub Actions workflows assume an AWS role through
+# short-lived OIDC tokens with no long-lived keys in GitHub.
 #
-# GitHub Actions OIDC provider — separate from the HCP Terraform OIDC provider
-# (app.terraform.io). This allows GitHub Actions workflows to assume an AWS role
-# via short-lived OIDC tokens without storing long-lived AWS credentials as secrets.
-resource "aws_iam_openid_connect_provider" "github_actions" {
-  url             = "https://token.actions.githubusercontent.com"
-  client_id_list  = ["sts.amazonaws.com"]
-  thumbprint_list = ["6938fd4d98bab03faadb97b34396831e3780aea1", "1c58a3a8518e8759bf075b76b750d4f2df264fcd"]
-}
+# The statement order below is the order the hand-written policy had, and each statement lists
+# its actions and resources exactly as before, because the module renders a one-element list as
+# a bare JSON string. That keeps the stored policy document byte-identical.
+module "github_actions_role" {
+  source  = "app.terraform.io/WebbPulse/platform-modules/aws//modules/github-actions-role"
+  version = "~> 1.1"
 
-resource "aws_iam_role" "github_actions_deploy" {
-  name = "${local.prefix}-github-actions-deploy"
+  role_name = "${local.prefix}-github-actions-deploy"
+  subjects  = ["repo:WebbPulse/CarModPicker:*"]
 
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
+  policy_statements = concat(
+    [
+      # Lambda: upload the zip to the artifacts bucket, then point the function at it
       {
-        Effect = "Allow"
-        Principal = {
-          Federated = aws_iam_openid_connect_provider.github_actions.arn
-        }
-        Action = "sts:AssumeRoleWithWebIdentity"
-        Condition = {
-          StringEquals = {
-            "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
-          }
-          StringLike = {
-            "token.actions.githubusercontent.com:sub" = "repo:WebbPulse/CarModPicker:*"
-          }
-        }
-      }
-    ]
-  })
-}
-
-locals {
-  github_actions_statements = [
-    # Lambda — upload the zip to the artifacts bucket, then point the function at it
-    {
-      Effect   = "Allow"
-      Action   = ["s3:PutObject", "s3:GetObject"]
-      Resource = "${aws_s3_bucket.lambda_artifacts.arn}/*"
-    },
-    {
-      Effect = "Allow"
-      Action = [
-        "lambda:UpdateFunctionCode",
-        "lambda:PublishVersion",
-        "lambda:GetFunction",
-        "lambda:GetFunctionConfiguration",
-        "lambda:GetFunctionCodeSigningConfig",
-      ]
-      Resource = aws_lambda_function.api.arn
-    },
-    # S3 — sync frontend build artefacts
-    {
-      Effect = "Allow"
-      Action = [
-        "s3:PutObject",
-        "s3:GetObject",
-        "s3:DeleteObject",
-        "s3:ListBucket",
-      ]
-      Resource = [
-        aws_s3_bucket.frontend.arn,
-        "${aws_s3_bucket.frontend.arn}/*",
-      ]
-    },
-    # CloudFront — invalidate the cache after a frontend deploy
-    {
-      Effect = "Allow"
-      Action = [
-        "cloudfront:CreateInvalidation",
-        "cloudfront:GetInvalidation",
-      ]
-      Resource = aws_cloudfront_distribution.frontend.arn
-    },
-  ]
-
-  # Staging access gate: let the deploy role read the origin-verify header value, so a pipeline
-  # step that must call api.staging.<domain> directly (smoke test, health check) can get past the
-  # API authorizer. Production adds nothing here.
-  github_actions_staging_gate_statements = local.staging_gate_enabled ? [
-    {
-      Effect   = "Allow"
-      Action   = ["ssm:GetParameter"]
-      Resource = module.staging_access_gate[0].origin_verify_ssm_parameter_arn
-    },
-  ] : []
-}
-
-resource "aws_iam_role_policy" "github_actions_deploy" {
-  name = "deploy-permissions"
-  role = aws_iam_role.github_actions_deploy.id
-
-  policy = jsonencode({
-    Version   = "2012-10-17"
-    Statement = concat(local.github_actions_statements, local.github_actions_staging_gate_statements)
-  })
+        actions   = ["s3:PutObject", "s3:GetObject"]
+        resources = ["${aws_s3_bucket.lambda_artifacts.arn}/*"]
+      },
+      {
+        actions = [
+          "lambda:UpdateFunctionCode",
+          "lambda:PublishVersion",
+          "lambda:GetFunction",
+          "lambda:GetFunctionConfiguration",
+          "lambda:GetFunctionCodeSigningConfig",
+        ]
+        resources = [aws_lambda_function.api.arn]
+      },
+      # S3: sync frontend build artefacts
+      {
+        actions = [
+          "s3:PutObject",
+          "s3:GetObject",
+          "s3:DeleteObject",
+          "s3:ListBucket",
+        ]
+        resources = [
+          module.frontend.bucket_arn,
+          "${module.frontend.bucket_arn}/*",
+        ]
+      },
+      # CloudFront: invalidate the cache after a frontend deploy
+      {
+        actions = [
+          "cloudfront:CreateInvalidation",
+          "cloudfront:GetInvalidation",
+        ]
+        resources = [module.frontend.distribution_arn]
+      },
+    ],
+    # Staging access gate: let the deploy role read the origin-verify header value, so a pipeline
+    # step that must call api.staging.<domain> directly (smoke test, health check) can get past
+    # the API authorizer. Production adds nothing here.
+    local.staging_gate_enabled ? [
+      {
+        actions   = ["ssm:GetParameter"]
+        resources = [module.staging_access_gate[0].origin_verify_ssm_parameter_arn]
+      },
+    ] : [],
+  )
 }
