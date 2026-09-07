@@ -2,6 +2,10 @@ resource "aws_apigatewayv2_api" "api" {
   name          = "${local.prefix}-api"
   protocol_type = "HTTP"
   description   = "CarModPicker ${var.environment} API (Lambda proxy)"
+
+  # Behind the staging access gate the API is reachable only through its custom domain, which
+  # CloudFront calls with the origin-verify header; the execute-api URL would bypass that.
+  disable_execute_api_endpoint = local.staging_gate_enabled
 }
 
 resource "aws_cloudwatch_log_group" "api_access" {
@@ -21,6 +25,11 @@ resource "aws_apigatewayv2_route" "default" {
   api_id    = aws_apigatewayv2_api.api.id
   route_key = "$default"
   target    = "integrations/${aws_apigatewayv2_integration.lambda.id}"
+
+  # Staging access gate: the module's REQUEST authorizer admits only requests carrying the
+  # origin-verify header CloudFront adds, so api.staging.<domain> cannot be called around the gate.
+  authorization_type = local.staging_gate_enabled ? "CUSTOM" : "NONE"
+  authorizer_id      = local.staging_gate_enabled ? module.staging_access_gate[0].http_api_authorizer_id : null
 }
 
 resource "aws_apigatewayv2_stage" "default" {
