@@ -50,7 +50,7 @@ boto3-stubs[s3,sesv2,dynamodb]==1.43.88  # Type stubs for boto3 S3, SES, and Dyn
 Pillow==12.3.0
 
 # Observability (Phase 2 / OBS-01 + OBS-02)
-sentry-sdk>=2.60.0,<3
+sentry-sdk>=2.68.1,<3
 # aws-embedded-metrics: EMF emitter for CloudWatch custom metrics from the
 # crawler. Rides the existing awslogs CloudWatch Logs path so no extra IAM
 # or PutMetricData API calls are required. `AWS_EMF_ENVIRONMENT=Local` must
