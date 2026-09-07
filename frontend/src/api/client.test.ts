@@ -59,6 +59,22 @@ describe('client.ts — token helpers (real module)', () => {
   });
 });
 
+describe('client.ts — credentials (real module)', () => {
+  beforeEach(() => {
+    vi.doUnmock('./client');
+    vi.resetModules();
+  });
+
+  // Staging sits behind the access gate. Its CloudFront signed cookies are set
+  // on the staging apex, so a call from www.staging to api.staging only carries
+  // them when the client asks for credentials. Without this the gated staging
+  // API answers 401.
+  it('sends credentials so cross-subdomain cookies reach the API host', async () => {
+    const { apiClient } = await import('./client');
+    expect(apiClient.defaults.withCredentials).toBe(true);
+  });
+});
+
 describe('client.ts — paramsSerializer (real module)', () => {
   beforeEach(() => {
     vi.doUnmock('./client');
