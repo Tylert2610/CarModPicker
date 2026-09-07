@@ -17,28 +17,3 @@ module "app_baseline" {
     "monthly-critical" = { limit_amount = "60" }
   }
 }
-
-moved {
-  from = aws_resourcegroups_group.carmodpicker
-  to   = module.app_baseline.aws_resourcegroups_group.this[0]
-}
-
-moved {
-  from = aws_ce_anomaly_monitor.carmodpicker
-  to   = module.app_baseline.aws_ce_anomaly_monitor.this[0]
-}
-
-moved {
-  from = aws_ce_anomaly_subscription.carmodpicker
-  to   = module.app_baseline.aws_ce_anomaly_subscription.this[0]
-}
-
-moved {
-  from = aws_budgets_budget.warn
-  to   = module.app_baseline.aws_budgets_budget.this["monthly-warn"]
-}
-
-moved {
-  from = aws_budgets_budget.critical
-  to   = module.app_baseline.aws_budgets_budget.this["monthly-critical"]
-}

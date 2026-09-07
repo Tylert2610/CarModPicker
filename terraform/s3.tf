@@ -61,25 +61,5 @@ module "lambda_artifacts" {
   # Lambda ships the placeholder as a local filename, not through S3.
 }
 
-moved {
-  from = aws_s3_bucket.lambda_artifacts
-  to   = module.lambda_artifacts.aws_s3_bucket.this
-}
-
-moved {
-  from = aws_s3_bucket_public_access_block.lambda_artifacts
-  to   = module.lambda_artifacts.aws_s3_bucket_public_access_block.this
-}
-
-moved {
-  from = aws_s3_bucket_versioning.lambda_artifacts
-  to   = module.lambda_artifacts.aws_s3_bucket_versioning.this
-}
-
-moved {
-  from = aws_s3_bucket_lifecycle_configuration.lambda_artifacts
-  to   = module.lambda_artifacts.aws_s3_bucket_lifecycle_configuration.this
-}
-
 # The frontend bucket, its public access block, the origin access control and the bucket policy
 # live in module "frontend" (cloudfront.tf), alongside the distribution that reads them.

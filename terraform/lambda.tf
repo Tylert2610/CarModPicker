@@ -140,18 +140,3 @@ module "lambda_api" {
 
   tags = { Name = "${local.prefix}-api" }
 }
-
-moved {
-  from = aws_iam_role.lambda_api
-  to   = module.lambda_api.aws_iam_role.this
-}
-
-moved {
-  from = aws_cloudwatch_log_group.lambda_api
-  to   = module.lambda_api.aws_cloudwatch_log_group.this
-}
-
-moved {
-  from = aws_lambda_function.api
-  to   = module.lambda_api.aws_lambda_function.this
-}

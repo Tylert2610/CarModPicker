@@ -79,7 +79,7 @@ Most of this stack is now assembled from `app.terraform.io/WebbPulse/platform-mo
 | `spa-frontend` | `cloudfront.tf` | The frontend bucket, its public access block, the origin access control and bucket policy, the CloudFront distribution with the access-gate origins and behaviors, and the apex and `www` alias records. |
 | `github-actions-role` | `iam_github_actions.tf` | The GitHub Actions OIDC provider, the `github-actions-deploy` role and its inline deploy policy. |
 
-The adoption was a pure state move: every `moved` block lives in `moved.tf` and the speculative plans on both workspaces read `0 to add, 0 to change, 0 to destroy`.
+The adoption was a pure state move: the speculative plans on both workspaces read `0 to add, 0 to change, 0 to destroy`. The `moved` blocks that carried the state across have been applied in both workspaces and are no longer in the configuration.
 
 What stays hand-written is what a single-provider module cannot own: the ACM certificates (`acm.tf`, one in `aws.us_east_1` for CloudFront and one regional for the API) with their DNS validation records, the CloudFront Function in `cloudfront_function.tf`, and the SES and verification records in `route53.tf`.
 
@@ -92,7 +92,6 @@ What stays hand-written is what a single-provider module cannot own: the ACM cer
 | `variables.tf` | Input variables: region, environment, shaping toggles above, throttling, secrets. |
 | `locals.tf` | `project`, `prefix` (`carmodpicker-<env>`), `custom_domain`, `domain_name` (served domain), `active_domain` (served domain, or the apex when no custom domain is bound), `parent_delegation`, `email_from`, `frontend_url`, `api_url`, `allowed_origins`. |
 | `data.tf` | `aws_caller_identity`, `aws_region` lookups for ARN construction. |
-| `moved.tf` | Every `moved` block in one place: the older count-conversion renames, and the moves that took the hand-written resources into the shared platform modules. |
 | `outputs.tf` | API/Lambda/DynamoDB/CloudFront identifiers plus everything the deploy workflows need. |
 | `dynamodb.tf` | One `aws_dynamodb_table` per entry in `dynamodb_tables.json`, on-demand billing, PITR + deletion protection in production. |
 | `dynamodb_tables.json` | Generated from `backend/app/db/dynamo/tables.py` by `backend/scripts/export_dynamo_tables.py`; a backend test fails when it is stale. |
