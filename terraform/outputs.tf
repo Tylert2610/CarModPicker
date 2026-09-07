@@ -10,17 +10,17 @@ output "aws_region" {
 
 output "cloudfront_domain" {
   description = "CloudFront distribution domain name"
-  value       = aws_cloudfront_distribution.frontend.domain_name
+  value       = module.frontend.distribution_domain_name
 }
 
 output "cloudfront_distribution_id" {
   description = "CloudFront distribution ID (needed for cache invalidations)"
-  value       = aws_cloudfront_distribution.frontend.id
+  value       = module.frontend.distribution_id
 }
 
 output "frontend_bucket" {
   description = "S3 bucket name for the frontend SPA"
-  value       = aws_s3_bucket.frontend.bucket
+  value       = module.frontend.bucket_name
 }
 
 output "domain_name" {
@@ -45,7 +45,7 @@ output "frontend_url" {
 
 output "github_actions_role_arn" {
   description = "IAM role ARN for GitHub Actions OIDC deployments"
-  value       = aws_iam_role.github_actions_deploy.arn
+  value       = module.github_actions_role.role_arn
 }
 
 output "api_invoke_url" {

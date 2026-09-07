@@ -25,7 +25,7 @@ locals {
   staging_gate_enabled = var.environment == "staging" && var.staging_access_gate && local.custom_domain
   staging_gate_count   = local.staging_gate_enabled ? 1 : 0
 
-  frontend_url = local.custom_domain ? "https://www.${local.domain_name}" : "https://${aws_cloudfront_distribution.frontend.domain_name}"
+  frontend_url = module.frontend.frontend_url
   api_url      = module.api.api_url
 
   # What the frontend build should use as VITE_API_URL: always the API's own host, staging
