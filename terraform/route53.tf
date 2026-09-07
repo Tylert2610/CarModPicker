@@ -17,6 +17,37 @@ module "staging_dns" {
   parent_zone_id = var.parent_route53_zone_id
 }
 
+# Apex to CloudFront (redirect to www is done by the CloudFront viewer-request
+# function so we don't need a separate S3 website bucket to handle it).
+resource "aws_route53_record" "apex_a" {
+  count = local.custom_domain ? 1 : 0
+
+  zone_id = module.staging_dns.zone_id
+  name    = local.domain_name
+  type    = "A"
+
+  alias {
+    name                   = aws_cloudfront_distribution.frontend.domain_name
+    zone_id                = aws_cloudfront_distribution.frontend.hosted_zone_id
+    evaluate_target_health = false
+  }
+}
+
+# www to the CloudFront distribution
+resource "aws_route53_record" "www" {
+  count = local.custom_domain ? 1 : 0
+
+  zone_id = module.staging_dns.zone_id
+  name    = "www.${local.domain_name}"
+  type    = "A"
+
+  alias {
+    name                   = aws_cloudfront_distribution.frontend.domain_name
+    zone_id                = aws_cloudfront_distribution.frontend.hosted_zone_id
+    evaluate_target_health = false
+  }
+}
+
 # Apex TXT records. Route53 stores all TXT records at the same name in a
 # single RRSet, so SPF and domain-verification strings share one resource.
 resource "aws_route53_record" "spf" {

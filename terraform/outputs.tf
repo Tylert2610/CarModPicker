@@ -10,17 +10,17 @@ output "aws_region" {
 
 output "cloudfront_domain" {
   description = "CloudFront distribution domain name"
-  value       = module.frontend.distribution_domain_name
+  value       = aws_cloudfront_distribution.frontend.domain_name
 }
 
 output "cloudfront_distribution_id" {
   description = "CloudFront distribution ID (needed for cache invalidations)"
-  value       = module.frontend.distribution_id
+  value       = aws_cloudfront_distribution.frontend.id
 }
 
 output "frontend_bucket" {
   description = "S3 bucket name for the frontend SPA"
-  value       = module.frontend.bucket_name
+  value       = aws_s3_bucket.frontend.bucket
 }
 
 output "domain_name" {
