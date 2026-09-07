@@ -105,7 +105,7 @@ What stays hand-written is what a single-provider module cannot own: the ACM cer
 | `acm.tf` | Wildcard cert for the served domain in `us-east-1` (CloudFront) and a regional cert for `api.<domain>` (HTTP API), both DNS-validated; validation waits on the staging delegation record. |
 | `route53.tf` | `module "staging_dns"` (`platform-modules/aws//modules/staging-dns`): the hosted zone for the served domain plus, in staging, the NS delegation into the parent zone through `aws.parent_dns`. Then the SES DKIM/MAIL-FROM/DMARC and verification records. The apex and `www` alias records live in `module "frontend"`, the `api` alias record in `module "api"`. |
 | `ses.tf` | SESv2 configuration set, domain identity (custom domain) or mailbox identity (`email_from`), custom MAIL FROM, SNS topic + subscription for bounces/complaints, account-level VDM. |
-| `secretsmanager.tf` | `<prefix>/app` JSON secret (`SECRET_KEY`, `SENTRY_DSN`) read by the Lambda at import, plus the standalone `secret-key` / `sentry-dsn` secrets. |
+| `secretsmanager.tf` | `<prefix>/app`, the one JSON secret per environment (`SECRET_KEY`, `SENTRY_DSN`), read by the Lambda at cold start through `APP_SECRETS_ARN`. |
 | `iam_github_actions.tf` | `module "github_actions_role"` (`platform-modules/aws//modules/github-actions-role`): GitHub OIDC provider + `github-actions-deploy` role: Lambda code updates, artifacts upload, frontend sync, invalidation, and (gate on) reading the origin-verify SSM parameter. |
 | `monitoring.tf` | Alarms SNS topic; Lambda errors/throttles, HTTP API 5xx and p99 integration latency, per-table DynamoDB throttle events. |
 | `management.tf` | Tag-based Resource Group, Cost Explorer anomaly monitor + daily email subscription, monthly cost budgets. |
@@ -166,7 +166,7 @@ cd terraform && terraform init -backend=false && terraform validate
 Sentry DSN provisioning is out-of-band (Terraform cannot create Sentry projects):
 
 1. Create the Sentry project in the Sentry dashboard.
-2. Set `sentry_dsn` on the HCP workspace; the next apply writes it into `<prefix>/app` and `<prefix>/sentry-dsn`.
+2. Set `sentry_dsn` on the HCP workspace; the next apply writes it into `<prefix>/app`.
 3. Add frontend Sentry secrets to GitHub Actions: `VITE_SENTRY_DSN`, `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_PROJECT`.
 4. Redeploy so the new value is picked up.
 
