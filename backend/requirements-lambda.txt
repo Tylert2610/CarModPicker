@@ -1,5 +1,5 @@
 annotated-types==0.8.0
-anyio==4.14.2
+anyio==4.15.0
 click==8.5.0
 fastapi==0.141.1
 h11==0.16.0
@@ -23,14 +23,14 @@ python-multipart==0.0.32
 pyotp==2.10.0
 qrcode[pil]==8.2
 webauthn==2.7.1
-google-auth==2.57.0
+google-auth==2.57.1
 
 requests==2.34.2
 beautifulsoup4==4.15.0
 defusedxml==0.7.1
 pybreaker==1.4.1
 
-boto3==1.43.83
+boto3==1.43.88
 Pillow==12.3.0
 
 sentry-sdk>=2.60.0,<3
