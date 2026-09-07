@@ -79,4 +79,4 @@ watchdog==6.0.0
 # script under backend/scripts/perf/ wraps it and parses the CSV output.
 # Dev-only — never imported by app code or run in production. See
 # backend/scripts/perf/README.md and D004 / R019 for the gate context.
-locust>=2.44.0
+locust>=2.46.4
