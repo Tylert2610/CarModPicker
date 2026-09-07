@@ -117,6 +117,13 @@ module "lambda_api" {
   source  = "app.terraform.io/WebbPulse/platform-modules/aws//modules/lambda-function"
   version = "~> 1.6"
 
+  # 1.8 attaches its own inline xray-write policy whenever tracing is Active. The runtime policy
+  # below already grants xray:PutTraceSegments and xray:PutTelemetryRecords, so the module's copy
+  # would be redundant and this adoption stays a zero diff. Cleanup for a later pass: drop the
+  # X-Ray statement from data.aws_iam_policy_document.lambda_api_runtime and let this default back
+  # to true, so the module that turns tracing on also owns the grant.
+  attach_xray_write_policy = false
+
   function_name = "${local.prefix}-api"
   role_name     = "${local.prefix}-lambda-api"
 
