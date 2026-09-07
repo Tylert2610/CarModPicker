@@ -83,8 +83,10 @@ PUBLIC_ROUTES: set[tuple[str, str]] = {
     ("GET", "/api/parts/{part_id}/listings"),
     ("GET", "/api/parts/{part_id}/price-history"),
     ("GET", "/api/parts/{part_id}/with-listings"),
-    ("POST", "/api/parts/price-history"),  # batch read (POST for body size)
-    ("POST", "/api/parts/{part_id}/listings"),  # public listing submission
+    # NOTE: POST /api/parts/price-history and POST /api/parts/{part_id}/listings
+    # were public until they were brought in line with every other mutating route
+    # and put behind get_current_user. They are now covered by the protected
+    # sweep above, not allow-listed here.
     # Categories (catalog reference data)
     ("GET", "/api/categories/"),
     ("GET", "/api/categories/count"),

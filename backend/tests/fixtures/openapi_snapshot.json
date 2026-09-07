@@ -12533,6 +12533,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
         "summary": "Post Batch Price History",
         "tags": [
           "parts"
@@ -13345,6 +13350,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
         "summary": "Create Or Update Part Listing",
         "tags": [
           "parts"
