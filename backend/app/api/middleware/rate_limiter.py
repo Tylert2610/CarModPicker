@@ -226,6 +226,31 @@ rate_limiter = SophisticatedRateLimiter(
 )
 
 
+# Paths that must match exactly to be exempt from rate limiting. These are single
+# endpoints, so a prefix test would wrongly exempt unrelated paths. In particular "/"
+# is a prefix of every path, so testing it with startswith exempts the entire API.
+RATE_LIMIT_EXEMPT_EXACT: Tuple[str, ...] = ("/", "/health", "/ready", "/openapi.json")
+
+# Paths that are exempt along with everything beneath them. The documentation UIs serve
+# their own sub-resources (for example /docs/oauth2-redirect), so they match as prefixes.
+RATE_LIMIT_EXEMPT_PREFIXES: Tuple[str, ...] = ("/docs", "/redoc")
+
+
+def is_rate_limit_exempt(path: str) -> bool:
+    """Return True when ``path`` is exempt from rate limiting.
+
+    Exemption is deliberately split into two kinds. Entries in
+    ``RATE_LIMIT_EXEMPT_EXACT`` are matched exactly, so the root path "/" exempts only
+    the root and not every path that begins with it. Entries in
+    ``RATE_LIMIT_EXEMPT_PREFIXES`` are matched as prefixes, so the docs UIs also exempt
+    the sub-resources they load.
+    """
+    if path in RATE_LIMIT_EXEMPT_EXACT:
+        return True
+
+    return any(path == prefix or path.startswith(f"{prefix}/") for prefix in RATE_LIMIT_EXEMPT_PREFIXES)
+
+
 async def rate_limit_middleware(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
     """
     FastAPI middleware for sophisticated rate limiting.
@@ -235,9 +260,8 @@ async def rate_limit_middleware(request: Request, call_next: Callable[[Request],
         response = await call_next(request)
         return response
 
-    # Skip rate limiting for health checks, readiness, static files, and documentation
-    skip_paths = ["/", "/health", "/ready", "/docs", "/openapi.json", "/redoc"]
-    if any(request.url.path.startswith(path) for path in skip_paths):
+    # Skip rate limiting for health checks, readiness, the root, and documentation
+    if is_rate_limit_exempt(request.url.path):
         response = await call_next(request)
         return response
 
