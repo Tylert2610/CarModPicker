@@ -19,16 +19,24 @@ written and are treated as constraints, not open options.
   entrypoint per domain serves the per-function deploy.
 - The deploy unit is an OCI image per domain function, run on Lambda through the
   AWS Lambda Web Adapter with uvicorn, so that the identical image also runs on
-  Fargate or App Runner. There is one ECR repository per application account with
-  a lifecycle rule. Zip packaging goes away.
+  Fargate or App Runner. ECR is **one repository per domain per environment**,
+  each with its own lifecycle rule, so `carmodpicker-staging-media` and
+  `carmodpicker-prod-media` are separate repositories. That keeps a lifecycle
+  rule from expiring another environment's images and keeps the pull policy on
+  each repository scoped to the one account that runs it. Zip packaging goes
+  away.
 - API Gateway HTTP API routes by path prefix to the right domain function. The
   public API contract does not change and the frontend needs no edits. The
   migration follows the strangler pattern: routes move one domain at a time while
   the existing monolith keeps the `$default` route.
 - Shared code moves to two new organisation repositories, one Python package and
-  one TypeScript packages repository, published to AWS CodeArtifact in the
-  Platform account. The core of each is framework-neutral. FastAPI and Lambda
-  specifics live in small adapter sub-modules.
+  one TypeScript packages repository, published to AWS CodeArtifact. The core of
+  each is framework-neutral. FastAPI and Lambda specifics live in small adapter
+  sub-modules.
+- Shared services, CodeArtifact among them, live in a **new WebbPulse Platform
+  AWS account** that is being vended now. They do not live in Management.
+  Production runs in the **member accounts**, account `734702670403` for this
+  application. Management holds no workload and no shared service.
 - Reusable GitHub workflows called through `workflow_call` in an organisation
   `.github` repository replace the per-application workflows.
 - CloudWatch log retention becomes 7 days everywhere.
@@ -44,9 +52,14 @@ written and are treated as constraints, not open options.
 ## Summary of the current state
 
 The backend is 24,090 lines under `backend/app`, spread over 25 endpoint modules,
-25 DynamoDB tables, 25 repositories, and 14 services, exposing 170 route
-decorators. It is deployed as a single Lambda zip behind one HTTP API `$default`
-route, with `app/lambda_handler.py` a five-line Mangum wrapper.
+25 DynamoDB tables, 25 repositories, and 15 services, exposing 176 HTTP routes.
+That total is 162 `@router.<method>` decorators in the endpoint modules, plus 9
+routes generated at runtime by `BaseDynamoEndpointRouter`, plus 5 root-level
+routes in `main.py`. It was confirmed by importing the app and enumerating
+`app.routes`, not by counting decorators, because the generated routes are
+invisible to a decorator grep. It is deployed as a single Lambda zip behind one
+HTTP API `$default` route, with `app/lambda_handler.py` a five-line Mangum
+wrapper.
 
 The frontend is 283 TypeScript files under `frontend/src`, about 41,400 source
 lines plus 14,300 lines of colocated tests, on React 19, React Router 7, Tailwind
@@ -59,6 +72,13 @@ one integration, so both need changes before a single domain can be cut over.
 Second, the genuine cross-repository duplication with WebbPulse-Portfolio sits in
 the backend plumbing and in the frontend tooling configuration, not in the
 frontend application code.
+
+Every count in this document was re-verified against the code after the first
+draft. The route totals in particular come from importing the app and
+enumerating `app.routes`, because three modules generate CRUD routes at runtime
+that a decorator grep does not see. Where the first draft was wrong, the
+corrected figure is used and the error is noted inline so the reasoning that
+depended on it can be re-checked rather than silently inherited.
 
 ---
 
@@ -140,7 +160,7 @@ the single largest genuine duplication with Portfolio.
 | `app/api/utils/bucket_orphan_utils.py` | 45 | Collects referenced file keys for orphan cleanup | app | n/a | No |
 | `app/api/utils/subscription_utils.py` | 36 | Premium tier and build list cap checks | app | n/a | No |
 | `app/api/utils/google_oauth.py` | 82 | Google OAuth ID token verification | neutral | `webbpulse_core.auth.google_oauth` | No |
-| `app/api/middleware/rate_limiter.py` | 282 | Per-method and per-endpoint rate limiting, in-memory | fastapi | `webbpulse_core.fastapi.rate_limit` over a DynamoDB store, see the correctness note below | Loosely, `core/login_limiter.py` (86) is login-only and DynamoDB-backed |
+| `app/api/middleware/rate_limiter.py` | 282 | Per-method and per-endpoint rate limiting, in-memory, and trusts `X-Forwarded-For` | fastapi | `webbpulse_core.fastapi.rate_limit` over the shared `<prefix>-rate-limits` DynamoDB table, see the correctness note and decision below | Loosely, `core/login_limiter.py` (86) is login-only and DynamoDB-backed |
 | `app/api/middleware/error_handler.py` | 243 | Converts exceptions to the standard error envelope | fastapi | `webbpulse_core.fastapi.errors` | No |
 | `app/api/middleware/request_context.py` | 18 | Assigns a uuid7 request id, sets the context vars | fastapi | `webbpulse_core.fastapi.request_context` | Yes, `RequestLoggingMiddleware` in `core/middleware.py` |
 | `app/api/dependencies/auth.py` | 197 | bcrypt hashing, JWT issue and verify, current-user dependencies | fastapi | `webbpulse_core.auth.passwords` and `.jwt` neutral, deps as adapter | Yes, `app/core/security.py` (76); PyJWT here, python-jose there |
@@ -152,15 +172,76 @@ the single largest genuine duplication with Portfolio.
 ### Correctness finding: the rate limiter does not work on Lambda
 
 Found while inventorying, unrelated to the restructure but worth fixing
-independently of it. `SophisticatedRateLimiter` holds its counters in six
-`defaultdict` instances in process memory. On Lambda every execution environment
-gets its own instance, so counters are never shared between concurrent
-environments and are lost on every cold start. The configured limits, 120 GET
-requests per minute and 10 auth requests per minute among them, are therefore not
-actually enforced in production. Portfolio's `core/login_limiter.py` solves the
-same problem correctly with a DynamoDB item plus a TTL attribute and a conditional
-update, and that is the design the shared package should adopt. Concurrency on
-these functions was recently raised from 10 to 1000, which widens the gap.
+independently of it. `SophisticatedRateLimiter` holds its counters in eight
+`defaultdict` instances in process memory, a minute and an hour bucket for each
+of the general, GET, auth, and admin classes. On Lambda every execution
+environment gets its own instance, so counters are never shared between
+concurrent environments and are lost on every cold start. The configured limits,
+120 GET requests per minute and 10 auth requests per minute among them, are
+therefore not actually enforced in production. Concurrency on these functions was
+recently raised from 10 to 1000, which widens the gap by two orders of magnitude:
+the effective limit is the configured limit multiplied by the number of live
+execution environments.
+
+There is a second bug in the same file. `_get_client_ip` takes the **leftmost**
+hop of `X-Forwarded-For`:
+
+```python
+forwarded_for = request.headers.get("X-Forwarded-For")
+if forwarded_for:
+    return forwarded_for.split(",")[0].strip()
+```
+
+That value is caller-supplied and unverified. Any client can send
+`X-Forwarded-For: <anything>` and get a fresh bucket per request, so even within
+a single execution environment the limiter is trivially bypassed. This is the
+more serious of the two defects, because the in-memory problem weakens the limit
+while this one removes it.
+
+### Decision: the rate limiting standard is layered
+
+Locked, and it is a platform standard rather than a CarModPicker fix. Three
+layers, each doing what it is actually good at.
+
+**Layer 1, HTTP API stage and per-route throttling.** Free, enforced before any
+Lambda is invoked, and already exposed by the platform `http-api` module through
+`throttling_burst_limit` and `throttling_rate_limit` on the `$default` stage.
+This is the blunt capacity guard that stops a flood from becoming a Lambda bill.
+Per-route throttling on the expensive routes goes in alongside the
+route-to-integration map that module change already needs.
+
+**Layer 2, a per-identity fixed-window limiter in the shared Python package.**
+This is the real limit, the one with per-identity semantics that API Gateway
+cannot express. It lives in `webbpulse_core` and is backed by **one
+`<prefix>-rate-limits` DynamoDB table with a TTL attribute**, one table per
+environment, not one per domain. A fixed window is chosen over a sliding log
+deliberately: it is a single conditional `UpdateItem` per request against one
+item, where the current in-memory design keeps a list of timestamps per key.
+It is applied to **auth routes and mutating routes**, not to every GET, which
+keeps the added read and write cost proportionate to the risk.
+
+It **fails open**. If the DynamoDB call errors or times out, the request is
+served. A limiter that fails closed converts a partial DynamoDB problem into a
+total outage, which is a worse failure than the one it prevents.
+
+**Client identity is taken from the API Gateway request context**, specifically
+the source IP that the Lambda Web Adapter forwards from
+`requestContext.http.sourceIp`, **never from the leftmost `X-Forwarded-For`
+hop**. API Gateway populates that field itself and a client cannot forge it.
+This is the direct fix for the second bug above, and it is a hard rule for the
+shared package: the header is never trusted as an identity source. Where a
+request is authenticated, the user id is the better key and is used in
+preference to the IP.
+
+**Layer 3, CloudFront plus WAF, opt-in per project.** Rate-based WAF rules in
+front of CloudFront handle volumetric and bot traffic. This is genuinely useful
+and genuinely not free, so it is opt-in per project rather than part of the
+baseline. CarModPicker does not need it today.
+
+Portfolio's `core/login_limiter.py` is the closest existing thing to layer 2 and
+is login-only; it is the starting point for the shared implementation rather
+than a competing design. The in-memory limiter is not carried into the shared
+package under any circumstances.
 
 ### Services
 
@@ -176,6 +257,7 @@ these functions was recently raised from 10 to 1000, which widens the gap.
 | `app/api/services/part_price_alert_service.py` | 224 | Threshold checks, fires SES price-drop email | app | No |
 | `app/api/services/sitemap_service.py` | 221 | Sitemap index and child sitemap XML | neutral | Yes, `app/api/seo.py` (58), same idea |
 | `app/api/services/car_generation_service.py` | 168 | Make, model, generation resolution | app | No |
+| `app/api/services/build_list_service.py` | 157 | Build list CRUD, free-tier cap, build log creation, copy | app | No |
 | `app/api/services/bug_report_service.py` | 160 | Bug report lifecycle | app | No |
 | `app/api/services/base_dynamo_crud_service.py` | 102 | Generic CRUD service backing the generic router | fastapi | Yes, folded into Portfolio's `crud_router` |
 | `app/api/services/page_html_sanitizer.py` | 86 | Strips scripts and user state from submitted DOM | neutral | No |
@@ -188,36 +270,40 @@ Pillow processing and the CarModPicker bucket conventions are app-specific.
 ### Endpoints
 
 All 25 endpoint modules are app-specific. Their route counts feed section 2.
+The Routes column is the decorator count. Three modules also mount a
+`BaseDynamoEndpointRouter`, which attaches up to six generic CRUD routes that no
+decorator declares; the Generated column is what each actually contributes after
+its `disable_endpoints` list is applied.
 
-| Path | Lines | Routes |
-|---|---|---|
-| `app/api/endpoints/parts.py` | 596 | 18 |
-| `app/api/endpoints/build_lists.py` | 673 | 15 |
-| `app/api/endpoints/users.py` | 577 | 12 |
-| `app/api/endpoints/build_list_parts.py` | 566 | 10 |
-| `app/api/endpoints/part_manufacturers.py` | 240 | 10 |
-| `app/api/endpoints/images.py` | 431 | 8 |
-| `app/api/endpoints/reports.py` | 237 | 8 |
-| `app/api/endpoints/auth/core.py` | 294 | 7 |
-| `app/api/endpoints/auth/oauth.py` | 425 | 7 |
-| `app/api/endpoints/auth/webauthn.py` | 319 | 7 |
-| `app/api/endpoints/bug_reports.py` | 216 | 7 |
-| `app/api/endpoints/car_generations.py` | 156 | 7 |
-| `app/api/endpoints/retailers.py` | 185 | 7 |
-| `app/api/endpoints/build_logs.py` | 278 | 5 |
-| `app/api/endpoints/categories.py` | 90 | 5 |
-| `app/api/endpoints/part_price_alerts.py` | 222 | 5 |
-| `app/api/endpoints/votes.py` | 156 | 5 |
-| `app/api/endpoints/admin/db_ops.py` | 237 | 5 |
-| `app/api/endpoints/auth/two_factor.py` | 158 | 3 |
-| `app/api/endpoints/build_list_phases.py` | 120 | 3 |
-| `app/api/endpoints/build_list_labor_estimates.py` | 127 | 3 |
-| `app/api/endpoints/app_settings.py` | 52 | 2 |
-| `app/api/endpoints/search.py` | 103 | 1 |
-| `app/api/endpoints/crawled_pages.py` | 176 | 1 |
-| `app/api/endpoints/admin/stats.py` | 52 | 1 |
+| Path | Lines | Routes | Generated | Total |
+|---|---|---|---|---|
+| `app/api/endpoints/parts.py` | 596 | 18 | 3 | 21 |
+| `app/api/endpoints/build_lists.py` | 673 | 15 | 3 | 18 |
+| `app/api/endpoints/users.py` | 577 | 12 | 0 | 12 |
+| `app/api/endpoints/build_list_parts.py` | 566 | 10 | 0 | 10 |
+| `app/api/endpoints/part_manufacturers.py` | 240 | 10 | 0 | 10 |
+| `app/api/endpoints/images.py` | 431 | 8 | 0 | 8 |
+| `app/api/endpoints/reports.py` | 237 | 8 | 0 | 8 |
+| `app/api/endpoints/auth/core.py` | 294 | 7 | 0 | 7 |
+| `app/api/endpoints/auth/oauth.py` | 425 | 7 | 0 | 7 |
+| `app/api/endpoints/auth/webauthn.py` | 319 | 7 | 0 | 7 |
+| `app/api/endpoints/bug_reports.py` | 216 | 7 | 0 | 7 |
+| `app/api/endpoints/car_generations.py` | 156 | 7 | 3 | 10 |
+| `app/api/endpoints/retailers.py` | 185 | 7 | 0 | 7 |
+| `app/api/endpoints/build_logs.py` | 278 | 5 | 0 | 5 |
+| `app/api/endpoints/categories.py` | 90 | 5 | 0 | 5 |
+| `app/api/endpoints/part_price_alerts.py` | 222 | 5 | 0 | 5 |
+| `app/api/endpoints/votes.py` | 156 | 5 | 0 | 5 |
+| `app/api/endpoints/admin/db_ops.py` | 237 | 5 | 0 | 5 |
+| `app/api/endpoints/auth/two_factor.py` | 158 | 3 | 0 | 3 |
+| `app/api/endpoints/build_list_phases.py` | 120 | 3 | 0 | 3 |
+| `app/api/endpoints/build_list_labor_estimates.py` | 127 | 3 | 0 | 3 |
+| `app/api/endpoints/app_settings.py` | 52 | 2 | 0 | 2 |
+| `app/api/endpoints/search.py` | 103 | 1 | 0 | 1 |
+| `app/api/endpoints/crawled_pages.py` | 176 | 1 | 0 | 1 |
+| `app/api/endpoints/admin/stats.py` | 52 | 1 | 0 | 1 |
 
-The 23 modules under `app/api/schemas/` (about 1,300 lines total) are all
+The 22 modules under `app/api/schemas/` (1,535 lines total) are all
 app-specific request and response models, except `pagination.py` (11 lines),
 whose `CursorPage` envelope moves with the cursor pagination helper.
 
@@ -278,26 +364,44 @@ than one being chosen over the other.
 
 ## 2. Proposed domain boundaries
 
-Nine domains. The counts are `@router.<method>` decorators in the modules each
-domain absorbs, totalling 170. Table names are unprefixed; at runtime they carry
+Nine domains. The Routes column is the real route count per domain, decorators
+plus the routes `BaseDynamoEndpointRouter` generates, totalling 171 across the
+endpoint modules. Table names are unprefixed; at runtime they carry
 `carmodpicker-<env>-`.
+
+The write sets below are the tables a domain writes **through its own request
+paths today**, including the cascades and denormalisations its services perform
+into other domains' tables. They are deliberately not the tidy "one domain owns
+its tables" picture, because that picture is not what the code does. Section 2's
+cross-domain subsection and the async event decision in section 2.1 are what
+close the gap.
 
 | Domain | Endpoint modules | Routes | Tables read | Tables written | AWS services | Minimum IAM |
 |---|---|---|---|---|---|---|
 | `identity` | `auth/core`, `auth/oauth`, `auth/two_factor`, `auth/webauthn` | 24 | users, oauth_accounts, webauthn_credentials | users, oauth_accounts, webauthn_credentials | DynamoDB, SES, Secrets Manager | Dynamo CRUD on 3 tables and their indexes, `ses:SendEmail` on the identity and config set, `secretsmanager:GetSecretValue` on the app secret |
-| `users` | `users`, `app_settings` | 14 | users, app_settings, build_lists, build_list_parts, build_list_phases, build_list_labor_estimates, build_logs, build_log_posts, parts, votes, reports, part_price_alerts, oauth_accounts, webauthn_credentials | users, app_settings | DynamoDB, S3 read | Dynamo read on 14 tables, write on 2, `s3:GetObject` on user images for presigning |
-| `catalog` | `parts`, `part_manufacturers`, `categories`, `retailers` | 40 | parts, part_cars, part_listings, part_price_history, part_manufacturers, categories, retailers, car_makes, car_models, car_generations, build_list_parts, votes, reports, part_price_alerts | parts, part_cars, part_listings, part_price_history, part_manufacturers, categories, retailers | DynamoDB, S3 read | Dynamo CRUD on 7 tables plus read on 7, `s3:GetObject` on user images |
-| `vehicles` | `car_generations`, `search` | 8 | car_makes, car_models, car_generations, build_lists, users | car_makes, car_models, car_generations | DynamoDB | Dynamo CRUD on 3 tables, read on 2 |
-| `build-lists` | `build_lists`, `build_list_parts`, `build_list_phases`, `build_list_labor_estimates` | 31 | build_lists, build_list_parts, build_list_phases, build_list_labor_estimates, parts, categories, retailers, car_generations, votes | build_lists, build_list_parts, build_list_phases, build_list_labor_estimates | DynamoDB, S3 read | Dynamo CRUD on 4 tables plus read on 5, `s3:GetObject` |
-| `build-logs` | `build_logs` | 5 | build_logs, build_log_posts, build_lists, users | build_logs, build_log_posts | DynamoDB | Dynamo CRUD on 2 tables, read on 2 |
-| `moderation` | `votes`, `reports`, `bug_reports` | 20 | votes, reports, bug_reports, build_lists, parts, users, car_generations | votes, reports, bug_reports | DynamoDB | Dynamo CRUD on 3 tables, read on 4 |
-| `media` | `images` | 8 | image_source_mappings, build_lists, parts | image_source_mappings | DynamoDB, S3 read and write | Dynamo CRUD on 1 table plus read on 2, `s3:PutObject`, `GetObject`, `DeleteObject`, `HeadObject`, `ListBucket` |
-| `ingestion` | `crawled_pages`, `part_price_alerts`, `admin/db_ops`, `admin/stats` | 12 | most tables, admin operations are broad | part_listings, part_price_history, part_price_alerts, parts, car and category seed tables | DynamoDB, SES, S3 read | Broad Dynamo access, `ses:SendEmail` for price-drop alerts, `s3:GetObject` |
+| `users` | `users`, `app_settings` | 14 | users, app_settings, build_lists, build_list_parts, build_list_phases, build_list_labor_estimates, build_logs, build_log_posts, parts, votes, reports, part_price_alerts, oauth_accounts, webauthn_credentials | users, app_settings, and via the delete cascade oauth_accounts, webauthn_credentials, build_lists, build_list_parts, build_list_phases, build_list_labor_estimates, build_logs, build_log_posts, parts, part_cars, part_listings, part_price_history, part_price_alerts, votes, reports | DynamoDB, S3 read and write, Secrets Manager | Dynamo read on 14 tables; write on 2 in steady state, 16 during the cascade until it goes async; `s3:PutObject`, `GetObject`, `DeleteObject` for avatars; `secretsmanager:GetSecretValue` |
+| `catalog` | `parts`, `part_manufacturers`, `categories`, `retailers` | 43 | parts, part_cars, part_listings, part_price_history, part_manufacturers, categories, retailers, car_makes, car_models, car_generations, build_list_parts, votes, reports, part_price_alerts | parts, part_cars, part_listings, part_price_history, part_manufacturers, categories, retailers, and via the part purge build_list_parts, votes, reports, part_price_alerts | DynamoDB, S3 read and delete, SES, Secrets Manager | Dynamo CRUD on 7 tables plus read on 7 and purge writes on 4; `s3:GetObject`, `DeleteObject`; `ses:SendEmail` for the price-drop path; `secretsmanager:GetSecretValue` |
+| `vehicles` | `car_generations`, `search` | 11 | car_makes, car_models, car_generations, build_lists, users | none | DynamoDB, Secrets Manager | Dynamo read only, on 5 tables; `secretsmanager:GetSecretValue` |
+| `build-lists` | `build_lists`, `build_list_parts`, `build_list_phases`, `build_list_labor_estimates` | 34 | build_lists, build_list_parts, build_list_phases, build_list_labor_estimates, parts, categories, retailers, car_generations, votes | build_lists, build_list_parts, build_list_phases, build_list_labor_estimates, build_logs, part_listings, part_price_history | DynamoDB, S3 read and delete, SES, Secrets Manager | Dynamo CRUD on 4 tables, write on 3 more, read on 5; `s3:GetObject`, `DeleteObject`; `ses:SendEmail` for the price-drop path; `secretsmanager:GetSecretValue` |
+| `build-logs` | `build_logs` | 5 | build_logs, build_log_posts, build_lists, users | build_logs, build_log_posts | DynamoDB, Secrets Manager | Dynamo CRUD on 2 tables, read on 2; `secretsmanager:GetSecretValue` |
+| `moderation` | `votes`, `reports`, `bug_reports` | 20 | votes, reports, bug_reports, build_lists, parts, users, car_generations | votes, reports, bug_reports, parts (`net_votes` only) | DynamoDB, Secrets Manager | Dynamo CRUD on 3 tables, read on 4, and a narrow `UpdateItem` on `parts.net_votes`; `secretsmanager:GetSecretValue` |
+| `media` | `images` | 8 | image_source_mappings, build_lists, parts | image_source_mappings | DynamoDB, S3 read, write and delete, Secrets Manager | Dynamo CRUD on 1 table plus read on 2, `s3:PutObject`, `GetObject`, `DeleteObject`, `HeadObject`, `ListBucket`; `secretsmanager:GetSecretValue` |
+| `ingestion` | `crawled_pages`, `part_price_alerts`, `admin/db_ops`, `admin/stats` | 12 | most tables, admin operations are broad | part_price_alerts, and from `admin/db_ops` car_makes, car_models, car_generations, part_manufacturers, parts, part_cars, build_lists, votes | DynamoDB, Secrets Manager | Broad Dynamo access for the admin operations; `secretsmanager:GetSecretValue`. No SES and no S3: see the note below |
 
-Total: 24 + 14 + 40 + 8 + 31 + 5 + 20 + 8 + 12 = 162 routes from the endpoint
-modules, plus the 8 root-level routes in `main.py` (root, health, ready, sitemap
-index, sitemap child) which every function serves locally for its own health
-checks. The 170 decorator count above includes the endpoint modules only.
+Total: 24 + 14 + 43 + 11 + 34 + 5 + 20 + 8 + 12 = 171 routes from the endpoint
+modules, plus the 5 root-level routes in `main.py` (`/`, `/health`, `/ready`,
+`/sitemap.xml`, `/sitemap-{name}.xml`) which every function serves locally for its
+own health checks, for 176 in total. FastAPI additionally mounts `/docs`,
+`/docs/oauth2-redirect`, `/redoc`, and `/api/openapi.json`, which are excluded
+from every count here.
+
+Three corrections to the naive decorator count are worth calling out, because
+each one moves a domain's size. `parts`, `build_lists`, and `car_generations`
+each mount a `BaseDynamoEndpointRouter` that attaches generic CRUD routes no
+decorator declares, three each after their `disable_endpoints` lists are applied.
+That is why `catalog` is 43 and not 40, `build-lists` 34 and not 31, and
+`vehicles` 11 and not 8. Any contract test that locks the route set must import
+the app rather than grep for decorators, or it will silently miss nine routes.
 
 ### Why these merges
 
@@ -322,7 +426,13 @@ in here as a library rather than a service.
 fans out over build lists, users, and parts. It is placed with vehicles because
 `search.py` already imports `car_generation_service`, and vehicles is otherwise
 the smallest domain. This is the weakest boundary in the set and is called out as
-an open question in section 6.
+an open question in section 6. Worth noting that `vehicles` is entirely
+read-only: `CarGenerationService` has no create, update, or delete. The car seed
+writes live in `app/core/init_cars.py`, which runs from the `main.py` lifespan
+under `RUN_STARTUP_TASKS`, and in `admin/db_ops`. That startup task needs a home
+in the new layout: running it in all nine functions would have nine cold starts
+racing the same seed writes, so it should move to a one-off job or be gated to a
+single function.
 
 **`build-lists` merges the list with its parts, phases, and labor estimates.**
 The three child modules are meaningless without the parent, all three check
@@ -334,15 +444,35 @@ already polymorphic over `entity_type` and `entity_id` and share the same
 `entity_key` index shape. Bug reports join them as another user-submitted
 moderation queue with the same status index pattern.
 
-**`media` is only 8 routes but stays separate.** It is the only domain that needs
-S3 write permissions, and keeping it alone is what lets every other domain hold
-`s3:GetObject` only. That IAM boundary justifies the split on its own.
+**`media` is only 8 routes but stays separate.** The original reason given for
+this split, that it is the only domain needing S3 write, does not survive
+checking: `users` uploads and deletes avatars, and `catalog` and `build-lists`
+both call `delete_image`, so four domains need S3 write or delete today. What
+still justifies the split is narrower but real. `media` is the only domain that
+needs `ListBucket` and the bulk object operations behind the admin orphan
+cleanup, and it is the only one whose S3 access is its entire purpose rather than
+an incidental side effect of an entity write. Keeping it separate lets the other
+three hold `PutObject` and `DeleteObject` scoped to their own key prefixes while
+`media` alone holds the bucket-wide grants.
 
 **`ingestion` collects the Chrome extension scrape endpoint, price alerts, and
-the admin operations.** These are the write-heavy, low-traffic, mostly
-machine-driven paths, and they have very different scaling and timeout profiles
-from the interactive read paths. Admin operations are grouped here rather than
-given their own function because they are rare and already privileged.
+the admin operations.** These are the low-traffic, mostly machine-driven paths,
+and they have very different scaling and timeout profiles from the interactive
+read paths. Admin operations are grouped here rather than given their own
+function because they are rare and already privileged.
+
+One correction to how this domain was originally described. It is not the
+write-heavy ingestion path it sounds like. `crawled_pages.py` touches no
+repository at all: it sanitises and parses HTML and returns the result, and the
+caller writes. The listing and price-history writes that look like ingestion are
+performed by `part_listing_service`, which is invoked from `parts.py`,
+`build_list_parts.py`, and `part_manufacturers.py`, so they belong to `catalog`
+and `build-lists`. The SES price-drop email fires from the same path, which is
+why those two domains carry `ses:SendEmail` in the table above and `ingestion`
+does not. What is genuinely left in `ingestion` is the price-alert CRUD and the
+broad admin operations. That makes it a thinner and more privilege-heavy domain
+than the name suggests, and it is a reasonable candidate to rename `admin` or to
+fold its two alert routes into `catalog`. Noted as an open question in section 6.
 
 ### Cross-domain calls
 
@@ -362,23 +492,73 @@ read-only IAM, rather than introduce service-to-service HTTP calls. This keeps
 latency flat and is the pragmatic reading of "the repository layer is the hard
 seam".
 
-**Needs rethinking before the cut.** Three cases do not resolve cleanly:
+**Needs rethinking before the cut.** Three cases write across domain boundaries.
+All three are settled by the same decision, recorded in section 2.1.
 
 1. `users.py` touches 13 repositories, almost all of them to build the profile
-   aggregate and to cascade a user delete. The delete in particular writes to
-   tables owned by four other domains. This needs either an explicit cascade
-   contract or an events-driven cleanup, and it is the single hardest item in
-   the migration.
+   aggregate and to cascade a user delete. Verified against
+   `_delete_user_everywhere` in `endpoints/users.py`, the delete writes into
+   `oauth_accounts`, `webauthn_credentials`, `build_lists`, `build_list_parts`,
+   `build_list_phases`, `build_list_labor_estimates`, `build_logs`,
+   `build_log_posts`, `parts`, `part_price_alerts`, `votes`, and `reports`, and
+   transitively into `part_cars`, `part_listings`, and `part_price_history`
+   through the part purge. That is tables owned by five other domains, not four,
+   and it is the single hardest item in the migration.
 2. `part_service.purge_related_rows_for_parts` writes to `build_list_parts`,
    `votes`, `reports`, and `part_price_alerts`, which belong to three other
-   domains. Same problem as the user cascade, smaller blast radius.
-3. `vote_service` denormalises a score back onto `build_lists` and `parts` after
-   every vote. That is a write from `moderation` into two other domains' tables.
-   Either `moderation` gets narrow write access to those two score attributes,
-   or the score becomes a computed read.
+   domains. Same problem as the user cascade, smaller blast radius. Verified at
+   `services/part_service.py:446-458`.
+3. `vote_service` denormalises a score after every vote. The earlier draft of
+   this document said it writes onto both `build_lists` and `parts`; that is
+   wrong. `_sync_part_net_votes` early-returns unless the entity is a part, then
+   writes `parts.net_votes` and nothing else. Build list scores are computed on
+   read from the `votes` table. So this is one cross-domain write attribute, not
+   two.
 
 `admin/db_ops` and `admin/stats` legitimately span everything and are accepted as
 a broad-permission function by design.
+
+### 2.1 Decision: cross-domain writes go async through events
+
+Locked. None of the three cases above is solved by granting one domain write
+access to another's tables. Every cross-domain write becomes an asynchronous
+event, and the owning domain is the only writer of its own tables.
+
+The shape is the same in all three cases:
+
+1. The domain that owns the originating entity writes a **tombstone** into its
+   own table, in the same request, as the single durable record that the
+   operation happened. A user delete writes a `deleted` marker on the user row
+   rather than removing it; a part purge writes one on the part row.
+2. **DynamoDB Streams** on that table, or an SQS queue the domain writes to,
+   fans the event out to each other domain.
+3. Each domain runs its **own cleanup handler** against **its own tables only**,
+   subscribed to that event. `build-lists` deletes its own rows, `moderation`
+   deletes its own votes and reports, and so on. No domain ever holds write IAM
+   on a table it does not own.
+4. The tombstone is reaped once every subscriber has acknowledged, or simply left
+   in place with a TTL.
+
+Vote score denormalisation works the same way. `moderation` writes the vote and
+nothing else. The stream on the `votes` table drives a handler in `catalog` that
+recomputes and writes `parts.net_votes`. `moderation` therefore drops the
+`parts` write from its IAM entirely, and the row in the domain table above that
+grants it a narrow `UpdateItem` on `net_votes` is an interim state, valid only
+until this lands.
+
+What this buys and what it costs. The IAM story becomes clean: write permission
+per domain is exactly the tables that domain owns, which is what makes the
+per-domain policies in `lambda.tf` worth writing at all. The cost is that the
+cascade becomes eventually consistent, and every read path that could observe a
+half-cleaned entity must tolerate it. In practice that means the tombstone must
+be checked on read: a user marked deleted is not served, a purged part is not
+listed, before the fan-out has finished. That check is a prerequisite for the
+cut, not an afterthought, and it is the reason the `users` carve-out stays last
+in the sequence.
+
+The consequence for sequencing is that the event plumbing, the stream or queue,
+the per-domain handlers, and the tombstone reads, is its own PR that must land
+before the `users` and `catalog` carve-outs, not alongside them.
 
 ---
 
@@ -431,8 +611,9 @@ backend/
       <domain>/                  service and repository tests, moto-backed
     contract/
       test_route_inventory.py    asserts the union of domain routers equals
-                                 today's 170 routes and paths, the guard that
-                                 the public contract did not move
+                                 today's 176 routes and paths, the guard that
+                                 the public contract did not move. It must
+                                 enumerate app.routes, not grep decorators
     integration/
       <domain>/                  per-domain app, TestClient against moto
     monolith/                    the existing suite, repointed at composition.monolith
@@ -590,10 +771,10 @@ CodeArtifact under the `@webbpulse` scope.
 | `vitest.config.ts` | 1 | ~30 | shareable as a factory | `@webbpulse/vite-config` | coverage thresholds 60/60/50/50 are enforced |
 | Tailwind | 0 | n/a | shareable as tokens | `@webbpulse/tokens` | v4, CSS-first. No JS config exists; the tokens live in `src/styles/tokens.css` |
 | `.prettierrc.json` | 1 | n/a | shareable | `@webbpulse/prettier-config` | CarModPicker's 6 keys are a strict subset of Portfolio's 10 |
-| `src/api/*.ts` (20 domain modules) | 20 | ~1,743 | app-specific | n/a | thin wrappers per backend domain, one test file each |
+| `src/api/*.ts` (21 domain modules) | 21 | ~1,743 | app-specific | n/a | thin wrappers per backend domain, one test file each |
 | `src/pages/`, `src/components/parts|buildLists|buildListParts|cars|filters|profile|admin|ads|users` | ~130 | ~34,000 | app-specific | n/a | |
 | `src/types/Api.ts` | 1 | 710 | app-specific | n/a | could be generated from the OpenAPI schema instead |
-| `src/services/Api.ts` | 1 | 25 | delete | n/a | self-described temporary shim, still imported by `AuthContext`, `usePartsFilters`, `useGoogleSignIn` |
+| `src/services/Api.ts` | 1 | 28 | delete | n/a | self-described temporary re-export shim over `src/api/*`, still imported by 53 non-test source modules |
 
 ### The API client caveat
 
@@ -646,16 +827,16 @@ PostCSS pipeline.
 
 | File | Lines | Change |
 |---|---|---|
-| `lambda.tf` | 142 | Largest change. One `module "lambda_api"` becomes nine image-based functions, most naturally a `for_each` over a domains map. The four inline `aws_iam_role_policy` resources become per-domain policies scoped to the tables in section 2 instead of the current wildcard `table/carmodpicker-<env>-*`. `archive_file` and the `lambda_placeholder` directory are deleted. `log_retention_days` 14 becomes 7 |
-| `apigateway.tf` | 33 | `route_keys = ["$default"]` becomes an explicit path-prefix route map, one route per domain, each bound to its own integration. `access_log_retention_days` 14 becomes 7. Keep `$default` pointing at the monolith throughout the strangler migration |
-| New `ecr.tf` | n/a | One repository per application account with a lifecycle rule, plus the base image repository. Needs a new platform module |
+| `lambda.tf` | 142 | Largest change. One `module "lambda_api"` becomes nine image-based functions, most naturally a `for_each` over a domains map. The four inline `aws_iam_role_policy` resources become per-domain policies scoped to the tables in section 2 instead of the current wildcard `table/carmodpicker-<env>-*`. `archive_file` and the `lambda_placeholder` directory are deleted. Every one of the nine policies keeps `secretsmanager:GetSecretValue`, because `load_app_secrets()` runs at import time in `config.py` and so every function needs it at cold start. `log_retention_days` 14 becomes 7 |
+| `apigateway.tf` | 33 | `route_keys = ["$default"]` becomes an explicit path-prefix route map, one route per domain, each bound to its own integration. Per-route throttling is set here as layer 1 of the rate limiting standard. `access_log_retention_days` 14 becomes 7. Keep `$default` pointing at the monolith throughout the strangler migration |
+| New `ecr.tf` | n/a | One repository per domain per environment, each with a lifecycle rule, plus the base image repository. Nine domain repositories plus the base, per environment. Needs a new platform module |
 | `s3.tf` | 65 | `module "lambda_artifacts"` and the `carmodpicker-<env>-lambda-artifacts` bucket are removed once zips are gone. Keep until the last domain is cut over |
 | `iam_github_actions.tf` | 65 | The deploy role loses `s3:PutObject` on the artifacts bucket and gains ECR push, `ecr:GetAuthorizationToken`, `BatchCheckLayerAvailability`, `PutImage`, `InitiateLayerUpload`, `UploadLayerPart`, `CompleteLayerUpload`. `lambda:UpdateFunctionCode` widens from one function ARN to nine |
 | `monitoring.tf` | 20 | `module "alarms"` is per-function today. Nine functions must not become nine times the alarms; the aggregate approach already used for DynamoDB should extend to Lambda errors and throttles |
 | `outputs.tf` | 94 | `lambda_function_name` and `lambda_function_arn` become maps. `LAMBDA_FUNCTION_NAME` and `LAMBDA_ARTIFACTS_BUCKET` environment variables change shape |
 | `variables.tf` | 133 | Add the domains map and the image tag input |
-| `dynamodb.tf` | 15 | Unchanged. The 25 tables and `dynamodb_tables.json` stay as they are |
-| `ses.tf`, `route53.tf`, `acm.tf`, `cloudfront.tf`, `staging_access_gate.tf`, `management.tf`, `secretsmanager.tf`, `providers.tf`, `locals.tf`, `versions.tf`, `data.tf` | n/a | Unchanged |
+| `dynamodb.tf` | 15 | Gains the `<prefix>-rate-limits` table with its TTL attribute for the shared limiter. The existing 25 tables and `dynamodb_tables.json` are otherwise unchanged |
+| `ses.tf`, `route53.tf`, `acm.tf`, `cloudfront.tf`, `cloudfront_function.tf`, `staging_access_gate.tf`, `management.tf`, `secretsmanager.tf`, `providers.tf`, `locals.tf`, `versions.tf`, `data.tf` | n/a | Unchanged |
 
 ### Platform module changes
 
@@ -685,7 +866,10 @@ as a new input, ideally with an optional per-route authorizer.
 
 **A new `ecr` module is needed.** No module under `modules/` creates an ECR
 repository. It needs a lifecycle policy input, image tag mutability, scan on
-push, and a repository policy allowing the application accounts to pull.
+push, and a repository policy allowing the application accounts to pull. It is
+called once per domain per environment, so it should take a single repository
+name and be invoked from a `for_each` in the application, rather than trying to
+own the whole set itself.
 
 Also worth doing while the modules are open: `lambda-function` and `http-api`
 both validate `log_retention_days` and `access_log_retention_days` against the
@@ -766,24 +950,27 @@ rather than GitHub Actions.
 - The platform `lambda-function` module cannot deploy an OCI image today, so no domain can be cut over until that module ships a new version.
 - The `http-api` module supports one integration only, so path-prefix routing to nine functions is blocked on a second module change.
 - Nine cold starts replace one, and the current 29 second integration timeout leaves no headroom if an image is large; the shared base image is the mitigation but needs measuring.
-- The user delete in `users.py` cascades writes into four other domains' tables and has no clean home after the split.
-- `part_service.purge_related_rows_for_parts` writes to three other domains' tables and needs the same decision as the user cascade.
-- `vote_service` denormalises scores onto `build_lists` and `parts`, so either moderation gets narrow cross-domain write access or the score becomes computed.
+- The user delete in `users.py` cascades writes into five other domains' tables. Section 2.1 settles the mechanism, a tombstone plus stream fan-out to per-domain cleanup handlers, but the eventual consistency it introduces means every read path must tolerate a half-cleaned entity.
+- `part_service.purge_related_rows_for_parts` writes to three other domains' tables and goes async by the same mechanism as the user cascade.
+- `vote_service` denormalises `net_votes` onto `parts` only, not onto `build_lists` as an earlier draft stated. It becomes a stream-driven handler owned by `catalog`, so `moderation` ends up with no cross-domain write at all.
 - Cross-domain table reads are proposed as allowed with read-only IAM; if the owner wants strict per-domain data ownership instead, several read paths become service calls and latency rises.
 - The `vehicles` domain merging car generations with search is the weakest boundary and may be better split or folded into `catalog`.
 - PyJWT here versus python-jose in Portfolio must be settled before the shared auth module is cut.
 - Eager OpenTelemetry SDK init would add cold-start cost on all nine functions; the lazy initialisation proposed in section 3 needs measuring against the 29 second integration timeout before the first cutover.
 - Whether the browser keeps Sentry or moves to OpenTelemetry is not settled by the backend observability decision and needs its own call.
 - The CloudWatch metric filter for errors must be tuned so nine functions do not produce nine times the alarm noise through the shared `api-alarms` SNS topic.
-- The rate limiter is in-memory and is not enforced across Lambda execution environments, so the configured limits do not hold in production today.
+- The rate limiter is in-memory and is not enforced across Lambda execution environments, and it keys on the caller-supplied leftmost `X-Forwarded-For` hop, so the configured limits are both diluted and trivially bypassable in production today. The layered standard in section 1 replaces it.
 - Tailwind v4 here versus v3 in Portfolio blocks sharing any component that emits classes, including the whole UI kit.
 - Portfolio's frontend has one test file against about 90 here, so extracting shared frontend code has no regression net on the Portfolio side.
 - Nine functions could multiply the CloudWatch alarm count; the aggregate pattern already used for DynamoDB should be extended rather than repeated per function.
 - Nine images per deploy multiplies ECR storage and pull time, so the lifecycle rule needs to be aggressive from day one.
 - The strangler cutover means the monolith and the extracted domains run the same code from two roots simultaneously, so any drift between the roots is a production risk until the last domain moves.
-- CodeArtifact adds a hard dependency on the Platform account being reachable during every build, including the base image build.
+- CodeArtifact adds a hard dependency on the new Platform account being reachable during every build, including the base image build. That account is being vended now, so the shared-package PRs are blocked on it existing and on cross-account CodeArtifact read being wired to the member accounts.
 - Moving retention from 14 days to 7 shortens the debugging window on exactly the deploys most likely to need it.
-- The frontend `services/Api.ts` shim is still imported by `AuthContext`, `usePartsFilters`, and `useGoogleSignIn`, so it must be removed before any HTTP package extraction.
+- The `init_cars` and `init_categories` startup tasks run from the `main.py` lifespan. Left as they are, all nine functions would race the same seed writes on every cold start. They need a single owner, a one-off job or a gate to one function, before the first cutover.
+- The rate limit table is one more DynamoDB write on every auth and mutating request. It fails open by design, but the added latency and cost on the hot write paths should be measured before the limiter is switched on in production.
+- The `ingestion` domain is thinner than its name suggests, since `crawled_pages` touches no repository and the listing writes belong to `catalog` and `build-lists`. It may be better named `admin` or dissolved into `catalog`.
+- The frontend `services/Api.ts` shim is still imported by 53 non-test source modules, not the three named in an earlier draft. Removing it is a mechanical rewrite of every import site across pages, components, hooks and contexts, so it is its own PR and a real one, not a cleanup folded into the HTTP package extraction.
 
 ## 7. Suggested PR sequence
 
@@ -795,31 +982,44 @@ Sizes are rough: small is under 200 lines changed, medium 200 to 800, large abov
 | 1 | This inventory document | small | Docs only, triggers nothing |
 | 2 | Platform modules: `lambda-function` gains real image support | medium | `package_type`, optional `runtime`/`handler`, `image_config`, `image_uri` in `ignore_changes`. Tag v1.8.0 |
 | 3 | Platform modules: `http-api` gains a route-to-integration map | medium | Backward compatible, existing single-integration callers keep working |
-| 4 | Platform modules: new `ecr` module | small | Lifecycle rule, scan on push, cross-account pull policy |
-| 5 | Terraform: ECR repositories and the base image, no functions yet | small | Additive only, nothing cuts over |
+| 4 | Platform modules: new `ecr` module | small | One repository per call, lifecycle rule, scan on push, pull policy scoped to the one account that runs the images |
+| 5 | Terraform: ECR repositories and the base image, no functions yet | small | Nine domain repositories plus the base, per environment. Additive only, nothing cuts over |
 | 6 | Backend: `src/` layout and the monolith composition root, no domain split | large | Pure move plus import rewrite. The existing 97 test files must pass untouched. This is the riskiest mechanical change and deserves its own PR |
-| 7 | Backend: the route inventory contract test | small | Locks the 170 routes and their paths before anything moves. Merge before PR 8 |
-| 8 | Backend: carve out `media` as the first domain package, both roots | medium | Smallest domain at 8 routes, and the only one needing S3 write, so it proves the IAM split |
-| 9 | Dockerfile, base image, and the container build workflow | medium | Builds and pushes but does not yet route traffic |
-| 10 | Terraform: the `media` function plus one path-prefix route, `$default` still the monolith | medium | The first real strangler cut. Verify, then leave it running for a while |
-| 11 | Reusable workflows in the org `.github` repository | medium | `python-ci`, `node-ci`, `container-deploy`, `spa-deploy`, and the fixed single-gate Terraform poll |
-| 12 | CarModPicker workflows become `workflow_call` consumers | small | Six files shrink to `uses:` blocks |
-| 13 to 19 | One PR per remaining domain: `build-logs`, `moderation`, `vehicles`, `ingestion`, `build-lists`, `identity`, `catalog` | medium each, `catalog` large | Ordered smallest first, hardest last. Each is a package carve-out plus its Terraform function and route |
-| 20 | `users` domain, including the delete cascade decision | large | Deliberately last, it is the hardest coupling |
-| 21 | Retire the `$default` monolith route, the artifacts bucket, and the zip path | small | Only after every domain has run in production |
-| 22 | Log retention to 7 days everywhere | small | Single input change once the function set is stable |
-| 23 | `webbpulse-core` tier 1: secrets, Dynamo client, serialization, settings base, CORS, health and ready | medium | The near-identical, framework-neutral set. No conflicts to settle first |
-| 24 | `webbpulse-core` OpenTelemetry module with lazy Lambda init | medium | Neutral core plus FastAPI and Lambda adapters. Land before the domain carve-outs so each domain adopts it on the way through |
-| 25 | Terraform: X-Ray, the error metric filter, and `api-alarms` wiring | small | Completes the observability path before the first domain relies on it |
-| 26 | `webbpulse-core` tier 2: repository, table specs, CRUD router | large | Requires the PyJWT decision and Portfolio's data-model migration to be scoped first |
-| 27 | CarModPicker consumes `webbpulse-core` | medium | Deletes the duplicated modules here |
-| 28 | Portfolio consumes `webbpulse-core` | medium | Proves the package is genuinely shared, not just extracted |
-| 29 | Rate limiter moved to a DynamoDB store | small | Independent bug fix, can land any time; do not carry the in-memory version into the shared package |
-| 30 | `@webbpulse/tsconfig`, `eslint-config`, `prettier-config` | small | The real near-term frontend win, no runtime risk |
-| 31 | `@webbpulse/ui` and `@webbpulse/react` | large | Blocked on aligning Tailwind versions with Portfolio |
+| 7 | Backend: the route inventory contract test | small | Locks the 176 routes and their paths before anything moves. Must enumerate `app.routes`, since 9 routes are generated at runtime and invisible to a decorator grep. Merge before PR 8 |
+| 8 | Rate limiting layer 2: the `<prefix>-rate-limits` table and the shared fixed-window limiter | small | Replaces the in-memory limiter and the `X-Forwarded-For` key with the API Gateway request context. Independent bug fix, can land any time, and should land early because the current limiter is bypassable |
+| 9 | Backend: carve out `media` as the first domain package, both roots | medium | Smallest domain at 8 routes, and the only one holding bucket-wide S3 grants, so it proves the IAM split |
+| 10 | Dockerfile, base image, and the container build workflow | medium | Builds and pushes but does not yet route traffic |
+| 11 | Terraform: the `media` function plus one path-prefix route, `$default` still the monolith | medium | The first real strangler cut. Per-route throttling goes in here as layer 1. Verify, then leave it running for a while |
+| 12 | Reusable workflows in the org `.github` repository | medium | `python-ci`, `node-ci`, `container-deploy`, `spa-deploy`, and the fixed single-gate Terraform poll |
+| 13 | CarModPicker workflows become `workflow_call` consumers | small | Six files shrink to `uses:` blocks |
+| 14 | Startup tasks get a single owner | small | `init_cars` and `init_categories` move out of the lifespan so nine functions do not race the same seed writes |
+| 15 to 19 | One PR per domain: `build-logs`, `moderation`, `vehicles`, `ingestion`, `build-lists` | medium each | Ordered smallest first. Each is a package carve-out plus its Terraform function and route |
+| 20 | Cross-domain event plumbing: tombstones, the stream or queue, and the per-domain cleanup handlers | large | Section 2.1. Must land before `catalog` and `users`, since both depend on it to stop writing into other domains' tables. Includes the tombstone-aware read paths |
+| 21 | `identity` domain | medium | Carve-out plus function and route |
+| 22 | `catalog` domain, including the part purge going async and the `net_votes` handler | large | Depends on PR 20. The `net_votes` write moves here from `moderation`, which then drops its last cross-domain write |
+| 23 | `users` domain, including the delete cascade going async | large | Deliberately last, it is the hardest coupling. Depends on PR 20 |
+| 24 | Retire the `$default` monolith route, the artifacts bucket, and the zip path | small | Only after every domain has run in production |
+| 25 | Log retention to 7 days everywhere | small | Single input change once the function set is stable |
+| 26 | `webbpulse-core` tier 1: secrets, Dynamo client, serialization, settings base, CORS, health and ready | medium | The near-identical, framework-neutral set. No conflicts to settle first. Blocked on the Platform account and CodeArtifact existing |
+| 27 | `webbpulse-core` OpenTelemetry module with lazy Lambda init | medium | Neutral core plus FastAPI and Lambda adapters. Land before the domain carve-outs so each domain adopts it on the way through |
+| 28 | Terraform: X-Ray, the error metric filter, and `api-alarms` wiring | small | Completes the observability path before the first domain relies on it. The Lambda role already carries the X-Ray write permissions |
+| 29 | `webbpulse-core` tier 2: repository, table specs, CRUD router | large | Requires the PyJWT decision and Portfolio's data-model migration to be scoped first |
+| 30 | CarModPicker consumes `webbpulse-core` | medium | Deletes the duplicated modules here |
+| 31 | Portfolio consumes `webbpulse-core` | medium | Proves the package is genuinely shared, not just extracted |
+| 32 | Frontend: delete the `services/Api.ts` shim | medium | Rewrites 53 import sites onto `src/api/*`. Prerequisite for any HTTP package extraction |
+| 33 | `@webbpulse/tsconfig`, `eslint-config`, `prettier-config` | small | The real near-term frontend win, no runtime risk |
+| 34 | `@webbpulse/ui` and `@webbpulse/react` | large | Blocked on aligning Tailwind versions with Portfolio |
 
-PRs 2 through 5, 11, and 29 are independent of the backend restructure and can
-run in parallel with PR 6. PR 24 should land before the domain carve-outs so that
+PRs 2 through 5, 8, 12, and 33 are independent of the backend restructure and can
+run in parallel with PR 6. PR 27 should land before the domain carve-outs so that
 each domain picks up OpenTelemetry as it moves rather than being retrofitted
-afterwards. Everything from PR 8 onward is otherwise sequential by design, since
-each strangler cut should be observed in production before the next one starts.
+afterwards. PR 20 is the new hard gate: `catalog` and `users` cannot be carved
+out before it, which is why the domain order puts the five self-contained domains
+first and the three coupled ones after. Everything from PR 9 onward is otherwise
+sequential by design, since each strangler cut should be observed in production
+before the next one starts.
+
+The shared-package PRs, 26 onwards, additionally depend on the new Platform
+account being vended and cross-account CodeArtifact read reaching the member
+accounts. They are sequenced late for that reason as much as for their own
+difficulty.
