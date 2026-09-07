@@ -17,7 +17,7 @@ module "staging_access_gate" {
   site_host        = "www.${local.domain_name}"
   additional_hosts = [local.domain_name]
   allowed_emails   = var.staging_access_users
-  http_api_id      = aws_apigatewayv2_api.api.id
+  http_api_id      = module.api.api_id
   invite_login_url = "https://www.${local.domain_name}/"
 
   # The application's own viewer-request logic (apex to www 301, prerender URI rewrites) runs
