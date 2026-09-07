@@ -8,8 +8,8 @@ module "api" {
   name        = "${local.prefix}-api"
   description = "CarModPicker ${var.environment} API (Lambda proxy)"
 
-  lambda_invoke_arn    = aws_lambda_function.api.invoke_arn
-  lambda_function_name = aws_lambda_function.api.function_name
+  lambda_invoke_arn    = module.lambda_api.invoke_arn
+  lambda_function_name = module.lambda_api.function_name
 
   route_keys                       = ["$default"]
   integration_timeout_milliseconds = 29000
@@ -27,7 +27,7 @@ module "api" {
   authorizer_id                = local.staging_gate_enabled ? module.staging_access_gate[0].http_api_authorizer_id : null
 
   domain_name      = local.custom_domain ? "api.${local.domain_name}" : null
-  certificate_arn  = local.custom_domain ? aws_acm_certificate_validation.api[0].certificate_arn : null
+  certificate_arn  = module.api_certificate.certificate_arn
   zone_id          = local.custom_domain ? module.staging_dns.zone_id : null
   domain_name_tags = { Name = "${local.prefix}-api-domain" }
 }

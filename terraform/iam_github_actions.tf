@@ -18,7 +18,7 @@ module "github_actions_role" {
       # Lambda: upload the zip to the artifacts bucket, then point the function at it
       {
         actions   = ["s3:PutObject", "s3:GetObject"]
-        resources = ["${aws_s3_bucket.lambda_artifacts.arn}/*"]
+        resources = ["${module.lambda_artifacts.bucket_arn}/*"]
       },
       {
         actions = [
@@ -28,7 +28,7 @@ module "github_actions_role" {
           "lambda:GetFunctionConfiguration",
           "lambda:GetFunctionCodeSigningConfig",
         ]
-        resources = [aws_lambda_function.api.arn]
+        resources = [module.lambda_api.function_arn]
       },
       # S3: sync frontend build artefacts
       {

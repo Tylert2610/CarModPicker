@@ -1,128 +1,57 @@
-# ---------------------------------------------------------------------------
-# SNS Topic — shared alarm notification target
-# Both email addresses must confirm their subscription after the first apply.
-# ---------------------------------------------------------------------------
-resource "aws_sns_topic" "alarms" {
-  name = "${local.prefix}-alarms"
+# The alarm SNS topic, its email subscriptions and the Lambda, HTTP API and DynamoDB alarms all
+# come from the shared api-alarms module. Every threshold, period and evaluation count is the
+# module default and matches state, so none of them is passed here.
+module "alarms" {
+  source  = "app.terraform.io/WebbPulse/platform-modules/aws//modules/api-alarms"
+  version = "~> 1.6"
+
+  name_prefix         = local.prefix
+  notification_emails = ["tyler@webbpulse.com", "tylert2610@gmail.com"]
+
+  lambda_function_name = module.lambda_api.function_name
+  http_api_id          = module.api.api_id
+
+  # Keyed by the dynamodb_tables.json key so each alarm keeps the address it has in state; the
+  # value is the real table name, which is what "<table name>-throttles" is built from.
+  dynamodb_tables = { for k, t in module.dynamodb.tables : k => t.name }
 }
 
-resource "aws_sns_topic_subscription" "alarms_tyler_webb" {
-  topic_arn = aws_sns_topic.alarms.arn
-  protocol  = "email"
-  endpoint  = "tyler@webbpulse.com"
+moved {
+  from = aws_sns_topic.alarms
+  to   = module.alarms.aws_sns_topic.alarms
 }
 
-resource "aws_sns_topic_subscription" "alarms_tyler_gmail" {
-  topic_arn = aws_sns_topic.alarms.arn
-  protocol  = "email"
-  endpoint  = "tylert2610@gmail.com"
+moved {
+  from = aws_sns_topic_subscription.alarms_tyler_webb
+  to   = module.alarms.aws_sns_topic_subscription.email["tyler@webbpulse.com"]
 }
 
-# ---------------------------------------------------------------------------
-# CloudWatch Alarms — Lambda + HTTP API + DynamoDB
-# ---------------------------------------------------------------------------
-resource "aws_cloudwatch_metric_alarm" "lambda_errors" {
-  alarm_name          = "${local.prefix}-lambda-errors"
-  alarm_description   = "Lambda API reported invocation errors"
-  namespace           = "AWS/Lambda"
-  metric_name         = "Errors"
-  dimensions          = { FunctionName = aws_lambda_function.api.function_name }
-  statistic           = "Sum"
-  period              = 300
-  evaluation_periods  = 1
-  threshold           = 0
-  comparison_operator = "GreaterThanThreshold"
-  treat_missing_data  = "notBreaching"
-  alarm_actions       = [aws_sns_topic.alarms.arn]
-  ok_actions          = [aws_sns_topic.alarms.arn]
+moved {
+  from = aws_sns_topic_subscription.alarms_tyler_gmail
+  to   = module.alarms.aws_sns_topic_subscription.email["tylert2610@gmail.com"]
 }
 
-resource "aws_cloudwatch_metric_alarm" "lambda_throttles" {
-  alarm_name          = "${local.prefix}-lambda-throttles"
-  alarm_description   = "Lambda API invocations were throttled"
-  namespace           = "AWS/Lambda"
-  metric_name         = "Throttles"
-  dimensions          = { FunctionName = aws_lambda_function.api.function_name }
-  statistic           = "Sum"
-  period              = 300
-  evaluation_periods  = 1
-  threshold           = 0
-  comparison_operator = "GreaterThanThreshold"
-  treat_missing_data  = "notBreaching"
-  alarm_actions       = [aws_sns_topic.alarms.arn]
-  ok_actions          = [aws_sns_topic.alarms.arn]
+moved {
+  from = aws_cloudwatch_metric_alarm.lambda_errors
+  to   = module.alarms.aws_cloudwatch_metric_alarm.lambda_errors[0]
 }
 
-resource "aws_cloudwatch_metric_alarm" "api_5xx" {
-  alarm_name          = "${local.prefix}-api-5xx"
-  alarm_description   = "HTTP API returned 5xx responses"
-  namespace           = "AWS/ApiGateway"
-  metric_name         = "5xx"
-  dimensions          = { ApiId = module.api.api_id }
-  statistic           = "Sum"
-  period              = 300
-  evaluation_periods  = 1
-  threshold           = 0
-  comparison_operator = "GreaterThanThreshold"
-  treat_missing_data  = "notBreaching"
-  alarm_actions       = [aws_sns_topic.alarms.arn]
-  ok_actions          = [aws_sns_topic.alarms.arn]
+moved {
+  from = aws_cloudwatch_metric_alarm.lambda_throttles
+  to   = module.alarms.aws_cloudwatch_metric_alarm.lambda_throttles[0]
 }
 
-resource "aws_cloudwatch_metric_alarm" "api_integration_latency_p99" {
-  alarm_name          = "${local.prefix}-api-integration-latency-p99"
-  alarm_description   = "HTTP API p99 integration latency above 10 s"
-  namespace           = "AWS/ApiGateway"
-  metric_name         = "IntegrationLatency"
-  dimensions          = { ApiId = module.api.api_id }
-  extended_statistic  = "p99"
-  period              = 300
-  evaluation_periods  = 1
-  threshold           = 10000
-  comparison_operator = "GreaterThanThreshold"
-  treat_missing_data  = "notBreaching"
-  alarm_actions       = [aws_sns_topic.alarms.arn]
-  ok_actions          = [aws_sns_topic.alarms.arn]
+moved {
+  from = aws_cloudwatch_metric_alarm.api_5xx
+  to   = module.alarms.aws_cloudwatch_metric_alarm.api_5xx[0]
 }
 
-resource "aws_cloudwatch_metric_alarm" "dynamodb_throttles" {
-  for_each = aws_dynamodb_table.tables
+moved {
+  from = aws_cloudwatch_metric_alarm.api_integration_latency_p99
+  to   = module.alarms.aws_cloudwatch_metric_alarm.api_integration_latency[0]
+}
 
-  alarm_name          = "${each.value.name}-throttles"
-  alarm_description   = "DynamoDB read or write throttle events on ${each.value.name}"
-  evaluation_periods  = 1
-  threshold           = 0
-  comparison_operator = "GreaterThanThreshold"
-  treat_missing_data  = "notBreaching"
-  alarm_actions       = [aws_sns_topic.alarms.arn]
-  ok_actions          = [aws_sns_topic.alarms.arn]
-
-  metric_query {
-    id          = "throttles"
-    expression  = "reads + writes"
-    label       = "ThrottleEvents"
-    return_data = true
-  }
-
-  metric_query {
-    id = "reads"
-    metric {
-      namespace   = "AWS/DynamoDB"
-      metric_name = "ReadThrottleEvents"
-      dimensions  = { TableName = each.value.name }
-      stat        = "Sum"
-      period      = 300
-    }
-  }
-
-  metric_query {
-    id = "writes"
-    metric {
-      namespace   = "AWS/DynamoDB"
-      metric_name = "WriteThrottleEvents"
-      dimensions  = { TableName = each.value.name }
-      stat        = "Sum"
-      period      = 300
-    }
-  }
+moved {
+  from = aws_cloudwatch_metric_alarm.dynamodb_throttles
+  to   = module.alarms.aws_cloudwatch_metric_alarm.dynamodb_throttles
 }

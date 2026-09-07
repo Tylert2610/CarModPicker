@@ -1,90 +1,44 @@
-# ---------------------------------------------------------------------------
-# Resource Group — tag-based auto-discovery
-# Surfaces all Project=carmodpicker resources in the console.
-# ---------------------------------------------------------------------------
-resource "aws_resourcegroups_group" "carmodpicker" {
-  name        = local.prefix
-  description = "All CarModPicker managed resources"
+# Account level housekeeping: the tag based resource group, Cost Explorer anomaly detection and
+# the free budget alerts. All of it now comes from the shared app-baseline module.
+module "app_baseline" {
+  source  = "app.terraform.io/WebbPulse/platform-modules/aws//modules/app-baseline"
+  version = "~> 1.6"
 
-  resource_query {
-    query = jsonencode({
-      ResourceTypeFilters = ["AWS::AllSupported"]
-      TagFilters = [
-        {
-          Key    = "Project"
-          Values = ["carmodpicker"]
-        }
-      ]
-    })
+  name                = local.prefix
+  notification_emails = ["tyler@webbpulse.com", "tylert2610@gmail.com"]
+
+  resource_group_description = "All CarModPicker managed resources"
+  resource_group_tag_filters = {
+    Project = [local.project]
+  }
+
+  budgets = {
+    "monthly-warn"     = { limit_amount = "30" }
+    "monthly-critical" = { limit_amount = "60" }
   }
 }
 
-# ---------------------------------------------------------------------------
-# Cost Anomaly Detection — alerts on unexpected spend spikes (free)
-# Monitors per AWS service; daily digest when any anomaly >= $10.
-# ---------------------------------------------------------------------------
-resource "aws_ce_anomaly_monitor" "carmodpicker" {
-  name              = local.prefix
-  monitor_type      = "DIMENSIONAL"
-  monitor_dimension = "SERVICE"
+moved {
+  from = aws_resourcegroups_group.carmodpicker
+  to   = module.app_baseline.aws_resourcegroups_group.this[0]
 }
 
-resource "aws_ce_anomaly_subscription" "carmodpicker" {
-  name      = local.prefix
-  frequency = "DAILY"
-
-  monitor_arn_list = [aws_ce_anomaly_monitor.carmodpicker.arn]
-
-  subscriber {
-    type    = "EMAIL"
-    address = "tyler@webbpulse.com"
-  }
-
-  subscriber {
-    type    = "EMAIL"
-    address = "tylert2610@gmail.com"
-  }
-
-  threshold_expression {
-    dimension {
-      key           = "ANOMALY_TOTAL_IMPACT_ABSOLUTE"
-      match_options = ["GREATER_THAN_OR_EQUAL"]
-      values        = ["10"]
-    }
-  }
+moved {
+  from = aws_ce_anomaly_monitor.carmodpicker
+  to   = module.app_baseline.aws_ce_anomaly_monitor.this[0]
 }
 
-# ---------------------------------------------------------------------------
-# Budget alerts — first 2 budgets per account are free
-# ---------------------------------------------------------------------------
-resource "aws_budgets_budget" "warn" {
-  name         = "${local.prefix}-monthly-warn"
-  budget_type  = "COST"
-  limit_amount = "30"
-  limit_unit   = "USD"
-  time_unit    = "MONTHLY"
-
-  notification {
-    comparison_operator        = "GREATER_THAN"
-    threshold                  = 100
-    threshold_type             = "PERCENTAGE"
-    notification_type          = "ACTUAL"
-    subscriber_email_addresses = ["tyler@webbpulse.com", "tylert2610@gmail.com"]
-  }
+moved {
+  from = aws_ce_anomaly_subscription.carmodpicker
+  to   = module.app_baseline.aws_ce_anomaly_subscription.this[0]
 }
 
-resource "aws_budgets_budget" "critical" {
-  name         = "${local.prefix}-monthly-critical"
-  budget_type  = "COST"
-  limit_amount = "60"
-  limit_unit   = "USD"
-  time_unit    = "MONTHLY"
+moved {
+  from = aws_budgets_budget.warn
+  to   = module.app_baseline.aws_budgets_budget.this["monthly-warn"]
+}
 
-  notification {
-    comparison_operator        = "GREATER_THAN"
-    threshold                  = 100
-    threshold_type             = "PERCENTAGE"
-    notification_type          = "ACTUAL"
-    subscriber_email_addresses = ["tyler@webbpulse.com", "tylert2610@gmail.com"]
-  }
+moved {
+  from = aws_budgets_budget.critical
+  to   = module.app_baseline.aws_budgets_budget.this["monthly-critical"]
 }
