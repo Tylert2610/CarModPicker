@@ -57,6 +57,13 @@ export const apiClient = axios.create({
     'Content-Type': 'application/json',
   },
   timeout: 30000,
+  // Send cookies on cross-subdomain calls to the API host. Staging sits behind
+  // the access gate, whose CloudFront signed cookies are set on the staging
+  // apex, so a request from www.staging to api.staging only carries them when
+  // the browser is told to include credentials. Both backends run CORS with
+  // allow_credentials and an explicit origin list, so this is safe in every
+  // environment; auth itself still rides on the Bearer token below.
+  withCredentials: true,
   paramsSerializer: (params) => {
     if (params instanceof URLSearchParams) {
       return params.toString();

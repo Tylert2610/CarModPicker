@@ -18,9 +18,11 @@ module "api" {
   access_log_retention_days        = 14
   # access_log_format and lambda_permission_statement_id: the module defaults are our values.
 
-  # Behind the staging access gate the API is reachable only through its custom domain, which
-  # CloudFront calls with the origin-verify header; the execute-api URL would bypass that, and
-  # the gate's REQUEST authorizer checks that header on every route.
+  # Behind the staging access gate the API is reachable only through its custom domain; the
+  # execute-api URL would bypass the authorizer's host, so it is disabled. The gate's REQUEST
+  # authorizer runs on every route and admits an OPTIONS preflight, a call carrying the
+  # origin-verify header (pipelines, health checks), or a browser call carrying the gate's
+  # signed cookies.
   disable_execute_api_endpoint = local.staging_gate_enabled
   authorizer_id                = local.staging_gate_enabled ? module.staging_access_gate[0].http_api_authorizer_id : null
 

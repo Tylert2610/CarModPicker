@@ -59,7 +59,7 @@ output "api_url" {
 }
 
 output "frontend_api_base_url" {
-  description = "Value for VITE_API_URL on the matching GitHub Environment: the site origin while the staging access gate is on (API calls go through CloudFront as /api/*), otherwise api_url"
+  description = "Value for VITE_API_URL on the matching GitHub Environment: the API host in every environment, staging access gate included"
   value       = local.frontend_api_base_url
 }
 
