@@ -45,7 +45,7 @@ output "frontend_url" {
 
 output "github_actions_role_arn" {
   description = "IAM role ARN for GitHub Actions OIDC deployments"
-  value       = module.github_actions_role.role_arn
+  value       = aws_iam_role.github_actions_deploy.arn
 }
 
 output "api_invoke_url" {
