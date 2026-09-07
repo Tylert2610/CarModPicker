@@ -58,7 +58,7 @@ resource "aws_cloudwatch_metric_alarm" "api_5xx" {
   alarm_description   = "HTTP API returned 5xx responses"
   namespace           = "AWS/ApiGateway"
   metric_name         = "5xx"
-  dimensions          = { ApiId = aws_apigatewayv2_api.api.id }
+  dimensions          = { ApiId = module.api.api_id }
   statistic           = "Sum"
   period              = 300
   evaluation_periods  = 1
@@ -74,7 +74,7 @@ resource "aws_cloudwatch_metric_alarm" "api_integration_latency_p99" {
   alarm_description   = "HTTP API p99 integration latency above 10 s"
   namespace           = "AWS/ApiGateway"
   metric_name         = "IntegrationLatency"
-  dimensions          = { ApiId = aws_apigatewayv2_api.api.id }
+  dimensions          = { ApiId = module.api.api_id }
   extended_statistic  = "p99"
   period              = 300
   evaluation_periods  = 1
