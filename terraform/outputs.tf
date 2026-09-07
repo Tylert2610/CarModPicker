@@ -75,20 +75,20 @@ output "staging_access_gate_user_pool_id" {
 
 output "lambda_function_name" {
   description = "Lambda API function name"
-  value       = aws_lambda_function.api.function_name
+  value       = module.lambda_api.function_name
 }
 
 output "lambda_function_arn" {
   description = "Lambda API function ARN"
-  value       = aws_lambda_function.api.arn
+  value       = module.lambda_api.function_arn
 }
 
 output "lambda_artifacts_bucket" {
   description = "S3 bucket the deploy workflow uploads Lambda zips to"
-  value       = aws_s3_bucket.lambda_artifacts.bucket
+  value       = module.lambda_artifacts.bucket_id
 }
 
 output "dynamodb_table_names" {
   description = "DynamoDB table names keyed by table suffix"
-  value       = { for suffix, table in aws_dynamodb_table.tables : suffix => table.name }
+  value       = module.dynamodb.table_names
 }

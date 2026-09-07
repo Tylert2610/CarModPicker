@@ -48,46 +48,37 @@ resource "aws_s3_bucket_lifecycle_configuration" "crawl_data" {
   }
 }
 
-resource "aws_s3_bucket" "lambda_artifacts" {
+module "lambda_artifacts" {
+  source  = "app.terraform.io/WebbPulse/platform-modules/aws//modules/lambda-artifacts-bucket"
+  version = "~> 1.6"
+
   bucket = "${local.prefix}-lambda-artifacts"
+
+  lifecycle_rule_id                      = "expire-noncurrent-artifacts"
+  noncurrent_version_expiration_days     = 30
+  abort_incomplete_multipart_upload_days = 7
+  # enable_sse and create_placeholder_object stay false: CarModPicker has neither today. Its
+  # Lambda ships the placeholder as a local filename, not through S3.
 }
 
-resource "aws_s3_bucket_public_access_block" "lambda_artifacts" {
-  bucket = aws_s3_bucket.lambda_artifacts.id
-
-  block_public_acls       = true
-  block_public_policy     = true
-  ignore_public_acls      = true
-  restrict_public_buckets = true
+moved {
+  from = aws_s3_bucket.lambda_artifacts
+  to   = module.lambda_artifacts.aws_s3_bucket.this
 }
 
-resource "aws_s3_bucket_versioning" "lambda_artifacts" {
-  bucket = aws_s3_bucket.lambda_artifacts.id
-
-  versioning_configuration {
-    status = "Enabled"
-  }
+moved {
+  from = aws_s3_bucket_public_access_block.lambda_artifacts
+  to   = module.lambda_artifacts.aws_s3_bucket_public_access_block.this
 }
 
-resource "aws_s3_bucket_lifecycle_configuration" "lambda_artifacts" {
-  bucket = aws_s3_bucket.lambda_artifacts.id
+moved {
+  from = aws_s3_bucket_versioning.lambda_artifacts
+  to   = module.lambda_artifacts.aws_s3_bucket_versioning.this
+}
 
-  rule {
-    id     = "expire-noncurrent-artifacts"
-    status = "Enabled"
-
-    filter {}
-
-    noncurrent_version_expiration {
-      noncurrent_days = 30
-    }
-
-    abort_incomplete_multipart_upload {
-      days_after_initiation = 7
-    }
-  }
-
-  depends_on = [aws_s3_bucket_versioning.lambda_artifacts]
+moved {
+  from = aws_s3_bucket_lifecycle_configuration.lambda_artifacts
+  to   = module.lambda_artifacts.aws_s3_bucket_lifecycle_configuration.this
 }
 
 # The frontend bucket, its public access block, the origin access control and the bucket policy

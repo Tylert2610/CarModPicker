@@ -18,7 +18,7 @@ module "frontend" {
   bucket_policy_sid          = "AllowCloudFrontOAC"
 
   aliases             = local.custom_domain ? ["www.${local.domain_name}", local.domain_name] : []
-  acm_certificate_arn = one(aws_acm_certificate_validation.carmodpicker[*].certificate_arn)
+  acm_certificate_arn = module.certificate.certificate_arn
 
   # Rewrites /about to /about/index.html etc. so prerendered subdirectory HTML resolves from S3.
   # Behind the gate the module associates the gate's function instead, which runs the same
