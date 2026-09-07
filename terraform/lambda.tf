@@ -49,12 +49,12 @@ data "aws_iam_policy_document" "dynamodb_tables_rw" {
 data "aws_iam_policy_document" "lambda_api_runtime" {
   statement {
     actions   = ["secretsmanager:GetSecretValue"]
-    resources = [aws_secretsmanager_secret.app.arn]
+    resources = [module.app_secrets.arns["app"]]
   }
 
   statement {
     actions   = ["logs:CreateLogStream", "logs:PutLogEvents"]
-    resources = ["${aws_cloudwatch_log_group.lambda_api.arn}:*"]
+    resources = ["${module.lambda_api.log_group_arn}:*"]
   }
 
   statement {
@@ -63,48 +63,28 @@ data "aws_iam_policy_document" "lambda_api_runtime" {
   }
 }
 
-data "aws_iam_policy_document" "lambda_assume_role" {
-  statement {
-    actions = ["sts:AssumeRole"]
-    principals {
-      type        = "Service"
-      identifiers = ["lambda.amazonaws.com"]
-    }
-  }
-}
-
-resource "aws_iam_role" "lambda_api" {
-  name               = "${local.prefix}-lambda-api"
-  assume_role_policy = data.aws_iam_policy_document.lambda_assume_role.json
-}
-
 resource "aws_iam_role_policy" "lambda_api_dynamodb" {
   name   = "dynamodb-tables"
-  role   = aws_iam_role.lambda_api.id
+  role   = module.lambda_api.role_id
   policy = data.aws_iam_policy_document.dynamodb_tables_rw.json
 }
 
 resource "aws_iam_role_policy" "lambda_api_ses" {
   name   = "ses-send"
-  role   = aws_iam_role.lambda_api.id
+  role   = module.lambda_api.role_id
   policy = data.aws_iam_policy_document.ses_send.json
 }
 
 resource "aws_iam_role_policy" "lambda_api_s3" {
   name   = "s3-user-images"
-  role   = aws_iam_role.lambda_api.id
+  role   = module.lambda_api.role_id
   policy = data.aws_iam_policy_document.user_images_rw.json
 }
 
 resource "aws_iam_role_policy" "lambda_api_runtime" {
   name   = "runtime"
-  role   = aws_iam_role.lambda_api.id
+  role   = module.lambda_api.role_id
   policy = data.aws_iam_policy_document.lambda_api_runtime.json
-}
-
-resource "aws_cloudwatch_log_group" "lambda_api" {
-  name              = "/aws/lambda/${local.prefix}-api"
-  retention_in_days = 14
 }
 
 data "archive_file" "lambda_placeholder" {
@@ -127,46 +107,51 @@ locals {
     AWS_EMF_ENVIRONMENT   = "Local"
     RUN_STARTUP_TASKS     = "false"
     DYNAMODB_TABLE_PREFIX = local.prefix
-    APP_SECRETS_ARN       = aws_secretsmanager_secret.app.arn
+    APP_SECRETS_ARN       = module.app_secrets.arns["app"]
     FRONTEND_URL          = local.frontend_url
     ALLOWED_ORIGINS       = local.allowed_origins
   } : key => value if value != "" }
 }
 
-resource "aws_lambda_function" "api" {
+module "lambda_api" {
+  source  = "app.terraform.io/WebbPulse/platform-modules/aws//modules/lambda-function"
+  version = "~> 1.6"
+
   function_name = "${local.prefix}-api"
-  role          = aws_iam_role.lambda_api.arn
+  role_name     = "${local.prefix}-lambda-api"
+
   runtime       = "python3.13"
-  architectures = ["x86_64"]
   handler       = "app.lambda_handler.handler"
+  architectures = ["x86_64"]
   memory_size   = 1024
   timeout       = 29
 
-  filename         = data.archive_file.lambda_placeholder.output_path
-  source_code_hash = data.archive_file.lambda_placeholder.output_base64sha256
-
-  environment {
-    variables = local.lambda_environment
+  code = {
+    filename         = data.archive_file.lambda_placeholder.output_path
+    source_code_hash = data.archive_file.lambda_placeholder.output_base64sha256
   }
 
-  tracing_config {
-    mode = "Active"
-  }
+  environment_variables = local.lambda_environment
 
-  logging_config {
-    log_format            = "JSON"
-    application_log_level = "INFO"
-    system_log_level      = "INFO"
-  }
-
-  lifecycle {
-    ignore_changes = [filename, source_code_hash, s3_bucket, s3_key, s3_object_version]
-  }
-
-  depends_on = [
-    aws_cloudwatch_log_group.lambda_api,
-    aws_iam_role_policy.lambda_api_runtime,
-  ]
+  log_retention_days    = 14
+  log_format            = "JSON"
+  application_log_level = "INFO"
+  system_log_level      = "INFO"
 
   tags = { Name = "${local.prefix}-api" }
+}
+
+moved {
+  from = aws_iam_role.lambda_api
+  to   = module.lambda_api.aws_iam_role.this
+}
+
+moved {
+  from = aws_cloudwatch_log_group.lambda_api
+  to   = module.lambda_api.aws_cloudwatch_log_group.this
+}
+
+moved {
+  from = aws_lambda_function.api
+  to   = module.lambda_api.aws_lambda_function.this
 }
