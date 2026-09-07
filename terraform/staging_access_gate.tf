@@ -9,8 +9,11 @@
 module "staging_access_gate" {
   count = local.staging_gate_count
 
-  source  = "app.terraform.io/WebbPulse/platform-modules/aws//modules/staging-access-gate"
-  version = "~> 1.1"
+  source = "app.terraform.io/WebbPulse/platform-modules/aws//modules/staging-access-gate"
+  # Pinned exactly: 1.3.2 adds aws_lambda_permission.login_invoke, a real new resource on the
+  # login function URL. That is a change to apply on its own, not something to fold into a
+  # state-move-only change. Relax this to ~> 1.3 in the change that adopts it.
+  version = "1.3.1"
 
   name             = local.prefix
   cookie_domain    = local.domain_name
