@@ -9,11 +9,11 @@ Single entry point (`init_sentry(*, server_name)`) called from every process:
 
 # DSN source
 
-DSN is pulled from `SENTRY_DSN` env var at init time. In production the value
-is injected by App Runner / ECS from AWS Secrets Manager (`${prefix}/sentry-dsn`);
-in local dev the value is simply unset so `init_sentry()` no-ops. Never hard-code
-the DSN — see `terraform/secretsmanager.tf` + `terraform/apprunner.tf` for the
-injection path (D-01, D-55).
+DSN is pulled from `SENTRY_DSN` env var at init time. In production the Lambda
+API reads the `${prefix}/app` JSON secret at cold start (via `APP_SECRETS_ARN`)
+and applies `SENTRY_DSN` from it; in local dev the value is simply unset so
+`init_sentry()` no-ops. Never hard-code the DSN, see `terraform/secretsmanager.tf`
+and `app/core/secrets.py` for the injection path (D-01, D-55).
 
 # Release tag
 
