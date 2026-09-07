@@ -1,6 +1,6 @@
 # Core FastAPI and web framework dependencies
 annotated-types==0.8.0
-anyio==4.14.2
+anyio==4.15.0
 click==8.5.0
 fastapi==0.141.1
 h11==0.16.0
@@ -28,7 +28,7 @@ python-multipart==0.0.32
 pyotp==2.10.0
 qrcode[pil]==8.2
 webauthn==2.7.1
-google-auth==2.57.0
+google-auth==2.57.1
 
 requests==2.34.2
 beautifulsoup4==4.15.0
@@ -42,11 +42,11 @@ pybreaker==1.4.1
 # Python's handshake is flagged (e.g. Vivid Racing). Ships native libcurl-
 # impersonate binaries — Linux x86_64 wheels available on PyPI. Not required
 # for Tier 0 adapters; safe to install regardless. See app/crawlers/fetchers.py.
-curl_cffi==0.16.2
+curl_cffi==0.16.3
 
 # Image storage and processing
-boto3==1.43.83
-boto3-stubs[s3,sesv2,dynamodb]==1.43.83  # Type stubs for boto3 S3, SES, and DynamoDB clients
+boto3==1.43.88
+boto3-stubs[s3,sesv2,dynamodb]==1.43.88  # Type stubs for boto3 S3, SES, and DynamoDB clients
 Pillow==12.3.0
 
 # Observability (Phase 2 / OBS-01 + OBS-02)
