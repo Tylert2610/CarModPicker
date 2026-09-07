@@ -35,7 +35,7 @@
     "@radix-ui/react-toast": "^1.2.23",
     "@react-oauth/google": "^0.13.5",
     "@sentry/react": "^10.72.0",
-    "@simplewebauthn/browser": "^13.3.0",
+    "@simplewebauthn/browser": "^14.0.0",
     "@tailwindcss/vite": "^4.3.3",
     "axios": "^1.15.0",
     "class-variance-authority": "^0.7.1",
