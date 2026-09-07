@@ -28,35 +28,3 @@ module "app_secrets" {
     }
   }
 }
-
-moved {
-  from = aws_secretsmanager_secret.secret_key
-  to   = module.app_secrets.aws_secretsmanager_secret.this["secret-key"]
-}
-
-moved {
-  from = aws_secretsmanager_secret_version.secret_key
-  to   = module.app_secrets.aws_secretsmanager_secret_version.this["secret-key"]
-}
-
-moved {
-  from = aws_secretsmanager_secret.sentry_dsn
-  to   = module.app_secrets.aws_secretsmanager_secret.this["sentry-dsn"]
-}
-
-# Inert in staging, where var.sentry_dsn is empty so neither the old count instance nor the
-# module version exists. In production it carries the real version across.
-moved {
-  from = aws_secretsmanager_secret_version.sentry_dsn[0]
-  to   = module.app_secrets.aws_secretsmanager_secret_version.this["sentry-dsn"]
-}
-
-moved {
-  from = aws_secretsmanager_secret.app
-  to   = module.app_secrets.aws_secretsmanager_secret.this["app"]
-}
-
-moved {
-  from = aws_secretsmanager_secret_version.app
-  to   = module.app_secrets.aws_secretsmanager_secret_version.this["app"]
-}
