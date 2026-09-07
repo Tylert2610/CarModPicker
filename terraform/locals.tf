@@ -26,7 +26,7 @@ locals {
   staging_gate_count   = local.staging_gate_enabled ? 1 : 0
 
   frontend_url = local.custom_domain ? "https://www.${local.domain_name}" : "https://${aws_cloudfront_distribution.frontend.domain_name}"
-  api_url      = local.custom_domain ? "https://api.${local.domain_name}" : aws_apigatewayv2_api.api.api_endpoint
+  api_url      = module.api.api_url
 
   # What the frontend build should use as VITE_API_URL. Behind the gate the browser must call the
   # API through the site origin (https://www.staging.<domain>/api/*) so the signed cookies travel

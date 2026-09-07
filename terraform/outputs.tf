@@ -30,12 +30,12 @@ output "domain_name" {
 
 output "route53_zone_id" {
   description = "Hosted zone id for domain_name (null without a custom domain)"
-  value       = one(aws_route53_zone.carmodpicker[*].zone_id)
+  value       = module.staging_dns.zone_id
 }
 
 output "route53_zone_name_servers" {
   description = "Name servers of the hosted zone; in staging these are what the parent-zone NS delegation points at"
-  value       = one(aws_route53_zone.carmodpicker[*].name_servers)
+  value       = module.staging_dns.name_servers
 }
 
 output "frontend_url" {
@@ -50,7 +50,7 @@ output "github_actions_role_arn" {
 
 output "api_invoke_url" {
   description = "HTTP API default execute-api endpoint (disabled while the staging access gate is on)"
-  value       = aws_apigatewayv2_api.api.api_endpoint
+  value       = module.api.api_endpoint
 }
 
 output "api_url" {

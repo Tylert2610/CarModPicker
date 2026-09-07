@@ -1,3 +1,12 @@
+# GitHub Actions OIDC provider and deploy role. Still hand-written: the shared
+# platform-modules/aws//modules/github-actions-role cannot take these statements as of 1.3.1.
+# Its sid-uniqueness validation on policy_statements calls coalesce(s.sid, ""), and Terraform's
+# coalesce rejects empty strings, so a statement without a sid fails the variable with
+# "Call to function coalesce failed: no non-null, non-empty-string arguments". Every statement
+# here is sid-less, and giving them sids to work around it would add Sid keys to the rendered
+# policy, which is a real change to the stored document rather than a state move. Adopt the
+# module once that validation is fixed upstream (compact + try, or s.sid == null ? "" : s.sid).
+#
 # GitHub Actions OIDC provider — separate from the HCP Terraform OIDC provider
 # (app.terraform.io). This allows GitHub Actions workflows to assume an AWS role
 # via short-lived OIDC tokens without storing long-lived AWS credentials as secrets.

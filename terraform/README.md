@@ -67,6 +67,23 @@ Outputs: `staging_access_gate_hosted_ui`, `staging_access_gate_user_pool_id`, `f
 
 Production ran App Runner + RDS PostgreSQL alongside Lambda + DynamoDB until the Lambda path was proven, then the legacy stack was destroyed. The data was copied with `backend/scripts/backfill_from_postgres.py`, `api.carmodpicker.com` was flipped to the HTTP API alias, and the VPC, RDS, ECR and App Runner resources were removed. The last RDS snapshot is `carmodpicker-production-final-snapshot` in the production account; delete it once nothing needs the old data.
 
+## Shared platform modules
+
+Most of this stack is now assembled from `app.terraform.io/WebbPulse/platform-modules/aws`, pinned at `~> 1.3`:
+
+| Module | Instantiated in | What it owns |
+| --- | --- | --- |
+| `staging-dns` | `route53.tf` | The hosted zone for the served domain and, in staging only, the NS delegation written into the parent zone through `aws.parent_dns`. |
+| `http-api` | `apigateway.tf` | The HTTP API, its `$default` stage, integration, route, invoke permission, custom domain, mapping and alias record. |
+| `staging-access-gate` | `staging_access_gate.tf` | Cognito sign-in and CloudFront signed cookies in front of staging. See below. |
+
+The adoption was a pure state move: every `moved` block lives in `moved.tf` and the speculative plans on both workspaces read `0 to add, 0 to change, 0 to destroy`.
+
+What stays hand-written is what a single-provider module cannot own, plus two modules that cannot yet reproduce this stack exactly:
+
+- The ACM certificates (`acm.tf`, one in `aws.us_east_1` for CloudFront and one regional for the API) with their DNS validation records, the CloudFront Function in `cloudfront_function.tf`, and the SES and verification records in `route53.tf`.
+- The GitHub Actions role in `iam_github_actions.tf` and the CloudFront distribution and frontend bucket in `cloudfront.tf` and `s3.tf`. Each file starts with a note saying which module bug blocks it and what has to change upstream before it can move.
+
 ## File map
 
 | File | What it manages |
@@ -76,21 +93,22 @@ Production ran App Runner + RDS PostgreSQL alongside Lambda + DynamoDB until the
 | `variables.tf` | Input variables: region, environment, shaping toggles above, throttling, secrets. |
 | `locals.tf` | `project`, `prefix` (`carmodpicker-<env>`), `custom_domain`, `domain_name` (served domain), `active_domain` (served domain, or the apex when no custom domain is bound), `parent_delegation`, `email_from`, `frontend_url`, `api_url`, `allowed_origins`. |
 | `data.tf` | `aws_caller_identity`, `aws_region` lookups for ARN construction. |
+| `moved.tf` | Every `moved` block in one place: the older count-conversion renames, and the moves that took the hand-written resources into the four shared platform modules. |
 | `outputs.tf` | API/Lambda/DynamoDB/CloudFront identifiers plus everything the deploy workflows need. |
 | `dynamodb.tf` | One `aws_dynamodb_table` per entry in `dynamodb_tables.json`, on-demand billing, PITR + deletion protection in production. |
 | `dynamodb_tables.json` | Generated from `backend/app/db/dynamo/tables.py` by `backend/scripts/export_dynamo_tables.py`; a backend test fails when it is stale. |
 | `lambda.tf` | Execution role (DynamoDB on `<prefix>-*`, SES, user-images S3, app secret, logs, X-Ray), log group, placeholder zip, the `<prefix>-api` function. |
 | `lambda_placeholder/` | Source of the placeholder zip Terraform uploads on first create; code changes are ignored afterwards so the deploy workflow owns them. |
-| `apigateway.tf` | HTTP API with a `$default` Lambda proxy route, `$default` stage with throttling + JSON access logs, invoke permission, custom domain + mapping when `local.custom_domain`. |
+| `apigateway.tf` | `module "api"` (`platform-modules/aws//modules/http-api`): HTTP API with a `$default` Lambda proxy route, `$default` stage with throttling + JSON access logs, invoke permission, and the custom domain, mapping and alias record when `local.custom_domain`. |
 | `s3.tf` | `user-images` (private), `crawl-data` (private), `lambda-artifacts` (versioned, 30-day noncurrent expiry), `frontend` (private + OAC). |
-| `cloudfront.tf` | Distribution for the frontend, managed cache/origin/headers policies, SPA 403/404 fallback. Aliases and the ACM cert apply only with a custom domain. |
+| `cloudfront.tf` | Distribution for the frontend, managed cache/origin/headers policies, SPA 403/404 fallback, and the access-gate origins and behaviors. Aliases and the ACM cert apply only with a custom domain. Still hand-written, see the note at the top of the file. |
 | `cloudfront_function.tf` | Viewer-request function `frontend_uri_rewrite`: `cloudfront_functions/app_handler.js.tftpl` (apex → www 301 and `/foo` → `/foo/index.html` rewrite for prerendered routes, as `appHandler`) wrapped by `uri_rewrite.js.tftpl` as `handler`. Unused on staging while the access gate is on. |
 | `staging_access_gate.tf` | `module "staging_access_gate"` (count 0 or 1): Cognito user pool, login Lambda, CloudFront key group and function, HTTP API authorizer, SSM secrets. See "Staging access gate". |
 | `acm.tf` | Wildcard cert for the served domain in `us-east-1` (CloudFront) and a regional cert for `api.<domain>` (HTTP API), both DNS-validated; validation waits on the staging delegation record. |
-| `route53.tf` | Hosted zone for the served domain, staging NS delegation into the parent zone (`aws.parent_dns`), apex/`www`/`api` records, SES DKIM/MAIL-FROM/DMARC. `api` is an alias to the HTTP API custom domain. |
+| `route53.tf` | `module "staging_dns"` (`platform-modules/aws//modules/staging-dns`): the hosted zone for the served domain plus, in staging, the NS delegation into the parent zone through `aws.parent_dns`. Then the apex and `www` alias records and the SES DKIM/MAIL-FROM/DMARC and verification records. The `api` alias record lives in `module "api"`. |
 | `ses.tf` | SESv2 configuration set, domain identity (custom domain) or mailbox identity (`email_from`), custom MAIL FROM, SNS topic + subscription for bounces/complaints, account-level VDM. |
 | `secretsmanager.tf` | `<prefix>/app` JSON secret (`SECRET_KEY`, `SENTRY_DSN`) read by the Lambda at import, plus the standalone `secret-key` / `sentry-dsn` secrets. |
-| `iam_github_actions.tf` | GitHub OIDC provider + `github-actions-deploy` role: Lambda code updates, artifacts upload, frontend sync, invalidation, and (gate on) reading the origin-verify SSM parameter. |
+| `iam_github_actions.tf` | GitHub OIDC provider + `github-actions-deploy` role: Lambda code updates, artifacts upload, frontend sync, invalidation, and (gate on) reading the origin-verify SSM parameter. Still hand-written, see the note at the top of the file. |
 | `monitoring.tf` | Alarms SNS topic; Lambda errors/throttles, HTTP API 5xx and p99 integration latency, per-table DynamoDB throttle events. |
 | `management.tf` | Tag-based Resource Group, Cost Explorer anomaly monitor + daily email subscription, monthly cost budgets. |
 

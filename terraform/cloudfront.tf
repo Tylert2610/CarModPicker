@@ -1,3 +1,16 @@
+# The frontend distribution. Still hand-written: platform-modules/aws//modules/spa-frontend
+# 1.3.1 cannot take the staging access gate without changing this resource. Its access_gate input
+# is a single object variable that carries origin_verify_header_value, which is sensitive. A
+# module input object with one sensitive member is marked sensitive as a whole when it crosses
+# the module boundary, so inside the module every attribute derived from it, the path patterns,
+# the target origin ids, the allowed methods, the cache policy ids, comes out sensitive too. The
+# planned values are byte-identical to what is in state, but the sensitivity marks differ, and
+# Terraform plans that as an in-place update. Laundering the mark with nonsensitive() would put
+# the origin-verify secret into plan output, so the distribution stays here.
+#
+# The module is otherwise a match; adopt it once the gate's sensitive value reaches it through
+# its own input rather than as a member of the access_gate object.
+
 locals {
   frontend_origin_id           = "${local.prefix}-frontend-s3"
   staging_gate_login_origin_id = "${local.prefix}-access-gate-login"
