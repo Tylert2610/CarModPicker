@@ -5,6 +5,11 @@ Simulates the frontend's sparkline access pattern against two read endpoints:
 - ``GET  /api/parts/{id}/price-history?window=90d`` (weight=4, dominant call)
 - ``POST /api/parts/price-history``                  (weight=1, batch summary)
 
+The POST is authenticated (it takes ``get_current_user`` like every other
+mutating-shaped route). Export ``PERF_BEARER_TOKEN`` with a valid access token
+before running, or the POST rows come back 401 and the gate reports a 100%
+error rate. The GET is still public and needs no token.
+
 Part IDs are loaded from ``backend/.perf-runs/part-id-pool.json`` — the runner
 script (run_price_history_loadtest.sh) generates that pool from the DB before
 spawning users so every locust process sees the same pool without needing a
@@ -38,6 +43,10 @@ PART_ID_POOL_PATH = Path(os.environ.get("PART_ID_POOL_PATH", str(_DEFAULT_POOL_P
 WINDOW = os.environ.get("PERF_WINDOW", "90d")
 BATCH_SIZE = int(os.environ.get("PERF_BATCH_SIZE", "50"))
 
+# POST /api/parts/price-history requires an authenticated user. Supplied out of
+# band so no credential is ever committed here.
+BEARER_TOKEN = os.environ.get("PERF_BEARER_TOKEN", "")
+
 # Loaded at @events.test_start so we fail fast with a clear message instead of
 # crashing inside the first user's task with a confusing FileNotFoundError.
 _PART_ID_POOL: List[str] = []
@@ -69,6 +78,19 @@ def _on_test_start(environment: Environment, **_: object) -> None:
         f"[perf-gate] loaded {len(_PART_ID_POOL)} part IDs from {PART_ID_POOL_PATH} "
         f"(window={WINDOW}, batch_size={BATCH_SIZE})"
     )
+    if not BEARER_TOKEN:
+        print(
+            "[perf-gate] WARNING: PERF_BEARER_TOKEN is unset. "
+            "POST /api/parts/price-history requires auth and will return 401 for every "
+            "sample, so the POST budget cannot be measured."
+        )
+
+
+def _auth_headers() -> dict[str, str]:
+    """Bearer headers for the authenticated POST, empty when no token is set."""
+    if not BEARER_TOKEN:
+        return {}
+    return {"Authorization": f"Bearer {BEARER_TOKEN}"}
 
 
 class PriceHistoryUser(HttpUser):
@@ -106,4 +128,5 @@ class PriceHistoryUser(HttpUser):
             "/api/parts/price-history",
             json={"part_ids": part_ids, "window": WINDOW},
             name="POST /api/parts/price-history",
+            headers=_auth_headers(),
         )

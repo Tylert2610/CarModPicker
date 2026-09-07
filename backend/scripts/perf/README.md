@@ -9,13 +9,23 @@ Two read endpoints landed in M002/S05:
 | Endpoint | Method | p95 budget | Notes |
 | --- | --- | --- | --- |
 | `/api/parts/{id}/price-history?window=90d` | GET | < 200 ms | Single-part aggregate; sparkline render path |
-| `/api/parts/price-history` | POST | < 500 ms | Batch (1–100 IDs); page-load summary |
+| `/api/parts/price-history` | POST | < 500 ms | Batch (1–100 IDs); page-load summary. Requires auth — set `PERF_BEARER_TOKEN` |
 
 Plus: error rate must equal **0** across both endpoints.
 
 ## How to run
 
 Requires a live uvicorn server on `localhost:8000` and sample data loaded.
+
+`POST /api/parts/price-history` takes `get_current_user`, so the gate needs an
+access token for that half of the run. Without `PERF_BEARER_TOKEN` the POST
+samples all come back 401 and the run fails on error rate rather than latency.
+Mint one against the target environment and export it:
+
+```bash
+export PERF_BEARER_TOKEN=$(curl -s -X POST http://localhost:8000/api/auth/token \
+  -d "username=<user>&password=<password>" | python -c 'import json,sys; print(json.load(sys.stdin)["access_token"])')
+```
 
 ```bash
 # 1. Start the backend in another terminal
@@ -36,7 +46,7 @@ The script:
 4. Parses the resulting `*_stats.csv` and asserts the p95 budget + zero failures.
 5. Writes `backend/.perf-runs/price-history-{PASSED,FAILED}-<iso8601>.json` with the percentile dump.
 
-Tunable via env vars: `PERF_HOST`, `PERF_USERS`, `PERF_SPAWN_RATE`, `PERF_RUN_TIME`, `PERF_WINDOW`, `PERF_BATCH_SIZE`.
+Tunable via env vars: `PERF_HOST`, `PERF_USERS`, `PERF_SPAWN_RATE`, `PERF_RUN_TIME`, `PERF_WINDOW`, `PERF_BATCH_SIZE`, `PERF_BEARER_TOKEN`.
 
 ## What to do on FAIL
 

@@ -266,6 +266,7 @@ async def create_or_update_part_listing(
     data: PartListingCreate,
     deps: PublicEndpointDeps = Depends(get_standard_public_endpoint_dependencies),
     repos: Repositories = Depends(get_repositories),
+    current_user: DBUser = Depends(get_current_user),
 ) -> PartListingReadWithRetailer:
     """Create or update a retailer listing for a part (and optionally add a price)."""
     _get_part_or_404(repos, part_id)
@@ -502,6 +503,7 @@ async def get_part_price_history(
 async def post_batch_price_history(
     body: PriceHistoryBatchRequest,
     deps: PublicEndpointDeps = Depends(get_standard_public_endpoint_dependencies),
+    current_user: DBUser = Depends(get_current_user),
 ) -> PriceHistoryBatchResponse:
     """Aggregate min/max/last/trend per part for a batch of part IDs (1–100).
 

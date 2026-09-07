@@ -19,10 +19,15 @@ from app.db.dynamo.catalog import PartListing as DBPartListing
 from app.db.dynamo.catalog import PartPriceHistory as DBPartPriceHistory
 from app.db.dynamo.catalog import Retailer as DBRetailer
 from app.db.dynamo.users import User
-from tests.conftest import INVALID_UUID_STR, get_default_category_id, save_catalog
+from tests.conftest import INVALID_UUID_STR, get_default_category_id, login_user, save_catalog
 
 PRICE_HISTORY_PATH = "/api/parts/{part_id}/price-history"
 BATCH_PRICE_HISTORY_PATH = "/api/parts/price-history"
+
+
+def _auth_headers(client: TestClient, user: User) -> dict[str, str]:
+    """Bearer headers for ``user``. The batch POST requires an authenticated user."""
+    return {"Authorization": f"Bearer {login_user(client, user.username)}"}
 
 
 # --- helpers (mirror tests/services/test_part_price_aggregation_service.py) --
@@ -214,6 +219,7 @@ def test_post_batch_price_history_basic(client: TestClient, db_session: Any, tes
     response = client.post(
         BATCH_PRICE_HISTORY_PATH,
         json={"part_ids": [str(p.id) for p in parts]},
+        headers=_auth_headers(client, test_user),
     )
     assert response.status_code == 200, response.text
     body = response.json()
@@ -243,6 +249,7 @@ def test_post_batch_price_history_includes_empty_entries(client: TestClient, db_
     response = client.post(
         BATCH_PRICE_HISTORY_PATH,
         json={"part_ids": [str(part_with.id), str(part_other.id), str(part_empty.id)]},
+        headers=_auth_headers(client, test_user),
     )
     assert response.status_code == 200
     body = response.json()
@@ -263,7 +270,11 @@ def test_post_batch_price_history_window_default_90d(client: TestClient, db_sess
     listing = _make_listing(db_session, part, retailer)
     _add_history(db_session, listing, price_cents=999, observed_at=datetime.now(UTC) - timedelta(days=1))
 
-    response = client.post(BATCH_PRICE_HISTORY_PATH, json={"part_ids": [str(part.id)]})
+    response = client.post(
+        BATCH_PRICE_HISTORY_PATH,
+        json={"part_ids": [str(part.id)]},
+        headers=_auth_headers(client, test_user),
+    )
     assert response.status_code == 200
     body = response.json()
     assert body["window"] == "90d"
@@ -283,6 +294,7 @@ def test_post_batch_price_history_window_custom(client: TestClient, db_session: 
     response = client.post(
         BATCH_PRICE_HISTORY_PATH,
         json={"part_ids": [str(part.id)], "window": "30d"},
+        headers=_auth_headers(client, test_user),
     )
     assert response.status_code == 200
     body = response.json()
@@ -298,6 +310,7 @@ def test_post_batch_price_history_invalid_window_returns_422(
     response = client.post(
         BATCH_PRICE_HISTORY_PATH,
         json={"part_ids": [str(part.id)], "window": "xyz"},
+        headers=_auth_headers(client, test_user),
     )
     # Pydantic Literal validation rejects "xyz" before the handler runs, producing
     # the standard VALIDATION_ERROR envelope. The endpoint's INVALID_WINDOW path
@@ -307,16 +320,24 @@ def test_post_batch_price_history_invalid_window_returns_422(
     assert body["error_code"] in {"INVALID_WINDOW", "VALIDATION_ERROR"}
 
 
-def test_post_batch_price_history_empty_part_ids_returns_422(client: TestClient) -> None:
-    response = client.post(BATCH_PRICE_HISTORY_PATH, json={"part_ids": []})
+def test_post_batch_price_history_empty_part_ids_returns_422(client: TestClient, test_user: User) -> None:
+    response = client.post(
+        BATCH_PRICE_HISTORY_PATH,
+        json={"part_ids": []},
+        headers=_auth_headers(client, test_user),
+    )
     assert response.status_code == 422
     body = response.json()
     assert body["error_code"] == "VALIDATION_ERROR"
 
 
-def test_post_batch_price_history_too_many_ids_returns_422(client: TestClient) -> None:
+def test_post_batch_price_history_too_many_ids_returns_422(client: TestClient, test_user: User) -> None:
     too_many = [str(uuid.uuid4()) for _ in range(101)]
-    response = client.post(BATCH_PRICE_HISTORY_PATH, json={"part_ids": too_many})
+    response = client.post(
+        BATCH_PRICE_HISTORY_PATH,
+        json={"part_ids": too_many},
+        headers=_auth_headers(client, test_user),
+    )
     assert response.status_code == 422
     body = response.json()
     assert body["error_code"] == "VALIDATION_ERROR"
@@ -325,12 +346,13 @@ def test_post_batch_price_history_too_many_ids_returns_422(client: TestClient) -
     assert "100" in rendered or "at_most" in rendered or "max_length" in rendered
 
 
-def test_post_batch_price_history_unknown_ids_return_empty_entries(client: TestClient) -> None:
+def test_post_batch_price_history_unknown_ids_return_empty_entries(client: TestClient, test_user: User) -> None:
     unknown_a = str(uuid.uuid4())
     unknown_b = str(uuid.uuid4())
     response = client.post(
         BATCH_PRICE_HISTORY_PATH,
         json={"part_ids": [unknown_a, unknown_b]},
+        headers=_auth_headers(client, test_user),
     )
     assert response.status_code == 200
     body = response.json()
@@ -360,6 +382,7 @@ def test_post_batch_price_history_aggregates_link_group(client: TestClient, db_s
     response = client.post(
         BATCH_PRICE_HISTORY_PATH,
         json={"part_ids": [str(canonical.id)]},
+        headers=_auth_headers(client, test_user),
     )
     assert response.status_code == 200
     body = response.json()
@@ -367,3 +390,37 @@ def test_post_batch_price_history_aggregates_link_group(client: TestClient, db_s
     assert item["observation_count"] == 4
     assert item["min_cents"] == 3000
     assert item["max_cents"] == 5000
+
+
+# --- auth on the batch POST -------------------------------------------------
+# `POST /api/parts/price-history` was public until it was brought in line with
+# every other mutating route in the API and put behind `get_current_user`.
+
+
+def test_post_batch_price_history_anonymous_returns_401(client: TestClient) -> None:
+    """No Authorization header -> 401, same as every other authed route."""
+    response = client.post(
+        BATCH_PRICE_HISTORY_PATH,
+        json={"part_ids": [str(uuid.uuid4())]},
+    )
+    assert response.status_code == 401, response.text
+
+
+def test_post_batch_price_history_authenticated_succeeds(client: TestClient, db_session: Any, test_user: User) -> None:
+    """A valid Bearer token still gets the unchanged 200 response shape."""
+    retailer = _make_retailer(db_session, "batch-authed")
+    part = _make_part(db_session, test_user, name="Batch Authed")
+    listing = _make_listing(db_session, part, retailer)
+    _add_history(db_session, listing, price_cents=1234, observed_at=datetime.now(UTC) - timedelta(days=1))
+
+    response = client.post(
+        BATCH_PRICE_HISTORY_PATH,
+        json={"part_ids": [str(part.id)]},
+        headers=_auth_headers(client, test_user),
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert set(body.keys()) >= {"summaries", "window", "requested_count", "found_count"}
+    assert body["requested_count"] == 1
+    assert body["found_count"] == 1
+    assert body["summaries"][str(part.id)]["observation_count"] == 1
