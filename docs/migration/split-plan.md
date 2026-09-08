@@ -1203,6 +1203,100 @@ is built by Actions: the first exercise of the CodeArtifact token as a BuildKit
 secret, of the cross-account base image pull, and of `arm64` on a GitHub runner,
 which is open question 7. The PR body carries the checklist for that run.
 
+**Row 13 is delivered.** `terraform/lambda_domains.tf` creates
+`carmodpicker-staging-media` from the bootstrap tag, with its execution role,
+its runtime policy and its log group, and nothing routes to it. `local.lambda_domains`
+is a map with one entry, and the module call, the IAM policy and the three new
+outputs all key off it, so rows 18 through 31 each add a map entry rather than a
+file.
+
+The list of nine in `ecr.tf` is now `local.lambda_domain_names` and the map is
+`local.lambda_domains`, and they are deliberately different objects rather than
+one widened in place. All nine repositories exist from row 9 and the deploy role
+grants on all nine names from row 10, so those two consumers want the full list
+whether or not a function exists; the map wants only what has been created,
+because it is what the module iterates and what the outputs report. Keeping them
+separate is what lets `deploy-backend.yml`'s `existing-functions` job be
+truthful: it filters the image map by what `get-function-configuration` finds,
+and from this row until row 31 the honest answer is "some of the nine".
+
+`media`'s two table lists were derived from the code, not from section 1.2's
+ownership column, and the two agree. `app/composition/domains.py` declares
+`_MEDIA_REPOSITORIES` as five names, `app/db/dynamo/registry.py`'s `tables_for`
+maps each to a table suffix, and for `media` that mapping is the identity: five
+repositories, five tables. Of the five, `app/api/endpoints/images.py` writes only
+`image_source_mappings`, through `.record`; the other four are reached through
+`.get` and through `app/api/utils/bucket_orphan_utils.py`'s orphan sweep, which
+reads `parts`, `users`, `car_generations` and `build_lists` in full to find
+unreferenced S3 objects. Section 1.2 gives `image_source_mappings` to `media` and
+names no other writer, and `media` appears in no other row's "also written today
+by" column, so `media` is the one domain whose write set needs no seam unwound
+before it is cut. That is the other half of why it goes first, alongside Pillow
+on `aarch64`.
+
+`rate-limits` is in the write list and is in neither of those places, and the
+reason is worth recording because it recurs for all nine. The shared limiter is
+middleware, not a repository, so `_MEDIA_REPOSITORIES` cannot name it and
+`tables_for` cannot find it; but `add_shared_middleware` puts it in every
+application both roots build, so every domain function counts into
+`<prefix>-rate-limits` on every request. The limiter fails open, which is exactly
+what makes omitting the grant the dangerous choice: the function would keep
+serving, layer 2 would be silently off for that domain, and the only symptom
+would be a `rate_limit_failed_open=True` warning per request. The comment already
+in `locals.tf` predicted this and it held.
+
+Section 3.4 lists five S3 actions for `media` and the policy grants four, and
+that is a correction rather than a reduction. `s3:HeadObject` is not an IAM
+action. It is absent from AWS's machine readable service reference for S3, which
+lists 180 actions and none containing "head", and the HeadObject API is
+authorized by `s3:GetObject`, which is granted. The same is true of
+`s3:HeadBucket`, which `ListBucket` authorizes. IAM accepts an action name that
+matches nothing without an error, so the monolith's `user_images_rw` document in
+`lambda.tf` carries both today and neither has ever granted anything; only
+Access Analyzer's advisory `ValidatePolicy` flags them and nothing in the
+pipeline runs it. Copying them into a per-domain policy would make it read
+broader than it is, which is the opposite of the point. Section 3.4 should be
+read as four actions plus `ListBucket`, and the monolith's two dead actions are
+worth dropping in the same pass that retires it.
+
+Two things are deliberately not here. There is no X-Ray statement in the runtime
+policy beyond what the module attaches, because `attach_xray_write_policy` covers
+`PutTraceSegments` and `PutTelemetryRecords` and the OTLP endpoint's `xray:PutSpans`
+belongs with the code that calls it, which is row 16. And no `OTEL_` environment
+variable is set, for the same reason: configuring an exporter nothing reads is a
+value that looks live and is not.
+
+The environment is the monolith's minus four keys rather than a copy of it, and
+one of those four would have been fatal. `PORT` is baked into the image at 8080
+alongside `AWS_LWA_PORT`, and the monolith's map sets `PORT=8000`; copying it
+wholesale would have bound uvicorn to 8000 while the adapter polled 8080, which
+presents as a readiness check that never passes with no application logs to say
+why. `RUN_STARTUP_TASKS=false` is baked for the same reason and is not repeated.
+`EMAIL_FROM` and `EMAIL_ENABLED` are dropped because `media` sends no mail and
+section 3.4 gives SES to `identity` and `ingestion` only; a configured sender on
+a function with no `ses:SendEmail` grant is a configuration that lies.
+`SENTRY_SERVICE_NAME` becomes `lambda-media` rather than the monolith's
+`lambda-api`, so two functions' events cannot merge into one service in the
+window before row 16 removes Sentry from this domain.
+
+`bootstrap_image_tag` is a workspace variable on `CarModPicker-staging` only, at
+`sha-ef2e455df9e14ac7251ee1b13331603ff7a90234`, the tag row 11 pushed into all
+nine staging repositories. Production has no value for it and needs one, pointing
+at a tag in the production account's own repositories, before a per-domain
+function is planned there; the variable has no default, so a production plan
+fails loudly rather than creating a function from a tag that does not resolve.
+
+One thing the split plan should record about section 3.6 and open question 1: the
+alarm ceiling has already been lifted upstream. `platform-modules` 2.2.0 removed
+the `lambda_function_names <= 10` validation and chunks the list into groups of
+ten instead, adding a second alarm pair per group, with no plan change for a
+consumer at ten or fewer names. That does not decide open question 1, because the
+tradeoff the question describes is unchanged: a chunked alarm still means "group A
+is erroring" rather than "the backend is erroring", and `lambda_aggregate_threshold`
+still applies within a group. But it does mean the ceiling is no longer a hard
+stop that a tenth function runs into, so the decision can be made on the strength
+of the signal rather than under a constraint.
+
 PRs 1, 2, 3, 9, 10, and 33 are independent of everything else and can run in
 parallel. PR 22 is the hard gate: nothing from 23 onward can start without it,
 which is why the five uncoupled domains are cut first, buying time for the

@@ -1,0 +1,361 @@
+# ---------------------------------------------------------------------------
+# The per-domain FastAPI functions, delivered as container images and run under
+# the AWS Lambda Web Adapter. Section 3.3 and section 3.4 of
+# docs/migration/split-plan.md, row 13 of section 8.
+#
+# `media` is the only entry today. Rows 18 through 31 add the other eight, one
+# per row, and the shape here is built for that: everything a domain needs is
+# one entry in `local.lambda_domains`, and the module call, the IAM policy and
+# the outputs all key off it, so adding a domain is adding a map entry.
+#
+# The monolith in lambda.tf is deliberately untouched. It still serves every
+# route, because this file creates a function and nothing routes to it:
+# apigateway.tf keeps its single `legacy` integration until row 14. That is what
+# makes this change additive, and what makes it safe to apply before a single
+# request has ever reached this image.
+#
+# Every AWS_LWA_* setting is baked into the image by backend/Dockerfile
+# (AWS_LWA_PORT, AWS_LWA_READINESS_CHECK_PATH, AWS_LWA_READINESS_CHECK_PROTOCOL
+# and AWS_LWA_ASYNC_INIT), and so is PORT, and so is RUN_STARTUP_TASKS. None is
+# repeated here. Repeating one would put two sources of truth on the same
+# setting and let them drift, and PORT is the one where drift is fatal rather
+# than untidy: the monolith's environment sets PORT=8000 while the image binds
+# and polls 8080, so copying the monolith's map wholesale would present as a
+# readiness check that never passes with no application logs to say why.
+# ---------------------------------------------------------------------------
+
+locals {
+  # One entry per domain whose function exists. The keys are names from
+  # `local.lambda_domain_names` in ecr.tf, which is what ties a function to its
+  # ECR repository and to the deploy role's grant.
+  #
+  # `secrets` is whether the function reads the carmodpicker-<env>/app secret at
+  # all; `tables` names the tables it writes and `read_tables` the ones it only
+  # reads, both as keys of module.dynamodb, so every ARN comes out of the module
+  # rather than being rebuilt by hand and a renamed table is a plan error rather
+  # than a runtime denial.
+  #
+  # How `media`'s two table lists were derived, from the code rather than from
+  # the plan's ownership column:
+  #
+  #   - `app/composition/domains.py` declares `_MEDIA_REPOSITORIES` as `users`,
+  #     `car_generations`, `parts`, `build_lists` and `image_source_mappings`.
+  #     `app/db/dynamo/registry.py`'s `tables_for` maps each of those five
+  #     repository names to a table suffix, and for `media` the mapping is the
+  #     identity: the five repositories are the five tables.
+  #     `backend/tests/entrypoints/test_repository_bundles.py` recomputes that
+  #     tuple from the real import graph and fails if it drifts, so the bundle is
+  #     the checked statement of what this function can reach.
+  #   - Of the five, only `image_source_mappings` is written.
+  #     `app/api/endpoints/images.py` calls `repos.image_source_mappings.record`
+  #     and `.get_by_source_url`, and reaches the other four through `.get` and
+  #     through `app/api/utils/bucket_orphan_utils.py`'s orphan sweep, which is
+  #     five full reads to find unreferenced S3 objects. Section 1.2's ownership
+  #     table agrees: `image_source_mappings` is owned by `media` and written by
+  #     nothing else, and `media` appears in no other row's "also written today
+  #     by" column. So `media` is the one domain whose write set needs no seam
+  #     unwound before it is cut, which is part of why it is cut first.
+  #   - `rate-limits` is in `tables` and is not in either of those lists. It is
+  #     the shared limiter's counter table, layer 2 of the rate limiting
+  #     standard, and it is reached from the middleware stack rather than from a
+  #     repository, so `_MEDIA_REPOSITORIES` cannot name it. Every one of the
+  #     nine gets it, for the reason locals in lambda.tf already records: the
+  #     per-domain split replaces the monolith's wildcard with per-function
+  #     policies, and at that point every domain needs the limiter grant. The
+  #     limiter fails open, so withholding it would not break the function; it
+  #     would silently turn layer 2 off for this domain and log a warning on
+  #     every request, which is worse than a denial because nothing fails.
+  #
+  # `s3` is whether the function gets the user images bucket. Only `media` and,
+  # from row 31, `users` do; section 3.4 gives `users` the three object actions
+  # for avatars and `media` the full set including ListBucket.
+  lambda_domains = {
+    media = {
+      secrets     = true
+      s3          = true
+      memory      = 512
+      tables      = ["image_source_mappings", "rate-limits"]
+      read_tables = ["users", "car_generations", "parts", "build_lists"]
+    }
+  }
+
+  # DynamoDB actions a domain gets on a table it writes. The same twelve the
+  # monolith's runtime policy carries, so a domain moving off the monolith
+  # cannot lose an action it was relying on.
+  dynamodb_domain_write_actions = [
+    "dynamodb:BatchGetItem",
+    "dynamodb:BatchWriteItem",
+    "dynamodb:ConditionCheckItem",
+    "dynamodb:DeleteItem",
+    "dynamodb:DescribeTable",
+    "dynamodb:GetItem",
+    "dynamodb:PutItem",
+    "dynamodb:Query",
+    "dynamodb:Scan",
+    "dynamodb:TransactGetItems",
+    "dynamodb:TransactWriteItems",
+    "dynamodb:UpdateItem",
+  ]
+
+  # And on a table it only reads. Five, as section 3.4 says.
+  # TransactGetItems and ConditionCheckItem are left out on purpose: nothing in
+  # a read only path uses them, and including them would blur the line the least
+  # privilege claim rests on.
+  dynamodb_domain_read_actions = [
+    "dynamodb:BatchGetItem",
+    "dynamodb:DescribeTable",
+    "dynamodb:GetItem",
+    "dynamodb:Query",
+    "dynamodb:Scan",
+  ]
+
+  # Table and index ARNs per domain, resolved through module.dynamodb. The
+  # /index/* wildcard is on both sets because a Query naming an index is
+  # authorized against the index ARN and not the table's: `media` reads `parts`
+  # and `build_lists` through their owner indexes in the orphan sweep, and
+  # `image_source_mappings` carries its own.
+  lambda_domain_write_arns = {
+    for name, domain in local.lambda_domains : name => flatten([
+      for table in domain.tables : [
+        module.dynamodb.table_arns[table],
+        "${module.dynamodb.table_arns[table]}/index/*",
+      ]
+    ])
+  }
+
+  lambda_domain_read_arns = {
+    for name, domain in local.lambda_domains : name => flatten([
+      for table in domain.read_tables : [
+        module.dynamodb.table_arns[table],
+        "${module.dynamodb.table_arns[table]}/index/*",
+      ]
+    ])
+  }
+
+  # What every domain function is told about itself and its environment. The
+  # monolith's `local.lambda_environment` in lambda.tf is the reference, minus
+  # the four keys a domain function must not or need not carry:
+  #
+  #   - PORT and RUN_STARTUP_TASKS are baked into the image; see the file header.
+  #   - EMAIL_FROM and EMAIL_ENABLED are `identity`'s and `ingestion`'s, per
+  #     section 3.4's SES split. `media` sends no mail, and a configured sender
+  #     on a function with no ses:SendEmail grant is a misleading configuration.
+  #   - SENTRY_SERVICE_NAME becomes the domain's own name rather than the
+  #     monolith's "lambda-api", so two functions' events cannot merge into one
+  #     service. Row 16 removes Sentry from `media` outright and replaces it with
+  #     OpenTelemetry; no OTEL_ variable is set here, because setting one now
+  #     would configure an exporter no code reads yet.
+  lambda_domain_environment = {
+    for name, domain in local.lambda_domains : name => merge(
+      {
+        DEBUG                 = "false"
+        APP_ENVIRONMENT       = var.environment
+        DYNAMODB_TABLE_PREFIX = local.prefix
+
+        # Named explicitly rather than left to the prefix convention, for the
+        # same reason lambda.tf names it: the function and the table cannot
+        # drift to different names, and a plan error rather than a runtime
+        # fail open is what surfaces if the table is ever renamed.
+        RATE_LIMITS_TABLE = module.dynamodb.table_names["rate-limits"]
+
+        FRONTEND_URL    = local.frontend_url
+        ALLOWED_ORIGINS = local.allowed_origins
+
+        SENTRY_RELEASE      = var.sentry_release
+        SENTRY_SERVICE_NAME = "lambda-${name}"
+        AWS_EMF_ENVIRONMENT = "Local"
+      },
+      domain.secrets ? { APP_SECRETS_ARN = module.app_secrets.arns["app"] } : {},
+      domain.s3 ? {
+        USER_IMAGES_BUCKET = aws_s3_bucket.user_images.bucket
+        # Empty means "the real S3 endpoint". The monolith filters empty values
+        # out of its map for this key; here it is simply not set, which is the
+        # same thing to pydantic and one fewer moving part.
+      } : {},
+    )
+  }
+}
+
+variable "bootstrap_image_tag" {
+  description = "Image tag used as the seed for every per-domain function, as pushed to ECR by the container image build in deploy-backend.yml. Lambda pulls and optimises the image when it creates the function, so a tag that does not resolve fails the create: the tag named here must already exist in the repository of every domain in local.lambda_domains before the apply. It is only ever a seed, because image_uri is on the lambda-function module's ignore_changes list, so the deploy step's UpdateFunctionCode is not undone by the next plan and this value never needs changing again."
+  type        = string
+
+  validation {
+    condition     = can(regex("^sha-[0-9a-f]{40}$", var.bootstrap_image_tag))
+    error_message = "bootstrap_image_tag must be sha- followed by a full 40 character commit sha, which is the tag the container image build pushes."
+  }
+}
+
+module "lambda_domain" {
+  for_each = local.lambda_domains
+
+  source  = "app.terraform.io/WebbPulse/platform-modules/aws//modules/lambda-function"
+  version = "~> 2.1"
+
+  # `carmodpicker-<env>-<domain>`, which is exactly the key the image map in
+  # .github/workflows/deploy-backend.yml builds for UpdateFunctionCode and the
+  # name pattern the deploy role's lambda_domain_function_arns already grants
+  # on. Changing this shape breaks both without a plan error.
+  function_name = "${local.prefix}-${each.key}"
+  role_name     = "${local.prefix}-lambda-${each.key}"
+
+  # An Image function takes neither runtime nor handler: the image supplies
+  # both, and the module rejects either one alongside package_type = "Image".
+  # No image_config either, because the Dockerfile already declares the CMD that
+  # starts this domain's entrypoint out of /etc/carmodpicker-entrypoint.
+  package_type = "Image"
+
+  # arm64, per section 2.6, which is where the monolith's x86_64 is left behind.
+  # Row 11 verified the three native pins on aarch64 (Pillow, bcrypt, webauthn)
+  # by building and running all nine images, and `media` is the one that
+  # exercises Pillow, which is why the plan cuts it first.
+  architectures = ["arm64"]
+  memory_size   = each.value.memory
+
+  # 29 seconds, matching the HTTP API integration timeout the routes in row 14
+  # will use. A longer function timeout is invisible because the gateway gives
+  # up first.
+  timeout = 29
+
+  # The seed only. The repository URL comes from module.registry rather than
+  # being rebuilt from the account id and the region, so the function and the
+  # repository cannot drift to different names.
+  code = {
+    image_uri = "${module.registry.repository_urls[each.key]}:${var.bootstrap_image_tag}"
+  }
+
+  environment_variables = local.lambda_domain_environment[each.key]
+
+  # 7 days, the retention the platform migration decision settled on, and
+  # created by Terraform rather than lazily by Lambda so the retention is in
+  # place from the first invoke instead of after the group has already collected
+  # a run of never expiring events. The monolith stays at 14 until row 17 moves
+  # both; this function starts where it is going to end up.
+  log_retention_days           = 7
+  log_format                   = "JSON"
+  application_log_level        = "INFO"
+  system_log_level             = "INFO"
+  set_logging_config_log_group = true
+
+  # Unlike the monolith, whose runtime policy carried the two X-Ray actions
+  # before the module owned them, these roles are new, so the module attaches
+  # its own X-Ray write policy and the runtime policy below does not repeat
+  # xray:PutTraceSegments or xray:PutTelemetryRecords.
+  tracing_mode             = "Active"
+  attach_xray_write_policy = true
+
+  tags = { Name = "${local.prefix}-${each.key}" }
+}
+
+# ---------------------------------------------------------------------------
+# One runtime policy per domain, naming only that domain's tables. Section 3.4.
+#
+# Logs are here, because the module creates the log group but leaves writing to
+# it to the application, the same way the monolith's runtime policy does.
+#
+# X-Ray is not here at all, which is the one place this differs from Portfolio.
+# Portfolio adds xray:PutSpans and xray:PutSpansForIndexing because its
+# functions export OTLP spans to the X-Ray endpoint, and those two actions are
+# what that POST is authorized by. CarModPicker's functions do not export OTLP
+# yet: row 16 is what adds OpenTelemetry to `media`, and it is the row that adds
+# those two actions with the code that needs them. Granting them now would be a
+# permission with no caller.
+# ---------------------------------------------------------------------------
+
+resource "aws_iam_role_policy" "lambda_domain" {
+  for_each = local.lambda_domains
+
+  name = "${each.key}-runtime"
+  role = module.lambda_domain[each.key].role_id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = concat(
+      [
+        {
+          Sid      = "WriteOwnLogs"
+          Effect   = "Allow"
+          Action   = ["logs:CreateLogStream", "logs:PutLogEvents"]
+          Resource = "${module.lambda_domain[each.key].log_group_arn}:*"
+        },
+      ],
+      length(local.lambda_domain_write_arns[each.key]) > 0 ? [
+        {
+          Sid      = "ReadWriteOwnTables"
+          Effect   = "Allow"
+          Action   = local.dynamodb_domain_write_actions
+          Resource = local.lambda_domain_write_arns[each.key]
+        },
+      ] : [],
+      length(local.lambda_domain_read_arns[each.key]) > 0 ? [
+        {
+          Sid      = "ReadSharedTables"
+          Effect   = "Allow"
+          Action   = local.dynamodb_domain_read_actions
+          Resource = local.lambda_domain_read_arns[each.key]
+        },
+      ] : [],
+      # The one app secret, and only for the domains that read it. `media`'s
+      # descriptor in app/composition/domains.py declares
+      # requires_secrets=("SECRET_KEY",), because all eight of its routes verify
+      # a token, and SECRET_KEY is a key of the carmodpicker-<env>/app JSON.
+      #
+      # Written out rather than taken from module.app_secrets.read_policy_statement,
+      # which Portfolio uses, because that output's policy_actions default is the
+      # pair GetSecretValue and DescribeSecret. Section 3.4 names one action and
+      # the monolith's runtime policy grants one action, so this grants one
+      # action. The resource still comes off the module, so the policy cannot
+      # name a secret the module does not create.
+      each.value.secrets ? [
+        {
+          Sid      = "ReadTheAppSecret"
+          Effect   = "Allow"
+          Action   = ["secretsmanager:GetSecretValue"]
+          Resource = [module.app_secrets.arns["app"]]
+        },
+      ] : [],
+      # The user images bucket. The object actions and the bucket action are two
+      # statements because they take different resources: an object action is
+      # authorized against `<bucket>/*` and ListBucket against the bucket ARN
+      # itself, so folding them together would grant neither what it needs.
+      #
+      # Section 3.4 lists five actions here and this grants four, and the
+      # difference is a correction rather than a reduction. `s3:HeadObject` is
+      # not an IAM action: it does not appear in AWS's own machine readable
+      # service reference for S3, and the HeadObject API is authorized by
+      # `s3:GetObject`, which is already granted above. IAM accepts an action
+      # name that matches nothing without complaint, so the monolith's policy in
+      # lambda.tf carries both `s3:HeadObject` and `s3:HeadBucket` today and
+      # neither has ever granted anything; only Access Analyzer's advisory
+      # ValidatePolicy flags them, and nothing in the pipeline runs it. Carrying
+      # them forward would make this policy look broader than it is, which is
+      # the opposite of what a per-domain split is for. Cleanup for a later
+      # pass: drop the same two from the monolith's user_images_rw document.
+      #
+      # `s3:ListBucket` is doing two jobs. It authorizes list_objects_v2, which
+      # the orphan sweep pages through, and it is also what authorizes
+      # head_bucket, the call StorageService.__init__ makes once per cold start
+      # to decide whether uploads are enabled at all. Without it the service
+      # disables itself silently and every upload route answers as if the bucket
+      # were unconfigured, with a warning in the logs and no error to the caller.
+      each.value.s3 ? [
+        {
+          Sid    = "ReadWriteUserImageObjects"
+          Effect = "Allow"
+          Action = [
+            "s3:PutObject",
+            "s3:GetObject",
+            "s3:DeleteObject",
+          ]
+          Resource = ["${aws_s3_bucket.user_images.arn}/*"]
+        },
+        {
+          Sid      = "ListTheUserImagesBucket"
+          Effect   = "Allow"
+          Action   = ["s3:ListBucket"]
+          Resource = [aws_s3_bucket.user_images.arn]
+        },
+      ] : [],
+    )
+  })
+}
