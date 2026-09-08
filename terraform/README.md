@@ -150,6 +150,14 @@ The deploy workflows select the `production` or `staging` GitHub Environment fro
 
 Secret: `TFC_API_TOKEN`.
 
+### Repository variables
+
+One deploy-adjacent variable is repository-scoped rather than environment-scoped, because a `pull_request` job cannot read an Environment whose deployment branch policy admits only `main` and `staging`:
+
+| Variable | Output | Notes |
+| --- | --- | --- |
+| `CI_AWS_ROLE_ARN` | `github_actions_ci_role_arn` | Take the **staging** workspace's value. The three CI workflows assume it through OIDC purely to mint a read-only CodeArtifact token so `pip install` can resolve `webbpulse`. The role holds the CodeArtifact reads and nothing else, and its trust names `pull_request` plus the `staging` and `main` branch refs rather than a wildcard, so a pull request cannot reach the deploy role. |
+
 ## Local validation
 
 ```bash

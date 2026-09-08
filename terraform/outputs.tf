@@ -48,6 +48,11 @@ output "github_actions_role_arn" {
   value       = module.github_actions_role.role_arn
 }
 
+output "github_actions_ci_role_arn" {
+  description = "IAM role ARN for pull request CI: read only CodeArtifact access, no deploy permissions. Set it as the CI_AWS_ROLE_ARN repository variable, taking the staging workspace's value since pull request checks resolve the same read only package either way."
+  value       = module.github_actions_ci_role.role_arn
+}
+
 output "api_invoke_url" {
   description = "HTTP API default execute-api endpoint (disabled while the staging access gate is on)"
   value       = module.api.api_endpoint
