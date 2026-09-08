@@ -92,3 +92,26 @@ output "dynamodb_table_names" {
   description = "DynamoDB table names keyed by table suffix"
   value       = module.dynamodb.table_names
 }
+
+# ---------------------------------------------------------------------------
+# The per-domain functions from lambda_domains.tf. Both maps carry only the
+# domains whose function exists, which is `media` today and grows by one with
+# each of rows 18 through 31, so a consumer reading either one is reading the
+# truth about this environment rather than the nine names the plan will
+# eventually reach.
+# ---------------------------------------------------------------------------
+
+output "domain_lambda_function_names" {
+  description = "Per-domain Lambda function name keyed by domain. This is the key deploy-backend.yml builds its function-image map on, and the name its existing-functions job probes with get-function-configuration before handing the map to UpdateFunctionCode."
+  value       = { for name, fn in module.lambda_domain : name => fn.function_name }
+}
+
+output "domain_lambda_function_arns" {
+  description = "Per-domain Lambda function ARN keyed by domain. Row 14's API Gateway integrations and the alarm module's function list in row 15 both read this rather than rebuilding the ARN from the account id and the region."
+  value       = { for name, fn in module.lambda_domain : name => fn.function_arn }
+}
+
+output "domain_lambda_log_group_names" {
+  description = "Per-domain CloudWatch log group name keyed by domain. Row 15 merges these into the alarm module's error_log_groups, and a responder tailing one domain does not have to guess the group from the function name."
+  value       = { for name, fn in module.lambda_domain : name => fn.log_group_name }
+}

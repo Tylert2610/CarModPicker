@@ -29,13 +29,16 @@ locals {
   shared_base_image_repository_arn = "arn:aws:ecr:us-west-2:${local.artifacts_account_id}:repository/webbpulse/python-lambda-base"
 
   # The nine per-domain function ARNs, written out rather than read off a module output, because
-  # the functions do not exist yet: PR 13 of docs/migration/split-plan.md creates them and this is
-  # PR 10. Granting ahead of the resource is safe for lambda:UpdateFunctionCode and InvokeFunction,
-  # which resolve at call time, and it is what lets the deploy workflow in PR 12 land before the
-  # first function does. The name here has to stay in step with the function_name PR 13 sets,
-  # "${local.prefix}-${domain}", which is the same shape module.lambda_api already uses.
+  # only some of the functions exist: PR 13 of docs/migration/split-plan.md creates `media` and
+  # rows 18 through 31 add the other eight one at a time. Granting ahead of the resource is safe
+  # for lambda:UpdateFunctionCode and InvokeFunction, which resolve at call time, and it is what
+  # lets the deploy workflow in PR 12 land before the first function does. Reading the ARNs off
+  # module.lambda_domain instead would shrink this policy to whatever exists today and mean an
+  # IAM change riding along with every one of those eight rows. The name here has to stay in step
+  # with the function_name lambda_domains.tf sets, "${local.prefix}-${domain}", which is the same
+  # shape module.lambda_api already uses.
   lambda_domain_function_arns = [
-    for domain in sort(local.lambda_domains) :
+    for domain in sort(local.lambda_domain_names) :
     "arn:aws:lambda:${var.aws_region}:${data.aws_caller_identity.current.account_id}:function:${local.prefix}-${domain}"
   ]
 

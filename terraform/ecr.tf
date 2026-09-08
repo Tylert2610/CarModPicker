@@ -9,8 +9,8 @@
 #
 # This is the whole of PR 9. The deploy role's push permissions are PR 10 and
 # the functions that pull these images are PR 13 onward, so nothing consumes a
-# repository yet. local.lambda_domains is defined here rather than in a later
-# file because it is the single list those later PRs reuse: functions, IAM
+# repository yet. local.lambda_domain_names is defined here rather than in a
+# later file because it is the single list those later PRs reuse: functions, IAM
 # policies and routes all key off the same names, and a domain added in one
 # place should not be a domain missing in another.
 #
@@ -25,10 +25,19 @@
 
 locals {
   # The nine deployable domains from section 1 of the split plan, in the order
-  # section 6.1 cuts them over. Later PRs add per-domain attributes (memory, the
-  # tables each one owns, the secrets it reads) by widening this from a list to a
-  # map; today nothing but ECR reads it, and a list is what that needs.
-  lambda_domains = [
+  # section 6.1 cuts them over. This is the ordered name list, and it is the one
+  # thing that must stay in this order: the ECR repositories are keyed off it,
+  # the deploy role's function ARNs are built from it, and section 3.6 makes the
+  # alarm module's `lambda_function_names` positional, so a reorder rewrites
+  # every metric math expression rather than being cosmetic.
+  #
+  # Per-domain attributes (memory, the tables each one owns, whether it reads a
+  # secret) live in `local.lambda_domains` in lambda_domains.tf, which is a map
+  # keyed by these names. It is deliberately not the same object: this list has
+  # all nine from row 9 onward, because nine repositories exist and the deploy
+  # role grants on all nine, while the map holds only the domains whose function
+  # has actually been created. Rows 18 through 31 add one entry each.
+  lambda_domain_names = [
     "media",
     "build-logs",
     "moderation",
@@ -52,5 +61,5 @@ module "registry" {
   # Immutability is what makes a sha- tag a reproducible deploy, and it is why
   # the build job in PR 12 needs a guard that skips a push when the tag already
   # exists rather than overwriting it.
-  repositories = { for domain in local.lambda_domains : domain => {} }
+  repositories = { for domain in local.lambda_domain_names : domain => {} }
 }
