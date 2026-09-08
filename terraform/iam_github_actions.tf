@@ -28,8 +28,20 @@ locals {
   # so a consumer function has to be in us-west-2 too.
   shared_base_image_repository_arn = "arn:aws:ecr:us-west-2:${local.artifacts_account_id}:repository/webbpulse/python-lambda-base"
 
-  # CodeArtifact read plus the sts:GetServiceBearerToken that get-authorization-token needs, and
-  # pull on the shared base image. Kept as its own list so the deploy statements above stay
+  # The nine per-domain function ARNs, written out rather than read off a module output, because
+  # the functions do not exist yet: PR 13 of docs/migration/split-plan.md creates them and this is
+  # PR 10. Granting ahead of the resource is safe for lambda:UpdateFunctionCode and InvokeFunction,
+  # which resolve at call time, and it is what lets the deploy workflow in PR 12 land before the
+  # first function does. The name here has to stay in step with the function_name PR 13 sets,
+  # "${local.prefix}-${domain}", which is the same shape module.lambda_api already uses.
+  lambda_domain_function_arns = [
+    for domain in sort(local.lambda_domains) :
+    "arn:aws:lambda:${var.aws_region}:${data.aws_caller_identity.current.account_id}:function:${local.prefix}-${domain}"
+  ]
+
+  # Everything the container build needs: CodeArtifact read plus the sts:GetServiceBearerToken
+  # that get-authorization-token needs, pull on the shared base image, and push on this account's
+  # own nine domain repositories. Kept as its own list so the deploy statements above stay
   # readable, and so the shapes stay recognisably the ones the artifacts root exports.
   shared_registry_policy_statements = [
     {
@@ -79,10 +91,36 @@ locals {
     },
     {
       # GetAuthorizationToken is a registry level action with no resource of its own, which is why
-      # it is a separate statement on "*" rather than folded into the one above.
+      # it is a separate statement on "*" rather than folded into the one above. It covers this
+      # account's own registry as well as the shared one, so the push grant below needs no second
+      # auth statement.
       sid       = "SharedBaseImageAuth"
       actions   = ["ecr:GetAuthorizationToken"]
       resources = ["*"]
+    },
+    {
+      # Push a built domain image to this account's own registry, and read the manifest back.
+      # BatchGetImage is what the build job's existing-tag guard calls: the repositories are
+      # IMMUTABLE, so a rebuild of an already pushed sha- tag fails the push rather than
+      # overwriting it, and the guard has to be able to see the tag before it tries.
+      #
+      # Get and SetRepositoryPolicy are here for the first apply of PR 13. Creating a container
+      # image function makes Lambda write its own LambdaECRImageRetrievalPolicy statement onto
+      # the repository, and that write happens under the caller's credentials.
+      sid = "EcrPushDomainImages"
+      actions = [
+        "ecr:BatchCheckLayerAvailability",
+        "ecr:InitiateLayerUpload",
+        "ecr:UploadLayerPart",
+        "ecr:CompleteLayerUpload",
+        "ecr:PutImage",
+        "ecr:BatchGetImage",
+        "ecr:DescribeImages",
+        "ecr:GetDownloadUrlForLayer",
+        "ecr:GetRepositoryPolicy",
+        "ecr:SetRepositoryPolicy",
+      ]
+      resources = module.registry.repository_arns_list
     },
   ]
 }
@@ -109,6 +147,10 @@ module "github_actions_role" {
         actions   = ["s3:PutObject", "s3:GetObject"]
         resources = ["${module.lambda_artifacts.bucket_arn}/*"]
       },
+      # One statement over ten function ARNs rather than two, because the monolith and the nine
+      # domain functions take the same UpdateFunctionCode call. Only the payload differs: the
+      # monolith gets an S3 zip from the bucket above, a domain function gets an ECR image tag the
+      # build job has already pushed.
       {
         actions = [
           "lambda:UpdateFunctionCode",
@@ -117,7 +159,19 @@ module "github_actions_role" {
           "lambda:GetFunctionConfiguration",
           "lambda:GetFunctionCodeSigningConfig",
         ]
-        resources = [module.lambda_api.function_arn]
+        resources = concat(
+          [module.lambda_api.function_arn],
+          local.lambda_domain_function_arns,
+        )
+      },
+      # Invoke a domain function directly for the post deploy smoke probe. Between PR 13 and that
+      # domain's cutover PR the function has no API Gateway route at all, so a synthetic HTTP API
+      # event through Invoke is the only way to prove a freshly shipped image answers. The
+      # monolith is left out on purpose: it is reachable at its public /health URL and does not
+      # need an invoke grant to be probed.
+      {
+        actions   = ["lambda:InvokeFunction"]
+        resources = local.lambda_domain_function_arns
       },
       # S3: sync frontend build artefacts
       {
@@ -150,8 +204,9 @@ module "github_actions_role" {
         resources = [module.staging_access_gate[0].origin_verify_ssm_parameter_arn]
       },
     ] : [],
-    # Shared registry: read the webbpulse CodeArtifact domain so CI can pip install the shared
-    # "webbpulse" package and npm install @webbpulse/*, and pull the shared Lambda base image.
+    # Registries: read the webbpulse CodeArtifact domain so CI can pip install the shared
+    # "webbpulse" package and npm install @webbpulse/*, pull the shared Lambda base image, and
+    # push the built domain images to this account's own repositories.
     local.shared_registry_policy_statements,
   )
 }
