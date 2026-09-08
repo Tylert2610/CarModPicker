@@ -4,11 +4,14 @@ Adopting `webbpulse` moved logging, tracing, the settings base and the uvicorn
 entry into the package. Three things it did **not** move are load-bearing for
 CarModPicker's public contract, and each has a way of regressing quietly:
 
-- **The error envelope.** `webbpulse.http.create_app` installs exception
-  handlers rendering `{"success", "status", "message", "request_id"}`.
-  CarModPicker serves two different shapes, neither of which is that one, and
-  they are what the frontend and the Chrome extension parse. Adopting
-  `create_app` later without noticing would rewrite every error body in the API.
+- **The error envelope.** CarModPicker now renders the shared
+  `{"success", "status", "message", "request_id"}` envelope from
+  `webbpulse.http.register_error_handlers`, with `error_code` on every error and
+  `details` on a 422. It used to serve three shapes: a raw Starlette
+  `{"detail": "Not Found"}` for an unmatched route, its own
+  `{success, message, error_code}` for a handled one, and that plus `details`
+  for a 422. These tests pin the single shape so a regression to any of the
+  three is caught.
 - **The tracing gate.** `webbpulse.otel.configure_tracing` defaults to this
   region's X-Ray OTLP endpoint when none is configured. CarModPicker has no OTLP
   IAM grant yet, and that endpoint answers 403 to an unsigned request, which the
@@ -41,13 +44,11 @@ BACKEND_DIR = Path(__file__).resolve().parents[2]
 
 # --- The error envelope ------------------------------------------------------
 #
-# These three bodies are what `staging` serves today, captured from a running
-# application rather than read off the handlers, because the two disagree: CMP's
-# `register_error_handlers` hooks `fastapi.HTTPException`, which does NOT catch
-# the bare `starlette.exceptions.HTTPException` that routing raises for an
-# unmatched path. So an unmatched route keeps Starlette's `{"detail": ...}` while
-# anything raised inside a route gets CarModPicker's envelope. Both shapes are
-# in the contract and both are asserted.
+# One shape now, asserted against a running application rather than read off the
+# handlers. The package registers for `starlette.exceptions.HTTPException`
+# rather than only FastAPI's subclass, which is what brings the unmatched route
+# and the wrong method into the envelope; CMP's old handlers hooked only the
+# FastAPI subclass, so routing errors escaped as `{"detail": "Not Found"}`.
 
 
 @pytest.fixture(scope="module")
@@ -58,42 +59,50 @@ def media_client() -> TestClient:
     return TestClient(build_app(), raise_server_exceptions=False)
 
 
-def test_unmatched_route_keeps_starlette_detail_shape(media_client: TestClient) -> None:
-    """An unmatched path returns `{"detail": "Not Found"}`, not the package envelope.
+def test_unmatched_route_returns_the_envelope(media_client: TestClient) -> None:
+    """An unmatched path returns the envelope, never `{"detail": "Not Found"}`.
 
-    The frontend reads `.detail` in this case (see `UseApiRequest.tsx`), so the
-    key has to survive. `create_app`'s handlers would turn this into
-    `{"success": false, "status": 404, ...}` and drop `detail` entirely.
+    This is the shape that used to escape to the frontend, and it is the whole
+    reason the package registers for the Starlette exception rather than only
+    FastAPI's subclass.
     """
     response = media_client.get("/api/no-such-path-abc123")
     assert response.status_code == 404
-    assert response.json() == {"detail": "Not Found"}
+    body = response.json()
+    assert "detail" not in body
+    assert body["success"] is False
+    assert body["status"] == 404
+    assert body["error_code"] == "NOT_FOUND"
+    assert isinstance(body["message"], str) and body["message"]
+    assert isinstance(body["request_id"], str) and body["request_id"] != "-"
 
 
-def test_handled_error_keeps_carmodpicker_envelope(media_client: TestClient) -> None:
-    """An error raised inside a route keeps `success`/`message`/`error_code`.
+def test_handled_error_returns_the_envelope(media_client: TestClient) -> None:
+    """An error raised inside a route carries the four base fields plus a code.
 
-    Note there is deliberately no `detail` key here and no `status` or
-    `request_id`: this is CarModPicker's own envelope, and the frontend reads
-    `.message` for it. Asserting the exact body is the point, because a partial
-    assertion would pass against the package's envelope too.
+    The message and `error_code` are unchanged from before the adoption; what is
+    new is `status` and `request_id` alongside them, which is what lets a user's
+    report be joined to a CloudWatch line.
     """
     response = media_client.get("/api/images/by-source-url")
     assert response.status_code == 401
-    assert response.json() == {
-        "success": False,
-        "message": "Not authenticated",
-        "error_code": "UNAUTHORIZED",
-    }
+    body = response.json()
+    assert "detail" not in body
+    assert body["success"] is False
+    assert body["status"] == 401
+    assert body["message"] == "Not authenticated"
+    assert body["error_code"] == "UNAUTHORIZED"
+    assert isinstance(body["request_id"], str) and body["request_id"] != "-"
 
 
-def test_validation_error_keeps_carmodpicker_envelope() -> None:
+def test_validation_error_returns_the_envelope_with_details() -> None:
     """A 422 keeps `error_code` and the `details` list of `field`/`message`/`type`.
 
-    The package renders validation failures as an `errors` list of
-    `loc`/`msg`/`type` instead, so the field names differ as well as the
-    envelope. Asserted against Root A because the route used here is a catalog
-    route rather than a media one.
+    `validation_details=True` is what preserves that list, which the frontend
+    renders per field. The package also carries its own `errors` list of
+    `loc`/`msg`/`type` alongside it; both are in the body. Asserted against
+    Root A because the route used here is a catalog route rather than a media
+    one.
     """
     from app.composition.app import app
 
@@ -101,14 +110,13 @@ def test_validation_error_keeps_carmodpicker_envelope() -> None:
     response = client.get("/api/parts/not-a-uuid")
     assert response.status_code == 422
     body = response.json()
+    assert "detail" not in body
     assert body["success"] is False
-    assert body["message"] == "Validation error"
+    assert body["status"] == 422
     assert body["error_code"] == "VALIDATION_ERROR"
+    assert isinstance(body["request_id"], str) and body["request_id"] != "-"
     assert isinstance(body["details"], list) and body["details"]
     assert set(body["details"][0]) == {"field", "message", "type"}
-    # The package's shape must not have leaked in alongside CarModPicker's.
-    assert "status" not in body
-    assert "request_id" not in body
 
 
 def test_domain_apps_declare_no_package_health_route(media_client: TestClient) -> None:

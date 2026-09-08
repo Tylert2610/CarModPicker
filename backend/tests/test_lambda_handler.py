@@ -69,7 +69,14 @@ def test_handler_returns_404_for_unknown_route() -> None:
     response = handler(api_gateway_v2_event("/definitely-not-a-route"), lambda_context())
 
     assert response["statusCode"] == 404
-    assert json.loads(response["body"]) == {"detail": "Not Found"}
+    # The envelope, not Starlette's raw `{"detail": "Not Found"}`: an unmatched
+    # route is the one place that shape used to escape.
+    body = json.loads(response["body"])
+    assert "detail" not in body
+    assert body["success"] is False
+    assert body["status"] == 404
+    assert body["error_code"] == "NOT_FOUND"
+    assert body["request_id"] != "-"
 
 
 @pytest.mark.parametrize("run_startup_tasks", [True, False])

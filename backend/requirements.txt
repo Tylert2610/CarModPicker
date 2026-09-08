@@ -4,9 +4,12 @@
 # `aws codeartifact login --tool pip` step in `backend-ci.yml`.
 #
 # Extras, and why each one: `fastapi` for the app factory and `run_uvicorn`,
-# `otel` for `configure_tracing`. `dynamodb` is deliberately absent: CarModPicker
-# has its own repository layer and its own secret loader, and pulling the extra
-# would add boto3 pins on top of the ones below for code nothing here imports.
+# `otel` for `configure_tracing`, `dynamodb` for the botocore error handlers
+# `register_error_handlers(dynamodb=True)` installs. That extra used to be
+# absent because CarModPicker has its own repository layer and secret loader,
+# but the handlers are what turn a DynamoDB throttle into a 503 with
+# `Retry-After` instead of a flat 500, so it earns its place now. It adds no
+# new pins: boto3 is already pinned below.
 #
 # `aws-otel` is absent too, and that is a row 16 decision rather than an
 # oversight. It carries the SigV4 signing exporter the X-Ray OTLP endpoint
@@ -14,7 +17,7 @@
 # but gated off unless OTEL_EXPORTER_OTLP_TRACES_ENDPOINT is set, because the
 # monolith on staging has no OTLP IAM grant. Row 16 turns tracing on per domain
 # and adds this extra with it.
-webbpulse[fastapi,otel]==0.2.0
+webbpulse[fastapi,otel,dynamodb]==0.3.0
 
 # Core FastAPI and web framework dependencies
 annotated-types==0.8.0

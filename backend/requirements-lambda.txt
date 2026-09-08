@@ -6,8 +6,10 @@
 #
 # `otel` rides along even though tracing is gated off until row 16. The gate is
 # an environment variable, so turning tracing on must not also require a
-# dependency change, and the extra is import light while unused.
-webbpulse[fastapi,otel]==0.2.0
+# dependency change, and the extra is import light while unused. `dynamodb`
+# carries the botocore error handlers the composition root installs; the package
+# imports botocore lazily inside them, so it costs nothing at import time.
+webbpulse[fastapi,otel,dynamodb]==0.3.0
 
 annotated-types==0.8.0
 anyio==4.15.0

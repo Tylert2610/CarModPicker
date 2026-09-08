@@ -127,13 +127,19 @@ describe('Login page', () => {
   });
 
   it('surfaces an error message when credentials are invalid (401)', async () => {
-    // parseApiError in useApiRequest requires isAxiosError=true to pull
-    // `detail` out of response.data.
+    // parseApiError in useApiRequest reads `message` off the error envelope
+    // in response.data.
     vi.mocked(apiClient.post).mockRejectedValueOnce({
       isAxiosError: true,
       response: {
         status: 401,
-        data: { detail: 'Invalid credentials' },
+        data: {
+          success: false,
+          status: 401,
+          message: 'Invalid credentials',
+          request_id: 'req-1',
+          error_code: 'UNAUTHORIZED',
+        },
       },
     });
 

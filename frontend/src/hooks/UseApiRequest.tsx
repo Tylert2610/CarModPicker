@@ -1,6 +1,6 @@
-import { AxiosError, type AxiosResponse } from 'axios';
+import { type AxiosResponse } from 'axios';
 import { useCallback, useState } from 'react';
-import type { HTTPValidationError, ValidationError } from '../types/Api';
+import { getApiErrorMessage } from '../utils/apiError';
 
 interface UseApiRequestReturn<TData, TPayload> {
   data: TData | null;
@@ -10,30 +10,8 @@ interface UseApiRequestReturn<TData, TPayload> {
   setError: (message: string | null) => void;
 }
 
-const parseApiError = (err: unknown): string => {
-  const axiosError = err as AxiosError<HTTPValidationError>;
-  if (axiosError.isAxiosError && axiosError.response?.data) {
-    const responseData = axiosError.response.data;
-    if (responseData.detail) {
-      if (Array.isArray(responseData.detail)) {
-        return responseData.detail
-          .map((detailItem: ValidationError) => detailItem.msg)
-          .join('. ');
-      } else if (typeof responseData.detail === 'string') {
-        return responseData.detail;
-      }
-    }
-    // Check for alternative message formats
-    if ('message' in responseData && typeof responseData.message === 'string') {
-      return responseData.message;
-    }
-    return 'An unexpected error format was received from the server.';
-  }
-  if (err instanceof Error && err.message) {
-    return err.message;
-  }
-  return 'An unexpected error occurred.';
-};
+const parseApiError = (err: unknown): string =>
+  getApiErrorMessage(err, 'An unexpected error occurred.');
 
 function useApiRequest<TData, TPayload = unknown>(
   requestFn: (payload: TPayload) => Promise<AxiosResponse<TData>>

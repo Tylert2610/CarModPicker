@@ -116,7 +116,16 @@ describe('ViewCar page', () => {
       if (url === `/car-generations/${mockCar.id}`) {
         return Promise.reject({
           isAxiosError: true,
-          response: { data: { detail: 'Car not found' }, status: 404 },
+          response: {
+            data: {
+              success: false,
+              status: 404,
+              message: 'Car not found',
+              request_id: 'req-1',
+              error_code: 'NOT_FOUND',
+            },
+            status: 404,
+          },
         });
       }
       return Promise.resolve({ data: null });
