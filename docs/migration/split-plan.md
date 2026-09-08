@@ -787,6 +787,43 @@ longer exists. `error_handler_middleware` is defined and never registered, since
 never called, because `main.py` inlines an equivalent. None of these are load
 bearing and all three are confusing to read.
 
+### Transaction Search, the OTLP prerequisite
+
+2026-09-07. Enabled in Terraform, in `terraform/transaction_search.tf`, because
+AWS requires it before the X-Ray OTLP endpoint will accept spans: "If you are
+using traces, make sure Transaction Search is enabled to send spans to the X-Ray
+OTLP endpoint." It is the prerequisite for the collector-less export described
+above, and it lands ahead of the domain carve-outs that point the functions at
+the endpoint.
+
+Three resources: a CloudWatch Logs resource policy letting `xray.amazonaws.com`
+write to `aws/spans`, the trace segment destination set to `CloudWatchLogs`, and
+the `Default` indexing rule at 1 percent.
+
+It goes in as a two-step sequence. Terraform cannot create the `aws/spans` log
+group ahead of X-Ray, because names starting with `aws/` are reserved and
+CreateLogGroup rejects them, so the group does not exist until the destination
+flips and X-Ray writes to it for the first time. Step one is this file as it
+stands: the resource policy, the destination, and the indexing rule. X-Ray then
+creates `aws/spans` with its own 30 day default. Step two uncomments the `import`
+block and `aws_cloudwatch_log_group.spans` resource at the bottom of the file to
+adopt the group and put the platform's standard 7 day retention on it.
+
+Two things worth knowing. It is account-wide for the region rather than per
+environment, so it changes trace storage for everything in the account that
+writes segments, not only the CarModPicker functions. And spans are stored as
+structured logs in `aws/spans` under CloudWatch Logs pricing rather than as X-Ray
+traces, with 1 percent of traceIds indexed for trace summaries, which is the free
+tier and the AWS default. The account's `Default` rule reads 0 percent today, so
+the first apply raises it.
+
+Neither X-Ray resource reverts anything when it is removed from Terraform, so
+turning this back off is an explicit change of the destination to `XRay` and not
+a destroy.
+
+The provider bump this needed, `~> 5.0` to `~> 6.46`, is what made those two
+X-Ray resources available: both were added in 6.46.0.
+
 There is no CloudWatch dashboard today and none is proposed. The aggregate alarms
 plus X-Ray service map cover what a dashboard would show.
 
