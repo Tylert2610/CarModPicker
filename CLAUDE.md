@@ -141,9 +141,9 @@ Six workflows in `.github/workflows/`, three CI and three deploy, each scoped by
 
 | Workflow | Trigger | Paths |
 |---|---|---|
-| `backend-ci.yml` | `pull_request` → `main` | `backend/**` |
-| `frontend-ci.yml` | `pull_request` → `main` | `frontend/**` |
-| `chrome-extension-ci.yml` | `pull_request` → `main` | `chrome-extension/**` |
+| `backend-ci.yml` | `pull_request` → `main`, `staging` | `backend/**` |
+| `frontend-ci.yml` | `pull_request` → `main`, `staging` | `frontend/**` |
+| `chrome-extension-ci.yml` | `pull_request` → `main`, `staging` | `chrome-extension/**` |
 | `backend-deploy.yml` | `push` → `main`, `staging` | `backend/**` |
 | `frontend-deploy.yml` | `push` → `main`, `staging` | `frontend/**` |
 | `chrome-extension-deploy.yml` | `push` → `main` | `chrome-extension/**` |
@@ -151,8 +151,6 @@ Six workflows in `.github/workflows/`, three CI and three deploy, each scoped by
 The three deploy workflows are fully independent — a backend merge never rebuilds the frontend.
 
 `backend-deploy.yml` and `frontend-deploy.yml` pick their GitHub Environment from the branch (`main` → `production`, otherwise `staging`) and read every deploy-time value from that Environment. The backend deploy builds a Lambda zip (`requirements-lambda.txt` resolved for manylinux x86_64 / Python 3.13, plus `app/`), uploads it to the artifacts bucket keyed by commit SHA, waits for HCP Terraform to go idle, then runs `update-function-code` and `publish-version`.
-
-**Still to change:** the three CI workflows only run on PRs into `main`; PRs into `staging` run no checks until `staging` is added to their `pull_request: branches:`.
 
 **`chrome-extension-deploy.yml` stays `main`-only.** It publishes to the Chrome Web Store, not to AWS: patch-bump `manifest.json`, tag `chrome-extension-vX.Y.Z`, cut a GitHub Release, upload and publish the zip via the CWS API. A browser extension has no staging-account equivalent and there is no staging store listing, so a `staging` trigger would have nothing to deploy to. It is also the one sanctioned exception to "never commit directly to `main`" — it pushes its own version bump with `git push origin HEAD:main`.
 
