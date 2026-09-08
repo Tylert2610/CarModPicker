@@ -61,5 +61,13 @@ module "registry" {
   # Immutability is what makes a sha- tag a reproducible deploy, and it is why
   # the build job in PR 12 needs a guard that skips a push when the tag already
   # exists rather than overwriting it.
-  repositories = { for domain in local.lambda_domain_names : domain => {} }
+  # The ingestion repository is being renamed to admin (PR #341). It holds three
+  # disposable images that were never deployed, and force_delete is read from
+  # the repository's prior state at destroy time, so it has to be true in state
+  # before the key is removed from the map. This is that one-apply setup step;
+  # the next PR drops the key and the flag goes with it.
+  repositories = {
+    for domain in local.lambda_domain_names :
+    domain => domain == "ingestion" ? { force_delete = true } : {}
+  }
 }
