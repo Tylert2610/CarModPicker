@@ -5728,6 +5728,11 @@
       }
     },
     "securitySchemes": {
+      "APIKeyHeader": {
+        "in": "header",
+        "name": "X-API-Key",
+        "type": "apiKey"
+      },
       "OAuth2PasswordBearer": {
         "flows": {
           "password": {
@@ -12499,7 +12504,7 @@
     },
     "/api/parts/price-history": {
       "post": {
-        "description": "Aggregate min/max/last/trend per part for a batch of part IDs (1\u2013100).\n\nPOST (not GET) so the body can carry up to 100 UUIDs without hitting proxy\nURL-length limits. The endpoint never 404s on a per-id basis \u2014 unknown IDs\nreturn well-formed empty-summary entries so the client can iterate without\nholes. Invalid `window` values 422 with `error_code: INVALID_WINDOW`.",
+        "description": "Aggregate min/max/last/trend per part for a batch of part IDs (1\u2013100).\n\nPOST (not GET) so the body can carry up to 100 UUIDs without hitting proxy\nURL-length limits. The endpoint never 404s on a per-id basis \u2014 unknown IDs\nreturn well-formed empty-summary entries so the client can iterate without\nholes. Invalid `window` values 422 with `error_code: INVALID_WINDOW`.\n\nWriters are machines, not end users: an `X-API-Key` matching the configured\n`EXTENSION_API_KEY` gets in (the Chrome extension and ingestion jobs), and so\ndoes an admin bearer token. A non-admin user token is 403; no credential at\nall is 401. `caller` is the admin user, or None on the API-key path.",
         "operationId": "post_batch_price_history_api_parts_price_history_post",
         "requestBody": {
           "content": {
@@ -12534,6 +12539,9 @@
           }
         },
         "security": [
+          {
+            "APIKeyHeader": []
+          },
           {
             "OAuth2PasswordBearer": []
           }

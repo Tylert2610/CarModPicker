@@ -54,6 +54,25 @@ async function getApiUrl(): Promise<string> {
 }
 
 /**
+ * Get the stored ingestion API key.
+ *
+ * `POST /api/parts/price-history` takes `require_api_key_or_admin` on the
+ * backend: a matching `X-API-Key`, or a bearer token belonging to an admin.
+ * The extension is one of the two sanctioned machine writers, so it carries
+ * the shared key rather than needing every user to be an admin.
+ *
+ * Stored in `chrome.storage.local`, not `sync`, deliberately: it is a shared
+ * secret and `sync` would replicate it to every Chrome profile the user is
+ * signed into. Unset is the normal state — the header is simply omitted and
+ * the routes that do not need it are unaffected.
+ */
+async function getApiKey(): Promise<string | null> {
+  const result = await chrome.storage.local.get(["apiKey"]);
+  const apiKey = result["apiKey"];
+  return typeof apiKey === "string" && apiKey.length > 0 ? apiKey : null;
+}
+
+/**
  * Get stored authentication token
  */
 async function getToken(): Promise<string | null> {
@@ -84,6 +103,7 @@ async function apiRequest<T>(
 ): Promise<ApiResponse<T>> {
   const apiUrl = await getApiUrl();
   const token = await getToken();
+  const apiKey = await getApiKey();
 
   const url = `${apiUrl}${endpoint}`;
   const headers: Record<string, string> = {
@@ -93,6 +113,13 @@ async function apiRequest<T>(
 
   if (token) {
     headers["Authorization"] = `Bearer ${token}`;
+  }
+
+  // Sent alongside the bearer token, not instead of it. Routes that take
+  // `require_api_key_or_admin` check the key first and let a non-admin user
+  // through on it; every other route ignores the header entirely.
+  if (apiKey) {
+    headers["X-API-Key"] = apiKey;
   }
 
   try {

@@ -339,6 +339,14 @@ DOMAINS: Dict[str, Domain] = {
     ),
     # 43 routes, the largest domain: parts, manufacturers, categories, retailers.
     # 17 of them verify a token.
+    #
+    # `POST /api/parts/price-history` also accepts an X-API-Key matching
+    # EXTENSION_API_KEY, another key of the same carmodpicker-<env>/app JSON, so
+    # it needs no additional grant beyond the one SECRET_KEY already buys. It is
+    # deliberately NOT named in requires_secrets: `check_signing_key` turns that
+    # tuple into a hard `require_secrets` in production, and an unset key is a
+    # supported state here (the route falls back to admin tokens only) rather
+    # than a reason to fail a cold start.
     "catalog": Domain(
         name="catalog",
         title="CarModPicker catalog",

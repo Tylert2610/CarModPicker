@@ -12,6 +12,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.db.dynamo.catalog import Part as DBPart
@@ -25,9 +26,32 @@ PRICE_HISTORY_PATH = "/api/parts/{part_id}/price-history"
 BATCH_PRICE_HISTORY_PATH = "/api/parts/price-history"
 
 
+TEST_API_KEY = "test-extension-api-key-0123456789"
+
+
 def _auth_headers(client: TestClient, user: User) -> dict[str, str]:
-    """Bearer headers for ``user``. The batch POST requires an authenticated user."""
+    """Bearer headers for ``user``."""
     return {"Authorization": f"Bearer {login_user(client, user.username)}"}
+
+
+def _api_key_headers(key: str = TEST_API_KEY) -> dict[str, str]:
+    """`X-API-Key` headers for the machine path onto the batch POST.
+
+    The batch route takes `require_api_key_or_admin`, so an end-user token is
+    not enough; the seeding tests below use the key rather than logging an
+    admin in on every case.
+    """
+    return {"X-API-Key": key}
+
+
+@pytest.fixture(autouse=True)
+def _configured_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Point `settings.EXTENSION_API_KEY` at a known value for this module.
+
+    `_resolve_secret` consults the live `os.environ` before anything else, so
+    setting the variable is enough and no Secrets Manager call is ever made.
+    """
+    monkeypatch.setenv("EXTENSION_API_KEY", TEST_API_KEY)
 
 
 # --- helpers (mirror tests/services/test_part_price_aggregation_service.py) --
@@ -219,7 +243,7 @@ def test_post_batch_price_history_basic(client: TestClient, db_session: Any, tes
     response = client.post(
         BATCH_PRICE_HISTORY_PATH,
         json={"part_ids": [str(p.id) for p in parts]},
-        headers=_auth_headers(client, test_user),
+        headers=_api_key_headers(),
     )
     assert response.status_code == 200, response.text
     body = response.json()
@@ -249,7 +273,7 @@ def test_post_batch_price_history_includes_empty_entries(client: TestClient, db_
     response = client.post(
         BATCH_PRICE_HISTORY_PATH,
         json={"part_ids": [str(part_with.id), str(part_other.id), str(part_empty.id)]},
-        headers=_auth_headers(client, test_user),
+        headers=_api_key_headers(),
     )
     assert response.status_code == 200
     body = response.json()
@@ -273,7 +297,7 @@ def test_post_batch_price_history_window_default_90d(client: TestClient, db_sess
     response = client.post(
         BATCH_PRICE_HISTORY_PATH,
         json={"part_ids": [str(part.id)]},
-        headers=_auth_headers(client, test_user),
+        headers=_api_key_headers(),
     )
     assert response.status_code == 200
     body = response.json()
@@ -294,7 +318,7 @@ def test_post_batch_price_history_window_custom(client: TestClient, db_session: 
     response = client.post(
         BATCH_PRICE_HISTORY_PATH,
         json={"part_ids": [str(part.id)], "window": "30d"},
-        headers=_auth_headers(client, test_user),
+        headers=_api_key_headers(),
     )
     assert response.status_code == 200
     body = response.json()
@@ -310,7 +334,7 @@ def test_post_batch_price_history_invalid_window_returns_422(
     response = client.post(
         BATCH_PRICE_HISTORY_PATH,
         json={"part_ids": [str(part.id)], "window": "xyz"},
-        headers=_auth_headers(client, test_user),
+        headers=_api_key_headers(),
     )
     # Pydantic Literal validation rejects "xyz" before the handler runs, producing
     # the standard VALIDATION_ERROR envelope. The endpoint's INVALID_WINDOW path
@@ -324,7 +348,7 @@ def test_post_batch_price_history_empty_part_ids_returns_422(client: TestClient,
     response = client.post(
         BATCH_PRICE_HISTORY_PATH,
         json={"part_ids": []},
-        headers=_auth_headers(client, test_user),
+        headers=_api_key_headers(),
     )
     assert response.status_code == 422
     body = response.json()
@@ -336,7 +360,7 @@ def test_post_batch_price_history_too_many_ids_returns_422(client: TestClient, t
     response = client.post(
         BATCH_PRICE_HISTORY_PATH,
         json={"part_ids": too_many},
-        headers=_auth_headers(client, test_user),
+        headers=_api_key_headers(),
     )
     assert response.status_code == 422
     body = response.json()
@@ -352,7 +376,7 @@ def test_post_batch_price_history_unknown_ids_return_empty_entries(client: TestC
     response = client.post(
         BATCH_PRICE_HISTORY_PATH,
         json={"part_ids": [unknown_a, unknown_b]},
-        headers=_auth_headers(client, test_user),
+        headers=_api_key_headers(),
     )
     assert response.status_code == 200
     body = response.json()
@@ -382,7 +406,7 @@ def test_post_batch_price_history_aggregates_link_group(client: TestClient, db_s
     response = client.post(
         BATCH_PRICE_HISTORY_PATH,
         json={"part_ids": [str(canonical.id)]},
-        headers=_auth_headers(client, test_user),
+        headers=_api_key_headers(),
     )
     assert response.status_code == 200
     body = response.json()
@@ -393,30 +417,69 @@ def test_post_batch_price_history_aggregates_link_group(client: TestClient, db_s
 
 
 # --- auth on the batch POST -------------------------------------------------
-# `POST /api/parts/price-history` was public until it was brought in line with
-# every other mutating route in the API and put behind `get_current_user`.
+# `POST /api/parts/price-history` was public, then briefly behind
+# `get_current_user`, and is now behind `require_api_key_or_admin`. Its only
+# legitimate writers are the Chrome extension and ingestion/admin jobs, so it
+# takes an `X-API-Key` matching `EXTENSION_API_KEY` or an admin bearer token.
+
+
+def _batch_body() -> dict[str, Any]:
+    return {"part_ids": [str(uuid.uuid4())]}
 
 
 def test_post_batch_price_history_anonymous_returns_401(client: TestClient) -> None:
-    """No Authorization header -> 401, same as every other authed route."""
+    """No credential of any kind -> 401."""
+    response = client.post(BATCH_PRICE_HISTORY_PATH, json=_batch_body())
+    assert response.status_code == 401, response.text
+
+
+def test_post_batch_price_history_wrong_api_key_returns_401(client: TestClient) -> None:
+    """A wrong `X-API-Key` and no token is indistinguishable from no credential."""
     response = client.post(
         BATCH_PRICE_HISTORY_PATH,
-        json={"part_ids": [str(uuid.uuid4())]},
+        json=_batch_body(),
+        headers=_api_key_headers("not-the-configured-key"),
     )
     assert response.status_code == 401, response.text
 
 
-def test_post_batch_price_history_authenticated_succeeds(client: TestClient, db_session: Any, test_user: User) -> None:
-    """A valid Bearer token still gets the unchanged 200 response shape."""
-    retailer = _make_retailer(db_session, "batch-authed")
-    part = _make_part(db_session, test_user, name="Batch Authed")
+def test_post_batch_price_history_empty_api_key_returns_401(client: TestClient) -> None:
+    """An empty header value must not match, even against an empty config."""
+    response = client.post(
+        BATCH_PRICE_HISTORY_PATH,
+        json=_batch_body(),
+        headers=_api_key_headers(""),
+    )
+    assert response.status_code == 401, response.text
+
+
+def test_post_batch_price_history_api_key_unset_rejects_any_key(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """With no key configured the route fails closed: the key path is shut."""
+    monkeypatch.delenv("EXTENSION_API_KEY", raising=False)
+    response = client.post(
+        BATCH_PRICE_HISTORY_PATH,
+        json=_batch_body(),
+        headers=_api_key_headers(),
+    )
+    assert response.status_code == 401, response.text
+
+
+def test_post_batch_price_history_correct_api_key_succeeds(
+    client: TestClient, db_session: Any, test_user: User
+) -> None:
+    """The configured `X-API-Key` gets the unchanged 200 response shape."""
+    retailer = _make_retailer(db_session, "batch-apikey")
+    part = _make_part(db_session, test_user, name="Batch Api Key")
     listing = _make_listing(db_session, part, retailer)
     _add_history(db_session, listing, price_cents=1234, observed_at=datetime.now(UTC) - timedelta(days=1))
 
     response = client.post(
         BATCH_PRICE_HISTORY_PATH,
         json={"part_ids": [str(part.id)]},
-        headers=_auth_headers(client, test_user),
+        headers=_api_key_headers(),
     )
     assert response.status_code == 200, response.text
     body = response.json()
@@ -424,3 +487,58 @@ def test_post_batch_price_history_authenticated_succeeds(client: TestClient, db_
     assert body["requested_count"] == 1
     assert body["found_count"] == 1
     assert body["summaries"][str(part.id)]["observation_count"] == 1
+
+
+def test_post_batch_price_history_admin_token_succeeds(
+    client: TestClient, db_session: Any, test_user: User, test_admin_user: User
+) -> None:
+    """An admin bearer token is the human path onto the same route."""
+    retailer = _make_retailer(db_session, "batch-admin")
+    part = _make_part(db_session, test_user, name="Batch Admin")
+    listing = _make_listing(db_session, part, retailer)
+    _add_history(db_session, listing, price_cents=4321, observed_at=datetime.now(UTC) - timedelta(days=1))
+
+    response = client.post(
+        BATCH_PRICE_HISTORY_PATH,
+        json={"part_ids": [str(part.id)]},
+        headers=_auth_headers(client, test_admin_user),
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["requested_count"] == 1
+    assert body["found_count"] == 1
+    assert body["summaries"][str(part.id)]["observation_count"] == 1
+
+
+def test_post_batch_price_history_superuser_token_succeeds(client: TestClient, test_superuser_user: User) -> None:
+    """`get_current_admin_user` accepts a superuser too, so this route does."""
+    response = client.post(
+        BATCH_PRICE_HISTORY_PATH,
+        json=_batch_body(),
+        headers=_auth_headers(client, test_superuser_user),
+    )
+    assert response.status_code == 200, response.text
+
+
+def test_post_batch_price_history_non_admin_token_returns_403(client: TestClient, test_user: User) -> None:
+    """A valid token for an ordinary user is authenticated but not authorized."""
+    response = client.post(
+        BATCH_PRICE_HISTORY_PATH,
+        json=_batch_body(),
+        headers=_auth_headers(client, test_user),
+    )
+    assert response.status_code == 403, response.text
+
+
+def test_post_batch_price_history_bad_key_falls_through_to_token(client: TestClient, test_admin_user: User) -> None:
+    """A junk key alongside a good admin token still gets in on the token."""
+    headers = {**_api_key_headers("junk"), **_auth_headers(client, test_admin_user)}
+    response = client.post(BATCH_PRICE_HISTORY_PATH, json=_batch_body(), headers=headers)
+    assert response.status_code == 200, response.text
+
+
+def test_post_batch_price_history_key_wins_over_non_admin_token(client: TestClient, test_user: User) -> None:
+    """The key is checked first, so it rescues a request from a non-admin token."""
+    headers = {**_api_key_headers(), **_auth_headers(client, test_user)}
+    response = client.post(BATCH_PRICE_HISTORY_PATH, json=_batch_body(), headers=headers)
+    assert response.status_code == 200, response.text
