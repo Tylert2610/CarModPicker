@@ -650,3 +650,99 @@ jobs:
             exit 1
           fi
           echo "Every deployed domain function answered GET /health with 200."
+
+  # Row 14 onward: prove each cut domain is reached through its own API Gateway
+  # route rather than still falling through to the monolith on $default.
+  #
+  # Section 6.3 says a flip is verified by the access log's `routeKey`, and
+  # `scripts/verify_route_cut.sh` is what reads it. This job is the scheduled
+  # caller: it runs after the images are deployed and each function has answered
+  # its own `/health`, so a failure here is about routing rather than about the
+  # image.
+  #
+  # It is deliberately additive. It adds no `needs` edge to `build-images`,
+  # `image-map` or `deploy-images` beyond the one it reads through
+  # `smoke-domains`, and it changes none of them. A failure here reports a
+  # routing problem and does not roll anything back, which is correct: the
+  # rollback for a bad cut is deleting the routes entry in Terraform, not
+  # reverting an image.
+  #
+  # `always()` plus the explicit result tests, matching `existing-functions` and
+  # `deploy-images`: the ordinary state until every domain is cut is that some of
+  # the chain skipped, and a skip upstream must not silently skip this.
+  verify-route-cuts:
+    needs: [resolve-env, deploy-images, smoke-domains]
+    if: >-
+      always()
+      && needs.resolve-env.result == 'success'
+      && needs.deploy-images.result == 'success'
+      && needs.smoke-domains.result == 'success'
+    runs-on: ubuntu-latest
+    environment: ${{ needs.resolve-env.outputs.name }}
+    permissions:
+      contents: read
+      id-token: write
+
+    env:
+      AWS_REGION: us-west-2
+      # The credential path is staging only. Production has no access gate, so
+      # the parameter name is empty on `main` and the read below is skipped; the
+      # script then calls the API host with no gate header at all, which is what
+      # production wants.
+      ORIGIN_VERIFY_PARAMETER: ${{ github.ref_name == 'main' && '' || '/carmodpicker-staging/access-gate/origin-verify' }}
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c # v6.2.4
+        with:
+          role-to-assume: ${{ needs.resolve-env.outputs.role-arn }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # The deploy role already carries `ssm:GetParameter` on this parameter,
+      # from the staging access gate wiring in `iam_github_actions.tf`. Masked
+      # before it can reach a log. `CARMODPICKER_ORIGIN_VERIFY` is the name the
+      # script reads; leaving it unset makes the script fall back to a direct
+      # invoke, which would report a warning rather than a verification, so a
+      # missing parameter is worth the explicit message.
+      - name: Read the staging access gate origin-verify value
+        if: env.ORIGIN_VERIFY_PARAMETER != ''
+        run: |
+          set -uo pipefail
+          if VALUE=$(aws ssm get-parameter --with-decryption --name "$ORIGIN_VERIFY_PARAMETER" \
+              --query Parameter.Value --output text 2>/dev/null) && [ -n "$VALUE" ]; then
+            echo "::add-mask::$VALUE"
+            echo "CARMODPICKER_ORIGIN_VERIFY=$VALUE" >> "$GITHUB_ENV"
+            echo "Using the staging access gate origin-verify header."
+          else
+            echo "No origin-verify parameter found; the script will fall back to a direct invoke."
+          fi
+
+      - name: Verify each cut domain
+        env:
+          ENVIRONMENT: ${{ needs.resolve-env.outputs.name }}
+          # Edit this line, and only this line, when a cut lands. The names are
+          # the ones `scripts/verify_route_cut.sh` knows, which are the keys of
+          # `local.lambda_domains` in terraform/lambda_domains.tf.
+          DOMAINS: "media"
+        run: |
+          set -uo pipefail
+
+          FAILED=0
+          for DOMAIN in $DOMAINS; do
+            echo "::group::${ENVIRONMENT} ${DOMAIN}"
+            if bash scripts/verify_route_cut.sh "$ENVIRONMENT" "$DOMAIN"; then
+              echo "The '${DOMAIN}' cut verified."
+            else
+              echo "The '${DOMAIN}' cut did not verify."
+              FAILED=1
+            fi
+            echo "::endgroup::"
+          done
+
+          if [ "$FAILED" -ne 0 ]; then
+            echo "One or more route cuts did not verify."
+            exit 1
+          fi
+          echo "Every cut domain is served by its own function."

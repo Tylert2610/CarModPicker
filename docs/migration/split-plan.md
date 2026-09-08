@@ -990,7 +990,7 @@ infrastructure.
 | 11 | Dockerfile, parameterised by `DOMAIN` | medium | 0 | 4a, 6 |
 | 12 | `deploy-backend.yml`: `resolve-env`, `build-images`, `image-map`, `deploy-images`, `smoke-domains` | medium | 0 | 10, 11 |
 | 13 | Terraform: `media` function from the bootstrap tag, unrouted | medium | 3 add | 12 |
-| 14 | Terraform: `media` API Gateway routes. **First cut** | small | 3 add | 13 |
+| 14 | Terraform: `media` API Gateway routes. **First cut** | small | 4 add | 13 |
 | 15 | Terraform: alarms to `api-alarms ~> 2.1`, `lambda_function_names` | small | 6 change | 14 |
 | 16 | Observability: OpenTelemetry in `media`, Sentry removed from it | medium | 1 change | 14 |
 | 17 | Terraform: log retention 14 to 7 days | small | 2 change | 15 |
@@ -1241,7 +1241,8 @@ application both roots build, so every domain function counts into
 `<prefix>-rate-limits` on every request. The limiter fails open, which is exactly
 what makes omitting the grant the dangerous choice: the function would keep
 serving, layer 2 would be silently off for that domain, and the only symptom
-would be a `rate_limit_failed_open=True` warning per request. The comment already
+would be a warning per request carrying the structured `rate_limit_failed_open:
+true` JSON field. The comment already
 in `locals.tf` predicted this and it held.
 
 Section 3.4 lists five S3 actions for `media` and the policy grants four, and
@@ -1284,6 +1285,78 @@ nine staging repositories. Production has no value for it and needs one, pointin
 at a tag in the production account's own repositories, before a per-domain
 function is planned there; the variable has no default, so a production plan
 fails loudly rather than creating a function from a tag that does not resolve.
+
+**Row 14 is delivered, and it is the first cut.** `terraform/apigateway.tf` gives
+the `media` function an integration and two explicit route keys, `ANY /api/images`
+and `ANY /api/images/{proxy+}`, so those eight routes now resolve to
+`carmodpicker-<env>-media` and everything else still falls through to `$default`
+and the monolith. `default_integration = "legacy"` is unchanged and the
+monolith's own integration and invoke permission are untouched, which is what
+makes the rollback in section 6.4 a matter of deleting one list entry.
+
+The plan is 4 adds rather than the 3 the table predicted, and the missing one is
+the invoke permission. A route needs three resources, not two: the integration,
+the route, and an `aws_lambda_permission` letting API Gateway call the function.
+The module creates the permission per integration rather than per route, so the
+count is one integration, two routes and one permission. The estimate counted the
+two routes and the integration and forgot that the new function has no
+resource-based policy yet, because row 13 created it unrouted. Every later cut
+carries the same shape: one integration, one permission, and two route keys per
+path prefix, so row 18's `build-logs` is 4 and row 19's `moderation`, with three
+prefixes, is 8.
+
+Both route keys per prefix are required, and neither may end in a slash.
+`ANY /api/images` does not match `/api/images/upload` and `ANY /api/images/{proxy+}`
+does not match the bare collection path, so creating only one of the pair sends
+half the domain to the new function and half to the monolith, which section 3.5
+calls the worst failure mode because it half works. The trailing slash is a
+separate trap and it fails at apply time rather than at plan time: API Gateway
+normalises `ANY /api/images/` to the bare key and then rejects the pair as a
+duplicate, so a plan that looks green fails the apply.
+
+The routes are data rather than literals. `local.routed_lambda_domains` names the
+domains that have been cut and `local.lambda_domain_path_prefixes` names each
+one's prefixes from section 1.1's "path prefixes served" column; the integrations
+map and the two route keys per prefix are both generated from those. So rows 18
+through 31 each add one name and one prefix list, and a domain cannot be left
+with an integration nothing routes to, which the module's
+`every_integration_is_routed` check would fail the plan on anyway, nor with one
+half of a route pair, which nothing would catch.
+
+No `authorization_type` is set on either key, which is deliberate and is the
+security-relevant part of this row. The module's own choice is CUSTOM whenever
+`authorizer_id` is set, so on staging both new keys carry the access gate's
+authorizer exactly as `$default` does. Setting `NONE` on a route to make a probe
+convenient would punch a hole straight past the gate for the whole `/api/images`
+prefix, and `scripts/verify_route_cut.sh` checks for exactly that by making one
+request with no credential and requiring a 401 or 403.
+
+`scripts/verify_route_cut.sh <env> <domain>` is the verification section 6.3
+describes, and it reads the access log's `routeKey` rather than a response
+header. Portfolio's equivalent script reads an `X-WebbPulse-Domain` response
+header that its middleware stamps on every response; CarModPicker's backend sets
+no such header, and adding one is a backend change rather than a routing one, so
+the access log is the primary signal here rather than the cross-check it is in
+Portfolio. That is also why the deploy role gains one narrow grant in this row:
+`logs:FilterLogEvents`, scoped to `/aws/apigateway/carmodpicker-<env>-api` and to
+that one action. Adding the header later would be worth it, since it is
+synchronous and needs no CloudWatch read; the script prefers it if it appears.
+
+Staging is behind the access gate, so a plain `curl` gets a 401 from the
+authorizer rather than an answer from the API, which would read as a failed cut
+when it is really a missing credential. The script takes
+`CARMODPICKER_ORIGIN_VERIFY` (the header value in
+`/carmodpicker-staging/access-gate/origin-verify`, which the deploy role could
+already read) or `CARMODPICKER_GATE_COOKIE`. With neither it falls back to
+invoking the function directly with a synthesised HTTP API v2 event, the same
+probe `smoke-domains` uses, and says plainly that this proves the function serves
+the paths and not that the gateway routes to them.
+
+The `verify-route-cuts` job in `.github/workflows/deploy-backend.yml` is the
+scheduled caller, appended after `smoke-domains` and touching none of the image
+build or deploy jobs. A failure there is a routing problem and rolls nothing
+back, which is right: the rollback for a bad cut is a Terraform apply, not an
+image revert.
 
 One thing the split plan should record about section 3.6 and open question 1: the
 alarm ceiling has already been lifted upstream. `platform-modules` 2.2.0 removed

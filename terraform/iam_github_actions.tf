@@ -187,6 +187,18 @@ module "github_actions_role" {
         actions   = ["lambda:InvokeFunction"]
         resources = local.lambda_domain_function_arns
       },
+      # Read the HTTP API access log, for scripts/verify_route_cut.sh. Section 6.3 of
+      # docs/migration/split-plan.md makes the access log's `routeKey` field the check that a
+      # strangler cut actually took effect: before a cut every entry for the prefix reads
+      # "$default", after it they read the explicit route key, and nothing visible over HTTP
+      # distinguishes the two. So the verification has to read this log group, and it is the only
+      # log group it reads. Scoped to that one group rather than to the account's logs, and to the
+      # one read action, because a deploy role that can read every log group is a wider credential
+      # than a route check needs.
+      {
+        actions   = ["logs:FilterLogEvents"]
+        resources = ["arn:aws:logs:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:log-group:/aws/apigateway/${local.prefix}-api:*"]
+      },
       # S3: sync frontend build artefacts
       {
         actions = [
