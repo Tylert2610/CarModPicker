@@ -3,7 +3,7 @@
 # module default and matches state, so none of them is passed here.
 module "alarms" {
   source  = "app.terraform.io/WebbPulse/platform-modules/aws//modules/api-alarms"
-  version = "~> 1.7"
+  version = "~> 2.4"
 
   name_prefix         = local.prefix
   notification_emails = ["tyler@webbpulse.com", "tylert2610@gmail.com"]
@@ -29,4 +29,37 @@ module "alarms" {
   # a JsonFormatter with rename_fields levelname -> level on the non-TTY path, so every record in
   # this log group is JSON with a top level "level" key.
   error_log_groups = { api = module.lambda_api.log_group_name }
+
+  # The shared DynamoDB backed limiter in app/api/middleware/shared_rate_limiter.py allows a
+  # request when it cannot reach "<prefix>-rate-limits", rather than refusing traffic. Nothing
+  # reported that: the request succeeded, so AWS/Lambda Errors stays at zero and the API returns
+  # 200 while the limit is not being enforced. This is one metric filter per log group below and
+  # one "<prefix>-rate-limit-failed-open" alarm on the metric they share.
+  rate_limit_fail_open_alarm = true
+
+  # The limiter is installed as global middleware in app/main.py, so it runs in the monolith and
+  # in every domain function. error_log_groups only covers the monolith, so the list is given
+  # explicitly here rather than defaulting to it.
+  rate_limit_fail_open_log_groups = merge(
+    { api = module.lambda_api.log_group_name },
+    { for name in keys(local.lambda_domains) : name => module.lambda_domain[name].log_group_name },
+  )
+
+  # NOT the module default. The default { $.rate_limit_failed_open IS TRUE } matches a top level
+  # JSON field, and this service does not emit one: _failed_open in shared_rate_limiter.py builds
+  # a printf style message and interpolates the flag into the message text, so the record reads
+  #
+  #   {"level":"WARNING","message":"Shared rate limit check failed; allowing the request.
+  #    rate_limit_failed_open=True operation=check ...", ...}
+  #
+  # A JSON filter pattern selects on fields and cannot see inside the message string, so the
+  # default would match nothing here: the metric would sit flat at 0 and the alarm would report
+  # healthy while the limiter was failing open. A quoted pattern is a plain substring match over
+  # the whole raw event, which does match. It is case sensitive, and Python's %s interpolation of
+  # a bool renders "True", not "true".
+  #
+  # The better fix is at the source: emit the flag as a real log record field, the way Portfolio's
+  # limiter does, and drop this override for the module default. That is a backend change and does
+  # not belong in the same PR as the alarm.
+  rate_limit_fail_open_filter_pattern = "\"rate_limit_failed_open=True\""
 }
