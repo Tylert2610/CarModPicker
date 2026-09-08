@@ -507,3 +507,36 @@ def test_unsubscribe_unknown_alert_id_redirects_to_error(client: TestClient, db_
     )
     assert response.status_code == 302
     assert "status=error" in response.headers.get("location", "")
+
+
+# --- route ordering regression (split-plan section 1.4) ---------------------
+
+
+def test_unsubscribe_is_registered_before_parameterised_routes() -> None:
+    """`/unsubscribe` must be registered ahead of every `/{alert_id}` route.
+
+    FastAPI resolves in registration order, so a literal that is registered after a
+    parameterised sibling of the same shape is only reachable while no route with a
+    matching method exists on the parameter. Unsubscribe survived on that accident:
+    `/{alert_id}` carries PATCH and DELETE and there is no GET detail route, so a GET
+    for `/unsubscribe` fell through to the literal. Adding `GET /{alert_id}` would have
+    swallowed it silently, redirecting nothing and returning 422 for a token that is
+    not a UUID.
+
+    Asserting on registration order rather than on a live request is deliberate: a
+    request-level test passes either way today and would only start failing once the
+    GET detail route lands, which is exactly the silent break this guards against.
+    """
+    from app.api.endpoints.part_price_alerts import router
+
+    paths = [route.path for route in router.routes if getattr(route, "path", None)]
+
+    assert "/unsubscribe" in paths, paths
+    unsubscribe_index = paths.index("/unsubscribe")
+
+    parameterised_indexes = [index for index, path in enumerate(paths) if "{alert_id}" in path]
+    assert parameterised_indexes, paths
+
+    assert unsubscribe_index < min(parameterised_indexes), (
+        "/unsubscribe must be registered before the /{alert_id} routes, " f"got order {paths}"
+    )

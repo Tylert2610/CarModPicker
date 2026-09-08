@@ -8,6 +8,14 @@ T03 also lands the public, unauth `GET /unsubscribe?token=...` route — the JWT
 *is* the auth (purpose='price_alert_unsubscribe'), mirroring the verify-email
 confirm idiom. Both DEBUG and prod redirect to the frontend /account/alerts
 page with a status query string.
+
+Route ordering is load-bearing here. FastAPI resolves in registration order, so
+the literal `/unsubscribe` is declared ahead of the parameterised `/{alert_id}`
+routes. It previously sat after them and was reachable only by accident:
+`/{alert_id}` carries PATCH and DELETE and no GET, so a GET fell through to the
+literal. Adding a `GET /{alert_id}` detail route would have shadowed unsubscribe
+silently. Keep `/unsubscribe` above `/{alert_id}`, and keep any future literal
+segment above it too.
 """
 
 import logging
@@ -89,61 +97,6 @@ async def list_my_active_alerts(current_user: DBUser = Depends(get_current_user)
     return [PartPriceAlertRead.model_validate(a) for a in alerts]
 
 
-@router.patch(
-    "/{alert_id}",
-    response_model=PartPriceAlertRead,
-    responses=standard_responses(
-        success_description="Alert updated",
-        unauthorized=True,
-        not_found=True,
-        validation_error=True,
-    ),
-)
-async def update_my_alert(
-    alert_id: UUID,
-    payload: PartPriceAlertUpdate,
-    current_user: DBUser = Depends(get_current_user),
-) -> PartPriceAlertRead:
-    """Update threshold and/or active flag on the user's own alert.
-
-    Returns 404 (not 403) for alerts owned by another user, to avoid leaking
-    existence via endpoint behavior.
-    """
-    alert = part_price_alert_service.get_alert_for_owner(alert_id, current_user.id)
-    if alert is None:
-        ResponsePatterns.raise_not_found("Price alert", alert_id)
-    assert alert is not None
-
-    alert = part_price_alert_service.update_alert(alert, threshold_cents=payload.threshold_cents, active=payload.active)
-    return PartPriceAlertRead.model_validate(alert)
-
-
-@router.delete(
-    "/{alert_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
-    responses=standard_responses(
-        success_description="Alert deactivated",
-        unauthorized=True,
-        not_found=True,
-    ),
-)
-async def delete_my_alert(
-    alert_id: UUID,
-    current_user: DBUser = Depends(get_current_user),
-) -> None:
-    """Soft-delete the user's own alert by setting active=False.
-
-    Idempotent at the user-experience level: a second DELETE on the same id
-    returns 404 because the row is no longer ownable-and-active. (T03 will
-    treat already-deleted rows the same way the unsubscribe-via-token path
-    does — currently 404 is the simplest contract for this surface.)
-    """
-    deactivated = part_price_alert_service.deactivate_alert(alert_id, current_user.id)
-    if not deactivated:
-        ResponsePatterns.raise_not_found("Price alert", alert_id)
-    return None
-
-
 def _unsubscribe_redirect_url(success: bool, message: str) -> str:
     """Build the redirect target for the unsubscribe-via-token flow.
 
@@ -220,3 +173,58 @@ async def unsubscribe_via_token(token: str = Query(...)) -> RedirectResponse:
             url=_unsubscribe_redirect_url(False, "Invalid+or+expired+link"),
             status_code=302,
         )
+
+
+@router.patch(
+    "/{alert_id}",
+    response_model=PartPriceAlertRead,
+    responses=standard_responses(
+        success_description="Alert updated",
+        unauthorized=True,
+        not_found=True,
+        validation_error=True,
+    ),
+)
+async def update_my_alert(
+    alert_id: UUID,
+    payload: PartPriceAlertUpdate,
+    current_user: DBUser = Depends(get_current_user),
+) -> PartPriceAlertRead:
+    """Update threshold and/or active flag on the user's own alert.
+
+    Returns 404 (not 403) for alerts owned by another user, to avoid leaking
+    existence via endpoint behavior.
+    """
+    alert = part_price_alert_service.get_alert_for_owner(alert_id, current_user.id)
+    if alert is None:
+        ResponsePatterns.raise_not_found("Price alert", alert_id)
+    assert alert is not None
+
+    alert = part_price_alert_service.update_alert(alert, threshold_cents=payload.threshold_cents, active=payload.active)
+    return PartPriceAlertRead.model_validate(alert)
+
+
+@router.delete(
+    "/{alert_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses=standard_responses(
+        success_description="Alert deactivated",
+        unauthorized=True,
+        not_found=True,
+    ),
+)
+async def delete_my_alert(
+    alert_id: UUID,
+    current_user: DBUser = Depends(get_current_user),
+) -> None:
+    """Soft-delete the user's own alert by setting active=False.
+
+    Idempotent at the user-experience level: a second DELETE on the same id
+    returns 404 because the row is no longer ownable-and-active. (T03 will
+    treat already-deleted rows the same way the unsubscribe-via-token path
+    does — currently 404 is the simplest contract for this surface.)
+    """
+    deactivated = part_price_alert_service.deactivate_alert(alert_id, current_user.id)
+    if not deactivated:
+        ResponsePatterns.raise_not_found("Price alert", alert_id)
+    return None
