@@ -11,13 +11,16 @@
 # `Retry-After` instead of a flat 500, so it earns its place now. It adds no
 # new pins: boto3 is already pinned below.
 #
-# `aws-otel` is absent too, and that is a row 16 decision rather than an
-# oversight. It carries the SigV4 signing exporter the X-Ray OTLP endpoint
-# requires, and CarModPicker exports no traces yet: `configure_tracing` is wired
-# but gated off unless OTEL_EXPORTER_OTLP_TRACES_ENDPOINT is set, because the
-# monolith on staging has no OTLP IAM grant. Row 16 turns tracing on per domain
-# and adds this extra with it.
-webbpulse[fastapi,otel,dynamodb]==0.3.0
+# `aws-otel` is what row 16 added, and it is not optional once tracing is on.
+# The X-Ray OTLP endpoint authenticates with SigV4 and answers 403 to an
+# unsigned POST, and the OTLP exporter retries a 403 in silence, so the symptom
+# of leaving this out is traces that never appear with nothing in the logs to
+# say why. The extra carries `aws-opentelemetry-distro`, from which only the
+# `OTLPAwsSpanExporter` class is used: `webbpulse.otel` builds the pipeline
+# itself rather than launching under `opentelemetry-instrument`, so the
+# distribution is a library here and not a wrapper. It is additive to `otel`
+# rather than a replacement for it, and both must be present.
+webbpulse[fastapi,otel,dynamodb,aws-otel]==0.3.0
 
 # Core FastAPI and web framework dependencies
 annotated-types==0.8.0

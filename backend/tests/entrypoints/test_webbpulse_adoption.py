@@ -13,10 +13,13 @@ CarModPicker's public contract, and each has a way of regressing quietly:
   for a 422. These tests pin the single shape so a regression to any of the
   three is caught.
 - **The tracing gate.** `webbpulse.otel.configure_tracing` defaults to this
-  region's X-Ray OTLP endpoint when none is configured. CarModPicker has no OTLP
-  IAM grant yet, and that endpoint answers 403 to an unsigned request, which the
-  exporter retries in silence. So tracing must stay off until row 16, and "off"
-  has to be asserted rather than assumed.
+  region's X-Ray OTLP endpoint when none is configured. Row 16 turned tracing on
+  in the deployed domain functions by setting
+  `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` in Terraform, but the gate itself stays,
+  and it is what keeps the test suite and a local run free of an exporter. "Off
+  when the variable is unset" therefore has to be asserted rather than assumed:
+  without it every test run would open a batch exporter to an endpoint that
+  answers 403 to an unsigned request and retries it in silence.
 - **The request context filter.** `request_id` and `user_id` come from
   CarModPicker's ContextVars, not from the package, which merges trace ids
   instead. OBS-04 depends on every record carrying both.
@@ -138,11 +141,13 @@ def test_domain_apps_declare_no_package_health_route(media_client: TestClient) -
 
 
 def test_configure_tracing_is_a_noop_without_an_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
-    """No OTLP endpoint means no provider, which is every environment today.
+    """No OTLP endpoint means no provider, which is every un-deployed process.
 
-    Without the gate the package would fall back to the X-Ray OTLP endpoint and
-    export into a 403 forever, and the only symptom would be traces never
-    appearing.
+    Terraform sets the variable on the deployed domain functions, so this is the
+    state a test, a local run and the monolith are in rather than the state
+    everything is in. Without the gate the package would fall back to the X-Ray
+    OTLP endpoint and export into a 403 forever, and the only symptom would be
+    traces never appearing.
     """
     monkeypatch.delenv(OTLP_ENDPOINT_ENV, raising=False)
     assert configure_tracing(DOMAINS["media"]) is False

@@ -140,11 +140,31 @@ locals {
   #   - EMAIL_FROM and EMAIL_ENABLED are `identity`'s and `admin`'s, per
   #     section 3.4's SES split. `media` sends no mail, and a configured sender
   #     on a function with no ses:SendEmail grant is a misleading configuration.
-  #   - SENTRY_SERVICE_NAME becomes the domain's own name rather than the
-  #     monolith's "lambda-api", so two functions' events cannot merge into one
-  #     service. Row 16 removes Sentry from `media` outright and replaces it with
-  #     OpenTelemetry; no OTEL_ variable is set here, because setting one now
-  #     would configure an exporter no code reads yet.
+  #   - SENTRY_SERVICE_NAME is gone. Row 16 removed `init_sentry` from every
+  #     entrypoint, so nothing in a domain function reads it, and a Sentry
+  #     variable on a function with no Sentry in it is a misleading
+  #     configuration. The monolith in lambda.tf keeps its own until row 31.
+  #
+  # The two OTEL_ variables are the whole tracing contract, and they are what
+  # row 16 turns on. `webbpulse.otel.configure_tracing` builds the pipeline
+  # itself rather than running under `opentelemetry-instrument`, so
+  # OTEL_EXPORTER_OTLP_TRACES_PROTOCOL, OTEL_PYTHON_DISTRO,
+  # OTEL_PYTHON_CONFIGURATOR and OTEL_TRACES_SAMPLER are deliberately not set:
+  # the protocol is implicit in the exporter class the package constructs, the
+  # distribution is used as a library rather than a launcher, and the sampler is
+  # passed explicitly so a ratio sampler in the environment cannot pre-drop the
+  # spans the tail step exists to judge.
+  #
+  # WEBBPULSE_OTEL_SAMPLE_RATIO is the probability a *non-error* trace is kept.
+  # Errors are kept whatever it says, which is the point of tail sampling and is
+  # why 0.1 on production is not the 90 percent loss of failures a head sampler
+  # at the same ratio would be. Staging keeps everything, because its traffic is
+  # this repository's own tests and a smoke run.
+  #
+  # The endpoint is what un-gates the code. `configure_tracing` in
+  # app/composition/wiring.py returns early unless it is set, which is what
+  # keeps the test suite and a local run free of an exporter, so setting it here
+  # is what makes tracing a Terraform change rather than a code change.
   lambda_domain_environment = {
     for name, domain in local.lambda_domains : name => merge(
       {
@@ -161,9 +181,14 @@ locals {
         FRONTEND_URL    = local.frontend_url
         ALLOWED_ORIGINS = local.allowed_origins
 
-        SENTRY_RELEASE      = var.sentry_release
-        SENTRY_SERVICE_NAME = "lambda-${name}"
         AWS_EMF_ENVIRONMENT = "Local"
+
+        WEBBPULSE_OTEL_SAMPLE_RATIO = var.environment == "production" ? "0.1" : "1.0"
+        # Set explicitly rather than left to the package's own default, which
+        # derives the same URL from AWS_REGION. Naming it here is what makes the
+        # destination visible in the plan and in the console, so a function
+        # exporting nowhere is a diff rather than an archaeology exercise.
+        OTEL_EXPORTER_OTLP_TRACES_ENDPOINT = "https://xray.${var.aws_region}.amazonaws.com/v1/traces"
       },
       domain.secrets ? { APP_SECRETS_ARN = module.app_secrets.arns["app"] } : {},
       domain.s3 ? {
@@ -240,7 +265,9 @@ module "lambda_domain" {
   # Unlike the monolith, whose runtime policy carried the two X-Ray actions
   # before the module owned them, these roles are new, so the module attaches
   # its own X-Ray write policy and the runtime policy below does not repeat
-  # xray:PutTraceSegments or xray:PutTelemetryRecords.
+  # xray:PutTraceSegments or xray:PutTelemetryRecords. It does add
+  # xray:PutSpans, which the module's policy does not carry; see the statement
+  # below.
   tracing_mode             = "Active"
   attach_xray_write_policy = true
 
@@ -253,13 +280,23 @@ module "lambda_domain" {
 # Logs are here, because the module creates the log group but leaves writing to
 # it to the application, the same way the monolith's runtime policy does.
 #
-# X-Ray is not here at all, which is the one place this differs from Portfolio.
-# Portfolio adds xray:PutSpans and xray:PutSpansForIndexing because its
-# functions export OTLP spans to the X-Ray endpoint, and those two actions are
-# what that POST is authorized by. CarModPicker's functions do not export OTLP
-# yet: row 16 is what adds OpenTelemetry to `media`, and it is the row that adds
-# those two actions with the code that needs them. Granting them now would be a
-# permission with no caller.
+# X-Ray is here only in part, and row 16 is what put it here. The module's
+# attach_xray_write_policy grants xray:PutTraceSegments and
+# xray:PutTelemetryRecords, which are the two actions the X-Ray *segment* API
+# takes and the two the Lambda service itself needs for Active tracing, so those
+# are not repeated. They are not the actions the OTLP endpoint takes:
+# `POST https://xray.<region>.amazonaws.com/v1/traces` is authorized by
+# xray:PutSpans, and that is the call webbpulse's OTLPAwsSpanExporter makes on
+# every flush. Neither the module's inline policy nor the AWS managed
+# AWSXrayWriteOnlyAccess carries it, so without the statement below every export
+# is a 403, which the exporter retries in silence, and the symptom is that
+# traces never appear with nothing in the logs to say why.
+#
+# xray:PutSpansForIndexing is granted alongside it. Both actions are in the
+# X-Ray service authorization reference at Write level, and the pair is what
+# Transaction Search indexes a span through; PutSpans alone would export the
+# span and leave it unsearchable. Neither action takes a resource-level
+# permission, so "*" is the only resource either accepts.
 # ---------------------------------------------------------------------------
 
 resource "aws_iam_role_policy" "lambda_domain" {
@@ -277,6 +314,12 @@ resource "aws_iam_role_policy" "lambda_domain" {
           Effect   = "Allow"
           Action   = ["logs:CreateLogStream", "logs:PutLogEvents"]
           Resource = "${module.lambda_domain[each.key].log_group_arn}:*"
+        },
+        {
+          Sid      = "WriteSpansToTheXRayOTLPEndpoint"
+          Effect   = "Allow"
+          Action   = ["xray:PutSpans", "xray:PutSpansForIndexing"]
+          Resource = "*"
         },
       ],
       length(local.lambda_domain_write_arns[each.key]) > 0 ? [

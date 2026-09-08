@@ -992,7 +992,7 @@ infrastructure.
 | 13 | Terraform: `media` function from the bootstrap tag, unrouted | medium | 3 add | 12 |
 | 14 | Terraform: `media` API Gateway routes. **First cut** | small | 4 add | 13 |
 | 15 | Terraform: alarms to `api-alarms ~> 2.1`, `lambda_function_names` | small | 6 change | 14 |
-| 16 | Observability: OpenTelemetry in `media`, Sentry removed from it | medium | 1 change | 14 |
+| 16 | Observability: OpenTelemetry in the domain functions, Sentry removed from them. **Delivered** | medium | 1 change | 14 |
 | 17 | Terraform: log retention 14 to 7 days | small | 2 change | 15 |
 | 18 | `build-logs`: function, routes, OTel | medium | 6 add | 16 |
 | 19 | `moderation`: function, routes, OTel | medium | 8 add | 18 |
@@ -1357,6 +1357,69 @@ scheduled caller, appended after `smoke-domains` and touching none of the image
 build or deploy jobs. A failure there is a routing problem and rolls nothing
 back, which is right: the rollback for a bad cut is a Terraform apply, not an
 image revert.
+
+**Row 16 is delivered, and it turned tracing on in all nine rather than in one.**
+The row was written as `media` only, because when it was written `media` was the
+only function that existed. Rows 18 through 31 each say "function, routes, OTel",
+and doing the OTel third of each of those eight rows here costs nothing: the
+wiring is per domain in shape but identical in content, and
+`local.lambda_domain_environment` and the runtime policy in
+`terraform/lambda_domains.tf` are both `for_each` over `local.lambda_domains`, so
+a domain added in a later row gets the two OTEL_ variables and the `xray:PutSpans`
+grant by existing. What those later rows still owe is their function and their
+routes, which is the part that actually differs between them. The Terraform plan
+is 1 change, as the row predicted, because `media` is still the only entry in the
+map.
+
+Three things had to move. `backend/requirements.txt` and
+`backend/requirements-lambda.txt` gained the `aws-otel` extra, which carries the
+SigV4 signing exporter. `terraform/lambda_domains.tf` sets
+`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` to this region's X-Ray OTLP endpoint and
+`WEBBPULSE_OTEL_SAMPLE_RATIO` to 1.0 on staging and 0.1 on production, and adds
+`xray:PutSpans` and `xray:PutSpansForIndexing` to each domain's runtime policy.
+And `init_sentry` is gone from all nine entrypoints, leaving Sentry running in
+`app/composition/app.py` alone, which is the monolith that still serves
+production until row 31.
+
+**The ordering bug this row found is the part worth reading.** Row 8 wired
+`configure_tracing` into `build_domain_app` and gated it, and the gate worked, so
+nothing looked wrong. But every entrypoint carries a module-level
+`app = build_app()` for Mangum, and that line runs at *import*, which is before
+`main` has called anything. `build_domain_app` only attaches the FastAPI
+instrumentation when a provider already exists, so the module-level application
+was built with tracing off and could never be instrumented, and `main` then served
+that same object. Setting the environment variable alone would therefore have
+produced a function that configured a real tracer provider, exported nothing, and
+logged nothing about it. `main` now builds its own application after
+`configure_tracing`, and the module-level one stays exactly as it was for Mangum.
+This is the failure the package's own docstring warns about from the other
+direction: `instrument_app` can only inject its server span middleware while the
+middleware stack is unbuilt, so an application that has started cannot be
+instrumented after the fact, and the symptom either way is silence.
+
+`backend/tests/entrypoints/test_otel_wiring.py` is what stops it recurring. It
+parses each entrypoint rather than reading it as text, so the prose in these
+modules can go on explaining why Sentry is absent, and it asserts four things per
+domain: no Sentry import and no `init_sentry` call, `configure_logging` before
+`configure_tracing`, `configure_tracing` before `build_app`, and that the object
+handed to `run_uvicorn` is a fresh `build_app()` call rather than the module
+global. The last two are the ones that were actually broken. It also asserts that
+the monolith's composition root still calls `init_sentry`, because "Sentry is
+removed" is per file here rather than repository wide, and that both requirements
+files carry `aws-otel`: the package warns and falls back to the unsigned exporter
+when it is missing rather than failing a cold start, so leaving it out of the file
+the image installs would produce a function that starts, serves, and silently
+exports into a 403.
+
+Two premises the row was written on turned out not to hold, and both are recorded
+because the later rows inherit them. The extra is named `aws-otel`, and
+`requirements.txt` already predicted that correctly. But `SENTRY_SERVICE_NAME` and
+`SENTRY_RELEASE` were still being set on the domain functions, and they are
+removed here rather than left as configuration nothing reads; the monolith in
+`terraform/lambda.tf` keeps both. And nothing in this row needed a change to
+`webbpulse` itself: 0.3.0 already carries the tail sampler, the signing exporter
+selection and the per-request flush, so the row is a configuration change and a
+call-ordering fix rather than a package adoption.
 
 One thing the split plan should record about section 3.6 and open question 1: the
 alarm ceiling has already been lifted upstream. `platform-modules` 2.2.0 removed
