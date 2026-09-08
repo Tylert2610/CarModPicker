@@ -259,6 +259,24 @@ APP_SETTINGS = TableSpec(
     partition_key=_n("id"),
 )
 
+# The shared rate limiter's own table, layer 2 of the rate limiting standard.
+#
+# Its items are counters keyed on the API Gateway request context identity, not
+# domain data, and every one of them expires within its own window, so there is
+# nothing here worth restoring to a point in time. The suffix is "rate-limits"
+# rather than the underscored style the entity tables use, because the table name
+# is fixed by the platform standard as `<prefix>-rate-limits` and WebbPulse-Portfolio
+# already declares it under exactly that name.
+#
+# The TTL attribute is `expires_at`, matching Portfolio's declaration, so the two
+# repositories can converge on one limiter implementation without a table rename.
+RATE_LIMITS = TableSpec(
+    suffix="rate-limits",
+    partition_key=_s("pk"),
+    ttl_attribute="expires_at",
+)
+
+
 TABLES: tuple[TableSpec, ...] = (
     USERS,
     OAUTH_ACCOUNTS,
@@ -285,6 +303,7 @@ TABLES: tuple[TableSpec, ...] = (
     BUG_REPORTS,
     IMAGE_SOURCE_MAPPINGS,
     APP_SETTINGS,
+    RATE_LIMITS,
 )
 
 

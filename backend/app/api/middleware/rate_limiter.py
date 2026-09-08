@@ -13,6 +13,7 @@ from fastapi import Request
 from fastapi.responses import JSONResponse, Response
 
 from ...core.config import settings
+from .shared_rate_limiter import client_identity, shared_rate_limiter
 
 logger = logging.getLogger(__name__)
 
@@ -291,6 +292,33 @@ async def rate_limit_middleware(request: Request, call_next: Callable[[Request],
                 "X-RateLimit-Remaining-Hour": str(max(0, limits_info["hour_limit"] - limits_info["hour_count"])),
             },
         )
+
+    # Layer 2: the shared limiter. Layer 1 above is in-memory, so it only sees the
+    # traffic that reached this execution environment; the shared counter is what makes
+    # a limit hold across environments and, after the split, across the nine functions.
+    # It runs only once layer 1 has allowed the request, so a burst that layer 1 already
+    # rejected costs no DynamoDB call.
+    #
+    # Every failure mode inside is swallowed and logged at WARNING, so this call cannot
+    # raise into the request path or turn a DynamoDB problem into a 5xx.
+    if settings.ENABLE_SHARED_RATE_LIMITING:
+        identity = client_identity(request)
+        shared_limited, shared_retry_after = shared_rate_limiter.check(identity)
+        if shared_limited:
+            retry_after = shared_retry_after or 60
+            logger.warning("Shared rate limit exceeded for %s", identity)
+            return JSONResponse(
+                status_code=429,
+                content={
+                    "detail": "Too many requests",
+                    "message": "Rate limit exceeded",
+                    "retry_after": retry_after,
+                },
+                headers={
+                    "Retry-After": str(retry_after),
+                    "X-RateLimit-Remaining-Minute": "0",
+                },
+            )
 
     # Add rate limit headers to response
     response = await call_next(request)

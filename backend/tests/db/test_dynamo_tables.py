@@ -30,6 +30,10 @@ EXPECTED_SUFFIXES = {
     "bug_reports",
     "image_source_mappings",
     "app_settings",
+    # Not a domain entity: the shared rate limiter's counters, layer 2 of the rate
+    # limiting standard. Hyphenated rather than underscored because the table name is
+    # fixed by the platform standard as `<prefix>-rate-limits`.
+    "rate-limits",
 }
 
 DROPPED_SUFFIXES = {
