@@ -1,10 +1,18 @@
+import os
 from functools import lru_cache
 from urllib.parse import urlparse
 
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from app.core.secrets import load_app_secrets
+from app.core.secrets import fetch_app_secrets
+
+# Settings whose value may come from the single JSON secret named by
+# APP_SECRETS_ARN. Its keys are these names exactly, so there is no mapping to
+# keep in step. Each is stored in a shadow field and exposed as a property that
+# resolves on first read, so importing this module performs no network call and
+# a process that never reads a secret never needs secretsmanager:GetSecretValue.
+SECRET_FIELDS = ("SECRET_KEY", "SENTRY_DSN")
 
 
 class Settings(BaseSettings):
@@ -13,9 +21,12 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "CarModPicker"
     DEBUG: bool = False
 
-    # JWT Auth
-    SECRET_KEY: str = Field(
+    # JWT Auth. Resolved lazily through the SECRET_KEY property below; an
+    # environment variable still wins, which keeps local development and the
+    # test suite free of AWS.
+    SECRET_KEY_SETTING: str = Field(
         default="",
+        alias="SECRET_KEY",
         description="Secret key for JWT token signing. MUST be set in production!",
     )
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
@@ -103,19 +114,13 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_and_normalize_settings(self) -> "Settings":
-        """Validate settings and normalize storage variable names."""
-        # Validate SECRET_KEY in production
-        is_prod = not self.DEBUG and self.APP_ENVIRONMENT.lower() != "development"
-        if not self.SECRET_KEY and is_prod:
-            # In production, SECRET_KEY must be set
-            import warnings
+        """Normalize storage variable names.
 
-            warnings.warn(
-                "SECRET_KEY is empty in production! JWT tokens will be insecure. "
-                "Set SECRET_KEY environment variable.",
-                UserWarning,
-            )
-
+        Deliberately does not look at SECRET_KEY. Reading it here would resolve
+        the secret at construction time and put a Secrets Manager call back on
+        the import path, which is exactly what this module no longer does. The
+        production check moved to require_secrets(), called at the point of use.
+        """
         # Normalize storage settings to handle both variable naming conventions
         # Handle bucket name
         if not self.USER_IMAGES_BUCKET and self.S3_BUCKET_NAME:
@@ -207,8 +212,9 @@ class Settings(BaseSettings):
     EMAIL_FROM: str = Field(default="")
 
     # Sentry settings (Phase 2 / OBS-01)
-    SENTRY_DSN: str = Field(
+    SENTRY_DSN_SETTING: str = Field(
         default="",
+        alias="SENTRY_DSN",
         description="Sentry DSN for error reporting. Empty = Sentry disabled. Injected via Secrets Manager in prod (D-01, D-55).",
     )
     SENTRY_RELEASE: str = Field(
@@ -312,7 +318,70 @@ class Settings(BaseSettings):
         """Get maximum image size in bytes."""
         return self.MAX_IMAGE_SIZE_MB * 1024 * 1024
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", case_sensitive=True, extra="ignore")
+    APP_SECRETS_ARN: str = Field(
+        default="",
+        description=(
+            "ARN of the one JSON secret holding SECRET_FIELDS. Empty = secrets come "
+            "from the environment only and no Secrets Manager call is ever made."
+        ),
+    )
+
+    # --- Lazily resolved secrets -------------------------------------------------
+    #
+    # Each SECRET_FIELDS name is stored in a `<NAME>_SETTING` field populated from
+    # the environment (via the field alias) and read back through a property that
+    # falls back to Secrets Manager only when the environment left it empty. The
+    # fetch is cached in app.core.secrets for the life of the execution
+    # environment, so the first read of the first secret pays the call and nothing
+    # after it does.
+
+    def _resolve_secret(self, name: str) -> str:
+        # The live environment is consulted first, not just the value captured
+        # when this Settings was built. `settings` is a module level singleton
+        # constructed at import, so reading os.environ here preserves the old
+        # behaviour of picking up a value exported after that point, which the
+        # test suite and the crawler entrypoints both rely on.
+        from_env = os.environ.get(name, "") or getattr(self, f"{name}_SETTING", "")
+        if from_env:
+            return from_env
+        arn = os.environ.get("APP_SECRETS_ARN", "") or self.APP_SECRETS_ARN
+        if not arn:
+            return ""
+        return fetch_app_secrets(arn).get(name, "")
+
+    @property
+    def SECRET_KEY(self) -> str:
+        return self._resolve_secret("SECRET_KEY")
+
+    @property
+    def SENTRY_DSN(self) -> str:
+        return self._resolve_secret("SENTRY_DSN")
+
+    def require_secrets(self, *names: str) -> None:
+        """Raise unless every named secret resolves to a non-empty value.
+
+        Call this at the point of use, not at import. It replaces the import
+        time validator that used to warn about an empty SECRET_KEY: a function
+        that signs tokens fails loudly at startup, and one that does not, such
+        as an entirely read only domain, never asks and never needs the grant.
+        """
+        unknown = [name for name in names if name not in SECRET_FIELDS]
+        if unknown:
+            raise ValueError(f"Unknown secret(s): {', '.join(sorted(unknown))}")
+        missing = [name for name in names if not self._resolve_secret(name)]
+        if missing:
+            raise ValueError(
+                "Missing required secret(s) (set them as environment variables or "
+                f"as keys of the APP_SECRETS_ARN secret): {', '.join(missing)}"
+            )
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=True,
+        extra="ignore",
+        populate_by_name=True,
+    )
 
 
 @lru_cache()
@@ -324,7 +393,7 @@ def get_settings() -> Settings:
     return Settings()
 
 
-load_app_secrets()
-
-# Create settings instance for normal usage
+# No secret is read here. Importing this module makes no network call and needs
+# no AWS credentials, which is what lets every per domain entrypoint be imported
+# by tooling and by the route contract test.
 settings = get_settings()

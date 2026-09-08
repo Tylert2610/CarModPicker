@@ -106,7 +106,7 @@ What stays hand-written is what a single-provider module cannot own: the ACM cer
 | `acm.tf` | Wildcard cert for the served domain in `us-east-1` (CloudFront) and a regional cert for `api.<domain>` (HTTP API), both DNS-validated; validation waits on the staging delegation record. |
 | `route53.tf` | `module "staging_dns"` (`platform-modules/aws//modules/staging-dns`): the hosted zone for the served domain plus, in staging, the NS delegation into the parent zone through `aws.parent_dns`. Then the SES DKIM/MAIL-FROM/DMARC and verification records. The apex and `www` alias records live in `module "frontend"`, the `api` alias record in `module "api"`. |
 | `ses.tf` | SESv2 configuration set, domain identity (custom domain) or mailbox identity (`email_from`), custom MAIL FROM, SNS topic + subscription for bounces/complaints, account-level VDM. |
-| `secretsmanager.tf` | `<prefix>/app`, the one JSON secret per environment (`SECRET_KEY`, `SENTRY_DSN`), read by the Lambda at cold start through `APP_SECRETS_ARN`. |
+| `secretsmanager.tf` | `<prefix>/app`, the one JSON secret per environment (`SECRET_KEY`, `SENTRY_DSN`), resolved by the Lambda on the first read of a secret through `APP_SECRETS_ARN`, not at import. |
 | `ecr.tf` | `module "registry"` (`platform-modules/aws//modules/ecr-repository`): one ECR repository plus lifecycle policy per entry in `local.lambda_domains`, named `carmodpicker-<env>/<domain>`, IMMUTABLE tags, scan on push, keep the last 10 `sha-` tagged images, untagged expired after a day. Nothing pulls from them yet. |
 | `iam_github_actions.tf` | `module "github_actions_role"` (`platform-modules/aws//modules/github-actions-role`): GitHub OIDC provider + `github-actions-deploy` role: Lambda code updates, artifacts upload, frontend sync, invalidation, and (gate on) reading the origin-verify SSM parameter. |
 | `monitoring.tf` | Alarms SNS topic; Lambda errors/throttles, HTTP API 5xx and p99 integration latency, one aggregate DynamoDB throttle alarm across every table. |
@@ -116,7 +116,7 @@ What stays hand-written is what a single-provider module cannot own: the ACM cer
 
 - **Naming**: every resource name starts with `local.prefix` = `carmodpicker-<environment>`.
 - **Tags**: `Project`, `Environment`, `ManagedBy=terraform` applied globally via provider `default_tags`.
-- **Secrets**: values flow HCP workspace variable → `var.*` → Secrets Manager. The Lambda reads `<prefix>/app` at import time through `APP_SECRETS_ARN` (`backend/app/core/secrets.py`). No secret values live in Terraform state outputs or version control.
+- **Secrets**: values flow HCP workspace variable → `var.*` → Secrets Manager. The Lambda resolves `<prefix>/app` through `APP_SECRETS_ARN` on the first read of a secret field, not at import (`backend/app/core/config.py`, `backend/app/core/secrets.py`). A function that reads no secret makes no call and needs no `secretsmanager:GetSecretValue` grant. No secret values live in Terraform state outputs or version control.
 - **Lambda code is not Terraform's**: the function is created with a placeholder and `ignore_changes` on the package attributes. `backend-deploy.yml` uploads the real zip to `<prefix>-lambda-artifacts` and calls `update-function-code`.
 - **No VPC**: the Lambda is not in a VPC and there is no NAT Gateway; every dependency is reached over public AWS endpoints.
 
