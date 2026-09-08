@@ -804,10 +804,11 @@ It goes in as a two-step sequence. Terraform cannot create the `aws/spans` log
 group ahead of X-Ray, because names starting with `aws/` are reserved and
 CreateLogGroup rejects them, so the group does not exist until the destination
 flips and X-Ray writes to it for the first time. Step one is this file as it
-stands: the resource policy, the destination, and the indexing rule. X-Ray then
-creates `aws/spans` with its own 30 day default. Step two uncomments the `import`
-block and `aws_cloudwatch_log_group.spans` resource at the bottom of the file to
-adopt the group and put the platform's standard 7 day retention on it.
+stood at first: the resource policy, the destination, and the indexing rule. X-Ray
+then creates `aws/spans` with its own 30 day default. Step two, applied on staging
+on 2026-09-08 once the group existed, is the `import` block and
+`aws_cloudwatch_log_group.spans` resource that adopt the group and put the
+platform's standard 7 day retention on it.
 
 Two things worth knowing. It is account-wide for the region rather than per
 environment, so it changes trace storage for everything in the account that
