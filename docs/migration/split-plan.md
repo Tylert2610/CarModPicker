@@ -608,16 +608,21 @@ do not change.
 
 ### 3.6 Alarms, and the ceiling
 
-`monitoring.tf`. `api-alarms` moves from `~> 1.7` to `~> 2.1`, and
-`lambda_function_name` becomes `lambda_function_names`, a list. Aggregate on:
+`monitoring.tf`. `api-alarms` is already at `~> 2.4`, and `lambda_function_name`
+becomes `lambda_function_names`, a list. Aggregate on:
 `lambda_aggregate_alarm = true`, `lambda_aggregate_threshold = 0`.
 `dynamodb_aggregate_alarm = true` stays as it is. `error_log_groups` becomes a
-merge of the monolith's log group and the nine domains'.
+merge of the monolith's log group and the created domains'. The list itself
+holds the domains only and not the monolith; the paragraph on row 15 below says
+what that costs and why it is still right.
 
 The list order matters and is not cosmetic. The module builds CloudWatch metric
 math over positionally-named metric ids, `m0`, `m1`, and so on, so reordering the
 list rewrites every expression and replaces the alarm. Fix the order once, in the
-same order as `local.lambda_domains`, and add a comment saying so.
+same order as `local.lambda_domain_names`, and add a comment saying so. The
+ordered list and not `local.lambda_domains`: the latter is a map, and `keys()` on
+it returns lexicographic order rather than cut order, so it reshuffles every
+metric math id whenever a domain lands mid-alphabet.
 
 **The ceiling.** The module caps `lambda_function_names` at ten, because beyond
 that the metric math expression exceeds what CloudWatch accepts. Nine domains
@@ -991,7 +996,7 @@ infrastructure.
 | 12 | `deploy-backend.yml`: `resolve-env`, `build-images`, `image-map`, `deploy-images`, `smoke-domains` | medium | 0 | 10, 11 |
 | 13 | Terraform: `media` function from the bootstrap tag, unrouted | medium | 3 add | 12 |
 | 14 | Terraform: `media` API Gateway routes. **First cut** | small | 4 add | 13 |
-| 15 | Terraform: alarms to `api-alarms ~> 2.1`, `lambda_function_names` | small | 6 change | 14 |
+| 15 | Terraform: alarms to `lambda_function_names`, aggregated. **Delivered** | small | 3 add, 1 change, 2 destroy | 14 |
 | 16 | Observability: OpenTelemetry in `media`, Sentry removed from it | medium | 1 change | 14 |
 | 17 | Terraform: log retention 14 to 7 days | small | 2 change | 15 |
 | 18 | `build-logs`: function, routes, OTel | medium | 6 add | 16 |
@@ -1369,6 +1374,74 @@ still applies within a group. But it does mean the ceiling is no longer a hard
 stop that a tenth function runs into, so the decision can be made on the strength
 of the signal rather than under a constraint.
 
+**Row 15 is delivered, and open question 1 is answered: the monolith is out of
+the list.** `terraform/monitoring.tf` moves the shared `api-alarms` module from
+the one function form to the many function form. `lambda_function_name` is
+replaced by `lambda_function_names` with `lambda_aggregate_alarm = true` and
+`lambda_aggregate_threshold = 0`, so `carmodpicker-<env>-lambda-errors-aggregate`
+and `carmodpicker-<env>-lambda-throttles-aggregate` sum AWS/Lambda Errors and
+Throttles across the domain functions. The module version stays at `~> 2.4` and
+`rate_limit_fail_open_alarm` stays on; neither was touched. Nine domains is under
+the module's chunk size of ten, so this is one alarm pair for the whole estate
+for the life of the migration and no chunking ever happens.
+
+The two inputs are mutually exclusive by the module's own validation, so
+excluding the monolith is not a matter of leaving it out of a list: it destroys
+the monolith's own `-lambda-errors` and `-lambda-throttles` alarms. Keeping them
+was not free. Adding the monolith to the aggregate would spend a slot on a
+function rows 18 through 31 are retiring and would make "the backend is erroring"
+mean "the backend or the thing it is being moved off is erroring", which is the
+signal the whole aggregate shape exists to protect. The module's
+`lambda_errors_alarm_function_name` escape hatch is the other route and is worse:
+it creates an alarm named `<prefix>-lambda-errors`, which is exactly the alarm
+this change destroys, so it would buy the errors half back as a no-op that hides
+the decision instead of recording it.
+
+The monolith is not uncovered meanwhile. It still serves every route not yet cut,
+so an invocation failure in it is a gateway 5xx and `<prefix>-api-5xx` fires on
+that, including for the init failures and timeouts that never reach the gateway
+as an application response and are the only things AWS/Lambda Errors would have
+caught that the 5xx alarm would not. Its log group stays in `error_log_groups`,
+so its ERROR records still reach `<prefix>-application-errors`, and its limiter
+still reaches `<prefix>-rate-limit-failed-open`. Row 31 removes the monolith and
+the rest of its coverage together.
+
+Both lists are derived rather than written out, so rows 18 through 31 extend the
+alarms by adding a domain rather than by editing this file.
+`lambda_function_names` filters `local.lambda_domain_names` from `ecr.tf` down to
+the domains whose function actually exists, and the filter rather than the map is
+the load-bearing part. The module turns the list into positional metric math ids
+`m0`, `m1` and so on, so a reorder rewrites both alarm definitions; reading
+`keys()` off `local.lambda_domains`, which is what Portfolio does, returns
+Terraform's lexicographic key order rather than the insertion order, so on
+CarModPicker's cut order it would yield `catalog, identity, media` where the plan
+wants `media, identity, catalog` and would reshuffle every id on any mid-alphabet
+insert. Portfolio can afford it because all four of its domains landed at once;
+here they arrive one row at a time, which is precisely when the difference bites.
+Filtering section 6.1's ordered list gets append-only growth for free.
+
+The plan is 3 to add, 1 to change and 2 to destroy, against the table's estimate
+of 6 change, and both halves of the estimate were wrong in an instructive way. It
+assumed all nine functions existed by this row, when row 13 created `media` alone
+and the other eight are still rows 18 through 31, so the aggregate covers one
+function today and grows to nine. And it assumed the switch was an in-place edit
+of an existing alarm pair, when the two input forms produce differently named
+resources: `-lambda-errors` and `-lambda-throttles` are destroyed and
+`-lambda-errors-aggregate` and `-lambda-throttles-aggregate` are created. The
+third add is the `media` error metric filter, which is `error_log_groups` growing
+to cover the domain functions and not only the monolith, and the one change is
+that alarm's description tracking the count, from "1 log group" to "2 log
+groups". That last one is worth noting for later rows: every cut from 18 onward
+will show one metric filter add plus that same one-line description change, so a
+plan of two rather than one there is expected rather than a surprise.
+
+The log-based half is the half that scales, and this row is where it starts
+carrying the estate. Every filter writes the same dimensionless metric, so
+`<prefix>-application-errors` stays exactly one alarm however many log groups it
+grows to and has no metric math ceiling to run into, which is what section 3.6
+recommended before the ceiling was lifted upstream and is still the right shape
+now that it has been.
+
 **Ingestion is now admin.** Open question 4 asked whether the domain should be
 renamed and the answer is yes, taken on 2026-09-07. Section 1.5 had already
 argued the case: `crawled_pages` writes nothing, the listing writes the old name
@@ -1425,13 +1498,17 @@ something else changed.
 Ranked. The first three block work; the rest can be answered as their PR comes
 up.
 
-**1. The alarm ceiling.** Section 3.6 recommends keeping `lambda_function_names`
-at ten as the fast Lambda-level signal and letting the log-based
-`application-errors` alarm scale past it, since it is dimensionless. The
-alternative is two aggregate alarms over two groups of five, which removes the
-ceiling but weakens the signal from "the backend is erroring" to "group A is
-erroring". This needs a decision before PR 15, and it is the only one of these
-that constrains the architecture rather than the schedule.
+**1. The alarm ceiling. Answered: the monolith is out of the list, and done.**
+Taken on 2026-09-08 and delivered by row 15. `lambda_function_names` carries the
+nine domains and not the monolith, so the nine share one aggregate errors alarm
+and one aggregate throttles alarm, nine is under the module's chunk size of ten,
+and no chunking happens. The signal stays "the backend is erroring" rather than
+"group A is erroring", which is what the question was really protecting. The cost
+is that the monolith's own `-lambda-errors` and `-lambda-throttles` alarms are
+destroyed rather than kept, because the module's two input forms are mutually
+exclusive; until row 31 retires it, its invocation failures surface through
+`<prefix>-api-5xx` and its logged errors through `<prefix>-application-errors`.
+Section 3.6's paragraph on row 15 has the full reasoning.
 
 **2. `net_votes` eventual consistency.** Seam 3 makes the denormalised vote count
 lag the vote by the stream latency, so a user who votes and immediately reloads
