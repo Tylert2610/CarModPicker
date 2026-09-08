@@ -329,12 +329,16 @@ def build_domain_app(
     # A root serving no domain that seeds does not wire the seed at all, so a
     # function with read-only IAM on the car tables never attempts the write.
     seeds = any(domain.seeds for domain in resolved)
-    tasks = startup_tasks if startup_tasks is not None else run_startup_tasks
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         if seeds and settings.RUN_STARTUP_TASKS:
-            tasks()
+            # Resolved on each startup rather than bound when the application is
+            # built, so `tests/test_lambda_handler.py` can patch
+            # `app.main.run_startup_tasks` and have the patch take effect. A
+            # callable bound at build time would have been captured before the
+            # patch existed.
+            (startup_tasks or run_startup_tasks)()
         yield
 
     app = FastAPI(

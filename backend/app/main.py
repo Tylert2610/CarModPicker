@@ -5,22 +5,26 @@ Everything this module used to do by hand now lives in `app.composition`:
 `app.composition.wiring.build_domain_app` assembles the middleware, the
 exception handlers, the CORS policy, the lifespan and the five root routes.
 Root A (`app.composition.app`) calls that with all nine descriptors, Root B
-(`app.entrypoints.<domain>`) with one, and this module simply re-exports Root A's
-application so the existing test suite exercises the new wiring rather than a
-parallel copy of it.
+(`app.entrypoints.<domain>`) with one.
+
+This module re-exports Root A's application rather than building its own. That
+matters beyond tidiness: building a second one would give two full FastAPI
+instances in every process that imports both, doubling the import cost of a
+cold start and making `app.main.app` and `app.composition.app.app` different
+objects, so which one a caller saw would depend on how it imported.
 
 `uvicorn app.main:app`, `app/lambda_handler.py` and every `from app.main import
 app` in the suite keep working unchanged, and the OpenAPI document is byte
 identical to what it was.
 
-`run_startup_tasks` stays a module attribute here, and is handed to the builder
-rather than looked up inside it, because `tests/test_lambda_handler.py` patches
-`app.main.run_startup_tasks` and asserts the lifespan honours
-`settings.RUN_STARTUP_TASKS`. Threading it through keeps that seam where the
-test expects it.
+`run_startup_tasks` stays a module attribute here because
+`tests/test_lambda_handler.py` patches `app.main.run_startup_tasks` and asserts
+the lifespan honours `settings.RUN_STARTUP_TASKS`. The lifespan reaches it
+through this module at startup rather than holding a reference taken when the
+application was built, which is what lets the patch take effect.
 """
 
-from app.composition import app as composition_root
+from app.composition.app import app
 from app.composition.wiring import run_startup_tasks as _run_startup_tasks
 
 
@@ -29,4 +33,4 @@ def run_startup_tasks() -> None:
     _run_startup_tasks()
 
 
-app = composition_root.build_app(startup_tasks=lambda: run_startup_tasks())
+__all__ = ["app", "run_startup_tasks"]

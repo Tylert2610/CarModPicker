@@ -38,8 +38,25 @@ sums to 171. Both are right and the difference is the five root routes.
 
 FastAPI adds four more of its own on top, which every count in the plan
 excludes: `/docs`, `/docs/oauth2-redirect`, `/redoc` and `/api/openapi.json`.
-So `len(app.routes)` reports 180 for Root A, and the constants below name all
-three numbers so a future reader does not have to re-derive which is which.
+So Root A serves 180 routes in total, and the constants below name all three
+numbers so a future reader does not have to re-derive which is which.
+
+## Counting routes is version dependent
+
+`len(app.routes)` is not that 180 on every supported version, which is why
+`_effective_routes` exists. Starlette 1.x, which `requirements.txt` pins via
+FastAPI 0.141.1, changed `include_router` to store one lazy `_IncludedRouter`
+per included router instead of copying the sub-router's routes into the parent.
+On that version `app.routes` has 34 entries for Root A: the 4 doc routes, the 5
+root routes, and 25 opaque wrappers whose own `path` and `methods` are `None`.
+Walking it naively finds 9 routes and misses all 171. Starlette 0.x flattens on
+include and the same walk finds all 180.
+
+The difference is invisible in the served application: routing and the OpenAPI
+document are identical either way, which is exactly why it is worth a test.
+A count taken from `app.routes` silently means something different depending on
+which version is installed, so every count here goes through
+`_effective_routes`, which handles both shapes.
 """
 
 from __future__ import annotations
@@ -47,7 +64,7 @@ from __future__ import annotations
 import importlib
 import json
 from pathlib import Path
-from typing import List, Set, Tuple
+from typing import Any, Iterator, List, Set, Tuple
 
 import pytest
 
@@ -91,17 +108,46 @@ EXPECTED_DOMAIN_ROUTES = {
 }
 
 
+def _effective_routes(app: object) -> "Iterator[Any]":
+    """Every route an application serves, flattened.
+
+    `app.routes` is not a flat list of routes on every supported version.
+    Starlette 1.x (pinned in `requirements.txt` as 1.6.0, via FastAPI 0.141.1)
+    changed `include_router` to store one lazy `_IncludedRouter` wrapper per
+    included router rather than copying the sub-router's routes into the
+    parent, so walking `app.routes` there yields wrappers whose own `path` and
+    `methods` are `None` and misses every route underneath them. Those wrappers
+    expose `effective_route_contexts()`, which recurses through nested includes
+    and yields one context per real route, carrying the final `path` and
+    `methods` after every prefix has been applied.
+
+    Starlette 0.x flattens on include, so the plain routes are already there.
+    Both shapes are handled, because the suite has to pass on whichever is
+    installed and the difference is invisible in the served application: the
+    OpenAPI document and the request routing are identical either way.
+    """
+    for route in getattr(app, "routes", []):
+        contexts = getattr(route, "effective_route_contexts", None)
+        if callable(contexts):
+            yield from contexts()
+        else:
+            yield route
+
+
 def _pairs(app: object) -> Set[Tuple[str, str]]:
-    """Every `(method, path)` a application serves, HEAD excluded.
+    """Every `(method, path)` an application serves, HEAD excluded.
 
     Starlette adds HEAD alongside GET on every route it generates, so counting
     it would double the GET routes and make every number in the plan wrong.
     """
     out: Set[Tuple[str, str]] = set()
-    for route in getattr(app, "routes", []):
+    for route in _effective_routes(app):
+        path = getattr(route, "path", None)
+        if path is None:
+            continue
         for method in getattr(route, "methods", None) or []:
             if method != "HEAD":
-                out.add((method, getattr(route, "path")))
+                out.add((method, path))
     return out
 
 
@@ -180,10 +226,13 @@ def test_no_route_is_registered_twice() -> None:
     from app.main import app
 
     seen: List[Tuple[str, str]] = []
-    for route in app.routes:
+    for route in _effective_routes(app):
+        path = getattr(route, "path", None)
+        if path is None:
+            continue
         for method in getattr(route, "methods", None) or []:
             if method != "HEAD":
-                seen.append((method, getattr(route, "path")))
+                seen.append((method, path))
     duplicates = sorted({pair for pair in seen if seen.count(pair) > 1})
     assert duplicates == [], f"routes registered more than once: {duplicates}"
 
@@ -238,9 +287,10 @@ def test_the_price_alert_unsubscribe_route_is_registered_first() -> None:
     from app.main import app
 
     paths = [
-        getattr(route, "path")
-        for route in app.routes
-        if getattr(route, "path", "").startswith("/api/part-price-alerts")
+        path
+        for route in _effective_routes(app)
+        for path in [getattr(route, "path", None)]
+        if path is not None and path.startswith("/api/part-price-alerts")
     ]
     unsubscribe = paths.index("/api/part-price-alerts/unsubscribe")
     parameterised = min(index for index, path in enumerate(paths) if "{alert_id}" in path)

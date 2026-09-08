@@ -49,17 +49,35 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
     from fastapi import FastAPI
 
 
+def _startup_tasks() -> None:
+    """Call `app.main.run_startup_tasks`, looked up at startup rather than bound.
+
+    `tests/test_lambda_handler.py` patches `app.main.run_startup_tasks` and
+    asserts the lifespan honours `settings.RUN_STARTUP_TASKS`. Going through the
+    module attribute here, at the moment the lifespan runs, is what lets that
+    patch take effect; a reference captured when the application was built would
+    have been taken before the patch existed.
+
+    The import is inside the function because `app.main` imports this module.
+    """
+    from app import main
+
+    main.run_startup_tasks()
+
+
 def build_app(startup_tasks: Optional[Callable[[], None]] = None) -> "FastAPI":
     """Every domain's routers, plus the five root routes, on one application.
 
-    `startup_tasks` is threaded through so `app.main` can keep the module-level
-    `run_startup_tasks` name its tests patch. Left unset it is
-    `app.composition.wiring.run_startup_tasks`, the same function body
-    `app/main.py` used to define.
+    Called once, at the bottom of this module. `app/main.py` re-exports the
+    result rather than calling this again, so there is exactly one Root A
+    application per process.
     """
     from app.composition.wiring import build_domain_app
 
-    return build_domain_app(list(DOMAINS.values()), startup_tasks=startup_tasks)
+    return build_domain_app(
+        list(DOMAINS.values()),
+        startup_tasks=startup_tasks if startup_tasks is not None else _startup_tasks,
+    )
 
 
 # Logging is configured at import, as `app/main.py` has always done it, because
