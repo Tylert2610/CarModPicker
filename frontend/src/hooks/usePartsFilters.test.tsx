@@ -42,7 +42,7 @@ beforeEach(() => {
     if (url === '/part-manufacturers/') {
       return Promise.resolve({ data: [] });
     }
-    if (url.startsWith('/car-generations/stats/makes')) {
+    if (url.startsWith('/car-generations/stats/car-makes')) {
       return Promise.resolve({ data: { Toyota: 1 } });
     }
     if (url.startsWith('/car-generations/') && !url.includes('filter')) {

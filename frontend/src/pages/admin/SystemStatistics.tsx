@@ -9,7 +9,10 @@ import { ErrorAlert } from '../../components/ui/alert';
 import { Button } from '../../components/ui/button';
 import { Card } from '../../components/ui/card';
 import Spinner from '../../components/ui/spinner';
-import type { AdminTableCountsResponse, CrawlBucketSummaryResponse } from '../../api/admin';
+import type {
+  AdminTableCountsResponse,
+  CrawlBucketSummaryResponse,
+} from '../../api/admin';
 import type { BucketEntityTypeCountResponse } from '../../api/images';
 import { adminApi } from '../../api/admin';
 import { bugReportsApi } from '../../api/bug_reports';

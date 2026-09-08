@@ -51,9 +51,8 @@ const { mockApiClient, mockLogout, mockRemoveStoredToken } = vi.hoisted(() => ({
 // `../api/auth`. Override the two named exports whose calls this file asserts
 // on with our hoisted vi.fn()s, leaving the rest of each module intact.
 vi.mock('../api/auth', async () => {
-  const actual = await vi.importActual<typeof import('../api/auth')>(
-    '../api/auth'
-  );
+  const actual =
+    await vi.importActual<typeof import('../api/auth')>('../api/auth');
   return {
     ...actual,
     authApi: { logout: mockLogout },
