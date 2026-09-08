@@ -233,6 +233,18 @@ class Settings(BaseSettings):
     RATE_LIMIT_ADMIN_REQUESTS_PER_MINUTE: int = 30
     RATE_LIMIT_ADMIN_REQUESTS_PER_HOUR: int = 300
 
+    # Layer 2: the shared, DynamoDB backed limiter. Layer 1 is the in-memory limiter
+    # above, which stays because it is free and absorbs a burst inside one execution
+    # environment before any network call happens. Layer 2 is what makes a limit hold
+    # across execution environments and, after the split, across the nine functions.
+    #
+    # The table name is not configurable. It is `<prefix>-rate-limits` by the platform
+    # standard, resolved from DYNAMODB_TABLE_PREFIX like every other table, and
+    # RATE_LIMITS_TABLE below exists only so the deployed function can be pointed at a
+    # differently named table without a code change. Leaving it empty is the normal case.
+    ENABLE_SHARED_RATE_LIMITING: bool = True
+    RATE_LIMITS_TABLE: str = ""
+
     # S3 storage settings. On App Runner, these are set via Terraform env vars; credentials
     # come from the App Runner instance IAM role (AWS_ACCESS_KEY_ID/SECRET left empty).
     # Accepts alternative variable names for local dev flexibility.
