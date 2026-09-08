@@ -7,12 +7,7 @@
 // global vi.mock('../api/client') from setup.ts (D-18) is the same mock the
 // real adminApi.getExtractionHealth() resolves through, so seeding
 // vi.mocked(apiClient.get) here drives the page's data-fetch effect.
-/* eslint-disable @typescript-eslint/unbound-method --
- * vi.mocked(apiClient.get) is the canonical Vitest pattern for typed mock
- * introspection; unbound-method rule fires on the method-reference even
- * though we never invoke it as an unbound function. Same suppression used
- * by SystemStatistics.test.tsx and admin.test.ts.
- */
+
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { apiClient } from '../../api/client';
 import {

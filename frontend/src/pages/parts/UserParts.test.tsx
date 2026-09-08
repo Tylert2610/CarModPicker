@@ -4,7 +4,7 @@
 // This file builds a local render that wraps children in <MemoryRouter> and
 // seeds useAuth via the same mockUseAuth singleton test-utils uses, so the
 // auth scenario is set per test without going through customRender.
-/* eslint-disable @typescript-eslint/unbound-method */
+
 import type { ReactElement, ReactNode } from 'react';
 import { render as rtlRender, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';

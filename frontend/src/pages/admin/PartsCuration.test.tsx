@@ -1,7 +1,3 @@
-/* eslint-disable @typescript-eslint/unbound-method --
- * vi.mocked(apiClient.get/post) is the canonical Phase 8 mocking pattern.
- */
-
 // Phase 8 plan 08-18 (Wave 4 — D-02) — PartsCuration admin page test.
 //
 // PartsCuration is the admin canonical-part curation workflow page (762 lines).

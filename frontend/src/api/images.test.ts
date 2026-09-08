@@ -18,11 +18,10 @@ import {
 import { apiClient } from './client';
 import { imageApi } from './images';
 
-/* eslint-disable-next-line @typescript-eslint/unbound-method */
 const getMock = apiClient.get as MockedFunction<typeof apiClient.get>;
-/* eslint-disable-next-line @typescript-eslint/unbound-method */
+
 const postMock = apiClient.post as MockedFunction<typeof apiClient.post>;
-/* eslint-disable-next-line @typescript-eslint/unbound-method */
+
 const deleteMock = apiClient.delete as MockedFunction<typeof apiClient.delete>;
 
 describe('imageApi — uploadImage (FormData)', () => {

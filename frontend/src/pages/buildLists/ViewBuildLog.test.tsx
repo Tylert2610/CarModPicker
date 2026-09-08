@@ -28,7 +28,7 @@
 // `testScenarios.authenticated` is kept below for conceptual alignment and
 // to keep this file discoverable by the phase-wide grep for that token.
 
-/* eslint-disable @typescript-eslint/unbound-method, @typescript-eslint/no-unsafe-assignment --
+/* eslint-disable @typescript-eslint/no-unsafe-assignment --
  * vi.mocked(apiClient.post) is the canonical Vitest pattern for typed mock
  * introspection; ESLint's unbound-method rule is a false positive here.
  * `expect.objectContaining(...)` returns `any` and trips no-unsafe-assignment

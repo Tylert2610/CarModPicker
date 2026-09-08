@@ -1,7 +1,3 @@
-/* eslint-disable @typescript-eslint/unbound-method --
- * vi.mocked(apiClient.get) is the canonical Phase 8 mocking pattern.
- */
-
 // Phase 8 plan 08-14 (D-11) — Home page happy-path + auth-branch tests.
 //
 // Home pulls named domain APIs (buildListsApi/partsApi/retailersApi/

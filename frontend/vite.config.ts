@@ -8,6 +8,13 @@ import { defineConfig } from 'vite';
 const isCIBuild = !!process.env.CI && !!process.env.SENTRY_AUTH_TOKEN;
 
 // https://vite.dev/config/
+/** `{ key: value }` when the value is set, and nothing at all when it is not. */
+const whenSet = <K extends string>(
+  key: K,
+  value: string | undefined
+): Record<K, string> | Record<string, never> =>
+  value === undefined ? {} : ({ [key]: value } as Record<K, string>);
+
 export default defineConfig({
   plugins: [
     react(),
@@ -15,10 +22,17 @@ export default defineConfig({
     ...(isCIBuild
       ? [
           sentryVitePlugin({
-            org: process.env.SENTRY_ORG,
-            project: process.env.SENTRY_PROJECT,
-            authToken: process.env.SENTRY_AUTH_TOKEN,
-            release: { name: process.env.SENTRY_RELEASE },
+            // Every key is spread rather than assigned, so an unset variable
+            // leaves the key absent and the plugin falls back to its own
+            // default. Assigning an explicit `undefined` is not the same thing
+            // to the plugin, and is what the shared tsconfig's
+            // exactOptionalPropertyTypes flagged here.
+            ...whenSet('org', process.env.SENTRY_ORG),
+            ...whenSet('project', process.env.SENTRY_PROJECT),
+            ...whenSet('authToken', process.env.SENTRY_AUTH_TOKEN),
+            ...(process.env.SENTRY_RELEASE !== undefined
+              ? { release: { name: process.env.SENTRY_RELEASE } }
+              : {}),
           }),
         ]
       : []),
@@ -50,7 +64,11 @@ export default defineConfig({
           if (id.includes('node_modules')) {
             return 'vendor';
           }
-          // App code: no manual chunks; Rollup splits by lazy() routes in App.tsx
+          // App code: no manual chunks; Rollup splits by lazy() routes in
+          // App.tsx. Returned explicitly because `undefined` is what tells
+          // Rollup to decide, and an implicit fall-through reads as an
+          // oversight.
+          return undefined;
         },
       },
     },

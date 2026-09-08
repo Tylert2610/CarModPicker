@@ -7,7 +7,7 @@
 // We route responses by URL prefix via a single vi.mocked(apiClient.get)
 // implementation so all effects settle with deterministic data.
 
-/* eslint-disable @typescript-eslint/unbound-method, @typescript-eslint/prefer-promise-reject-errors --
+/* eslint-disable @typescript-eslint/prefer-promise-reject-errors --
  * vi.mocked(apiClient.get) is the canonical Vitest pattern for typed mock
  * introspection (same rationale as AuthContext.test.tsx). The AxiosError-shaped
  * rejection object is intentionally plain (not an Error instance) so it mimics

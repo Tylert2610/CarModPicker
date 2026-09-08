@@ -1,7 +1,3 @@
-/* eslint-disable @typescript-eslint/unbound-method --
- * vi.mocked(apiClient.get) is the canonical Phase 8 mocking pattern.
- */
-
 // Phase 8 plan 08-14 (D-11) — ViewUser public-profile render + 404 path.
 //
 // ViewUser imports `apiClient` from `../api/client` and `buildListsApi` from

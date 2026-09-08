@@ -17,7 +17,7 @@
 // This is the canonical vitest pattern for API-module tests (we MUST reference
 // the method to set up mocks and assert call shape), so we disable the rule
 // file-wide here. Matches the pattern every Wave 1 API test file will adopt.
-/* eslint-disable @typescript-eslint/unbound-method */
+
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiClient } from './client';
 import { adminApi, type ExtractionHealthResponse } from './admin';

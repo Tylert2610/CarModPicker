@@ -26,7 +26,7 @@ import { mockBuildList, mockPart, mockUser } from '../test/mocks/api';
 // setup.ts (D-18) installs `vi.fn()` for every HTTP verb; the cast below
 // reflects the mocked reality. The original AxiosInstance method IS unbound
 // in general, but here apiClient IS the mock object, so the cast is safe.
-/* eslint-disable-next-line @typescript-eslint/unbound-method */
+
 const getMock = apiClient.get as MockedFunction<typeof apiClient.get>;
 
 function makeEmptyResults(query: string): SearchResults {

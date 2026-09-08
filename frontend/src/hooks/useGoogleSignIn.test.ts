@@ -1,5 +1,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { ApiClientResponse } from '../api/client';
+import { buildResponse } from '../test/apiResponse';
 import { useGoogleSignIn } from './useGoogleSignIn';
 import { authApi } from '../api/auth';
 import type { UserRead } from '../types/Api';
@@ -29,15 +31,8 @@ vi.mock('../api/auth', async () => {
   };
 });
 
-async function buildGoogleResponse<T>(data: T) {
-  const { AxiosHeaders } = await import('axios');
-  return {
-    data,
-    status: 200,
-    statusText: 'OK',
-    headers: {},
-    config: { headers: new AxiosHeaders() },
-  };
+function buildGoogleResponse<T>(data: T): ApiClientResponse<T> {
+  return buildResponse(data);
 }
 
 describe('useGoogleSignIn — env gate documentation', () => {
@@ -87,7 +82,7 @@ describe('useGoogleSignIn', () => {
   it('calls onLoggedIn and returns to idle when server returns an access_token', async () => {
     const user: UserRead = mockUser;
     vi.mocked(authApi.googleSignIn).mockResolvedValueOnce(
-      await buildGoogleResponse({
+      buildGoogleResponse({
         access_token: 'tok',
         token_type: 'bearer',
         user,
@@ -111,7 +106,7 @@ describe('useGoogleSignIn', () => {
 
   it('routes to signup state when server requires_signup', async () => {
     vi.mocked(authApi.googleSignIn).mockResolvedValueOnce(
-      await buildGoogleResponse({
+      buildGoogleResponse({
         requires_signup: true,
         signup_token: 'signup-token',
         suggested_username: 'newuser',

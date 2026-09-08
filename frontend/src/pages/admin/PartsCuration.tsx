@@ -25,7 +25,7 @@ import type {
 } from '../../api/admin';
 import { getApiErrorMessage } from '../../utils/apiError';
 
-function formatAxiosError(err: unknown, fallback: string): string {
+function formatAdminError(err: unknown, fallback: string): string {
   return getApiErrorMessage(err, err instanceof Error ? err.message : fallback);
 }
 
@@ -197,7 +197,7 @@ function PartsCuration() {
       setLinkGroup(resp.data);
     } catch (err) {
       setLinkGroup(null);
-      setGroupError(formatAxiosError(err, 'Failed to load link group.'));
+      setGroupError(formatAdminError(err, 'Failed to load link group.'));
     } finally {
       setIsLoadingGroup(false);
     }
@@ -251,7 +251,7 @@ function PartsCuration() {
       }
     } catch (err) {
       setUrlLookupError(
-        formatAxiosError(err, 'Failed to look up parts by URL.')
+        formatAdminError(err, 'Failed to look up parts by URL.')
       );
     } finally {
       setIsLookingUpUrl(false);
@@ -267,7 +267,7 @@ function PartsCuration() {
       setLookupId(resp.data.canonical_id);
       setSearchParams({ part: resp.data.canonical_id }, { replace: true });
     } catch (err) {
-      setActionError(formatAxiosError(err, 'Promote failed.'));
+      setActionError(formatAdminError(err, 'Promote failed.'));
     } finally {
       setIsActionBusy(false);
     }
@@ -284,7 +284,7 @@ function PartsCuration() {
         setLinkGroup(resp.data);
       }
     } catch (err) {
-      setActionError(formatAxiosError(err, 'Unlink failed.'));
+      setActionError(formatAdminError(err, 'Unlink failed.'));
     } finally {
       setIsActionBusy(false);
     }
@@ -325,7 +325,7 @@ function PartsCuration() {
       setManualDuplicateId('');
       setManualCanonicalId('');
     } catch (err) {
-      setManualLinkError(formatAxiosError(err, 'Manual link failed.'));
+      setManualLinkError(formatAdminError(err, 'Manual link failed.'));
     } finally {
       setIsManualLinking(false);
     }
@@ -343,7 +343,7 @@ function PartsCuration() {
       });
       setRescanResult(resp.data);
     } catch (err) {
-      setRescanError(formatAxiosError(err, 'Rescan failed.'));
+      setRescanError(formatAdminError(err, 'Rescan failed.'));
     } finally {
       setIsRescanning(false);
     }

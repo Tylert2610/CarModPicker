@@ -1,8 +1,3 @@
-/* eslint-disable @typescript-eslint/unbound-method --
- * vi.mocked(apiClient.get) is the canonical Vitest pattern for typed mock
- * introspection; unbound-method rule flags the method access even though we
- * never actually invoke it as an unbound function.
- */
 // Phase 8 plan 08-15 (D-02 Wave 4) — SystemStatistics page coverage.
 //
 // SystemStatistics.tsx (755 lines) is the primary admin stats dashboard.

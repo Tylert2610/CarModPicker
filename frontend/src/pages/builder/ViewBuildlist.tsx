@@ -179,9 +179,8 @@ function ViewBuildList() {
   }, [voteSummaryData]);
 
   const handleVoteUpdate = (
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _entityId: string,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+
     _newVote: 'upvote' | 'downvote' | null
   ) => {
     // Refresh vote summary after voting

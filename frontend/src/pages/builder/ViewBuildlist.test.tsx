@@ -14,11 +14,6 @@
 // we inline its shape locally so this file sets the auth branch without going
 // through customRender.
 
-/* eslint-disable @typescript-eslint/unbound-method --
- * vi.mocked(apiClient.get) is the canonical Vitest pattern for typed mock
- * introspection; same rationale as AuthContext.test.tsx.
- */
-
 import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';

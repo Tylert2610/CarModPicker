@@ -1,11 +1,6 @@
-/* eslint-disable @typescript-eslint/unbound-method --
- * vi.mocked(apiClient.get).mockResolvedValueOnce(...) is the canonical
- * mock pattern; the unbound-method rule flags the reference syntactically
- * but vi.mocked returns a spy wrapper.
- */
 import { act, render, waitFor } from '@testing-library/react';
-import { AxiosHeaders, type AxiosResponse } from 'axios';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { buildResponse } from '../../test/apiResponse';
 import { apiClient } from '../../api/client';
 import SparklineCell from './SparklineCell';
 import { __resetSparklineCellCache } from './sparkline-cache';
@@ -14,16 +9,6 @@ import type {
   PriceHistorySinglePartResponse,
   PriceHistorySummary,
 } from '../../types/Api';
-
-function buildResponse<T>(data: T): AxiosResponse<T> {
-  return {
-    data,
-    status: 200,
-    statusText: 'OK',
-    headers: {},
-    config: { headers: new AxiosHeaders() },
-  };
-}
 
 function makeSummary(
   overrides: Partial<PriceHistorySummary> = {}

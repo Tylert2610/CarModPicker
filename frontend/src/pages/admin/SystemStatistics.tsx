@@ -1,4 +1,3 @@
-import axios from 'axios';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
@@ -15,6 +14,7 @@ import type {
 } from '../../api/admin';
 import type { BucketEntityTypeCountResponse } from '../../api/images';
 import { adminApi } from '../../api/admin';
+import { isApiErrorWithStatus } from '../../api/client';
 import { bugReportsApi } from '../../api/bug_reports';
 import { buildListPartsApi } from '../../api/build_list_parts';
 import { buildListsApi } from '../../api/build_lists';
@@ -30,10 +30,7 @@ import { usersApi } from '../../api/users';
 import { votesApi } from '../../api/votes';
 
 function getHttpStatus(error: unknown): number | undefined {
-  if (axios.isAxiosError(error)) {
-    return error.response?.status;
-  }
-  return undefined;
+  return isApiErrorWithStatus(error) ? error.status : undefined;
 }
 
 /** Preferred order for S3 key prefix labels (matches upload entity_type values). */

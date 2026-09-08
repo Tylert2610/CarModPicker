@@ -13,7 +13,7 @@
 //   3. When the retailers surface grows (planner: "richer surface lands when
 //      needed"), a future plan has an existing file to extend instead of
 //      removing a coverage.exclude entry + authoring from scratch.
-/* eslint-disable @typescript-eslint/unbound-method */
+
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiClient } from './client';
 import { retailersApi } from './retailers';

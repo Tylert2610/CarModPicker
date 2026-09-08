@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/unbound-method, @typescript-eslint/no-unsafe-assignment --
+/* eslint-disable @typescript-eslint/no-unsafe-assignment --
  * vi.mocked(apiClient.*) is the canonical Phase 8 mocking pattern.
  * `expect.objectContaining(...)` returns `any` and trips no-unsafe-assignment
  * when nested as a property value — false positive in this matcher pattern.

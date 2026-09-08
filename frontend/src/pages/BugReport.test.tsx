@@ -1,7 +1,3 @@
-/* eslint-disable @typescript-eslint/unbound-method --
- * vi.mocked(apiClient.post) is the canonical Phase 8 mocking pattern.
- */
-
 // Phase 8 plan 08-14 (D-11) — BugReport page form render + submit + error.
 //
 // BugReport imports `bugReportsApi` from `../api/bug_reports`, which calls the

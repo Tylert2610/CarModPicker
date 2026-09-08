@@ -5,7 +5,7 @@
 // `mockApiClient` object identity (see frontend/src/test/setup.ts dual-mock block).
 // `expect.objectContaining(...)` returns `any`, which trips no-unsafe-assignment when
 // passed as a property value — also a false positive in this matcher pattern.
-/* eslint-disable @typescript-eslint/unbound-method, @typescript-eslint/no-unsafe-assignment */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiClient } from './client';
 import { bugReportsApi } from './bug_reports';

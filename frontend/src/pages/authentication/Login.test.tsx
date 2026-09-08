@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/unbound-method */
 // Phase 8 Plan 10 (D-11 Wave 3) — Login page coverage.
 //
 // Login.tsx wires together three sign-in surfaces: the password form (posts to

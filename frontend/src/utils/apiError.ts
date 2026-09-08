@@ -12,7 +12,13 @@
  * call sites read `data.message || data.detail` in a fallback chain. The
  * backend now renders one shape everywhere, so `message` is the only field to
  * read and the `.detail` fallbacks are gone.
+ *
+ * This envelope is CarModPicker's own and stays local. `formatApiErrorMessage`
+ * in `@webbpulse/api-client` reads FastAPI's `detail` or a bare `message`,
+ * neither of which carries `error_code` or the structured `details` this
+ * application branches on, so the shared formatter would lose information here.
  */
+import { ApiError } from '@webbpulse/api-client';
 
 /** The error body every backend response carries on a non-2xx status. */
 export interface ApiErrorEnvelope {
@@ -47,19 +53,23 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
  * narrows rather than asserts, and every consumer supplies its own fallback
  * message for the cases it returns null on.
  *
- * The check is on the shape rather than on `isAxiosError`, because a rejection
- * that carries `response.data` with a string `message` is the envelope whether
- * or not the flag is set, and some call sites already branch on `'response' in
- * err` alone.
+ * Two carriers are accepted. `ApiError` from `@webbpulse/api-client` holds the
+ * parsed body on `.body`, and that is what the transport throws now. The older
+ * `response.data` shape is still read because a rejection that carries it with
+ * a string `message` is the same envelope, and some call sites construct one.
  */
 export const getApiErrorEnvelope = (err: unknown): ApiErrorEnvelope | null => {
   if (!isRecord(err)) return null;
+  const body = err instanceof ApiError ? err.body : readLegacyBody(err);
+  if (!isRecord(body)) return null;
+  if (typeof body['message'] !== 'string') return null;
+  return body as unknown as ApiErrorEnvelope;
+};
+
+/** The `response.data` an axios style rejection used to carry. */
+const readLegacyBody = (err: Record<string, unknown>): unknown => {
   const response = err['response'];
-  if (!isRecord(response)) return null;
-  const data = response['data'];
-  if (!isRecord(data)) return null;
-  if (typeof data['message'] !== 'string') return null;
-  return data as unknown as ApiErrorEnvelope;
+  return isRecord(response) ? response['data'] : undefined;
 };
 
 /**
@@ -73,8 +83,9 @@ export const getApiErrorMessage = (err: unknown, fallback: string): string => {
   if (envelope?.message) return envelope.message;
   // A plain Error that never reached the API (a thrown guard, an aborted
   // request) still says more than the generic fallback does. Anything that
-  // carried a `response` has already been handled above, or carried a body
-  // this helper could not read, and its raw message is not user facing.
+  // reached the API has already been handled above, or carried a body this
+  // helper could not read, and its raw message is not user facing.
+  if (err instanceof ApiError) return fallback;
   if (isRecord(err) && 'response' in err) return fallback;
   if (err instanceof Error && err.message) return err.message;
   return fallback;
