@@ -1093,6 +1093,63 @@ the three native pins that question names, `Pillow`, `bcrypt` and `webauthn`,
 all publish `aarch64` wheels, and the base image is Debian trixie, whose glibc
 satisfies the `manylinux_2_28` floor Pillow's wheel carries.
 
+**Row 12 is delivered.** `.github/workflows/deploy-backend.yml` is a new file
+rather than an edit to `backend-deploy.yml`, and that is the one place this
+differs from what section 4 sketched. Section 4 describes replacing
+`backend-deploy.yml`'s build half while leaving its zip chain intact; splitting
+the two into separate files is how that is done, because the monolith
+`carmodpicker-<env>-api` is still the only function any route reaches and an
+image build that fails must not be able to hold back or roll back the deploy
+that serves requests. Two files cannot share a `needs` edge even by accident,
+which one file with two independent chains can grow later. `backend-deploy.yml`
+is untouched by this PR; section 6.5 is what deletes it.
+
+The chain is `resolve-env`, `build-images`, `image-map`, `existing-functions`,
+`deploy-images`, `smoke-domains`. Section 4 named five jobs and there are six:
+`existing-functions` is the addition, and it is what makes the deploy half safe
+to leave switched on for the whole migration rather than toggled by hand nine
+times. Portfolio never needed it, because its Terraform created all four of its
+functions before its deploy gate was first turned on, so its deploy was either
+wholly off or wholly on. Here row 13 creates `media` alone and rows 18 through 31
+add the other eight one at a time, so for most of this migration the truthful
+state is that some of the nine exist. A map naming a function that does not exist
+fails `aws lambda wait function-updated-v2` with `ResourceNotFoundException` and
+takes the whole deploy job red, including the domains that would have succeeded.
+So the map is filtered with `get-function-configuration` before it is handed
+over, and only a genuine `ResourceNotFoundException` is read as absence: any
+other error fails the job, because treating a denied call or an expired
+credential as "not created yet" would deploy nothing and report success.
+
+Both halves are gated by repository variables that are absent today, so this PR
+changes no behaviour on merge: `BACKEND_IMAGE_BUILD_ENABLED` turns on the build
+and `BACKEND_IMAGE_DEPLOY_ENABLED` turns on the deploy, and an unset variable is
+the empty string that neither `if` matches. CarModPicker has no
+`STAGING_DEPLOY_ENABLED` variable, unlike Portfolio, so the build gate is the
+only gate on a staging push. `workflow_dispatch` is present because the workflow
+triggers on push and never on a pull request, which makes a merge the earliest
+point any of this can run; the first build of the nine images is meant to be
+started and watched deliberately rather than discovered in a merge's logs.
+
+The reusable workflow calls are pinned to `@v1.2.1` exactly rather than to the
+moving `v1` tag, so the behaviour of this file cannot change without a commit to
+it. `build-images` passes `DOMAIN` as its only build argument: unlike Portfolio's
+caller there is no `READINESS_PROTOCOL`, because row 11 confirmed all nine poll
+`/health` over HTTP and the Dockerfile takes no argument for it. The deploy role
+was checked against the four grants this needs, and PR #327 had already added all
+of them: ECR push and `BatchGetImage` on the nine `carmodpicker-staging/<domain>`
+repositories, ECR pull on `webbpulse/python-lambda-base` in the Artifacts
+account, CodeArtifact read with `sts:GetServiceBearerToken`, and
+`lambda:InvokeFunction` plus `GetFunctionConfiguration` on all nine. Nothing was
+missing, so no Terraform change rides along with this PR and its expected plan
+stays zero.
+
+What this PR cannot prove is the build itself. The workflow does not run on pull
+requests, and row 11 built all nine images by hand rather than in CI, so the
+first push to `staging` with the build gate on is the first time the Dockerfile
+is built by Actions: the first exercise of the CodeArtifact token as a BuildKit
+secret, of the cross-account base image pull, and of `arm64` on a GitHub runner,
+which is open question 7. The PR body carries the checklist for that run.
+
 PRs 1, 2, 3, 9, 10, and 33 are independent of everything else and can run in
 parallel. PR 22 is the hard gate: nothing from 23 onward can start without it,
 which is why the five uncoupled domains are cut first, buying time for the
