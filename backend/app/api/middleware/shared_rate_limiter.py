@@ -19,11 +19,15 @@ migration, and falls back to the real peer address only in local development and
 tests.
 
 **It fails open.** Every DynamoDB call is wrapped. A missing table, an expired
-credential, a timeout, a throttle: all of them log at WARNING with
-`rate_limit_failed_open=True` and allow the request. A rate limiter is a protective
-control, not an authorisation control, so refusing traffic because DynamoDB is
-unavailable turns a dependency blip into an outage, which is the worse failure. The
-WARNING is the compensating control and is what an alarm should watch. Nothing in
+credential, a timeout, a throttle: all of them log at WARNING carrying a top-level
+JSON field `rate_limit_failed_open: true`, and allow the request. A rate limiter is
+a protective control, not an authorisation control, so refusing traffic because
+DynamoDB is unavailable turns a dependency blip into an outage, which is the worse
+failure. The WARNING is the compensating control and is what an alarm should watch:
+the `rate_limit_fail_open_filter_pattern` default in the shared `api-alarms` module
+is `{ $.rate_limit_failed_open IS TRUE }`, which selects on a real JSON boolean at
+the top level of the record and cannot see inside the message string, so the flag is
+passed through `extra=` rather than interpolated into the message text. Nothing in
 this module can raise into the request path or produce a 5xx.
 
 **Items expire on their own.** Each counter carries an `expires_at` TTL attribute,
@@ -39,10 +43,13 @@ are meant to converge on one implementation, so differences that are not forced 
 avoided.
 """
 
+import hashlib
 import json
 import logging
 import time
-from typing import Any, Mapping, Optional, Protocol
+from contextlib import contextmanager
+from contextvars import ContextVar
+from typing import Any, Iterator, Mapping, Optional, Protocol
 
 from botocore.exceptions import ClientError
 from fastapi import Request
@@ -60,6 +67,29 @@ REQUEST_CONTEXT_HEADER = "x-amzn-request-context"
 TTL_ATTRIBUTE = "expires_at"
 
 COUNT_ATTRIBUTE = "requests"
+
+# How many hex characters of the identity digest reach the log. The identity is a client
+# IP, so it is not logged raw; a truncated SHA-256 keeps two fail-open records for the same
+# caller correlatable without putting the address itself in CloudWatch. Sixteen characters
+# matches the user hash `app/api/services/storage_service.py` already uses.
+CLIENT_KEY_DIGEST_CHARS = 16
+
+# The route the current request is on, for the fail-open record. A ContextVar rather than
+# instance state because `shared_rate_limiter` is one module level object shared by every
+# concurrent request in the execution environment, so an attribute set per request would be
+# read by whichever request happened to log next. `request_route` is what the middleware
+# sets; anything calling the limiter outside a request scope simply logs `route: null`.
+current_route_var: ContextVar[Optional[str]] = ContextVar("rate_limit_route", default=None)
+
+
+@contextmanager
+def request_route(route: Optional[str]) -> Iterator[None]:
+    """Scope `route` to the current request for the duration of the limiter call."""
+    token = current_route_var.set(route)
+    try:
+        yield
+    finally:
+        current_route_var.reset(token)
 
 
 class TableClient(Protocol):
@@ -188,20 +218,49 @@ class SharedRateLimiter:
         return {"pk": f"RATE#{identity}"}
 
     @staticmethod
-    def _failed_open(operation: str, error: BaseException) -> None:
+    def client_key(identity: str) -> str:
+        """A stable, non-reversible handle for one caller, safe to log.
+
+        `identity` is the caller's IP as API Gateway saw it. Two fail-open records from
+        the same caller should be correlatable in CloudWatch, but the address itself does
+        not need to be there to do that, so what is logged is a truncated SHA-256 rather
+        than the address.
+        """
+        return hashlib.sha256(identity.encode("utf-8")).hexdigest()[:CLIENT_KEY_DIGEST_CHARS]
+
+    def _failed_open(
+        self,
+        operation: str,
+        error: BaseException,
+        identity: Optional[str] = None,
+    ) -> None:
         """Record a limiter failure that let a request through.
 
         Deliberately broad at the call sites. botocore raises `ClientError`,
         `EndpointConnectionError`, `NoCredentialsError` and `ReadTimeoutError` from
         unrelated base classes, and the right response to all of them is the same:
         allow the request and make the failure visible.
+
+        The flag travels in `extra=`, not in the message. `webbpulse.logging.JsonFormatter`
+        copies every non-reserved `LogRecord` attribute to the top level of the emitted
+        object, so `rate_limit_failed_open` lands there as a real JSON `true` and the
+        `{ $.rate_limit_failed_open IS TRUE }` metric filter matches it. Interpolating the
+        flag into the message text instead would bury it inside the `message` string, where
+        a JSON filter pattern cannot select on it.
         """
         logger.warning(
-            "Shared rate limit check failed; allowing the request. "
-            "rate_limit_failed_open=True operation=%s error_type=%s error_message=%s",
+            "Shared rate limit check failed; allowing the request. operation=%s error_type=%s error_message=%s",
             operation,
             type(error).__name__,
             error,
+            extra={
+                "rate_limit_failed_open": True,
+                "rate_limit_operation": operation,
+                "exception_type": type(error).__name__,
+                "exception_message": str(error),
+                "client_key": self.client_key(identity) if identity is not None else None,
+                "route": current_route_var.get(),
+            },
         )
 
     def _current(self, identity: str) -> Optional[Mapping[str, Any]]:
@@ -218,7 +277,7 @@ class SharedRateLimiter:
         try:
             item = self._current(identity)
         except Exception as error:  # noqa: BLE001 - fail open on every backend failure
-            self._failed_open("is_limited", error)
+            self._failed_open("is_limited", error, identity)
             return False
         if item is None:
             return False
@@ -229,7 +288,7 @@ class SharedRateLimiter:
         try:
             item = self._current(identity)
         except Exception as error:  # noqa: BLE001 - fail open on every backend failure
-            self._failed_open("retry_after", error)
+            self._failed_open("retry_after", error, identity)
             return None
         if item is None or int(item.get(COUNT_ATTRIBUTE, 0)) < self.max_requests:
             return None
@@ -258,10 +317,10 @@ class SharedRateLimiter:
             return int(response["Attributes"][COUNT_ATTRIBUTE])
         except ClientError as error:
             if _error_code(error) != "ConditionalCheckFailedException":
-                self._failed_open("record_request", error)
+                self._failed_open("record_request", error, identity)
                 return 0
         except Exception as error:  # noqa: BLE001 - fail open on every backend failure
-            self._failed_open("record_request", error)
+            self._failed_open("record_request", error, identity)
             return 0
 
         # The window that was in the item has passed, so this request starts a new one.
@@ -275,7 +334,7 @@ class SharedRateLimiter:
                 }
             )
         except Exception as error:  # noqa: BLE001 - fail open on every backend failure
-            self._failed_open("record_request", error)
+            self._failed_open("record_request", error, identity)
             return 0
         return 1
 
