@@ -11,8 +11,13 @@ the adapter here would make this slice about two things at once.
 
 `build_app` is importable on its own and reads no AWS, which is what lets the
 tests build this application with no credentials and no network. Only `main`
-configures logging and initialises Sentry, because those are process-wide
-effects a test importing the module must not inherit.
+configures logging, tracing and Sentry, because those are process-wide effects
+a test importing the module must not inherit.
+
+Logging and tracing come from the shared `webbpulse` package. Tracing is wired
+but inert: `configure_tracing` returns early unless
+`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` is set, and nothing sets it yet, because
+this domain has no OTLP IAM grant. Row 16 of the split plan turns it on.
 """
 
 from typing import TYPE_CHECKING
@@ -20,7 +25,12 @@ from typing import TYPE_CHECKING
 from mangum import Mangum
 
 from app.composition.domains import DOMAINS
-from app.composition.wiring import build_domain_app, check_signing_key, configure_logging
+from app.composition.wiring import (
+    build_domain_app,
+    check_signing_key,
+    configure_logging,
+    configure_tracing,
+)
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from fastapi import FastAPI
@@ -35,17 +45,28 @@ def build_app() -> "FastAPI":
 
 def main() -> None:
     """Process-wide setup, then serve. Not run by importing this module."""
-    import uvicorn
+    from webbpulse.lambda_entry import run_uvicorn
 
-    from app.core.config import settings
     from app.core.sentry import init_sentry
 
-    configure_logging()
+    # Logging first: `configure_tracing` logs its own warnings, and they are
+    # worth having in the shared JSON format rather than in whatever the root
+    # logger defaulted to.
+    configure_logging(service=DOMAIN.service_name)
+    # A no-op unless OTEL_EXPORTER_OTLP_TRACES_ENDPOINT is set, which nothing
+    # sets today. See `configure_tracing` in `app.composition.wiring`: row 16 of
+    # the split plan is what turns this on, per domain.
+    configure_tracing(DOMAIN)
     # Before the application is built, so the Sentry integrations can patch the
-    # route handlers.
+    # route handlers. Sentry stays until row 16 replaces it with OpenTelemetry.
     init_sentry(server_name=DOMAIN.service_name)
     check_signing_key([DOMAIN])
-    uvicorn.run(build_app(), host="0.0.0.0", port=settings.PORT)  # nosec B104
+    # `run_uvicorn` binds AWS_LWA_PORT, then PORT, then 8080, which is the
+    # Web Adapter's own precedence. Binding a port the adapter is not polling
+    # presents as the readiness check never passing, with no application logs
+    # at all, so the precedence is worth taking from the package rather than
+    # reimplementing against settings.PORT.
+    run_uvicorn(build_app())
 
 
 app = build_app()

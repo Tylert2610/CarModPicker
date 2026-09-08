@@ -1,3 +1,38 @@
+# Backend CI.
+#
+# `requirements.txt` now starts with `webbpulse`, which is published only to
+# CodeArtifact (domain `webbpulse`, repository `python`, in the Artifacts
+# account), never to PyPI. So this job cannot resolve its dependencies at all
+# until it holds a CodeArtifact token, and the login has to run before
+# `pip install` because what it does is write the authenticated index URL into
+# pip.conf.
+#
+# The role comes from a repository variable rather than a GitHub Environment.
+# `AWS_DEPLOY_ROLE_ARN` lives on the `staging` and `production` Environments,
+# whose deployment branch policies admit only those branches, so a
+# `pull_request` job cannot read it. `CI_AWS_ROLE_ARN` is repository scoped for
+# that reason.
+#
+# It is one variable rather than a branch conditional on purpose. This workflow
+# runs only on `pull_request`, every run resolves the same read only package,
+# and the CodeArtifact domain lives in the Artifacts account rather than in
+# either deploy account, so there is nothing for a conditional to pick between.
+#
+# `CI_AWS_ROLE_ARN` currently names `carmodpicker-staging-github-actions-deploy`,
+# and that is a known compromise rather than the end state. That role already
+# holds the CodeArtifact read grants and `sts:GetServiceBearerToken` from #316,
+# and its trust already admits every subject in this repository, so pointing CI
+# at it needs no Terraform and no apply. What it also holds is
+# `lambda:UpdateFunctionCode` and `ecr:PutImage`, which a pull request job has
+# no use for: any branch that can open a pull request can therefore assume a
+# role that can deploy. Portfolio hit this and split out a
+# `webbpulse-staging-github-actions-ci` role whose only permissions are the
+# CodeArtifact reads and whose trust names the pull request and branch subjects
+# instead of a wildcard. CarModPicker needs the same split, in
+# `terraform/iam_github_actions.tf`, alongside the ECR grants section 3.2 of the
+# split plan already schedules for that file. Repointing this variable is the
+# whole of the follow up.
+#
 name: Backend CI
 
 on:
@@ -10,6 +45,12 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    # `id-token: write` is what lets the job mint the OIDC token it trades for
+    # the role. Declaring `permissions` at all drops every default to none, so
+    # `contents: read` has to be restated or the checkout fails.
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v7
 
@@ -18,6 +59,24 @@ jobs:
         with:
           python-version: "3.13"
           cache: "pip"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.CI_AWS_ROLE_ARN }}
+          aws-region: us-west-2
+
+      - name: Authenticate pip against CodeArtifact
+        # Writes an index URL carrying a 12 hour token into pip.conf, so every
+        # `pip install` after this step resolves `webbpulse` from CodeArtifact
+        # and everything else from PyPI upstream. Must precede the install.
+        run: |
+          aws codeartifact login \
+            --tool pip \
+            --domain webbpulse \
+            --domain-owner ${{ vars.CODEARTIFACT_DOMAIN_OWNER }} \
+            --repository python \
+            --region us-west-2
 
       - name: Install dependencies
         run: |
@@ -61,6 +120,9 @@ jobs:
         run: |
           cd backend
           # Ignore ecdsa CVE-2024-23342: Not exploitable in this codebase as we use HS256 (HMAC) algorithm, not ECDSA-based algorithms
+          # `webbpulse` resolves through the CodeArtifact index configured above.
+          # It has no advisory feed of its own, so `--skip-editable` is not
+          # enough and the package is simply audited like any other dependency.
           pip-audit -r requirements.txt --ignore-vuln CVE-2024-23342
 
       - name: Run tests with coverage

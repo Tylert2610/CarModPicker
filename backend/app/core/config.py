@@ -1,9 +1,47 @@
+"""CarModPicker's settings, on top of the shared package's base.
+
+`BaseServiceSettings` from `webbpulse.config` carries the six fields every
+WebbPulse service has: `environment`, `service_name`, `log_level`,
+`app_secrets_arn` and the two CORS fields. Everything below them is
+CarModPicker's own, and the ~200 `settings.SCREAMING_CASE` call sites across the
+application are untouched by the change.
+
+## What the base does and does not take over
+
+The base supplies the field set and the CSV-or-JSON parsing for list valued
+environment variables. It deliberately does **not** take over secret
+resolution here. `BaseServiceSettings.load_secrets` fetches the whole blob and
+returns it; CarModPicker's `_resolve_secret` resolves one named field at a time,
+consulting the live `os.environ` first, and is what PR 7 built so that a
+read-only domain never needs `secretsmanager:GetSecretValue`. Those semantics
+are not the base's, so `_resolve_secret`, `require_secrets` and the
+`app.core.secrets` cache stay exactly as PR 7 left them.
+
+## Two model_config keys are overridden on purpose
+
+`case_sensitive=True` and `populate_by_name=True` are CarModPicker's, not the
+base's. The base sets `case_sensitive=False`, which would make `SECRET_KEY` and
+`secret_key` the same variable; here `SECRET_KEY` is an alias onto
+`SECRET_KEY_SETTING` and a case-insensitive match would let the alias and the
+shadow field collide. Overriding the key rather than renaming the fields is what
+keeps this change about composition rather than about renaming.
+
+The base's lower case `environment` and `log_level` are mirrored from
+CarModPicker's own `APP_ENVIRONMENT` and log level after validation, so a caller
+reaching for either spelling sees the same value. `environment` needs the care:
+the base types it as a Literal of local/test/staging/production while
+`APP_ENVIRONMENT` has always been free text defaulting to "development", so the
+mapping is explicit and an unrecognised value lands on "local" rather than
+failing validation and taking down a cold start over a typo.
+"""
+
 import os
 from functools import lru_cache
 from urllib.parse import urlparse
 
 from pydantic import Field, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import SettingsConfigDict
+from webbpulse.config import BaseServiceSettings
 
 from app.core.secrets import fetch_app_secrets
 
@@ -15,7 +53,7 @@ from app.core.secrets import fetch_app_secrets
 SECRET_FIELDS = ("SECRET_KEY", "SENTRY_DSN")
 
 
-class Settings(BaseSettings):
+class Settings(BaseServiceSettings):
     # API settings
     API_STR: str = "/api"
     PROJECT_NAME: str = "CarModPicker"
@@ -137,7 +175,42 @@ class Settings(BaseSettings):
         if not self.S3_ENDPOINT_URL and self.AWS_ENDPOINT_URL:
             object.__setattr__(self, "S3_ENDPOINT_URL", self.AWS_ENDPOINT_URL)
 
+        self._mirror_base_fields()
         return self
+
+    #: `APP_ENVIRONMENT` is free text and has always defaulted to "development";
+    #: the base's `environment` is a Literal. An unrecognised value maps to
+    #: "local" rather than raising, so a typo in a Terraform variable degrades to
+    #: local-ish defaults instead of failing the process at construction.
+    _ENVIRONMENT_ALIASES = {
+        "development": "local",
+        "dev": "local",
+        "local": "local",
+        "test": "test",
+        "testing": "test",
+        "staging": "staging",
+        "production": "production",
+        "prod": "production",
+    }
+
+    def _mirror_base_fields(self) -> None:
+        """Fill the base's lower case fields from CarModPicker's own spellings.
+
+        A pydantic field cannot be shadowed by a property, so the two spellings
+        are reconciled after validation rather than by making one derive from the
+        other. CarModPicker's uppercase names stay the ones the application and
+        Terraform use; the lower case ones exist so anything reading a service
+        through `BaseServiceSettings` sees the same values.
+        """
+        object.__setattr__(
+            self,
+            "environment",
+            self._ENVIRONMENT_ALIASES.get(self.APP_ENVIRONMENT.strip().lower(), "local"),
+        )
+        object.__setattr__(self, "service_name", self.SENTRY_SERVICE_NAME or self.PROJECT_NAME)
+        object.__setattr__(self, "app_secrets_arn", self.APP_SECRETS_ARN)
+        object.__setattr__(self, "cors_allow_origins", self.allowed_origins_list)
+        object.__setattr__(self, "cors_allow_credentials", True)
 
     # CORS settings
     ALLOWED_ORIGINS: str = Field(
@@ -375,6 +448,10 @@ class Settings(BaseSettings):
                 f"as keys of the APP_SECRETS_ARN secret): {', '.join(missing)}"
             )
 
+    # Overrides the base's `case_sensitive=False`. See the module docstring:
+    # `SECRET_KEY` is an alias onto `SECRET_KEY_SETTING`, and a case-insensitive
+    # match would let the alias and its shadow field collide. `populate_by_name`
+    # is what makes that alias work from either spelling.
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
