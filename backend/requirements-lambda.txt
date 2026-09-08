@@ -4,8 +4,7 @@ click==8.5.0
 fastapi==0.141.1
 h11==0.16.0
 idna==3.19
-pydantic==2.13.3
-pydantic[email]
+pydantic[email]==2.13.3
 pydantic-settings==2.15.0
 python-dotenv==1.2.3
 python-json-logger==4.2.0
