@@ -1,12 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { LARGE_FETCH_LIMIT } from '../constants';
-import {
-  partManufacturersApi,
-  carGenerationsApi,
-  categoriesApi,
-  partsApi,
-} from '../services/Api';
+import { carGenerationsApi } from '../api/car_generations';
+import { categoriesApi } from '../api/categories';
+import { partManufacturersApi } from '../api/part_manufacturers';
+import { partsApi } from '../api/parts';
 import type {
   PartManufacturerResponse,
   CarGenerationRead,

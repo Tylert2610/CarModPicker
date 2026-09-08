@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import useApiRequest from '../../hooks/UseApiRequest';
-import { carGenerationsApi } from '../../services/Api';
+import { carGenerationsApi } from '../../api/car_generations';
 import type { CarGenerationRead } from '../../types/Api';
 import { normalizeCarReadList } from '../../utils/carUtils';
 import AddItemTile from '../buildLists/AddItemTile';

@@ -1,5 +1,4 @@
 // Build List Parts domain API. Mirrors backend endpoints/build_list_parts.py.
-// Extracted from services/Api.ts (lines 661-744) per Phase 6 D-22.
 // Relationships between global parts and build lists.
 import { apiClient } from './client';
 import type {

@@ -82,7 +82,7 @@ const ChangePasswordDialog: React.FC<ChangePasswordDialogProps> = ({
     setIsSubmitting(true);
 
     try {
-      const { usersApi } = await import('../../services/Api');
+      const { usersApi } = await import('../../api/users');
       const updateData: {
         current_password: string;
         password: string;

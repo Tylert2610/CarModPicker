@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { partReportsApi } from '../../services/Api';
+import { partReportsApi } from '../../api/reports';
 import { Button } from '../ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/dialog';
 

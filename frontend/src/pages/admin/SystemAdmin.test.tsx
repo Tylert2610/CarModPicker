@@ -4,11 +4,10 @@
 
 // Phase 8 plan 08-16 (Wave 4) — SystemAdmin admin page coverage.
 //
-// SystemAdmin imports `adminApi`, `appSettingsApi`, `imageApi` from
-// `../../services/Api` and also consumes `useAppSettings` (AppSettingsContext).
-// Global setup.ts only mocks `default: mockApiClient`; this file extends with
-// a local vi.mock of `../../services/Api` that forwards every named domain
-// API the page uses through the globally-mocked `../../api/client` apiClient.
+// SystemAdmin imports `adminApi` from `../../api/admin`, `appSettingsApi`
+// from `../../api/app_settings` and `imageApi` from `../../api/images`, and
+// also consumes `useAppSettings` (AppSettingsContext). Each of those modules
+// calls the apiClient that setup.ts mocks.
 //
 // `useAppSettings` is mocked directly to avoid wiring an AppSettingsProvider
 // (matches the Support.test.tsx precedent — mock the hook rather than the
@@ -32,36 +31,6 @@ import { mockUser } from '../../test/mocks/api';
 const adminUser = testScenarios.adminAuthenticated.initialAuthState.user;
 
 const mockSetAppSettings = vi.fn();
-
-vi.mock('../../services/Api', async () => {
-  const clientMod = await import('../../api/client');
-  const client = clientMod.apiClient;
-  return {
-    default: client,
-    apiClient: client,
-    adminApi: {
-      runMigrations: () => client.post('/admin/db-ops/migrations/run'),
-      getCurrentRevision: () => client.get('/admin/db-ops/migrations/current'),
-      initCarGenerations: () =>
-        client.post('/admin/db-ops/init/car-generations'),
-      initPartCategories: () =>
-        client.post('/admin/db-ops/init/part-categories'),
-      deleteAllCars: () => client.post('/admin/db-ops/cars/delete-all'),
-      deleteAllParts: () => client.post('/admin/db-ops/parts/delete-all'),
-      deleteAllPartManufacturers: () =>
-        client.post('/admin/db-ops/part-manufacturers/delete-all'),
-    },
-    appSettingsApi: {
-      get: () => client.get('/app-settings/'),
-      update: (body: unknown) => client.put('/app-settings/', body),
-    },
-    imageApi: {
-      getOrphanedBucketObjects: () => client.get('/images/admin/orphaned'),
-      purgeOrphanedBucketObjects: () =>
-        client.post('/images/admin/purge-orphaned'),
-    },
-  };
-});
 
 vi.mock('../../hooks/useAuth', () => ({
   useAuth: () => mockUseAuth(),

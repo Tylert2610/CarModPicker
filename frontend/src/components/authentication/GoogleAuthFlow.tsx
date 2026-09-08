@@ -8,7 +8,7 @@ import {
   isGoogleConfigured,
   useGoogleSignIn,
 } from '../../hooks/useGoogleSignIn';
-import { authApi } from '../../services/Api';
+import { authApi } from '../../api/auth';
 import type { UserRead } from '../../types/Api';
 
 interface GoogleAuthFlowProps {

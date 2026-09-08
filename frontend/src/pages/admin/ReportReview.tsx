@@ -3,7 +3,8 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useApiRequest from '../../hooks/UseApiRequest';
 import { useAuth } from '../../hooks/useAuth';
-import apiClient, { reportsApi } from '../../services/Api';
+import { apiClient } from '../../api/client';
+import { reportsApi } from '../../api/reports';
 import type {
   PaginatedResponse,
   ReportUpdate,

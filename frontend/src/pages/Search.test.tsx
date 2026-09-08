@@ -6,14 +6,13 @@
 
 // Phase 8 plan 08-14 (D-11) — Search page render + URL-driven API round-trip.
 //
-// Search imports `searchApi` from `../services/Api`. The global setup.ts mock
-// provides only `default: mockApiClient`; we extend via a local vi.mock that
-// forwards searchApi.search through the already-mocked apiClient.
+// Search imports `searchApi` from `../api/search`, which calls the apiClient
+// that setup.ts mocks, so the round-trip is observable on
+// vi.mocked(apiClient.get).
 //
-// NOTE: we bypass test-utils.tsx's customRender — that helper registers its
-// own vi.mock('../../services/Api', ...) with ONLY `default`, which would
-// shadow the test-file mock and drop `searchApi`. We render manually with
-// MemoryRouter at the `/search?q=...` route.
+// We render manually with MemoryRouter at the `/search?q=...` route rather
+// than through test-utils.tsx's customRender, so this file controls the route
+// and the auth branch directly.
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
@@ -22,19 +21,6 @@ import { MemoryRouter } from 'react-router-dom';
 import { apiClient } from '../api/client';
 import { mockBuildList, mockPart, mockUser } from '../test/mocks/api';
 import { mockUseAuth } from '../test/utils/test-mocks';
-
-vi.mock('../services/Api', async () => {
-  const clientMod = await import('../api/client');
-  const client = clientMod.apiClient;
-  return {
-    default: client,
-    apiClient: client,
-    searchApi: {
-      search: (params: { q: string; skip?: number; limit?: number }) =>
-        client.get('/search/', { params }),
-    },
-  };
-});
 
 vi.mock('../hooks/useAuth', () => ({
   useAuth: () => mockUseAuth(),

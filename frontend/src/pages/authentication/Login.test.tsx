@@ -9,12 +9,10 @@
 // renders but their flows are not invoked (D-11 "happy-path + one error", not
 // OAuth flow).
 //
-// Mocking: setup.ts installs `vi.mock('../services/Api', importOriginal)` which
-// preserves every domain-API re-export (authApi, buildListsApi, etc.) while
-// mocking `default` (the shared Axios instance). setup.ts ALSO mocks
-// `../api/client` — so when Login.tsx calls authApi.login(...), the real
-// authApi code runs and internally hits `apiClient.post(...)` which lands on
-// the mocked client. We therefore assert on `apiClient.post`, not on authApi.
+// Mocking: setup.ts mocks `../api/client`, so when Login.tsx calls
+// authApi.login(...), the real authApi code runs and internally hits
+// `apiClient.post(...)` which lands on the mocked client. We therefore assert
+// on `apiClient.post`, not on authApi.
 //
 // We use `fireEvent` (not userEvent) for form submission — jsdom +
 // `userEvent.click` on a submit button inside nested containers is flaky

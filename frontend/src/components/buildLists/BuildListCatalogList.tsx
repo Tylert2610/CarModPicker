@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import useApiRequest from '../../hooks/UseApiRequest';
-import { buildListsApi } from '../../services/Api';
+import { buildListsApi } from '../../api/build_lists';
 import type {
   BuildListRead,
   BuildListReadWithVotes,

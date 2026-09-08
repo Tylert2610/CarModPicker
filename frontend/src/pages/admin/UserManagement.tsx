@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useApiRequest from '../../hooks/UseApiRequest';
 import { useAuth } from '../../hooks/useAuth';
-import { usersApi } from '../../services/Api';
+import { usersApi } from '../../api/users';
 import type {
   AdminUserUpdate,
   PaginatedResponse,

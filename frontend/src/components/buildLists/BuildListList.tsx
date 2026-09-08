@@ -5,7 +5,7 @@ import {
   BUILDER_SUBSEQUENT_PAGE_BUILD_LISTS,
 } from '../../constants';
 import useApiRequest from '../../hooks/UseApiRequest';
-import { buildListsApi } from '../../services/Api';
+import { buildListsApi } from '../../api/build_lists';
 import AddItemTile from './AddItemTile';
 import { ErrorAlert } from '../ui/alert';
 import Pagination from '../ui/pagination';

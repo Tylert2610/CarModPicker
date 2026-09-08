@@ -4,8 +4,8 @@ import {
   browserSupportsWebAuthn,
   startRegistration,
 } from '@simplewebauthn/browser';
-import { authApi } from '../../services/Api';
-import type { WebAuthnCredentialSummary } from '../../services/Api';
+import { authApi } from '../../api/auth';
+import type { WebAuthnCredentialSummary } from '../../api/auth';
 import { ConfirmationAlert, ErrorAlert } from '../ui/alert';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';

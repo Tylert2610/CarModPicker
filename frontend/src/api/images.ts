@@ -1,10 +1,7 @@
 // Images domain API. Mirrors backend endpoints/images.py.
-// Extracted from services/Api.ts (lines 947-1035) per Phase 6 D-22.
 //
-// Co-located response types per D-04 (admin bucket-summary types are also
-// imported from here by `admin.ts`). Re-exported below so existing import
-// sites that pull `BucketEntityTypeCountResponse` from `services/Api`
-// continue to resolve through the shim.
+// Co-located response types per D-04. The admin bucket-summary types are
+// authoritative here and `admin.ts` imports them from this module.
 import { apiClient } from './client';
 
 export interface ImageUploadResponse {

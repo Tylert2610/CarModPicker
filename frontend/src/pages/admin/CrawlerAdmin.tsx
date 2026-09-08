@@ -9,21 +9,9 @@ import { Card } from '../../components/ui/card';
 import { Input } from '../../components/ui/input';
 import { inputVariants } from '../../components/ui/input-variants';
 import Spinner from '../../components/ui/spinner';
-import type {
-  BackgroundJob,
-  BackgroundJobList,
-  CrawlerAdapterConfig,
-  CrawlerAdapterConfigUpdate,
-  CrawlerJobProgress,
-  CrawlerRunRequest,
-  CrawlerRunResponse,
-  CrawlerSchedule,
-  CrawlerScheduleCreate,
-  CrawlerScheduleUpdate,
-  RescrapeArchivesQueuedResponse,
-  RescrapeArchivesRequest,
-} from '../../services/Api';
-import { adminApi, categoriesApi } from '../../services/Api';
+import type { BackgroundJob, BackgroundJobList, CrawlerAdapterConfig, CrawlerAdapterConfigUpdate, CrawlerJobProgress, CrawlerRunRequest, CrawlerRunResponse, CrawlerSchedule, CrawlerScheduleCreate, CrawlerScheduleUpdate, RescrapeArchivesQueuedResponse, RescrapeArchivesRequest } from '../../api/admin';
+import { adminApi } from '../../api/admin';
+import { categoriesApi } from '../../api/categories';
 import type { CategoryResponse } from '../../types/Api';
 
 // ── Fetcher-tier visual system ───────────────────────────────────────────

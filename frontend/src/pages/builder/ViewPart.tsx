@@ -9,15 +9,13 @@ import { ExternalLink } from 'lucide-react';
 import useApiRequest from '../../hooks/UseApiRequest';
 import { useAuth } from '../../hooks/useAuth';
 import { useDocumentMeta } from '../../hooks/useDocumentMeta';
-import {
-  partManufacturersApi,
-  buildListPartsApi,
-  carGenerationsApi,
-  categoriesApi,
-  partsApi,
-  partVotesApi,
-  usersApi,
-} from '../../services/Api';
+import { buildListPartsApi } from '../../api/build_list_parts';
+import { carGenerationsApi } from '../../api/car_generations';
+import { categoriesApi } from '../../api/categories';
+import { partManufacturersApi } from '../../api/part_manufacturers';
+import { partsApi } from '../../api/parts';
+import { usersApi } from '../../api/users';
+import { partVotesApi } from '../../api/votes';
 import {
   carFullDisplayName,
   formatCarYearRange,

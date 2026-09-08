@@ -11,8 +11,8 @@
 // 2. Non-admin auth-deny path.
 // 3. Unauthenticated (null user) login-prompt path.
 //
-// Mocking: test-utils.tsx already installs vi.mock('../../services/Api',
-// importOriginal) + vi.mock('../../hooks/useAuth'). No per-file mocks needed.
+// Mocking: setup.ts mocks `../../api/client` and test-utils.tsx mocks
+// `../../hooks/useAuth`. No per-file mocks needed.
 // We use `testScenarios.adminAuthenticated` (Phase 8 D-05, seeded by plan
 // 08-01) for the admin fixture.
 import { describe, it, expect, beforeEach, vi } from 'vitest';

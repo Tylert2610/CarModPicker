@@ -7,7 +7,8 @@ import {
 } from 'react-icons/fa';
 import useApiRequest from '../../hooks/UseApiRequest';
 import { useAuth } from '../../hooks/useAuth';
-import { authApi, usersApi } from '../../services/Api';
+import { authApi } from '../../api/auth';
+import { usersApi } from '../../api/users';
 import type { TOTPSetupResponse } from '../../types/Api';
 import SectionHeader from '../layout/SectionHeader';
 import { ConfirmationAlert, ErrorAlert } from '../ui/alert';

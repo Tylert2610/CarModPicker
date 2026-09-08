@@ -4,10 +4,9 @@
 
 // Phase 8 plan 08-14 (D-11) — ViewUser public-profile render + 404 path.
 //
-// ViewUser imports `apiClient` default AND `buildListsApi` from
-// `../services/Api`. The global setup.ts mock provides only `default`; we
-// extend with a local mock that forwards buildListsApi.getBuildListsByUser
-// through the mocked apiClient.
+// ViewUser imports `apiClient` from `../api/client` and `buildListsApi` from
+// `../api/build_lists`. setup.ts mocks the client, and the domain module calls
+// through it, so both paths land on the same mocked Axios surface.
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
@@ -16,19 +15,6 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { apiClient } from '../api/client';
 import { mockUser } from '../test/mocks/api';
 import { mockUseAuth } from '../test/utils/test-mocks';
-
-vi.mock('../services/Api', async () => {
-  const clientMod = await import('../api/client');
-  const client = clientMod.apiClient;
-  return {
-    default: client,
-    apiClient: client,
-    buildListsApi: {
-      getBuildListsByUser: (userId: string, params?: unknown) =>
-        client.get(`/build-lists/user/${userId}`, { params }),
-    },
-  };
-});
 
 vi.mock('../hooks/useAuth', () => ({
   useAuth: () => mockUseAuth(),

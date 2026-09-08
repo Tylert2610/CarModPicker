@@ -1,8 +1,8 @@
 import type { ReactNode } from 'react';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 
-import type { AppSettings } from '../services/Api';
-import { appSettingsApi } from '../services/Api';
+import type { AppSettings } from '../api/app_settings';
+import { appSettingsApi } from '../api/app_settings';
 import { AppSettingsContext } from './AppSettingsContextDefinition';
 
 export const AppSettingsProvider: React.FC<{ children: ReactNode }> = ({

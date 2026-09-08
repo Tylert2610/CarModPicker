@@ -1,5 +1,4 @@
 // Parts domain API. Mirrors backend endpoints/parts.py.
-// Extracted from services/Api.ts (lines 351-458) per Phase 6 D-22.
 // Global shared parts in the catalog. Part-scoped vote/report wrappers
 // (legacy) live in `votes.ts` / `reports.ts`.
 import { apiClient } from './client';

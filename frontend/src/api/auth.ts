@@ -1,6 +1,4 @@
 // Auth domain API. Mirrors backend endpoints/auth/*.
-// Extracted from services/Api.ts (lines 747-901 + WebAuthn type interfaces
-// 903-917) per Phase 6 D-22.
 //
 // WebAuthn helper response types are co-located here (D-04) — they are not
 // pydantic-generated and only consumed by the auth flow.

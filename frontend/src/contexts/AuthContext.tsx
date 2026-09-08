@@ -3,7 +3,8 @@ import * as Sentry from '@sentry/react';
 import type { ReactNode } from 'react';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import apiClient, { authApi, removeStoredToken } from '../services/Api';
+import { authApi } from '../api/auth';
+import { apiClient, removeStoredToken } from '../api/client';
 import type { UserRead } from '../types/Api';
 import { AuthContext } from './AuthContextDefinition';
 

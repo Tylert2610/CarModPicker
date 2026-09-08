@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { LARGE_FETCH_LIMIT } from '../../constants';
 import useApiRequest from '../../hooks/UseApiRequest';
-import apiClient, { carGenerationsApi } from '../../services/Api';
+import { carGenerationsApi } from '../../api/car_generations';
+import { apiClient } from '../../api/client';
 import {
   carFullDisplayName,
   carGenerationDisplayName,

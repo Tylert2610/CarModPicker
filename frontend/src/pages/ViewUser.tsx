@@ -10,7 +10,8 @@ import CardInfoItem from '../components/ui/card-info-item';
 import Spinner from '../components/ui/spinner';
 import useApiRequest from '../hooks/UseApiRequest';
 import { useDocumentMeta } from '../hooks/useDocumentMeta';
-import apiClient, { buildListsApi } from '../services/Api';
+import { buildListsApi } from '../api/build_lists';
+import { apiClient } from '../api/client';
 import type { BuildListRead, UserRead } from '../types/Api';
 
 const fetchUserRequestFn = (

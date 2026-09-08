@@ -16,10 +16,9 @@
 // customRender) only provides the path/search — it does not run a route
 // match tree.
 //
-// Per PATTERNS.md Gotcha #8 the global setup.ts vi.mock('../services/Api',
-// { default: mockApiClient }) strips named re-exports; restore them via
-// vi.importActual so buildLogsApi / buildListsApi / imageApi resolve to
-// real domain objects that call through the mocked ../api/client.
+// buildLogsApi, buildListsApi and imageApi come from their
+// `../../api/<domain>` modules, which call through the apiClient that setup.ts
+// mocks, so no per-file module mock is needed.
 //
 // Auth scenario: this file does not use the shared `testScenarios.authenticated`
 // fixture via customRender because customRender wraps in BrowserRouter (no
@@ -37,14 +36,6 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-
-vi.mock('../../services/Api', async () => {
-  const actual =
-    await vi.importActual<typeof import('../../services/Api')>(
-      '../../services/Api'
-    );
-  return actual;
-});
 
 // Mock useAuth to return an authenticated user so the "New Post" action is
 // rendered and the compose dialog is reachable. Mirrors

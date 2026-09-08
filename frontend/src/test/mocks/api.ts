@@ -167,10 +167,3 @@ export const setupApiMocks = () => {
     return Promise.resolve(response);
   });
 };
-
-// Mock the entire API module
-export const mockApiModule = () => {
-  vi.doMock('../../services/Api', () => ({
-    default: mockApiClient,
-  }));
-};

@@ -2,12 +2,11 @@ import { AxiosError } from 'axios';
 import { Link } from 'react-router-dom';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import useApiRequest from '../../hooks/UseApiRequest';
-import apiClient, {
-  partManufacturersApi,
-  carGenerationsApi,
-  categoriesApi,
-  partsApi,
-} from '../../services/Api';
+import { carGenerationsApi } from '../../api/car_generations';
+import { categoriesApi } from '../../api/categories';
+import { apiClient } from '../../api/client';
+import { partManufacturersApi } from '../../api/part_manufacturers';
+import { partsApi } from '../../api/parts';
 import type {
   PartManufacturerCreate,
   PartManufacturerResponse,

@@ -55,15 +55,9 @@ vi.mock('../../hooks/useAuth', () => ({
   useAuth: () => mockUseAuth(),
 }));
 
-// Extend the global services/Api mock to expose named domain APIs (partsApi,
-// partVotesApi, categoriesApi, usersApi, etc. — all consumed by ViewPart).
-vi.mock('../../services/Api', async () => {
-  const actual =
-    await vi.importActual<typeof import('../../services/Api')>(
-      '../../services/Api'
-    );
-  return actual;
-});
+// ViewPart's domain APIs (partsApi, partVotesApi, categoriesApi, usersApi and
+// the rest) come from their `../../api/<domain>` modules, which call the
+// apiClient that setup.ts mocks.
 
 // testScenarios.authenticated equivalent (Phase 8 D-05).
 const authenticatedAuthState = {

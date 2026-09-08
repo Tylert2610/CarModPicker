@@ -3,7 +3,8 @@ import ReactMarkdown from 'react-markdown';
 import { Link, useParams } from 'react-router-dom';
 import useApiRequest from '../../hooks/UseApiRequest';
 import { useAuth } from '../../hooks/useAuth';
-import { buildListsApi, buildLogsApi } from '../../services/Api';
+import { buildListsApi } from '../../api/build_lists';
+import { buildLogsApi } from '../../api/build_logs';
 import type {
   BuildListRead,
   BuildLogPostRead,

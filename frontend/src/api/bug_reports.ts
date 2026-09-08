@@ -1,5 +1,4 @@
 // Bug Reports domain API. Mirrors backend endpoints/bug_reports.py.
-// Extracted from services/Api.ts (lines 1066-1097) per Phase 6 D-22.
 import { apiClient } from './client';
 import type {
   BugReportCreate,
