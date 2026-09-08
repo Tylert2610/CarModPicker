@@ -27,6 +27,23 @@ python scripts/backfill_from_postgres.py --dry-run   # one-off Postgres -> Dynam
 # Table definitions live in app/db/dynamo/tables.py; regenerate the Terraform copy after editing
 python scripts/export_dynamo_tables.py
 
+# Per-domain container images. One Dockerfile, nine images, selected by DOMAIN.
+# The dependency install resolves through CodeArtifact, so mint a token first.
+export CODEARTIFACT_AUTH_TOKEN="$(aws codeartifact get-authorization-token \
+  --domain webbpulse --domain-owner 432410731887 \
+  --region us-west-2 --query authorizationToken --output text)"
+# The base image lives in the Artifacts account, so pulling it needs that login.
+aws ecr get-login-password --region us-west-2 \
+  | docker login --username AWS --password-stdin \
+    432410731887.dkr.ecr.us-west-2.amazonaws.com
+
+scripts/build_image.sh media            # domains: identity, users, catalog,
+                                        # vehicles, build-lists, build-logs,
+                                        # moderation, media, ingestion
+scripts/run_image.sh media              # serves on :8080 against DynamoDB Local
+curl localhost:8080/health              # liveness, no I/O; what the adapter polls
+curl localhost:8080/ready               # readiness, reads DynamoDB
+
 # Tests — always run with -n auto for parallel execution
 # Tests run against moto's in-memory DynamoDB — no services required
 pytest -n auto
