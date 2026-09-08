@@ -77,7 +77,9 @@ Browser / Chrome Extension
 
 ### Backend (`backend/app/`)
 
-- **`main.py`** — App factory: registers all routers via `EndpointRegistry`, adds CORS, rate-limiting, and error-handler middleware.
+- **`main.py`** — The whole-surface application, kept as the import path everything already uses (`uvicorn app.main:app`, `lambda_handler.py`, the test suite). It is a thin wrapper over `app/composition/app.py` and holds no wiring of its own.
+- **`composition/`** — Root A, every domain in one process. `wiring.py` holds the `Domain` descriptor and the shared app building (CORS, rate limiting, error handlers, the five root routes); `domains.py` names the nine domains and, for each, the routers it owns, its prefixes and tags, and whether it needs `SECRET_KEY`; `app.py` composes all nine and is what `main.py` serves.
+- **`entrypoints/`** — Root B, one module per deployed function (`identity`, `users`, `catalog`, `vehicles`, `build_lists`, `build_logs`, `moderation`, `media`, `ingestion`). Each builds an application carrying one domain plus the five root routes. `domains.py` loads routers through a callable so importing a descriptor imports no endpoint module, which is what keeps a domain image to one domain; `backend/tests/entrypoints/` asserts it in a fresh interpreter with no AWS credentials.
 - **`api/endpoints/`** — One file per domain (`auth`, `users`, `car_generations`, `parts`, `build_lists`, `build_list_parts`, `build_list_phases`, `build_logs`, `votes`, `reports`, `images`, `search`, `admin`, `crawled_pages`, `part_manufacturers`, `categories`, `retailers`, `bug_reports`).
 - **`db/dynamo/`** — DynamoDB layer: `tables.py` (every table and GSI, one `TableSpec` each), `repository.py` (generic `DynamoRepository[TModel]`), and one module per domain (`users`, `catalog`, `build_lists`, `build_logs`, `moderation`, ...) holding the Pydantic item models and their repositories. `api/dependencies/repositories.py` bundles them into the `Repositories` dependency.
 - **`api/schemas/`** — Pydantic v2 request/response schemas.
@@ -184,5 +186,5 @@ The Lambda's code is not Terraform's: the function is created from a placeholder
 
 - **Tables:** Declare every table and index in `backend/app/db/dynamo/tables.py`, then run `python scripts/export_dynamo_tables.py` so `terraform/dynamodb_tables.json` matches (a test fails when they drift). There are no migrations; schema changes are additive attributes on Pydantic item models.
 - **pytest:** Always pass `-n auto` for parallel execution. Tests use moto's in-memory DynamoDB — no services required.
-- **New CRUD endpoints:** Extend `BaseDynamoEndpointRouter` + `BaseDynamoCRUDService`; register with `EndpointRegistry` in `main.py`.
+- **New CRUD endpoints:** Extend `BaseDynamoEndpointRouter` + `BaseDynamoCRUDService`, then add the router to its domain's loader in `backend/app/composition/domains.py` with the prefix and tags it should carry. Both composition roots pick it up from there. A new route changes the routing table, so regenerate `backend/tests/fixtures/route_contract.json` and bump the count for that domain in `backend/tests/entrypoints/test_route_split.py`; the diff on the fixture is the review artifact.
 - The backend CORS config explicitly allows `chrome-extension://` origins and `null` (for service workers).

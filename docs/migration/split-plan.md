@@ -924,14 +924,15 @@ infrastructure.
 | 1 | This plan and the inventory amendments | small | 0 | none |
 | 2 | Fix `/api/part-price-alerts/unsubscribe` route ordering | small | 0 | none |
 | 3 | Rate limiting layer 2: `<prefix>-rate-limits` table and the shared limiter | small | 1 add | none |
-| 4 | Backend: per-domain source layout, both composition roots, no domain deployed | large | 0 | none |
-| 5 | Backend: route contract test locking all 176 routes | small | 0 | 4 |
-| 6 | Backend: unwind the `Repositories` singleton into per-domain bundles | large | 0 | 4 |
-| 7 | Backend: lazy secret resolution in `config.py` | medium | 0 | 4 |
-| 8 | `webbpulse` package adoption: logging, tracing, settings base | medium | 0 | 4 |
+| 4a | Backend: both composition roots, no files moved | large | 0 | none |
+| 4b | Backend: physical move of the endpoint modules into `app/domains/<domain>/` | large | 0 | 4a |
+| 5 | Backend: route contract test locking all 176 routes | small | 0 | 4a |
+| 6 | Backend: unwind the `Repositories` singleton into per-domain bundles | large | 0 | 4a |
+| 7 | Backend: lazy secret resolution in `config.py` | medium | 0 | 4a |
+| 8 | `webbpulse` package adoption: logging, tracing, settings base | medium | 0 | 4a |
 | 9 | Terraform: nine ECR repositories per environment | small | 18 add per env | none |
 | 10 | Terraform: deploy role gains ECR push, widened Lambda, `InvokeFunction` | small | 1 change | 9 |
-| 11 | Dockerfile, parameterised by `DOMAIN` | medium | 0 | 4, 6 |
+| 11 | Dockerfile, parameterised by `DOMAIN` | medium | 0 | 4a, 6 |
 | 12 | `deploy-backend.yml`: `resolve-env`, `build-images`, `image-map`, `deploy-images`, `smoke-domains` | medium | 0 | 10, 11 |
 | 13 | Terraform: `media` function from the bootstrap tag, unrouted | medium | 3 add | 12 |
 | 14 | Terraform: `media` API Gateway routes. **First cut** | small | 3 add | 13 |
@@ -954,6 +955,24 @@ infrastructure.
 | 31 | `users`: function, routes, OTel. **Ninth cut, alarm list full** | large | 5 add | 30 |
 | 32 | Retire `$default`, the monolith, the artifacts bucket, the zip chain | medium | 12 destroy | 31 |
 | 33 | Frontend: delete the `services/Api.ts` shim, rewriting 74 import sites | medium | 0 | none |
+
+**PR 4 ships in two slices, and 4a is delivered.** The original row bundled two
+unrelated changes: introducing the composition roots, and moving every endpoint
+module on disk. Together they produce a diff in which a genuine wiring change is
+indistinguishable from a rename, so the two are separated.
+
+- **4a, delivered.** `app/composition/` holds the shared wiring, the nine domain
+  descriptors and Root A; `app/entrypoints/<domain>.py` is Root B, one module per
+  deployed function. `app/main.py` becomes a thin re-export of Root A and no
+  other module moves or is renamed. The route contract, the per-domain counts and
+  the isolation properties are asserted by `backend/tests/entrypoints/`, and the
+  published OpenAPI document is byte-identical to the one `staging` serves.
+- **4b, later.** The physical move of `app/api/endpoints/<module>.py` into
+  `app/domains/<domain>/`. Because 4a already records each domain's modules in
+  one place, 4b is a move plus an import rewrite, reviewable as such.
+
+Every row that depended on "4" depends on 4a: what PRs 6, 7, 8 and 11 need is the
+domain boundary expressed in code, not the directory layout. Only 4b needs 4b.
 
 PRs 1, 2, 3, 9, 10, and 33 are independent of everything else and can run in
 parallel. PR 22 is the hard gate: nothing from 23 onward can start without it,
