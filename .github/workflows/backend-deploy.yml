@@ -52,6 +52,27 @@ jobs:
         with:
           python-version: "3.13"
 
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # `requirements-lambda.txt` starts with `webbpulse`, which is published only
+      # to CodeArtifact (domain `webbpulse`, repository `python`, Artifacts
+      # account), so credentials and the CodeArtifact login have to precede the
+      # build. The deploy role already holds the CodeArtifact read grants. The
+      # login writes an authenticated index URL into pip.conf; everything else
+      # still resolves from PyPI through the upstream.
+      - name: Authenticate pip against CodeArtifact
+        run: |
+          aws codeartifact login \
+            --tool pip \
+            --domain webbpulse \
+            --domain-owner ${{ vars.CODEARTIFACT_DOMAIN_OWNER }} \
+            --repository python \
+            --region ${{ env.AWS_REGION }}
+
       # Pure-Python plus manylinux wheels only, resolved for the Lambda runtime
       # (x86_64, Python 3.13, Amazon Linux 2023). Two platform tags because pip
       # does not widen an explicit --platform: most wheels are manylinux2014,
@@ -73,12 +94,6 @@ jobs:
           find build/lambda -name "__pycache__" -type d -prune -exec rm -rf {} +
           (cd build/lambda && zip -q -r ../lambda.zip .)
           ls -l build/lambda.zip
-
-      - name: Configure AWS credentials via OIDC
-        uses: aws-actions/configure-aws-credentials@v6
-        with:
-          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
 
       # Upload runs in parallel with any active Terraform run — the artifacts
       # bucket is independent of Lambda state.
