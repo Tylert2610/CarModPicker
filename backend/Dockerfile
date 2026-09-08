@@ -118,6 +118,13 @@ RUN find /deps -type d -name "__pycache__" -prune -exec rm -rf {} + \
 # ---------------------------------------------------------------------------
 FROM ${BASE_IMAGE} AS runtime
 
+# The base image ends on its unprivileged `app` user, and a stage inherits that.
+# The two RUNs below write `/etc/carmodpicker-entrypoint` and read `/var/task`,
+# so this stage is root until the `USER app` at the end. Without this line the
+# first RUN fails with "cannot create /etc/carmodpicker-entrypoint: Permission
+# denied", which is what took down the first nine image builds.
+USER root
+
 # Which domain this image serves. There is no default on purpose: an image built
 # without it would silently be some arbitrary domain's, and the nine
 # repositories would stop meaning what their names say.
