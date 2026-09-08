@@ -1079,6 +1079,14 @@ which puts `request_id` and `user_id` on every record where the package merges
 trace ids instead, and the stream choice, since the package logs to stdout and
 CarModPicker has two commands whose stdout is data compared byte for byte.
 
+The package is pinned in both requirements files, and a test now enforces that.
+`requirements-lambda.txt` is what the deploy zip and row 11's per-domain image
+install, and it is the narrower file on purpose, so a runtime dependency added
+only to `requirements.txt` passes every check and then fails at import inside the
+image. `tests/test_requirements_lambda_subset.py` asserts the Lambda file is a
+strict subset with character-identical specifiers, extras included, which is what
+catches `webbpulse[fastapi]` drifting from `webbpulse[fastapi,otel]`.
+
 One thing is deliberately unfinished. `CI_AWS_ROLE_ARN` points at
 `carmodpicker-staging-github-actions-deploy`, which already holds the
 CodeArtifact grants and already trusts every subject in the repository, so CI
