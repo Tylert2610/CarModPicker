@@ -416,6 +416,10 @@ the contract test imports all nine of them. Everything that needs AWS goes in
 
 One `backend/Dockerfile` for all nine domains, selected by `ARG DOMAIN`.
 
+**Delivered by row 11.** The sketch below is what was designed; section 8's row
+11 paragraph records the three places the shipped file departs from it, the
+`PORT` one being the only one that would have cost a debugging session.
+
 ```dockerfile
 ARG BASE_IMAGE=432410731887.dkr.ecr.us-west-2.amazonaws.com/webbpulse/python-lambda-base@sha256:b5298b4b773ad6c9e311057cf5d43f37ceb98f0367347d714c6817f250a5cef7
 
@@ -1095,6 +1099,109 @@ works with no Terraform change. It also holds `lambda:UpdateFunctionCode` and
 role that can deploy. Row 10 already opens `terraform/iam_github_actions.tf`; the
 fix is to add the read-only CI role there, as Portfolio did, and repoint the
 variable.
+
+**Row 11 is delivered.** `backend/Dockerfile` builds all nine images from one
+file, with `ARG DOMAIN` selecting the entrypoint and no default, so an image
+cannot silently be some other domain's. The domain name is mapped to its module
+name at build time rather than at container start, because domain names carry
+hyphens for ECR repositories, functions and log groups while Python modules must
+carry underscores, and `build-lists` and `build-logs` are the two that differ;
+the build then asserts that `app/entrypoints/<module>.py` is actually in the
+image, which turns what would otherwise be a `ModuleNotFoundError` on a
+deployed function's first cold start into a failed build.
+
+Three things differ from what section 2.5 sketched, and each is a correction
+rather than a preference. The install is `requirements-lambda.txt`, not
+`requirements.txt`: the latter is the development set and carries `pytest`,
+`moto`, `black`, `mypy`, `locust` and `curl_cffi`, and section 2.6 already
+requires `curl_cffi` to stay out. PyPI stays configured as an extra index behind
+the CodeArtifact one, so the build works whether or not the requirements yet
+name `webbpulse`. That last prediction, that row 8 would change this file not at
+all, turned out wrong in the one way that mattered: `webbpulse` is a runtime
+dependency, so row 8 had to pin it in `requirements-lambda.txt` as well, and
+until it did the image would have failed at import while every check passed.
+`tests/test_requirements_lambda_subset.py` now enforces the relationship. And `PORT`
+is set alongside `AWS_LWA_PORT`, because `Settings.PORT` defaults to 8000 and it
+is the environment variable that overrides it; an entrypoint binding 8000 while
+the adapter polls 8080 presents as a readiness check that never passes, with no
+application logs to say why.
+
+`AWS_LWA_READINESS_CHECK_PATH=/health` holds for all nine, as section 2.5
+predicted: `/health` is a static dictionary and `/ready` is the one that calls
+`check_db_ready()`, so no domain needs Portfolio's `tcp` fallback. All nine were
+run under uvicorn against DynamoDB Local with the image's own environment and
+the `requirements-lambda.txt` closure, and all nine bind 8080, answer `/health`
+200 with no I/O, and answer `/ready` 200 with `database: up`. The dependency
+layer is about 99 MB uncompressed and `app/` about 1.9 MB, both identical across
+the nine, which is what keeps nine repositories close to the storage cost of
+one.
+
+`scripts/build_image.sh <domain>` and `scripts/run_image.sh <domain>` are the
+local helpers. The first exists so the CodeArtifact token reaches pip as a
+BuildKit secret rather than a build argument, where it would persist in
+`docker history`; the second runs an image with the environment its entrypoint
+needs and points it at `docker-compose.yml`'s DynamoDB Local. `arm64` is the
+default platform in both, which is open question 7 and still wants confirming;
+the three native pins that question names, `Pillow`, `bcrypt` and `webauthn`,
+all publish `aarch64` wheels, and the base image is Debian trixie, whose glibc
+satisfies the `manylinux_2_28` floor Pillow's wheel carries.
+
+**Row 12 is delivered.** `.github/workflows/deploy-backend.yml` is a new file
+rather than an edit to `backend-deploy.yml`, and that is the one place this
+differs from what section 4 sketched. Section 4 describes replacing
+`backend-deploy.yml`'s build half while leaving its zip chain intact; splitting
+the two into separate files is how that is done, because the monolith
+`carmodpicker-<env>-api` is still the only function any route reaches and an
+image build that fails must not be able to hold back or roll back the deploy
+that serves requests. Two files cannot share a `needs` edge even by accident,
+which one file with two independent chains can grow later. `backend-deploy.yml`
+is untouched by this PR; section 6.5 is what deletes it.
+
+The chain is `resolve-env`, `build-images`, `image-map`, `existing-functions`,
+`deploy-images`, `smoke-domains`. Section 4 named five jobs and there are six:
+`existing-functions` is the addition, and it is what makes the deploy half safe
+to leave switched on for the whole migration rather than toggled by hand nine
+times. Portfolio never needed it, because its Terraform created all four of its
+functions before its deploy gate was first turned on, so its deploy was either
+wholly off or wholly on. Here row 13 creates `media` alone and rows 18 through 31
+add the other eight one at a time, so for most of this migration the truthful
+state is that some of the nine exist. A map naming a function that does not exist
+fails `aws lambda wait function-updated-v2` with `ResourceNotFoundException` and
+takes the whole deploy job red, including the domains that would have succeeded.
+So the map is filtered with `get-function-configuration` before it is handed
+over, and only a genuine `ResourceNotFoundException` is read as absence: any
+other error fails the job, because treating a denied call or an expired
+credential as "not created yet" would deploy nothing and report success.
+
+Both halves are gated by repository variables that are absent today, so this PR
+changes no behaviour on merge: `BACKEND_IMAGE_BUILD_ENABLED` turns on the build
+and `BACKEND_IMAGE_DEPLOY_ENABLED` turns on the deploy, and an unset variable is
+the empty string that neither `if` matches. CarModPicker has no
+`STAGING_DEPLOY_ENABLED` variable, unlike Portfolio, so the build gate is the
+only gate on a staging push. `workflow_dispatch` is present because the workflow
+triggers on push and never on a pull request, which makes a merge the earliest
+point any of this can run; the first build of the nine images is meant to be
+started and watched deliberately rather than discovered in a merge's logs.
+
+The reusable workflow calls are pinned to `@v1.2.1` exactly rather than to the
+moving `v1` tag, so the behaviour of this file cannot change without a commit to
+it. `build-images` passes `DOMAIN` as its only build argument: unlike Portfolio's
+caller there is no `READINESS_PROTOCOL`, because row 11 confirmed all nine poll
+`/health` over HTTP and the Dockerfile takes no argument for it. The deploy role
+was checked against the four grants this needs, and PR #327 had already added all
+of them: ECR push and `BatchGetImage` on the nine `carmodpicker-staging/<domain>`
+repositories, ECR pull on `webbpulse/python-lambda-base` in the Artifacts
+account, CodeArtifact read with `sts:GetServiceBearerToken`, and
+`lambda:InvokeFunction` plus `GetFunctionConfiguration` on all nine. Nothing was
+missing, so no Terraform change rides along with this PR and its expected plan
+stays zero.
+
+What this PR cannot prove is the build itself. The workflow does not run on pull
+requests, and row 11 built all nine images by hand rather than in CI, so the
+first push to `staging` with the build gate on is the first time the Dockerfile
+is built by Actions: the first exercise of the CodeArtifact token as a BuildKit
+secret, of the cross-account base image pull, and of `arm64` on a GitHub runner,
+which is open question 7. The PR body carries the checklist for that run.
 
 PRs 1, 2, 3, 9, 10, and 33 are independent of everything else and can run in
 parallel. PR 22 is the hard gate: nothing from 23 onward can start without it,

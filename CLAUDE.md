@@ -27,6 +27,23 @@ python scripts/backfill_from_postgres.py --dry-run   # one-off Postgres -> Dynam
 # Table definitions live in app/db/dynamo/tables.py; regenerate the Terraform copy after editing
 python scripts/export_dynamo_tables.py
 
+# Per-domain container images. One Dockerfile, nine images, selected by DOMAIN.
+# The dependency install resolves through CodeArtifact, so mint a token first.
+export CODEARTIFACT_AUTH_TOKEN="$(aws codeartifact get-authorization-token \
+  --domain webbpulse --domain-owner 432410731887 \
+  --region us-west-2 --query authorizationToken --output text)"
+# The base image lives in the Artifacts account, so pulling it needs that login.
+aws ecr get-login-password --region us-west-2 \
+  | docker login --username AWS --password-stdin \
+    432410731887.dkr.ecr.us-west-2.amazonaws.com
+
+scripts/build_image.sh media            # domains: identity, users, catalog,
+                                        # vehicles, build-lists, build-logs,
+                                        # moderation, media, ingestion
+scripts/run_image.sh media              # serves on :8080 against DynamoDB Local
+curl localhost:8080/health              # liveness, no I/O; what the adapter polls
+curl localhost:8080/ready               # readiness, reads DynamoDB
+
 # Tests — always run with -n auto for parallel execution
 # Tests run against moto's in-memory DynamoDB — no services required
 pytest -n auto
@@ -137,7 +154,7 @@ feature/* ──PR──▶ staging ──PR──▶ main
 
 ### Workflows
 
-Six workflows in `.github/workflows/`, three CI and three deploy, each scoped by path.
+Seven workflows in `.github/workflows/`, three CI and four deploy, each scoped by path.
 
 | Workflow | Trigger | Paths |
 |---|---|---|
@@ -145,12 +162,17 @@ Six workflows in `.github/workflows/`, three CI and three deploy, each scoped by
 | `frontend-ci.yml` | `pull_request` → `main`, `staging` | `frontend/**` |
 | `chrome-extension-ci.yml` | `pull_request` → `main`, `staging` | `chrome-extension/**` |
 | `backend-deploy.yml` | `push` → `main`, `staging` | `backend/**` |
+| `deploy-backend.yml` | `push` → `main`, `staging`, plus `workflow_dispatch` | `backend/**` |
 | `frontend-deploy.yml` | `push` → `main`, `staging` | `frontend/**` |
 | `chrome-extension-deploy.yml` | `push` → `main` | `chrome-extension/**` |
 
-The three deploy workflows are fully independent — a backend merge never rebuilds the frontend.
+The deploy workflows are fully independent. A backend merge never rebuilds the frontend.
 
 `backend-deploy.yml` and `frontend-deploy.yml` pick their GitHub Environment from the branch (`main` → `production`, otherwise `staging`) and read every deploy-time value from that Environment. The backend deploy builds a Lambda zip (`requirements-lambda.txt` resolved for manylinux x86_64 / Python 3.13, plus `app/`), uploads it to the artifacts bucket keyed by commit SHA, waits for HCP Terraform to go idle, then runs `update-function-code` and `publish-version`.
+
+**`backend-deploy.yml` and `deploy-backend.yml` are two workflows with confusingly similar names, and the distinction is which function they deploy.** `backend-deploy.yml` is the monolith's zip chain and deploys `carmodpicker-<env>-api`, which is still the only function any API Gateway route reaches. `deploy-backend.yml` is the per-domain container image chain from row 12 of `docs/migration/split-plan.md`: `resolve-env`, `build-images`, `image-map`, `existing-functions`, `deploy-images`, `smoke-domains`, building the nine domain images from the one `backend/Dockerfile` with `DOMAIN` selecting the entrypoint. They are separate files rather than one so that an image build cannot hold back or roll back the deploy that serves traffic. Section 6.5 of the split plan retires the monolith, and that is the PR that deletes `backend-deploy.yml` and leaves `deploy-backend.yml` as the only backend deploy.
+
+Both halves of the image chain are gated by repository variables, and both are absent today, so `deploy-backend.yml` is inert until one is set. `BACKEND_IMAGE_BUILD_ENABLED` turns on the build, whose enabled run leaves nine images in ECR and changes no behaviour because nothing pulls them. `BACKEND_IMAGE_DEPLOY_ENABLED` turns on the deploy, which needs the domain functions to exist. `existing-functions` filters the image map down to the functions that actually exist before the deploy runs, so an estate part way through the cutover deploys what is there and skips what is not, rather than failing on `ResourceNotFoundException`.
 
 **`chrome-extension-deploy.yml` stays `main`-only.** It publishes to the Chrome Web Store, not to AWS: patch-bump `manifest.json`, tag `chrome-extension-vX.Y.Z`, cut a GitHub Release, upload and publish the zip via the CWS API. A browser extension has no staging-account equivalent and there is no staging store listing, so a `staging` trigger would have nothing to deploy to. It is also the one sanctioned exception to "never commit directly to `main`" — it pushes its own version bump with `git push origin HEAD:main`.
 
@@ -161,8 +183,11 @@ Deploy variables are **environment-scoped**: they live on the `production` and `
 | Workflow | Variables | Secrets |
 |---|---|---|
 | `backend-deploy.yml` | `AWS_DEPLOY_ROLE_ARN`, `TFC_WORKSPACE_ID`, `LAMBDA_FUNCTION_NAME`, `LAMBDA_ARTIFACTS_BUCKET` | `TFC_API_TOKEN` |
+| `deploy-backend.yml` | `AWS_DEPLOY_ROLE_ARN` (environment), `CODEARTIFACT_DOMAIN_OWNER`, `BACKEND_IMAGE_BUILD_ENABLED`, `BACKEND_IMAGE_DEPLOY_ENABLED` (all three repository-level) | none |
 | `frontend-deploy.yml` | `AWS_DEPLOY_ROLE_ARN`, `TFC_WORKSPACE_ID`, `FRONTEND_S3_BUCKET`, `CLOUDFRONT_DISTRIBUTION_ID`, `VITE_API_URL`, `CWS_EXTENSION_ID` | `TFC_API_TOKEN` |
 | `chrome-extension-deploy.yml` | `CWS_CLIENT_ID`, `CWS_EXTENSION_ID` | `CWS_CLIENT_SECRET`, `CWS_REFRESH_TOKEN` |
+
+`deploy-backend.yml` needs no `TFC_API_TOKEN`. Its Terraform wait is the reusable workflow's `aws lambda wait function-updated-v2` before and after each `update-function-code`, taken once for all functions rather than once per domain, which settles an in-flight apply without polling HCP at all. `AWS_DEPLOY_ROLE_ARN` is environment-scoped like every other deploy role, which is why the chain opens with a `resolve-env` job: a job that calls a reusable workflow with `uses:` may not carry an `environment:` key, so it cannot read an environment-scoped variable and `resolve-env` passes the ARN through a job output instead.
 
 The backend and frontend deploys poll the HCP Terraform runs API with `TFC_API_TOKEN` and wait for the workspace named by `TFC_WORKSPACE_ID` to reach a terminal state before touching Lambda or S3 — that poll is what stops a code update racing an in-flight configuration change. Production polls `ws-oh1VvpTBPxmcrSYD`; staging polls `CarModPicker-staging`.
 

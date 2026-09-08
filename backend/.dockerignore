@@ -1,0 +1,79 @@
+# What never reaches the build context.
+#
+# Two reasons, and the second is the one that bites. The obvious one is size: a
+# venv or an htmlcov directory in the context is megabytes uploaded to the
+# daemon on every build for nothing. The other is cache invalidation: the
+# Dockerfile's `COPY app/` is the layer that changes on every commit, and
+# anything swept into the context that changes more often than the source does
+# would invalidate layers that had no reason to rebuild.
+#
+# Nothing here is a substitute for the Dockerfile copying only what it needs.
+# The build copies `requirements-lambda.txt` and `app/` and nothing else, so
+# tests and development dependencies stay out of the image whatever this file
+# says. This is the belt to that file's braces.
+
+# Version control and tooling
+.git
+.gitignore
+.github
+**/.DS_Store
+
+# Python build and cache artifacts
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Virtual environments
+venv/
+.venv/
+env/
+.env
+.env.*
+
+# Test and coverage output
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+tests/
+
+# The development dependency set. `requirements-lambda.txt` is the runtime pin
+# set and the only one the Dockerfile installs; this one carries pytest, moto,
+# black, mypy, locust and curl_cffi, none of which belong in a Lambda image.
+# Excluded so a stray `COPY . .` in a future edit cannot pick it up either.
+requirements.txt
+
+# Local development scaffolding and one-off operational scripts, none of which
+# belongs in a Lambda image. `scripts/` holds table creation, backfills and the
+# perf gate; all of them are run by a software engineer against an environment,
+# never by a function.
+docker-compose.yml
+Dockerfile
+.dockerignore
+scripts/
+README.md
+
+# Tool configuration, used by the test and lint jobs rather than at runtime.
+pytest.ini
+mypy.ini
+pyproject.toml
+pyrightconfig.json
+runtime.txt
+.bandit
+
+# Seed data for the category and manufacturer tables. Read by
+# `scripts/` at seed time against a table, never by a request path, so it is
+# context weight and image weight for nothing.
+static_assets/
+
+# Editor state
+.idea/
+.vscode/
+*.swp
