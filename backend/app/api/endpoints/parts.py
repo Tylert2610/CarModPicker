@@ -9,7 +9,11 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from app.api.dependencies.auth import get_current_user, get_optional_current_user
+from app.api.dependencies.auth import (
+    get_current_user,
+    get_optional_current_user,
+    require_api_key_or_admin,
+)
 from app.api.dependencies.repositories import Repositories, get_repositories
 from app.api.schemas.pagination import CursorPage
 from app.api.schemas.part import (
@@ -503,7 +507,7 @@ async def get_part_price_history(
 async def post_batch_price_history(
     body: PriceHistoryBatchRequest,
     deps: PublicEndpointDeps = Depends(get_standard_public_endpoint_dependencies),
-    current_user: DBUser = Depends(get_current_user),
+    caller: Optional[DBUser] = Depends(require_api_key_or_admin),
 ) -> PriceHistoryBatchResponse:
     """Aggregate min/max/last/trend per part for a batch of part IDs (1–100).
 
@@ -511,6 +515,11 @@ async def post_batch_price_history(
     URL-length limits. The endpoint never 404s on a per-id basis — unknown IDs
     return well-formed empty-summary entries so the client can iterate without
     holes. Invalid `window` values 422 with `error_code: INVALID_WINDOW`.
+
+    Writers are machines, not end users: an `X-API-Key` matching the configured
+    `EXTENSION_API_KEY` gets in (the Chrome extension and ingestion jobs), and so
+    does an admin bearer token. A non-admin user token is 403; no credential at
+    all is 401. `caller` is the admin user, or None on the API-key path.
     """
     logger = deps["logger"]
 

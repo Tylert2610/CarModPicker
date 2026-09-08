@@ -12,6 +12,7 @@ function Options() {
   const [environment, setEnvironment] = useState<ApiEnvironment>("production");
   const [openPartAfterCreation, setOpenPartAfterCreation] = useState(true);
   const [openInNewTab, setOpenInNewTab] = useState(true);
+  const [apiKey, setApiKey] = useState("");
   const [status, setStatus] = useState<{
     message: string;
     type: "success" | "error";
@@ -35,6 +36,15 @@ function Options() {
         }
       },
     );
+
+    // The API key lives in `local`, not `sync`: it is a shared secret and
+    // `sync` would replicate it to every Chrome profile the user signs into.
+    chrome.storage.local.get(["apiKey"], (result) => {
+      const stored = result["apiKey"];
+      if (typeof stored === "string") {
+        setApiKey(stored);
+      }
+    });
   }, []);
 
   const getEnvironmentFromUrl = (apiUrl: string): ApiEnvironment => {
@@ -59,6 +69,14 @@ function Options() {
       openPartAfterCreation,
       openInNewTab,
     });
+
+    const trimmedApiKey = apiKey.trim();
+    if (trimmedApiKey) {
+      await chrome.storage.local.set({ apiKey: trimmedApiKey });
+    } else {
+      await chrome.storage.local.remove(["apiKey"]);
+    }
+    setApiKey(trimmedApiKey);
     setStatus({ message: "Settings saved successfully!", type: "success" });
 
     setTimeout(() => {
@@ -156,6 +174,29 @@ function Options() {
             </select>
             <div className="mt-2 text-xs text-neutral-400">
               Select which API environment to use. Default: Production
+            </div>
+
+            <label
+              htmlFor="apiKey"
+              className="block text-sm font-medium text-neutral-300 mt-6 mb-2"
+            >
+              Ingestion API Key
+            </label>
+            <input
+              id="apiKey"
+              type="password"
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              autoComplete="off"
+              spellCheck={false}
+              placeholder="Leave blank unless you have been given one"
+              className="w-full px-5 py-4 rounded-2xl bg-linear-to-br from-white/10 to-white/5 border border-white/20 text-white text-sm transition-all duration-300 backdrop-blur-[15px] placeholder:text-neutral-500 focus:outline-none focus:border-primary-500 focus:ring-4 focus:ring-primary-500/15 focus:bg-linear-to-br focus:from-white/15 focus:to-white/8 focus:-translate-y-px"
+            />
+            <div className="mt-2 text-xs text-neutral-400">
+              Sent as the <code>X-API-Key</code> header on every API call. Only
+              the batch price-history route requires it, and only ingestion
+              builds of the extension are given a key. Stored on this device
+              only, never synced across your Chrome profiles.
             </div>
           </div>
 

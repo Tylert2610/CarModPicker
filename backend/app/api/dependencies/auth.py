@@ -1,10 +1,11 @@
+import hmac
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 import bcrypt
 import jwt
 from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
+from fastapi.security import APIKeyHeader, OAuth2PasswordBearer
 from jwt import InvalidTokenError
 
 from app.api.dependencies.repositories import Repositories, get_repositories
@@ -195,3 +196,59 @@ async def get_current_superuser(
             detail="Superuser privileges required",
         )
     return current_user
+
+
+# --- API key or admin dependencies -------------------------------------------
+#
+# The batch price-history route is written to by two kinds of caller that are
+# not interactive users: the Chrome extension and ingestion/admin jobs. Neither
+# should need a per-user account, so they present the shared `X-API-Key` secret
+# instead; an admin bearer token is the human path to the same route.
+
+API_KEY_HEADER = "X-API-Key"
+
+api_key_header_scheme = APIKeyHeader(name=API_KEY_HEADER, auto_error=False)
+
+
+def verify_api_key(presented: Optional[str]) -> bool:
+    """True when `presented` matches the configured `EXTENSION_API_KEY`.
+
+    Compared with `hmac.compare_digest` so the check does not leak the key
+    through its own timing. An unconfigured (empty) key never matches, so a
+    deployment that forgets to set it fails closed rather than accepting the
+    empty string.
+    """
+    if not presented:
+        return False
+    configured = settings.EXTENSION_API_KEY
+    if not configured:
+        return False
+    return hmac.compare_digest(presented, configured)
+
+
+async def require_api_key_or_admin(
+    api_key: Optional[str] = Depends(api_key_header_scheme),
+    token: Optional[str] = Depends(oauth2_scheme_optional),
+    repos: Repositories = Depends(get_repositories),
+) -> Optional[DBUser]:
+    """Allow a valid `X-API-Key`, or an admin bearer token, and nothing else.
+
+    Returns the authenticated admin user, or `None` when the caller got in on
+    the API key (there is no user behind a machine credential). Raises through
+    the app's normal `HTTPException` path:
+
+      - no credential at all, or a bad/unknown key with no token -> 401
+      - a valid token belonging to a non-admin user -> 403
+    """
+    if verify_api_key(api_key):
+        return None
+
+    if token is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    user = await get_current_user(token=token, repos=repos)
+    return await get_current_admin_user(current_user=user)

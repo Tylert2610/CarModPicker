@@ -50,7 +50,7 @@ from app.core.secrets import fetch_app_secrets
 # keep in step. Each is stored in a shadow field and exposed as a property that
 # resolves on first read, so importing this module performs no network call and
 # a process that never reads a secret never needs secretsmanager:GetSecretValue.
-SECRET_FIELDS = ("SECRET_KEY", "SENTRY_DSN")
+SECRET_FIELDS = ("SECRET_KEY", "SENTRY_DSN", "EXTENSION_API_KEY")
 
 
 class Settings(BaseServiceSettings):
@@ -68,6 +68,19 @@ class Settings(BaseServiceSettings):
         description="Secret key for JWT token signing. MUST be set in production!",
     )
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
+
+    # Shared API key for non-interactive writers of the batch price-history
+    # route (the Chrome extension and ingestion/admin jobs). Resolved lazily
+    # through the EXTENSION_API_KEY property below, exactly like SECRET_KEY.
+    # Empty = no key is accepted and only an admin bearer token gets in.
+    EXTENSION_API_KEY_SETTING: str = Field(
+        default="",
+        alias="EXTENSION_API_KEY",
+        description=(
+            "Shared secret accepted in the X-API-Key header by ingestion routes. "
+            "Empty disables API-key auth, leaving admin tokens as the only way in."
+        ),
+    )
     # Bounds for user-configurable session length (minutes). User preference is clamped to this range.
     ACCESS_TOKEN_EXPIRE_MINUTES_MIN: int = 15
     ACCESS_TOKEN_EXPIRE_MINUTES_MAX: int = 10080  # 7 days
@@ -429,6 +442,10 @@ class Settings(BaseServiceSettings):
     @property
     def SENTRY_DSN(self) -> str:
         return self._resolve_secret("SENTRY_DSN")
+
+    @property
+    def EXTENSION_API_KEY(self) -> str:
+        return self._resolve_secret("EXTENSION_API_KEY")
 
     def require_secrets(self, *names: str) -> None:
         """Raise unless every named secret resolves to a non-empty value.

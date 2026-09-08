@@ -85,8 +85,12 @@ PUBLIC_ROUTES: set[tuple[str, str]] = {
     ("GET", "/api/parts/{part_id}/with-listings"),
     # NOTE: POST /api/parts/price-history and POST /api/parts/{part_id}/listings
     # were public until they were brought in line with every other mutating route
-    # and put behind get_current_user. They are now covered by the protected
-    # sweep above, not allow-listed here.
+    # and put behind an auth dependency. They are now covered by the protected
+    # sweep above, not allow-listed here. The batch price-history route went a
+    # step further and takes `require_api_key_or_admin`: an X-API-Key matching
+    # EXTENSION_API_KEY, or an admin bearer token. Anonymous is still 401, which
+    # is all this sweep asserts; the key/admin/non-admin boundaries live in
+    # tests/api/endpoints/test_parts_price_history.py.
     # Categories (catalog reference data)
     ("GET", "/api/categories/"),
     ("GET", "/api/categories/count"),
