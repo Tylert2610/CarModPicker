@@ -18,20 +18,9 @@
 # and the CodeArtifact domain lives in the Artifacts account rather than in
 # either deploy account, so there is nothing for a conditional to pick between.
 #
-# `CI_AWS_ROLE_ARN` currently names `carmodpicker-staging-github-actions-deploy`,
-# and that is a known compromise rather than the end state. That role already
-# holds the CodeArtifact read grants and `sts:GetServiceBearerToken` from #316,
-# and its trust already admits every subject in this repository, so pointing CI
-# at it needs no Terraform and no apply. What it also holds is
-# `lambda:UpdateFunctionCode` and `ecr:PutImage`, which a pull request job has
-# no use for: any branch that can open a pull request can therefore assume a
-# role that can deploy. Portfolio hit this and split out a
-# `webbpulse-staging-github-actions-ci` role whose only permissions are the
-# CodeArtifact reads and whose trust names the pull request and branch subjects
-# instead of a wildcard. CarModPicker needs the same split, in
-# `terraform/iam_github_actions.tf`, alongside the ECR grants section 3.2 of the
-# split plan already schedules for that file. Repointing this variable is the
-# whole of the follow up.
+# `CI_AWS_ROLE_ARN` must name `carmodpicker-staging-github-actions-ci`, the read
+# only CodeArtifact role in `terraform/iam_github_actions.tf`, never the deploy
+# role, which also holds `lambda:UpdateFunctionCode` and `ecr:PutImage`.
 #
 name: Backend CI
 
