@@ -42,11 +42,14 @@ locals {
     "arn:aws:lambda:${var.aws_region}:${data.aws_caller_identity.current.account_id}:function:${local.prefix}-${domain}"
   ]
 
-  # Everything the container build needs: CodeArtifact read plus the sts:GetServiceBearerToken
-  # that get-authorization-token needs, pull on the shared base image, and push on this account's
-  # own nine domain repositories. Kept as its own list so the deploy statements above stay
-  # readable, and so the shapes stay recognisably the ones the artifacts root exports.
-  shared_registry_policy_statements = [
+  # Reading the shared "webbpulse" package out of CodeArtifact. Three statements because the three
+  # actions take three different resources: GetAuthorizationToken is domain level, the read actions
+  # are per repository, and sts:GetServiceBearerToken has no resource of its own at all.
+  #
+  # Held as its own list because two roles need exactly this and nothing more of it: the deploy
+  # role, whose container build resolves the same package, and the pull request CI role at the
+  # bottom of this file, for which these three statements are the entire permission set.
+  codeartifact_read_policy_statements = [
     {
       sid       = "CodeArtifactToken"
       actions   = ["codeartifact:GetAuthorizationToken"]
@@ -69,10 +72,11 @@ locals {
       resources = local.codeartifact_repository_arns
     },
     {
-      # sts:GetServiceBearerToken has no resource of its own, and it lives in the caller's identity
-      # policy rather than in any CodeArtifact policy, which is why a resource policy alone is not
-      # enough. The condition pins it to CodeArtifact so the grant cannot mint a bearer token for
-      # another service.
+      # sts:GetServiceBearerToken lives in the caller's identity policy rather than in any
+      # CodeArtifact policy, which is why a resource policy alone is not enough. Without it
+      # get-authorization-token fails with a denial that names no CodeArtifact action. The
+      # condition pins it to CodeArtifact so the grant cannot mint a bearer token for another
+      # service.
       sid       = "CodeArtifactBearerToken"
       actions   = ["sts:GetServiceBearerToken"]
       resources = ["*"]
@@ -82,6 +86,13 @@ locals {
         }
       }
     },
+  ]
+
+  # Everything the container build needs: the CodeArtifact reads above, pull on the shared base
+  # image, and push on this account's own nine domain repositories. Kept as its own list so the
+  # deploy statements below stay readable, and so the shapes stay recognisably the ones the
+  # artifacts root exports.
+  shared_registry_policy_statements = concat(local.codeartifact_read_policy_statements, [
     {
       sid = "SharedBaseImagePull"
       actions = [
@@ -125,7 +136,7 @@ locals {
       ]
       resources = module.registry.repository_arns_list
     },
-  ]
+  ])
 }
 
 # GitHub Actions OIDC provider and deploy role, from the shared github-actions-role module. The
@@ -212,4 +223,49 @@ module "github_actions_role" {
     # push the built domain images to this account's own repositories.
     local.shared_registry_policy_statements,
   )
+}
+
+# ---------------------------------------------------------------------------
+# The role pull request CI assumes, separate from the deploy role above.
+#
+# backend-ci.yml needs an AWS identity for one thing only: minting a read only
+# CodeArtifact token so pip can install the "webbpulse" package, which is
+# published to CodeArtifact and never to PyPI. It was doing that with the deploy
+# role, which holds lambda:UpdateFunctionCode and ecr:PutImage and whose trust
+# admits every subject in the repository including a pull request branch. That
+# means any branch that can open a pull request could assume a role that
+# deploys.
+#
+# This role carries the CodeArtifact statements and nothing else, and its trust
+# names the pull request subject plus the two long lived branch refs rather than
+# a wildcard, so a push triggered job on staging or main can use it too.
+# ---------------------------------------------------------------------------
+module "github_actions_ci_role" {
+  source  = "app.terraform.io/WebbPulse/platform-modules/aws//modules/github-actions-role"
+  version = "~> 1.1"
+
+  role_name        = "${local.prefix}-github-actions-ci"
+  role_description = "Read only CodeArtifact access for pull request CI in WebbPulse/CarModPicker. Deploy permissions live on the separate github-actions-deploy role."
+
+  # The deploy role's module call owns this account's single
+  # token.actions.githubusercontent.com provider; an account holds at most one
+  # per URL, so this call trusts that one rather than creating a second.
+  create_oidc_provider = false
+  oidc_provider_arn    = module.github_actions_role.oidc_provider_arn
+
+  # CarModPicker predates GitHub's immutable subject claims, so its
+  # sub_claim_prefix is still the plain "repo:WebbPulse/CarModPicker" the deploy
+  # role above uses. Newer WebbPulse repositories get
+  # "repo:WebbPulse@185014056/<repo>@<id>" instead, and a trust policy written in
+  # the wrong shape is denied at AssumeRoleWithWebIdentity, so read
+  # /repos/WebbPulse/<repo>/actions/oidc/customization/sub before reusing this.
+  subjects = [
+    "repo:WebbPulse/CarModPicker:pull_request",
+    "repo:WebbPulse/CarModPicker:ref:refs/heads/staging",
+    "repo:WebbPulse/CarModPicker:ref:refs/heads/main",
+  ]
+
+  inline_policy_name = "codeartifact-read"
+
+  policy_statements = local.codeartifact_read_policy_statements
 }
