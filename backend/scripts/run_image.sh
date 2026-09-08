@@ -44,7 +44,7 @@ usage() {
 usage: run_image.sh <domain>
 
   domain  one of identity, users, catalog, vehicles, build-lists, build-logs,
-          moderation, media, ingestion
+          moderation, media, admin
 
 environment:
   PORT                   host port to publish on, default 8080
@@ -70,7 +70,7 @@ USAGE
 }
 
 case "${DOMAIN}" in
-    identity|users|catalog|vehicles|build-lists|build-logs|moderation|media|ingestion) ;;
+    identity|users|catalog|vehicles|build-lists|build-logs|moderation|media|admin) ;;
     "") echo "error: no domain given." >&2; usage ;;
     *) echo "error: '${DOMAIN}' is not a domain." >&2; usage ;;
 esac

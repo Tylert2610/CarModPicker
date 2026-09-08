@@ -101,7 +101,7 @@ TABLE_OWNERS: Dict[str, str] = {
     "votes": "moderation",
     "reports": "moderation",
     "bug_reports": "moderation",
-    "part_price_alerts": "ingestion",
+    "part_price_alerts": "admin",
     "image_source_mappings": "media",
 }
 
@@ -203,9 +203,9 @@ EXPECTED_CROSS_DOMAIN_READS: Dict[str, Set[str]] = {
     # objects. Read-only, admin-initiated, and the narrowest bundle in the map.
     "media": {"users", "car_generations", "parts", "build_lists"},
     # `admin/stats` counts twelve tables and `admin/db_ops` seeds and purges, so
-    # `ingestion` reads most of the application by design. Section 1.5's note
-    # that it is closer to `admin` than to `ingestion` is visible right here.
-    "ingestion": {
+    # `admin` reads most of the application by design. That breadth is why
+    # section 1.5's preferred name won: this is administration, not ingestion.
+    "admin": {
         "users",
         "oauth_accounts",
         "webauthn_credentials",

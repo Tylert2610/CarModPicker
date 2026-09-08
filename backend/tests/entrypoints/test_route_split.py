@@ -104,7 +104,7 @@ EXPECTED_DOMAIN_ROUTES = {
     "build-logs": 5,
     "moderation": 20,
     "media": 8,
-    "ingestion": 12,
+    "admin": 12,
 }
 
 

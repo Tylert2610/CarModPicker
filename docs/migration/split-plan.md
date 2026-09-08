@@ -63,7 +63,7 @@ decorator count is 162 and the real count is 171.
 | `build-logs` | `build_logs` | 5 | `/api/build-logs` |
 | `moderation` | `votes`, `reports`, `bug_reports` | 20 | `/api/votes`, `/api/reports`, `/api/bug-reports` |
 | `media` | `images` | 8 | `/api/images` |
-| `ingestion` | `crawled_pages`, `part_price_alerts`, `admin/db_ops`, `admin/stats` | 12 | `/api/crawled-pages`, `/api/part-price-alerts`, `/api/admin/db-ops`, `/api/admin/stats` |
+| `admin` | `crawled_pages`, `part_price_alerts`, `admin/db_ops`, `admin/stats` | 12 | `/api/crawled-pages`, `/api/part-price-alerts`, `/api/admin/db-ops`, `/api/admin/stats` |
 
 171 routes under `/api`, plus the five root routes in `main.py` (`/`, `/health`,
 `/ready`, `/sitemap.xml`, `/sitemap-{name}.xml`) that every function serves
@@ -93,26 +93,26 @@ what section 1.3 has to unwind.
 | `oauth_accounts` | `identity` | `users` (delete cascade) |
 | `webauthn_credentials` | `identity` | `users` (delete cascade) |
 | `app_settings` | `users` | none |
-| `parts` | `catalog` | `moderation` (`net_votes` denormalisation), `users` (delete cascade), `ingestion` (`admin/db_ops`) |
-| `part_cars` | `catalog` | `users` (delete cascade), `ingestion` |
+| `parts` | `catalog` | `moderation` (`net_votes` denormalisation), `users` (delete cascade), `admin` (`admin/db_ops`) |
+| `part_cars` | `catalog` | `users` (delete cascade), `admin` |
 | `part_listings` | `catalog` | `build-lists` (price capture), `users` (delete cascade) |
 | `part_price_history` | `catalog` | `build-lists` (price capture), `users` (delete cascade) |
-| `part_manufacturers` | `catalog` | `ingestion` |
-| `categories` | `catalog` | `ingestion` |
+| `part_manufacturers` | `catalog` | `admin` |
+| `categories` | `catalog` | `admin` |
 | `retailers` | `catalog` | none |
-| `car_makes` | `vehicles` | `ingestion` (seed and delete-all) |
-| `car_models` | `vehicles` | `ingestion` |
-| `car_generations` | `vehicles` | `ingestion` |
-| `build_lists` | `build-lists` | `users` (delete cascade), `ingestion` |
+| `car_makes` | `vehicles` | `admin` (seed and delete-all) |
+| `car_models` | `vehicles` | `admin` |
+| `car_generations` | `vehicles` | `admin` |
+| `build_lists` | `build-lists` | `users` (delete cascade), `admin` |
 | `build_list_parts` | `build-lists` | `catalog` (part purge), `users` (delete cascade) |
 | `build_list_phases` | `build-lists` | `users` (delete cascade) |
 | `build_list_labor_estimates` | `build-lists` | `users` (delete cascade) |
 | `build_logs` | `build-logs` | `build-lists` (created with the list), `users` (delete cascade) |
 | `build_log_posts` | `build-logs` | `users` (delete cascade) |
-| `votes` | `moderation` | `catalog` (part purge), `users` (delete cascade), `ingestion` |
+| `votes` | `moderation` | `catalog` (part purge), `users` (delete cascade), `admin` |
 | `reports` | `moderation` | `catalog` (part purge), `users` (delete cascade) |
 | `bug_reports` | `moderation` | none |
-| `part_price_alerts` | `ingestion` | `catalog` (part purge), `users` (delete cascade) |
+| `part_price_alerts` | `admin` | `catalog` (part purge), `users` (delete cascade) |
 | `image_source_mappings` | `media` | none |
 
 Cross-domain **reads** are allowed with read-only IAM. Cross-domain **writes**
@@ -148,9 +148,9 @@ not with it.
 
 **Seam 2: the part purge.** `part_service.purge_related_rows_for_parts` deletes a
 part and then writes into `build_list_parts`, `votes`, `reports`, and
-`part_price_alerts`, owned by `build-lists`, `moderation` twice, and `ingestion`.
+`part_price_alerts`, owned by `build-lists`, `moderation` twice, and `admin`.
 Same mechanism, smaller blast radius: a tombstone on `parts` plus a stream, with
-`build-lists`, `moderation`, and `ingestion` each draining their own queue.
+`build-lists`, `moderation`, and `admin` each draining their own queue.
 
 The read-path consequence is real here too and is more visible to users than the
 user cascade. A build list that contains a purged part must not render a hole; it
@@ -180,13 +180,13 @@ frontend change of about one line per call site and avoids the problem entirely.
 `evaluate_alerts_for_listing` inline on the request thread. That function reads
 `part_price_alerts`, `parts`, `retailers`, and `users`, and then sends SES mail,
 all before the listing write returns. `catalog` owns the listing;
-`part_price_alerts` belongs to `ingestion`.
+`part_price_alerts` belongs to `admin`.
 
 This one is the easiest to fix and the most worth fixing on its own merits, split
 or no split. Today a price write blocks on a fan-out read plus an SES call inside
 a 29 second Lambda, and there is no scheduler behind it: alerts fire only when
 some request happens to write a price. It becomes a stream on `part_listings`
-feeding an `ingestion` handler that owns both the alert rows and the SES send.
+feeding an `admin` handler that owns both the alert rows and the SES send.
 `catalog` loses its SES grant entirely.
 
 **Seam 5: the read fan-outs.** Two of them. `search.py` is one route reading
@@ -225,7 +225,7 @@ trap if a module is ever moved between domains.
 | `/api/parts/price-history` vs `/api/parts/{part_id}/price-history` | `catalog` | Different segment count and method |
 | `/api/parts/count`, `/filter-options`, `/check-url`, `/with-votes` vs `/{entity_id}` | `catalog` | Literals are registered before the generated `{entity_id}` route |
 | `/api/part-manufacturers/counts/by-source` vs `/{id}/parts` | `catalog` | Distinct two-segment shape |
-| `/api/part-price-alerts/unsubscribe` vs `/{alert_id}` | `ingestion` | Survives only because `/{alert_id}` is PATCH and DELETE and there is no GET detail route. Fragile: adding `GET /{alert_id}` breaks unsubscribe silently |
+| `/api/part-price-alerts/unsubscribe` vs `/{alert_id}` | `admin` | Survives only because `/{alert_id}` is PATCH and DELETE and there is no GET detail route. Fragile: adding `GET /{alert_id}` breaks unsubscribe silently |
 | `/api/build-list-parts/parts/{part_id}/build-lists/count` vs `/{build_list_id}` | `build-lists` | Three-segment shape differs. A bare `/api/build-list-parts/parts` would match `{build_list_id}` |
 | `/api/users/admin/users` vs `/{user_id}` | `users` | Two segments. A bare `/api/users/admin` would match `{user_id}` |
 | `/api/build-lists/with-votes`, `/count`, `/car/{id}`, `/user/me` vs generated `{entity_id}` | `build-lists` | Literals registered first |
@@ -236,7 +236,7 @@ route away from a silent production break, and the fix is to register
 should go in early, independent of the split.
 
 There is one genuine cross-domain ordering conflict and it is in the API Gateway
-map rather than in FastAPI. `ingestion` serves `/api/admin/db-ops` and
+map rather than in FastAPI. `admin` serves `/api/admin/db-ops` and
 `/api/admin/stats`, two children of `/api/admin`. There is no route at
 `/api/admin` itself, so two explicit prefix routes are needed rather than one,
 and no other domain may ever claim `/api/admin/{something}` without taking it
@@ -257,18 +257,17 @@ domain and worsens the largest boundary to fix the smallest, or giving search it
 own function, which makes ten domains and pushes the alarm ceiling from tight to
 breached. Nine, with search in `vehicles`, is the least bad of the three.
 
-`ingestion` is thinner than its name. `crawled_pages` is one route that touches
-no repository at all; it parses HTML the Chrome extension posts and returns the
-result. The listing writes that the name implies belong to `catalog`. What is
-actually in `ingestion` is the price alerts and the two admin modules, which is a
-coherent function but is closer to `admin` than to `ingestion`. Renaming it is
-cosmetic and cheap before the first cut and expensive after, since the name is in
-the ECR repository, the function name, the image tag, and the log group. It is in
-the open questions for that reason.
+`admin` was called `ingestion` until the rename below, and the old name was the
+weaker of the two. `crawled_pages` is one route that touches no repository at
+all; it parses HTML the Chrome extension posts and returns the result. The
+listing writes that "ingestion" implies belong to `catalog`. What is actually in
+the domain is the price alerts and the two admin modules, which is a coherent
+function and an administrative one. The boundary itself never moved; only the
+name did.
 
 The count the code would argue for, left to itself, is seven: fold `search` into
-`catalog`, fold `build-logs` into `build-lists`, and fold `ingestion`'s admin
-modules into the domains they administer. That is rejected because it makes
+`catalog`, fold `build-logs` into `build-lists`, and fold `admin`'s modules
+into the domains they administer. That is rejected because it makes
 `catalog` enormous and puts admin writes to six domains' tables behind six
 different functions, which is worse than one broad admin function. Nine stands.
 
@@ -309,7 +308,7 @@ backend/app/
     build_logs.py
     moderation.py
     media.py
-    ingestion.py
+    admin.py
   domains/
     identity/
       routers/      the four auth modules
@@ -566,7 +565,7 @@ This replaces the monolith's four inline policies, which today grant
 `table/carmodpicker-<env>-*` and its indexes to everything. The write action set
 is the twelve Dynamo write actions; the read set is five.
 
-Three domains have grants beyond Dynamo. `identity` and `ingestion` get
+Three domains have grants beyond Dynamo. `identity` and `admin` get
 `ses:SendEmail` on the identity and the `carmodpicker-transactional` configuration
 set; `catalog` loses SES when seam 4 moves. `media` gets `s3:PutObject`,
 `GetObject`, `DeleteObject`, `HeadObject`, `ListBucket` on the user images
@@ -590,7 +589,7 @@ Route keys, with the `/api` prefix that differs from Portfolio:
 | `build-logs` | `ANY /api/build-logs/{proxy+}`, `ANY /api/build-logs` |
 | `moderation` | `/api/votes`, `/api/reports`, `/api/bug-reports`, each with a `{proxy+}` pair |
 | `vehicles` | `/api/car-generations`, `/api/search`, each with a pair |
-| `ingestion` | `/api/crawled-pages`, `/api/part-price-alerts`, `/api/admin/db-ops`, `/api/admin/stats`, each with a pair |
+| `admin` | `/api/crawled-pages`, `/api/part-price-alerts`, `/api/admin/db-ops`, `/api/admin/stats`, each with a pair |
 | `build-lists` | `/api/build-lists`, `/api/build-list-parts`, `/api/build-list-phases`, `/api/build-list-labor-estimates`, each with a pair |
 | `identity` | `/api/auth`, with a pair |
 | `catalog` | `/api/parts`, `/api/part-manufacturers`, `/api/categories`, `/api/retailers`, each with a pair |
@@ -861,7 +860,7 @@ first, then the event plumbing, then the four that depend on it.
 3. `moderation` (20). Cuttable early only because seam 3 lands with it, moving
    the `net_votes` write to `catalog`'s side of the stream.
 4. `vehicles` (11). Read-only, no secret, cheapest possible IAM.
-5. `ingestion` (12). Gains the price-alert handler from seam 4.
+5. `admin` (12). Gains the price-alert handler from seam 4.
 6. Event plumbing: tombstones, streams, queues, and the tombstone-aware read
    paths in `build-lists`, `build-logs`, `moderation`, and `vehicles`.
 7. `build-lists` (34).
@@ -998,11 +997,11 @@ infrastructure.
 | 18 | `build-logs`: function, routes, OTel | medium | 6 add | 16 |
 | 19 | `moderation`: function, routes, OTel | medium | 8 add | 18 |
 | 20 | `vehicles`: function, routes, OTel | medium | 7 add | 19 |
-| 21 | `ingestion`: function, routes, OTel | medium | 11 add | 20 |
+| 21 | `admin`: function, routes, OTel | medium | 11 add | 20 |
 | 22 | Streams on `users`, `parts`, `votes`, `part_listings`, plus queues and DLQs | large | 16 add | 21 |
 | 23 | Tombstone attributes and tombstone-aware reads in four domains | large | 0 | 22 |
 | 24 | Seam 3: `net_votes` handler moves to `catalog`'s stream consumer | medium | 2 add | 22 |
-| 25 | Seam 4: price alert email moves to an `ingestion` stream handler | medium | 2 add | 22 |
+| 25 | Seam 4: price alert email moves to an `admin` stream handler | medium | 2 add | 22 |
 | 26 | `build-lists`: function, routes, OTel | large | 10 add | 23 |
 | 27 | `identity`: function, routes, OTel | medium | 4 add | 23 |
 | 28 | Seam 2: part purge goes async | large | 2 add | 23 |
@@ -1273,7 +1272,7 @@ wholesale would have bound uvicorn to 8000 while the adapter polled 8080, which
 presents as a readiness check that never passes with no application logs to say
 why. `RUN_STARTUP_TASKS=false` is baked for the same reason and is not repeated.
 `EMAIL_FROM` and `EMAIL_ENABLED` are dropped because `media` sends no mail and
-section 3.4 gives SES to `identity` and `ingestion` only; a configured sender on
+section 3.4 gives SES to `identity` and `admin` only; a configured sender on
 a function with no `ses:SendEmail` grant is a configuration that lies.
 `SENTRY_SERVICE_NAME` becomes `lambda-media` rather than the monolith's
 `lambda-api`, so two functions' events cannot merge into one service in the
@@ -1296,6 +1295,46 @@ is erroring" rather than "the backend is erroring", and `lambda_aggregate_thresh
 still applies within a group. But it does mean the ceiling is no longer a hard
 stop that a tenth function runs into, so the decision can be made on the strength
 of the signal rather than under a constraint.
+
+**Ingestion is now admin.** Open question 4 asked whether the domain should be
+renamed and the answer is yes, taken on 2026-09-07. Section 1.5 had already
+argued the case: `crawled_pages` writes nothing, the listing writes the old name
+implies live in `catalog`, and what is actually in the domain is the price alerts
+plus `admin/db_ops` and `admin/stats`. The name now says what the twenty
+repositories in its bundle already said.
+
+The question predicted this would be cheap now and expensive after the first cut,
+and the shape of the change bears that out. Nothing about the API moved: no
+route, no URL path, no prefix, no tag, no OpenAPI operation id. The route
+contract fixture and the published OpenAPI document are byte-identical, which is
+what makes the change reviewable as a rename rather than as a refactor. What did
+move is the deployment-unit name in eleven files: the descriptor and its
+repository tuple in `app/composition/domains.py`, the entrypoint module
+`app/entrypoints/ingestion.py` to `admin.py`, the valid-domain `case` list in
+`backend/Dockerfile` and in both `scripts/build_image.sh` and
+`scripts/run_image.sh`, the build matrix in `.github/workflows/deploy-backend.yml`,
+`local.lambda_domain_names` in `terraform/ecr.tf`, the two per-domain test
+expectations in `backend/tests/entrypoints/`, and the prose here and in
+`CLAUDE.md`. `service_name` derives from the descriptor's `name`, so
+`lambda-ingestion` became `lambda-admin` with no edit of its own, and
+`terraform/iam_github_actions.tf` derives the nine function ARNs from
+`local.lambda_domain_names`, so it changed without being touched.
+
+The one cost is in ECR. Renaming the repository is a destroy and a create, not a
+rename, and `carmodpicker-staging/ingestion` holds the three images row 11 pushed
+by hand. `force_delete` is a destroy-time flag that the provider reads from prior
+state rather than from configuration, and a key removed from a `for_each` map has
+no configuration left to evaluate, so it cannot be switched on in the same apply
+that removes the key. The images are disposable, nothing has ever deployed from
+them, and emptying the repository first is a smaller change than two applies with
+the guardrail left off; `terraform/ecr.tf` carries the command. Production owns
+none of these repositories yet, so it pays nothing at all.
+
+Had this waited until after row 21, the name would additionally have been in a
+live Lambda function, its log group, its execution role and inline policy, its
+alarm dimensions, and the image tags of everything already deployed, and the
+rename would have meant recreating a function that was serving traffic. That is
+the difference the open question was pointing at.
 
 PRs 1, 2, 3, 9, 10, and 33 are independent of everything else and can run in
 parallel. PR 22 is the hard gate: nothing from 23 onward can start without it,
@@ -1334,10 +1373,10 @@ mutating route. Both are presumably for the Chrome extension, which does hold a
 bearer token and could send it. Is this deliberate? If not it should be fixed
 before `catalog` is cut, not as part of it, so the fix is reviewable on its own.
 
-**4. Renaming `ingestion`.** It holds price alerts and two admin modules, and
-`crawled_pages` touches no repository. `admin` describes it better. Cheap now,
-expensive after the first cut, because the name is in the ECR repository, the
-function name, the image tag, and the log group.
+**4. Renaming `ingestion`. Answered: yes, and done.** It held price alerts and
+two admin modules, and `crawled_pages` touches no repository, so `admin`
+describes it better. Renamed on 2026-09-07, before its function existed. Section
+8's "Ingestion is now admin" paragraph records what it cost.
 
 **5. The `vehicles` boundary.** Search fanning out over four domains sits there
 because `vehicles` would otherwise be the smallest domain. Section 1.5 argues it
