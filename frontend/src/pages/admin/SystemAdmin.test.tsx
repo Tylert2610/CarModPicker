@@ -1,7 +1,3 @@
-/* eslint-disable @typescript-eslint/unbound-method --
- * vi.mocked(apiClient.*) is the canonical Phase 8 mocking pattern.
- */
-
 // Phase 8 plan 08-16 (Wave 4) — SystemAdmin admin page coverage.
 //
 // SystemAdmin imports `adminApi` from `../../api/admin`, `appSettingsApi`

@@ -11,7 +11,7 @@
 // apiClient mocks BEFORE mount — the customRender in test-utils.tsx calls
 // setupApiMocks() which would clobber per-test mock impls otherwise.
 
-/* eslint-disable @typescript-eslint/unbound-method, @typescript-eslint/no-unsafe-assignment --
+/* eslint-disable @typescript-eslint/no-unsafe-assignment --
  * vi.mocked(apiClient.get) is the canonical Vitest pattern for typed mock
  * introspection (mirrors AuthContext.test.tsx). The unsafe-assignment warning
  * fires on the nested `data: { data: [...], pagination: {...} }` literal used

@@ -1,4 +1,4 @@
-import type { AxiosResponse } from 'axios';
+import type { ApiClientResponse } from '../../api/client';
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useApiRequest from '../../hooks/UseApiRequest';
@@ -33,18 +33,18 @@ const fetchReportsRequestFn = (params?: {
   status?: string;
   skip?: number;
   limit?: number;
-}): Promise<AxiosResponse<PaginatedResponse<ReportWithDetails>>> =>
+}): Promise<ApiClientResponse<PaginatedResponse<ReportWithDetails>>> =>
   reportsApi.getReportsWithDetails(params);
 const updateReportRequestFn = (payload: {
   reportId: string;
   data: ReportUpdate;
-}): Promise<AxiosResponse<ReportWithDetails>> =>
+}): Promise<ApiClientResponse<ReportWithDetails>> =>
   apiClient.put<ReportWithDetails>(
     `/reports/${payload.reportId}`,
     payload.data
   );
 const getPendingReportsCountRequestFn = (): Promise<
-  AxiosResponse<PaginatedResponse<ReportWithDetails>>
+  ApiClientResponse<PaginatedResponse<ReportWithDetails>>
 > => reportsApi.getReportsWithDetails({ status: 'pending', skip: 0, limit: 1 });
 
 function ReportReview() {

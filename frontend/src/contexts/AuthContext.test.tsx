@@ -17,18 +17,12 @@
 // `removeStoredToken` from `../api/client`. This file mocks both directly so
 // it can assert on the logout and token-clearing calls.
 
-/* eslint-disable @typescript-eslint/unbound-method --
- * vi.mocked(apiClient.get) is the canonical Vitest pattern for typed mock
- * introspection; ESLint's unbound-method rule is a false positive here
- * because the returned value is immediately invoked as a mock helper
- * (mockResolvedValueOnce / mockReset / toHaveBeenCalledWith), never as a
- * bound method call on apiClient itself.
- */
-
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { ApiError } from '@webbpulse/api-client';
+import { buildApiError } from '../test/apiResponse';
 
 import { apiClient } from '../api/client';
 import { mockUser } from '../test/mocks/api';
@@ -69,6 +63,10 @@ vi.mock('../api/client', () => ({
   setStoredToken: vi.fn(),
   getStoredToken: vi.fn(() => null),
   removeStoredToken: mockRemoveStoredToken,
+  // The real predicate: it does no I/O, and stubbing it would make the 401
+  // branch below unreachable no matter what the request rejected with.
+  isApiErrorWithStatus: (error: unknown): error is ApiError =>
+    error instanceof ApiError,
 }));
 
 // Silence Sentry.setUser — AuthContext calls it unconditionally on every user
@@ -137,9 +135,14 @@ describe('AuthContext provider', () => {
   });
 
   it('stays unauthenticated when /users/me returns 401 and clears the stored token', async () => {
-    vi.mocked(apiClient.get).mockRejectedValueOnce({
-      response: { status: 401 },
-    });
+    vi.mocked(apiClient.get).mockRejectedValueOnce(
+      buildApiError(401, {
+        success: false,
+        status: 401,
+        message: 'Not authenticated',
+        request_id: 'req-401',
+      })
+    );
 
     renderWithProvider();
 

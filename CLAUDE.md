@@ -61,14 +61,33 @@ bandit -r app
 
 ### Frontend (`frontend/`)
 
+The frontend depends on the private `@webbpulse/*` packages, which are published
+to the org CodeArtifact repository and never to the public registry. `npm ci`
+fails with a 401 until you have a token, so log in first:
+
+```bash
+AWS_PROFILE=WebbPulse-Artifacts/AdministratorAccess AWS_REGION=us-west-2 \
+  aws codeartifact login --tool npm --domain webbpulse \
+  --domain-owner 432410731887 --repository npm --namespace @webbpulse
+```
+
+Run it from the repository root, not from `frontend/`: inside a package the CLI
+writes to that package's `.npmrc`, which is the tracked file. The token lands in
+`~/.npmrc` and lasts 12 hours. `frontend/.npmrc` holds only the scope-to-registry
+line and is committed. A read-only SSO profile cannot mint the token: the managed
+`ReadOnlyAccess` policy omits `sts:GetServiceBearerToken`.
+
 ```bash
 npm run dev           # dev server on port 4000 (proxies /api to backend)
 npm run dev:staging   # use staging API
 npm run dev:prod      # use production API
 npm run build         # tsc -b && vite build
 npm run lint          # eslint
+npm run format        # prettier --write
+npm run format:check  # prettier --check (what CI runs)
 npm run type-check    # tsc --noEmit
-npm test              # vitest
+npm test              # vitest (watch)
+npm run test:run      # vitest run (what CI runs)
 npm run test:coverage
 ```
 
@@ -123,7 +142,12 @@ Endpoints read and write through repositories from `app/db/dynamo/`, injected vi
 
 - **`pages/`** — Route-level components (lazy-loaded).
 - **`components/`** — Shared UI components.
-- **`api/`** — Axios-based API client modules (one per backend domain).
+- **`api/`** — API client modules (one per backend domain). All of them go
+  through `api/client.ts`, which adapts `@webbpulse/api-client` to the
+  `{ data }` response shape the call sites read and rejects with `ApiError` on a
+  non-2xx. `utils/apiError.ts` reads the backend's error envelope off that.
+- **`config/app.ts`** — startup configuration, validated by `@webbpulse/config`.
+  The `VITE_BACKEND` dev switch and the `/api` suffix are resolved here.
 - **`contexts/`** — React contexts (auth, user state).
 - **`hooks/`** — Custom React hooks.
 - React Router 7 for routing; Tailwind CSS 4 for styling.
@@ -184,9 +208,12 @@ Deploy variables are **environment-scoped**: they live on the `production` and `
 |---|---|---|
 | `backend-deploy.yml` | `AWS_DEPLOY_ROLE_ARN`, `TFC_WORKSPACE_ID`, `LAMBDA_FUNCTION_NAME`, `LAMBDA_ARTIFACTS_BUCKET` | `TFC_API_TOKEN` |
 | `deploy-backend.yml` | `AWS_DEPLOY_ROLE_ARN` (environment), `CODEARTIFACT_DOMAIN_OWNER`, `BACKEND_IMAGE_BUILD_ENABLED`, `BACKEND_IMAGE_DEPLOY_ENABLED` (all three repository-level) | none |
-| `frontend-deploy.yml` | `AWS_DEPLOY_ROLE_ARN`, `TFC_WORKSPACE_ID`, `FRONTEND_S3_BUCKET`, `CLOUDFRONT_DISTRIBUTION_ID`, `VITE_API_URL`, `CWS_EXTENSION_ID` | `TFC_API_TOKEN` |
+| `frontend-deploy.yml` | `AWS_DEPLOY_ROLE_ARN`, `TFC_WORKSPACE_ID`, `FRONTEND_S3_BUCKET`, `CLOUDFRONT_DISTRIBUTION_ID`, `VITE_API_URL`, `CWS_EXTENSION_ID`, `CODEARTIFACT_DOMAIN_OWNER` (repository-level) | `TFC_API_TOKEN` |
 | `chrome-extension-deploy.yml` | `CWS_CLIENT_ID`, `CWS_EXTENSION_ID` | `CWS_CLIENT_SECRET`, `CWS_REFRESH_TOKEN` |
 | `backend-ci.yml` | `CI_AWS_ROLE_ARN` (repository) | none |
+| `frontend-ci.yml` | `CI_AWS_ROLE_ARN`, `CODEARTIFACT_DOMAIN_OWNER` (both repository-level) | none |
+
+`frontend-ci.yml` now calls the org reusable workflow `WebbPulse/.github/.github/workflows/typescript-ci.yml@v1`, which owns the install, format check, lint, test and build steps plus the CodeArtifact login the `@webbpulse/*` packages need. Two checks stayed in this repository because the reusable workflow has no input for them: `npm audit --audit-level=moderate` and `madge --circular`. They live in a second job that installs nothing and assumes no role, since neither needs the private registry.
 
 **`CI_AWS_ROLE_ARN` is repository-scoped, and it is the one AWS role a pull request can reach.** `AWS_DEPLOY_ROLE_ARN` lives on the `staging` and `production` Environments, whose deployment branch policies admit only those branches, so a `pull_request` job cannot read it at all. CI still needs an AWS identity for one thing: `requirements.txt` starts with `webbpulse`, which is published only to CodeArtifact and never to PyPI, so the job has to mint a CodeArtifact token before `pip install` can resolve anything. `CI_AWS_ROLE_ARN` names `carmodpicker-staging-github-actions-ci` (output `github_actions_ci_role_arn`), a role that holds the CodeArtifact reads and `sts:GetServiceBearerToken` and nothing else, and whose trust names the `pull_request` subject plus the `staging` and `main` branch refs rather than a wildcard. It is deliberately not the deploy role: that one holds `lambda:UpdateFunctionCode` and `ecr:PutImage`, and pointing pull request CI at it would let any branch that can open a pull request assume a role that deploys. One variable rather than a branch conditional, because every run resolves the same read-only package out of the Artifacts account.
 

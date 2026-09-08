@@ -194,9 +194,10 @@ const BuildListParts: React.FC<BuildListPartsProps> = ({
       );
       // Refresh the build list parts
       await fetchBuildListParts(buildListId);
-    } catch (error) {
-      throw error;
     } finally {
+      // No catch: the caller handles the failure. This block exists only to
+      // clear the updating flag on both paths, and a catch that rethrows
+      // unchanged does nothing a bare `finally` does not already do.
       setIsUpdating(false);
     }
   };

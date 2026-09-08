@@ -1,4 +1,4 @@
-import { AxiosError } from 'axios';
+import { ApiError } from '@webbpulse/api-client';
 import { Link } from 'react-router-dom';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import useApiRequest from '../../hooks/UseApiRequest';
@@ -369,7 +369,7 @@ function CreatePartForm({ onPartCreated }: CreatePartFormProps) {
     } catch (err) {
       setIsCreating(false);
       // Handle duplicate URL error
-      if (err instanceof AxiosError && err.response?.data) {
+      if (err instanceof ApiError && err.body) {
         // `PART_ALREADY_EXISTS` is what the backend actually sends for a
         // duplicate. The other two are kept because they cost nothing and this
         // branch is the only thing standing between a duplicate and a dead-end

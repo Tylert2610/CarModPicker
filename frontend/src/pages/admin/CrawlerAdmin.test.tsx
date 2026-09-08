@@ -21,11 +21,6 @@
 // 2 (Adapter Tuning). Sections 3 (Background Jobs) and 4 (Manual Run) land in
 // follow-up tasks against the same file.
 
-/* eslint-disable @typescript-eslint/unbound-method --
- * vi.mocked(apiClient.get) is the canonical Vitest pattern for typed mock
- * introspection. See Builder.test.tsx for the in-repo precedent.
- */
-
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 
 import {

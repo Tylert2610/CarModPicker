@@ -13,11 +13,6 @@
 // modules, which call through the apiClient that setup.ts mocks, so no
 // per-file module mock is needed.
 
-/* eslint-disable @typescript-eslint/unbound-method --
- * vi.mocked(apiClient.get) is the canonical Vitest pattern for typed mock
- * introspection; ESLint's unbound-method rule is a false positive here.
- */
-
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MemoryRouter } from 'react-router-dom';

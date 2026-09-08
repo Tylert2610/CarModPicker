@@ -2,7 +2,7 @@
 //
 // Form: single email field → authApi.resetPassword({ email }) → confirmation
 // alert. Uses the shared mocked apiClient via setup.ts + test-utils.tsx.
-/* eslint-disable @typescript-eslint/unbound-method */
+
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   render,

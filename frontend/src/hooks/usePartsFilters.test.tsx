@@ -1,8 +1,3 @@
-/* eslint-disable @typescript-eslint/unbound-method --
- * vi.mocked(apiClient.get) is the canonical Wave 1 mocking pattern. The
- * unbound-method rule flags the reference syntactically; vi.mocked returns
- * a spy so `this` binding is not a real concern here.
- */
 import type { ReactNode } from 'react';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';

@@ -6,7 +6,7 @@
 // <MemoryRouter>+<Routes> (EditPart reads partId via useParams) and seeds
 // useAuth via the same mockUseAuth singleton test-utils uses, so the auth
 // scenario is set per test without going through customRender.
-/* eslint-disable @typescript-eslint/unbound-method */
+
 import type { ReactElement, ReactNode } from 'react';
 import { render as rtlRender, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';

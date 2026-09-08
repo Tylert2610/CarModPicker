@@ -1,4 +1,4 @@
-import { type AxiosResponse } from 'axios';
+import { type ApiClientResponse } from '../api/client';
 import { useCallback, useState } from 'react';
 import { getApiErrorMessage } from '../utils/apiError';
 
@@ -14,7 +14,7 @@ const parseApiError = (err: unknown): string =>
   getApiErrorMessage(err, 'An unexpected error occurred.');
 
 function useApiRequest<TData, TPayload = unknown>(
-  requestFn: (payload: TPayload) => Promise<AxiosResponse<TData>>
+  requestFn: (payload: TPayload) => Promise<ApiClientResponse<TData>>
 ): UseApiRequestReturn<TData, TPayload> {
   const [data, setData] = useState<TData | null>(null);
   const [error, setErrorState] = useState<string | null>(null);

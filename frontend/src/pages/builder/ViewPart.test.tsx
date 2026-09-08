@@ -16,11 +16,6 @@
 //   3. Interactive vote flow — clicking upvote triggers apiClient.post to
 //      `/votes/part/${id}` (the votesApi polymorphic URL; see api/votes.ts).
 
-/* eslint-disable @typescript-eslint/unbound-method --
- * vi.mocked(apiClient.*) is the canonical Vitest pattern for typed mock
- * introspection; same rationale as AuthContext.test.tsx.
- */
-
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';

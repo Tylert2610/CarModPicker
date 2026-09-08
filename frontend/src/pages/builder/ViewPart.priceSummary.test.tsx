@@ -1,8 +1,3 @@
-/* eslint-disable @typescript-eslint/unbound-method --
- * vi.mocked(apiClient.*) is the canonical Vitest mock-introspection pattern;
- * matches sibling tests under src/components/parts/ and src/pages/builder/.
- */
-
 import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';

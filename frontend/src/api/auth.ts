@@ -2,8 +2,12 @@
 //
 // WebAuthn helper response types are co-located here (D-04) — they are not
 // pydantic-generated and only consumed by the auth flow.
-import type { AxiosResponse } from 'axios';
-import { apiClient, setStoredToken, removeStoredToken } from './client';
+import {
+  apiClient,
+  setStoredToken,
+  removeStoredToken,
+  type ApiClientResponse,
+} from './client';
 import type {
   BodyLoginForAccessToken,
   BodyResetPassword,
@@ -44,7 +48,7 @@ export interface WebAuthnCredentialSummary {
 export const authApi = {
   login: async (
     data: BodyLoginForAccessToken
-  ): Promise<AxiosResponse<UserRead | LoginResponse>> => {
+  ): Promise<ApiClientResponse<UserRead | LoginResponse>> => {
     const response = await apiClient.post<LoginResponse>('/auth/token', data, {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     });
@@ -57,7 +61,7 @@ export const authApi = {
       setStoredToken(response.data.access_token);
     }
     // Enforce the contract: non-2FA login MUST return a user payload.
-    // Previously `response.data.user!` silently produced AxiosResponse<UserRead>
+    // Previously `response.data.user!` silently produced ApiClientResponse<UserRead>
     // whose .data was `undefined`, causing confusing downstream crashes.
     if (!response.data.user) {
       throw new Error(
@@ -68,11 +72,11 @@ export const authApi = {
     return {
       ...response,
       data: response.data.user,
-    } as AxiosResponse<UserRead>;
+    };
   },
   loginWith2FA: async (
     data: TOTPLoginRequest
-  ): Promise<AxiosResponse<UserRead>> => {
+  ): Promise<ApiClientResponse<UserRead>> => {
     const response = await apiClient.post<{
       access_token: string;
       token_type: string;
@@ -86,7 +90,7 @@ export const authApi = {
     return {
       ...response,
       data: response.data.user,
-    } as AxiosResponse<UserRead>;
+    };
   },
   setup2FA: () => apiClient.post<TOTPSetupResponse>('/auth/2fa/setup'),
   verify2FA: (data: TOTPVerifyRequest) =>
@@ -134,7 +138,7 @@ export const authApi = {
   webauthnLoginVerify: async (data: {
     challenge_token: string;
     credential: unknown;
-  }): Promise<AxiosResponse<UserRead>> => {
+  }): Promise<ApiClientResponse<UserRead>> => {
     const response = await apiClient.post<{
       access_token: string;
       token_type: string;
@@ -146,7 +150,7 @@ export const authApi = {
     return {
       ...response,
       data: response.data.user,
-    } as AxiosResponse<UserRead>;
+    };
   },
   webauthnListCredentials: () =>
     apiClient.get<WebAuthnCredentialSummary[]>('/auth/webauthn/credentials'),
@@ -167,36 +171,36 @@ export const authApi = {
     apiClient.post<GoogleSignInResponse>('/auth/oauth/google', data),
   googleLink: async (
     data: GoogleLinkRequest
-  ): Promise<AxiosResponse<UserRead>> => {
+  ): Promise<ApiClientResponse<UserRead>> => {
     const response = await apiClient.post<{
       access_token: string;
       token_type: string;
       user: UserRead;
     }>('/auth/oauth/google/link', data);
     if (response.data.access_token) setStoredToken(response.data.access_token);
-    return { ...response, data: response.data.user } as AxiosResponse<UserRead>;
+    return { ...response, data: response.data.user };
   },
   googleSignup: async (
     data: GoogleSignupRequest
-  ): Promise<AxiosResponse<UserRead>> => {
+  ): Promise<ApiClientResponse<UserRead>> => {
     const response = await apiClient.post<{
       access_token: string;
       token_type: string;
       user: UserRead;
     }>('/auth/oauth/google/signup', data);
     if (response.data.access_token) setStoredToken(response.data.access_token);
-    return { ...response, data: response.data.user } as AxiosResponse<UserRead>;
+    return { ...response, data: response.data.user };
   },
   oauthTwoFactor: async (
     data: OAuthTwoFactorRequest
-  ): Promise<AxiosResponse<UserRead>> => {
+  ): Promise<ApiClientResponse<UserRead>> => {
     const response = await apiClient.post<{
       access_token: string;
       token_type: string;
       user: UserRead;
     }>('/auth/oauth/2fa', data);
     if (response.data.access_token) setStoredToken(response.data.access_token);
-    return { ...response, data: response.data.user } as AxiosResponse<UserRead>;
+    return { ...response, data: response.data.user };
   },
   googleConnect: (data: GoogleConnectRequest) =>
     apiClient.post<OAuthAccountRead>('/auth/oauth/google/connect', data),
