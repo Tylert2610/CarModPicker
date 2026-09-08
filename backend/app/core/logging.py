@@ -1,17 +1,51 @@
+"""Log configuration, on top of the shared package's JSON formatter.
+
+`webbpulse.logging.configure_logging` is now what installs the root handler.
+It writes one JSON object per line to stdout with a top-level `level` and an
+RFC 3339 `timestamp`, which is the pair Lambda needs: with a function's log
+format set to JSON, Lambda filters on an application supplied `level` and an
+unparseable `timestamp` makes it stamp its own time and assign INFO, silently
+defeating both `application_log_level` filtering and the `{ $.level = "ERROR" }`
+metric filter behind the `api-alarms` module. The hand-rolled
+`python-json-logger` setup this replaces emitted `timestamp` through
+`rename_fields`, so the field names are unchanged in CloudWatch.
+
+## What stayed here, and why
+
+`RequestContextFilter` is CarModPicker's own and the package has no equivalent.
+It copies `request_id` and `user_id` off the two ContextVars onto every record,
+which is what OBS-04 and `tests/test_log_propagation.py` assert, and what makes
+`filter @message like /req=bg:crawler/` work in CloudWatch Insights. The package
+merges OpenTelemetry trace and span ids instead, which is a different pair for a
+different purpose, so the filter is attached to the package's handler here rather
+than dropped.
+
+The TTY path also stayed. `configure_logging` is unconditionally JSON, and a
+developer running the application locally wants the colorized single line, so
+`configure_app_logging` keeps that branch and only delegates to the package when
+stdout is not a TTY. That keeps local output readable while every deployed
+process, where stdout is a pipe, gets the shared JSON.
+
+The stream is the third local difference. The package logs to stdout; here the
+handler is moved to stderr, which is where the `logging.basicConfig` setup this
+replaces already put it. CarModPicker has two commands whose stdout is data
+rather than log output, `scripts/generate_ext_api_contract.py --stdout` and the
+OpenAPI snapshot regeneration, and both are compared byte for byte by a test, so
+one interleaved WARNING on stdout corrupts them. Lambda captures both streams
+into the same log group, so nothing is lost by the move.
+"""
+
 import logging
 import sys
 from copy import copy
 
 import click
-from pythonjsonlogger.json import JsonFormatter  # type: ignore[import-untyped]
+from webbpulse.logging import configure_logging as _configure_json_logging
 
 from app.core.log_context import RequestContextFilter
 
 # Human-readable format for TTY (local dev)
 LOG_FORMAT = "%(asctime)s - %(levelname)s - %(name)s - [req=%(request_id)s user=%(user_id)s] - %(message)s"
-
-# JSON format for non-TTY (production): fields become top-level JSON keys
-JSON_LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s %(request_id)s %(user_id)s %(message)s"
 
 # Level name colors (matches uvicorn default)
 TRACE_LOG_LEVEL = 5
@@ -48,57 +82,75 @@ class ColorizedFormatter(logging.Formatter):
         return super().format(record_copy)
 
 
-def make_formatter() -> logging.Formatter:
-    """Return JSON formatter in production (non-TTY), colorized text formatter locally."""
-    if sys.stdout.isatty():
-        return ColorizedFormatter(LOG_FORMAT)
-    return JsonFormatter(
-        JSON_LOG_FORMAT, rename_fields={"levelname": "level", "name": "logger", "asctime": "timestamp"}
-    )
+def _redirect_handlers_to_stderr(root: logging.Logger) -> None:
+    """Move the root's stdout stream handlers onto stderr, keeping the formatter.
 
+    `webbpulse.logging.configure_logging` writes to stdout, which is right for a
+    service whose stdout is only ever log output. CarModPicker has processes
+    where it is not: `scripts/generate_ext_api_contract.py --stdout` writes
+    Markdown to stdout and the drift guard in
+    `tests/test_ext_api_contract_up_to_date.py` compares it byte for byte, so a
+    single WARNING interleaved on the same stream corrupts the contract. The
+    same applies to the OpenAPI snapshot regeneration command in
+    `tests/test_openapi_snapshot.py`, which pipes stdout to a file.
 
-def configure_root_logging(level: int = logging.INFO) -> None:
-    """Configure the root logger with the app's formatter + RequestContextFilter.
-
-    IN-04: previously the three entry points (``main.py``, ``runner.py``,
-    ``ecs_runner.py``, ``ecs_rescrape_runner.py``) each called their own
-    ``logging.basicConfig(...)`` at import. ``main.py`` (App Runner) then
-    layered ``RequestContextFilter`` + ``make_formatter()`` on top, but
-    the crawler entry points did not — so their log records missed the
-    ``request_id`` / ``user_id`` attributes even after IN-03 set the
-    underlying ContextVars. This helper centralizes the setup so every
-    entry point gets the same filter + formatter in one call.
-
-    Safe to call multiple times: ``logging.basicConfig`` short-circuits
-    when the root logger already has handlers, so later calls only
-    re-attach the filter + formatter to whatever handlers exist.
+    Logs go to stderr instead, which is where the previous `logging.basicConfig`
+    setup put them, so this preserves CarModPicker's behaviour rather than
+    changing it. Nothing is lost on Lambda: the execution environment captures
+    both streams into the same log group, and the JSON formatter and its
+    `level`/`timestamp` keys are untouched, so Lambda's JSON log filtering and
+    the `{ $.level = "ERROR" }` metric filter still see what they need.
     """
-    logging.basicConfig(
-        level=level,
-        format=LOG_FORMAT,
-        handlers=[logging.StreamHandler()],
-    )
-    formatter = make_formatter()
-    ctx_filter = RequestContextFilter()
-    root = logging.getLogger()
     for handler in root.handlers:
-        handler.setFormatter(formatter)
-        # Avoid stacking the same filter instance if called repeatedly
-        # in the same process (tests, re-import pathways).
-        if not any(isinstance(f, RequestContextFilter) for f in handler.filters):
-            handler.addFilter(ctx_filter)
+        if isinstance(handler, logging.StreamHandler) and getattr(handler, "stream", None) is sys.stdout:
+            handler.setStream(sys.stderr)
 
 
-# Logger setup
+def _attach_request_context(root: logging.Logger) -> None:
+    """Put `RequestContextFilter` on every root handler, exactly once each.
+
+    A filter instance stacked twice would evaluate twice per record for no gain,
+    and `configure_app_logging` is called at import by Root A and again by an
+    entrypoint's `main()`, so the guard is load bearing rather than defensive.
+    """
+    for handler in root.handlers:
+        if not any(isinstance(existing, RequestContextFilter) for existing in handler.filters):
+            handler.addFilter(RequestContextFilter())
+
+
+def configure_app_logging(level: str = "INFO", service: str | None = None, environment: str | None = None) -> None:
+    """Configure the root logger: shared JSON when deployed, colorized on a TTY.
+
+    Idempotent. The package's own `configure_logging` short-circuits a second
+    call, and the TTY branch replaces its handler rather than adding to it, so
+    calling this from both an import and a `main()` leaves one handler either
+    way rather than duplicating every line.
+    """
+    if sys.stdout.isatty():
+        # Local development. `configure_logging` is unconditionally JSON, which
+        # is unreadable at a terminal, so the colorized formatter stays for this
+        # branch only. Handlers are replaced, not appended, for the same reason
+        # the package replaces Lambda's: a second handler doubles every line.
+        root = logging.getLogger()
+        for existing in root.handlers[:]:
+            root.removeHandler(existing)
+        handler = logging.StreamHandler(sys.stderr)
+        handler.setFormatter(ColorizedFormatter(LOG_FORMAT))
+        root.addHandler(handler)
+        root.setLevel(level.upper())
+    else:
+        _configure_json_logging(level=level, service=service, environment=environment)
+
+    root = logging.getLogger()
+    _redirect_handlers_to_stderr(root)
+    _attach_request_context(root)
+
+
+# Logger setup. `get_logger` is still exported per D-36; the `Depends(get_logger)`
+# call-site pattern is what `tests/test_logger_migration_regression.py` forbids,
+# not the export itself.
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
-console_handler = logging.StreamHandler(sys.stdout)
-console_handler.setLevel(logging.DEBUG)
-console_handler.setFormatter(make_formatter())
-console_handler.addFilter(RequestContextFilter())
-logger.addHandler(console_handler)
 
 
-# Define the dependency function
 def get_logger() -> logging.Logger:
     return logger

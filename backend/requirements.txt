@@ -1,3 +1,21 @@
+# The shared WebbPulse package. It lives only in CodeArtifact (domain
+# `webbpulse`, repository `python`, us-west-2), not on PyPI, so anything that
+# installs this file needs a CodeArtifact token first. CI gets one from the
+# `aws codeartifact login --tool pip` step in `backend-ci.yml`.
+#
+# Extras, and why each one: `fastapi` for the app factory and `run_uvicorn`,
+# `otel` for `configure_tracing`. `dynamodb` is deliberately absent: CarModPicker
+# has its own repository layer and its own secret loader, and pulling the extra
+# would add boto3 pins on top of the ones below for code nothing here imports.
+#
+# `aws-otel` is absent too, and that is a row 16 decision rather than an
+# oversight. It carries the SigV4 signing exporter the X-Ray OTLP endpoint
+# requires, and CarModPicker exports no traces yet: `configure_tracing` is wired
+# but gated off unless OTEL_EXPORTER_OTLP_TRACES_ENDPOINT is set, because the
+# monolith on staging has no OTLP IAM grant. Row 16 turns tracing on per domain
+# and adds this extra with it.
+webbpulse[fastapi,otel]==0.2.0
+
 # Core FastAPI and web framework dependencies
 annotated-types==0.8.0
 anyio==4.15.0

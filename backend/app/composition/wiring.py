@@ -128,35 +128,88 @@ class Domain:
         return tables_for(self.repositories)
 
 
-def configure_logging() -> None:
+def configure_logging(service: "str | None" = None) -> None:
     """The application's log format, applied to the root and uvicorn loggers.
 
-    Lifted verbatim out of `app/main.py`'s module body so both roots get the
-    same handlers rather than Root B getting whatever the default is. Still
-    module-level work in practice, because `app/main.py` has always done it at
-    import and the deployed monolith depends on that, but calling it twice is
-    harmless: it re-points the same handlers at the same formatter.
+    Now a thin call into `app.core.logging.configure_app_logging`, which puts
+    the shared package's JSON formatter on the root handler when stdout is not a
+    TTY and CarModPicker's colorized one when it is, and attaches
+    `RequestContextFilter` either way. The uvicorn loggers are handled inside
+    the package: it clears their handlers and sets `propagate = True` so their
+    access lines go through the root formatter, which is what the loop this
+    replaces was doing by hand.
+
+    Still module-level work in practice, because `app/main.py` has always
+    configured logging at import and the deployed monolith depends on that.
+    Calling it twice is harmless.
     """
-    from app.core.log_context import RequestContextFilter
-    from app.core.logging import LOG_FORMAT, make_formatter
+    from app.core.logging import configure_app_logging
 
-    logging.basicConfig(
-        level=logging.INFO,
-        format=LOG_FORMAT,
-        handlers=[logging.StreamHandler()],
+    configure_app_logging(
+        level=settings.log_level,
+        service=service or settings.PROJECT_NAME,
+        environment=settings.environment,
     )
-    formatter = make_formatter()
-    context_filter = RequestContextFilter()
-    root = logging.getLogger()
-    for handler in root.handlers:
-        handler.setFormatter(formatter)
-        handler.addFilter(context_filter)
 
-    for name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
-        log = logging.getLogger(name)
-        for handler in log.handlers:
-            handler.setFormatter(formatter)
-            handler.addFilter(context_filter)
+
+#: The environment variable that turns tracing on. Empty means off, and off is
+#: the state every CarModPicker process is in today.
+OTLP_ENDPOINT_ENV = "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"
+
+#: Set by `configure_tracing` when it installed a provider, and read by
+#: `build_domain_app` to decide whether instrumenting the application is worth
+#: anything. A module flag rather than a call into the package because
+#: `webbpulse.otel` keeps its own private `_CONFIGURED`, and an entrypoint that
+#: never called `configure_tracing` must not be able to observe a provider some
+#: other test installed in the same interpreter.
+_TRACING_CONFIGURED = False
+
+
+def configure_tracing(domain: "Domain") -> bool:
+    """Wire OpenTelemetry for one domain, but only when an endpoint is set.
+
+    Returns whether tracing was configured, which is `False` everywhere today.
+
+    **The gate is the point, and it is deliberately not the package's default.**
+    `webbpulse.otel.configure_tracing` falls back to this region's X-Ray OTLP
+    endpoint when no endpoint is configured, which is the right default for a
+    service whose Terraform grants `xray:PutTraceSegments`. CarModPicker is not
+    that service yet: staging still runs the monolith zip, no function has an
+    OTLP IAM grant, and Transaction Search is not enabled on the account. Taking
+    the package default here would have every process open a batch exporter to an
+    endpoint that answers 403, which the OTLP exporter retries in silence, so the
+    cost would be a background retry loop and no visible error anywhere.
+
+    Requiring the endpoint variable makes the off state explicit and makes
+    turning tracing on a Terraform change rather than a code change. Row 16 sets
+    it per domain, adds the `aws-otel` extra for the SigV4 signing exporter, and
+    attaches `AWSXrayWriteOnlyAccess`; until then this function returns early and
+    the package is never asked to build a provider.
+    """
+    global _TRACING_CONFIGURED
+    import os
+
+    if not os.environ.get(OTLP_ENDPOINT_ENV, "").strip():
+        logger.debug(
+            "Tracing not configured: %s is unset. Row 16 of the split plan turns it on.",
+            OTLP_ENDPOINT_ENV,
+        )
+        return False
+
+    from webbpulse.otel import configure_tracing as _configure_tracing
+    from webbpulse.otel import resolve_sample_ratio
+
+    # The ratio is resolved explicitly rather than left to the default so the
+    # value this process is actually running with appears in the configuration
+    # log line, which is the only way to tell a misread
+    # WEBBPULSE_OTEL_SAMPLE_RATIO from a correctly read one.
+    configured = _configure_tracing(
+        domain.service_name,
+        environment=settings.environment,
+        sample_ratio=resolve_sample_ratio(),
+    )
+    _TRACING_CONFIGURED = _TRACING_CONFIGURED or configured
+    return configured
 
 
 def check_signing_key(domains: "Iterable[Domain]") -> None:
@@ -422,5 +475,20 @@ def build_domain_app(
 
     if include_root_routes:
         add_root_routes(app)
+
+    # Attach the FastAPI instrumentation only when `configure_tracing` actually
+    # installed a provider, which today is never. Calling it unconditionally
+    # would be safe but pointless: with no provider the instrumentation records
+    # into the API's no-op spans and only costs a middleware on every request.
+    # It has to happen here rather than after the application starts serving:
+    # `instrument_app` can only inject its server span middleware while the
+    # middleware stack is still unbuilt, and past that point the application
+    # looks instrumented and emits nothing.
+    from webbpulse.otel import is_tracing_enabled
+
+    if _TRACING_CONFIGURED and is_tracing_enabled():
+        from webbpulse.otel import instrument_fastapi
+
+        instrument_fastapi(app)
 
     return app

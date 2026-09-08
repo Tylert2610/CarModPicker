@@ -1051,6 +1051,55 @@ imports no repository module outside its five.
 **Row 7 is delivered.** Secrets resolve lazily in `app/core/config.py`, and
 section 2.3 records what that changed.
 
+**Row 8 is delivered, and it took less from the package than the row implied.**
+`requirements.txt` now carries `webbpulse[fastapi,otel]==0.2.0`, which is
+published only to CodeArtifact, so `backend-ci.yml` gained an OIDC role
+assumption and an `aws codeartifact login --tool pip` step ahead of every
+install. Three pieces moved: `webbpulse.logging.configure_logging` replaced the
+hand-rolled `python-json-logger` setup, `Settings` now inherits
+`webbpulse.config.BaseServiceSettings`, and every entrypoint's `main()` serves
+through `webbpulse.lambda_entry.run_uvicorn`. `configure_tracing` is wired into
+`build_domain_app` but gated: it returns immediately unless
+`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` is set, because the package otherwise falls
+back to the X-Ray OTLP endpoint, which answers 403 without an IAM grant the
+monolith does not have and which the exporter then retries in silence. Row 16 is
+what sets the variable, per domain.
+
+What did not move is the more useful half of the result. `webbpulse.http.create_app`
+was evaluated and rejected: its exception handlers render
+`{"success", "status", "message", "request_id"}`, and CarModPicker serves two
+different shapes that the frontend and the Chrome extension parse. An unmatched
+route returns Starlette's `{"detail": "Not Found"}`, because
+`register_error_handlers` hooks `fastapi.HTTPException` and that does not catch
+the bare routing exception; anything raised inside a route returns
+`{"success", "message", "error_code"}` with no `detail` key at all. Adopting
+`create_app` would have rewritten both, and it has no equivalent for the four
+DynamoDB handlers either. Per the package gap policy the local implementation
+stays and the divergence is a package problem to solve later, not a fork.
+`tests/entrypoints/test_webbpulse_adoption.py` pins all three bodies exactly, so
+a later adoption fails loudly rather than silently changing every error message
+in the API. Two smaller pieces stayed for the same reason: `RequestContextFilter`,
+which puts `request_id` and `user_id` on every record where the package merges
+trace ids instead, and the stream choice, since the package logs to stdout and
+CarModPicker has two commands whose stdout is data compared byte for byte.
+
+The package is pinned in both requirements files, and a test now enforces that.
+`requirements-lambda.txt` is what the deploy zip and row 11's per-domain image
+install, and it is the narrower file on purpose, so a runtime dependency added
+only to `requirements.txt` passes every check and then fails at import inside the
+image. `tests/test_requirements_lambda_subset.py` asserts the Lambda file is a
+strict subset with character-identical specifiers, extras included, which is what
+catches `webbpulse[fastapi]` drifting from `webbpulse[fastapi,otel]`.
+
+One thing is deliberately unfinished. `CI_AWS_ROLE_ARN` points at
+`carmodpicker-staging-github-actions-deploy`, which already holds the
+CodeArtifact grants and already trusts every subject in the repository, so CI
+works with no Terraform change. It also holds `lambda:UpdateFunctionCode` and
+`ecr:PutImage`, which means any branch that can open a pull request can assume a
+role that can deploy. Row 10 already opens `terraform/iam_github_actions.tf`; the
+fix is to add the read-only CI role there, as Portfolio did, and repoint the
+variable.
+
 **Row 11 is delivered.** `backend/Dockerfile` builds all nine images from one
 file, with `ARG DOMAIN` selecting the entrypoint and no default, so an image
 cannot silently be some other domain's. The domain name is mapped to its module
@@ -1067,7 +1116,11 @@ rather than a preference. The install is `requirements-lambda.txt`, not
 `moto`, `black`, `mypy`, `locust` and `curl_cffi`, and section 2.6 already
 requires `curl_cffi` to stay out. PyPI stays configured as an extra index behind
 the CodeArtifact one, so the build works whether or not the requirements yet
-name `webbpulse` and row 8's adoption changes this file not at all. And `PORT`
+name `webbpulse`. That last prediction, that row 8 would change this file not at
+all, turned out wrong in the one way that mattered: `webbpulse` is a runtime
+dependency, so row 8 had to pin it in `requirements-lambda.txt` as well, and
+until it did the image would have failed at import while every check passed.
+`tests/test_requirements_lambda_subset.py` now enforces the relationship. And `PORT`
 is set alongside `AWS_LWA_PORT`, because `Settings.PORT` defaults to 8000 and it
 is the environment variable that overrides it; an entrypoint binding 8000 while
 the adapter polls 8080 presents as a readiness check that never passes, with no
