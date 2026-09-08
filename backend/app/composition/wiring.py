@@ -98,6 +98,14 @@ class Domain:
     #: Which settings the domain cannot serve a request without. A domain that
     #: names none can run with no `secretsmanager:GetSecretValue` at all.
     requires_secrets: Tuple[str, ...] = ()
+    #: The repositories a process serving this domain may use, by the attribute
+    #: name routes already reach through `repos.<name>`. Root B builds a bundle
+    #: from exactly this tuple, so a repository missing here is an
+    #: `RepositoryNotInBundle` on the route that wants it, and a repository
+    #: present here that the domain never uses is a DynamoDB grant the function
+    #: does not need. `tests/entrypoints/test_repository_bundles.py` checks both
+    #: directions against what the domain's modules actually reach.
+    repositories: Tuple[str, ...] = ()
     #: Whether the domain seeds the tables it owns on startup.
     seeds: bool = False
     #: Extra keyword arguments for `FastAPI(...)`.
@@ -106,6 +114,18 @@ class Domain:
     @property
     def service_name(self) -> str:
         return SERVICE_NAME_TEMPLATE.format(domain=self.name)
+
+    @property
+    def tables(self) -> Tuple[str, ...]:
+        """The DynamoDB tables this domain's repositories reach, sorted.
+
+        The function's whole data surface, and what its Terraform IAM policy has
+        to cover. Read from the repository registry rather than listed again
+        here, so the two cannot disagree.
+        """
+        from app.db.dynamo.registry import tables_for
+
+        return tables_for(self.repositories)
 
 
 def configure_logging() -> None:
@@ -159,6 +179,33 @@ def check_signing_key(domains: "Iterable[Domain]") -> None:
             "SECRET_KEY is empty. JWT tokens will be insecure. Set SECRET_KEY environment variable.",
             UserWarning,
         )
+
+
+def bundle_for(domains: "Sequence[Domain]") -> "Any":
+    """The bundle carrying exactly the repositories these domains declare.
+
+    The union across the domains served, which is one domain's tuple under Root
+    B and all twenty-five under Root A. Section 2.3 of the split plan is the
+    reason this exists: the twenty-five repositories used to be constructed at
+    module import, so every function would have imported the whole data layer at
+    cold start and held handles on tables it has no grant for.
+
+    Building the bundle constructs no repository. The first route that reaches
+    `repos.users` builds `UserRepository` and nothing else, which is what keeps
+    an image's import graph proportional to the routes it actually serves.
+
+    Imported inside the function because `app.composition.domains` imports this
+    module, and the bundle module reaches the repository registry.
+    """
+    from app.api.dependencies.repositories import build_bundle
+
+    names: "list[str]" = []
+    for domain in domains:
+        for repository in domain.repositories:
+            if repository not in names:
+                names.append(repository)
+    label = "+".join(domain.name for domain in domains) or "none"
+    return build_bundle(names, name=label)
 
 
 def run_startup_tasks() -> None:
@@ -320,6 +367,7 @@ def build_domain_app(
     `run_startup_tasks` name that `tests/test_lambda_handler.py` patches. It
     defaults to this module's own, which is the same function body.
     """
+    from app.api.dependencies.repositories import bind_repositories
     from app.composition.domains import DOMAINS
 
     if isinstance(domains, (Domain, str)):
@@ -350,6 +398,19 @@ def build_domain_app(
     )
 
     add_shared_middleware(app)
+
+    # Bind this application's repository bundle before the routers are
+    # registered, so every route it carries resolves `Depends(get_repositories)`
+    # to the domains actually being served. Root A passes nine domains and gets
+    # the union, which is all twenty-five; Root B passes one and gets that
+    # domain's tuple, and every other repository raises rather than handing back
+    # a live handle on a table the function has no grant for.
+    #
+    # Bound to the application rather than installed on the module, because
+    # `tests/entrypoints/test_route_split.py` builds all nine Root B
+    # applications in one interpreter and a process-wide install would leave the
+    # last one serving every test after it.
+    bind_repositories(app, bundle_for(resolved))
 
     for domain in resolved:
         for router, prefix, tags in domain.load_routers():
