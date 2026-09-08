@@ -127,7 +127,7 @@ def _media_routers() -> "Sequence[RouterSpec]":
     return [(images.router, "/images", ("images",))]
 
 
-def _ingestion_routers() -> "Sequence[RouterSpec]":
+def _admin_routers() -> "Sequence[RouterSpec]":
     from app.api.endpoints import crawled_pages, part_price_alerts
     from app.api.endpoints.admin import db_ops as admin_db_ops
     from app.api.endpoints.admin import stats as admin_stats
@@ -287,12 +287,12 @@ _MEDIA_REPOSITORIES = (
     "image_source_mappings",
 )
 
-#: `ingestion` owns `part_price_alerts`, and the two admin modules read and
-#: write most of the application by design: `admin/stats` counts twelve tables
-#: and `admin/db_ops` seeds and purges. It is the second widest bundle and the
-#: plan's section 1.5 note that it is closer to `admin` than to `ingestion` is
-#: visible right here.
-_INGESTION_REPOSITORIES = (
+#: `admin` owns `part_price_alerts`, and the two admin modules read and write
+#: most of the application by design: `admin/stats` counts twelve tables and
+#: `admin/db_ops` seeds and purges. It is the second widest bundle, and the
+#: breadth is why the domain is called `admin`: section 1.5 argued the contents
+#: were closer to administration than to ingestion, and the name now says so.
+_ADMIN_REPOSITORIES = (
     "users",
     "oauth_accounts",
     "webauthn_credentials",
@@ -392,12 +392,12 @@ DOMAINS: Dict[str, Domain] = {
     ),
     # 12 routes: price alerts, the crawled-page parser and the two admin
     # modules. 11 verify a token, and the price-alert unsubscribe route decodes
-    # one of its own.
-    "ingestion": Domain(
-        name="ingestion",
-        title="CarModPicker ingestion",
-        load_routers=_ingestion_routers,
-        repositories=_INGESTION_REPOSITORIES,
+    # one of its own. Named `admin` rather than `ingestion`, per section 1.5.
+    "admin": Domain(
+        name="admin",
+        title="CarModPicker admin",
+        load_routers=_admin_routers,
+        repositories=_ADMIN_REPOSITORIES,
         requires_secrets=("SECRET_KEY",),
     ),
 }

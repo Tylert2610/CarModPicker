@@ -139,15 +139,15 @@ ARG DOMAIN
 RUN set -eu; \
     test -n "${DOMAIN}" || { \
         echo "DOMAIN build arg is required: one of identity, users, catalog," >&2; \
-        echo "vehicles, build-lists, build-logs, moderation, media, ingestion." >&2; \
+        echo "vehicles, build-lists, build-logs, moderation, media, admin." >&2; \
         echo "  docker buildx build --build-arg DOMAIN=media ..." >&2; \
         exit 1; \
     }; \
     case "${DOMAIN}" in \
-        identity|users|catalog|vehicles|build-lists|build-logs|moderation|media|ingestion) ;; \
+        identity|users|catalog|vehicles|build-lists|build-logs|moderation|media|admin) ;; \
         *) \
             echo "DOMAIN=${DOMAIN} is not a domain. Expected one of identity, users," >&2; \
-            echo "catalog, vehicles, build-lists, build-logs, moderation, media, ingestion." >&2; \
+            echo "catalog, vehicles, build-lists, build-logs, moderation, media, admin." >&2; \
             exit 1 ;; \
     esac; \
     # Hyphens to underscores. Shell parameter substitution rather than a pipe
