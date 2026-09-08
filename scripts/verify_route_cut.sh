@@ -36,6 +36,17 @@
 #   2. Read the access log for the entry carrying that marker.
 #   3. Assert its routeKey is this domain's explicit key, not "$default".
 #
+# The marker works because terraform/apigateway.tf takes the http-api module's
+# default access_log_format, which carries `userAgent` alongside `path` and
+# `routeKey`. If that format is ever narrowed to drop `userAgent`, the filter
+# pattern here stops matching and every path reports as unlogged; widen the
+# format again rather than loosening the pattern to match on the path, which
+# would pick up unrelated traffic to the same prefix.
+#
+# Delivery is per log stream, so two probes a second apart can arrive tens of
+# seconds apart. Step 2 therefore polls until every expected path has appeared,
+# accumulating results across polls, rather than reading a single response once.
+#
 # A second, independent check confirms the function itself is answering: the
 # domain function's log group gets an invocation in the same window. Without it
 # a routeKey could name the right key while the integration pointed somewhere
@@ -89,7 +100,7 @@ Environment:
   CARMODPICKER_API_BASE_URL    override the API base URL entirely
   CARMODPICKER_CURL_TIMEOUT    per request timeout in seconds (default 20)
   CARMODPICKER_RETRIES         attempts per path (default 5)
-  CARMODPICKER_LOG_WAIT        seconds to wait for the access log (default 45)
+  CARMODPICKER_LOG_WAIT        seconds to wait for the access log (default 120)
 USAGE
   exit 2
 }
@@ -177,7 +188,7 @@ fi
 
 TIMEOUT=${CARMODPICKER_CURL_TIMEOUT:-20}
 RETRIES=${CARMODPICKER_RETRIES:-5}
-LOG_WAIT=${CARMODPICKER_LOG_WAIT:-45}
+LOG_WAIT=${CARMODPICKER_LOG_WAIT:-120}
 AWS_REGION_ARG=${AWS_REGION:-us-west-2}
 
 FAILURES=0
@@ -379,11 +390,31 @@ done
 echo
 echo "Waiting up to ${LOG_WAIT}s for ${ACCESS_LOG_GROUP} to catch up."
 
-# CloudWatch delivery is not instant. Poll rather than sleeping the whole budget,
-# so a fast environment finishes fast.
-LOG_JSON=""
+# The access log's format is the http-api module's default, which carries
+# `userAgent`, `path` and `routeKey`. The marker rides in the user agent of every
+# probe, so one filter pattern selects this run's entries and no other traffic's,
+# and `path` and `routeKey` are then the pair the check needs.
+#
+# Delivery is per log stream and is not instant, and two requests a second apart
+# can land in different streams that flush at different times. So this polls
+# until every expected path has appeared rather than until some count is
+# reached, and it accumulates across polls rather than trusting the last
+# response: an entry seen at 20s is not lost because the query at 40s had not
+# yet caught the other one.
+#
+# That accumulation is the fix for the first real CI failure of this script. The
+# old loop broke when `len(events) >= len(PROBE_PATHS)` and otherwise polled to
+# the deadline, then read only the final response. The bare path was delivered
+# quickly and the `{proxy+}` path was not, so the count never reached two, the
+# loop ran out the budget, and the last query happened to return only the one
+# entry. It reported "no access log entry" for a path whose request had in fact
+# been logged correctly, which reads as a routing failure and was not one.
+FOUND_PATHS=$(mktemp)
+trap 'rm -f "$FOUND_PATHS"' EXIT
+
 DEADLINE=$(($(date +%s) + LOG_WAIT))
-while [ "$(date +%s)" -lt "$DEADLINE" ]; do
+LOG_READ_OK=0
+while :; do
   LOG_JSON=$(aws logs filter-log-events \
     --log-group-name "$ACCESS_LOG_GROUP" \
     --region "$AWS_REGION_ARG" \
@@ -391,35 +422,19 @@ while [ "$(date +%s)" -lt "$DEADLINE" ]; do
     --filter-pattern "\"$MARKER\"" \
     --max-items 200 \
     --output json 2>/dev/null || echo '')
-  if [ -n "$LOG_JSON" ] && \
-    [ "$(printf '%s' "$LOG_JSON" | python3 -c 'import json,sys; print(len(json.load(sys.stdin).get("events",[])))' 2>/dev/null || echo 0)" -ge "${#PROBE_PATHS[@]}" ]; then
-    break
-  fi
-  sleep 5
-done
 
-echo
-
-if [ -z "$LOG_JSON" ]; then
-  echo "Could not read ${ACCESS_LOG_GROUP}."
-  echo "  Either the credentials cannot read it, or the access log is not"
-  echo "  being written. The routeKey check is the whole verification, so this"
-  echo "  is a failure rather than a skip."
-  exit 1
-fi
-
-# The access log's format is set in terraform/apigateway.tf and carries both
-# `path` and `routeKey`, which is exactly the pair this needs. The user agent is
-# not in the format, so the marker is matched by the filter pattern above
-# against the raw line; the entries that come back are this run's.
-#
-# One line per probe path is expected. If the gateway logged fewer, the probe
-# that is missing gets reported by its absence rather than passing quietly.
-ROUTE_KEYS=$(printf '%s' "$LOG_JSON" | python3 -c '
+  if [ -n "$LOG_JSON" ]; then
+    LOG_READ_OK=1
+    # Append this poll's entries. Duplicates across polls are fine: the reader
+    # below keeps the last value per path, and every poll reports the same
+    # routeKey for a given path.
+    printf '%s' "$LOG_JSON" | python3 -c '
 import json, sys
 
-events = json.load(sys.stdin).get("events", [])
-seen = {}
+try:
+    events = json.load(sys.stdin).get("events", [])
+except ValueError:
+    sys.exit(0)
 for event in events:
     try:
         entry = json.loads(event.get("message", ""))
@@ -428,19 +443,58 @@ for event in events:
     path = entry.get("path")
     key = entry.get("routeKey")
     if path is not None:
-        seen[path] = key
-for path, key in sorted(seen.items()):
-    print(f"{path}\t{key}")
-')
+        print("%s\t%s" % (path, key))
+' >>"$FOUND_PATHS" || {
+      # Not silenced. A parser that cannot run is indistinguishable from a log
+      # that has nothing in it once its output is discarded, and the failure this
+      # script exists to report would then be reported for the wrong reason.
+      echo "Failed to parse the access log response." >&2
+      exit 1
+    }
+  fi
+
+  # Done as soon as every probe path has an entry, however many polls that took.
+  MISSING=0
+  for path in "${PROBE_PATHS[@]}"; do
+    if ! awk -F'\t' -v p="$path" '$1 == p { found = 1 } END { exit !found }' "$FOUND_PATHS"; then
+      MISSING=$((MISSING + 1))
+    fi
+  done
+  [ "$MISSING" -eq 0 ] && break
+
+  NOW=$(date +%s)
+  [ "$NOW" -ge "$DEADLINE" ] && break
+  # Do not overshoot the deadline on the last sleep.
+  REMAINING=$((DEADLINE - NOW))
+  sleep "$([ "$REMAINING" -lt 5 ] && echo "$REMAINING" || echo 5)"
+done
+
+echo
+
+if [ "$LOG_READ_OK" -eq 0 ]; then
+  echo "Could not read ${ACCESS_LOG_GROUP}."
+  echo "  Either the credentials cannot read it, or the access log is not"
+  echo "  being written. The routeKey check is the whole verification, so this"
+  echo "  is a failure rather than a skip."
+  exit 1
+fi
+
+# One line per probe path is expected. If the gateway logged fewer, the probe
+# that is missing gets reported by its absence rather than passing quietly.
+ROUTE_KEYS=$(sort -u "$FOUND_PATHS")
 
 for path in "${PROBE_PATHS[@]}"; do
   want=$(expected_key "$path")
   got=$(printf '%s\n' "$ROUTE_KEYS" | awk -F'\t' -v p="$path" '$1 == p { print $2 }' | tail -n1)
 
   if [ -z "$got" ]; then
-    echo "  ${path} -> no access log entry  FAIL"
-    echo "        The request was not logged. Nothing can be concluded about"
-    echo "        which integration served it."
+    echo "  ${path} -> no access log entry after ${LOG_WAIT}s  FAIL"
+    echo "        The request was not logged within the budget, so nothing can"
+    echo "        be concluded about which integration served it. This is not"
+    echo "        itself evidence of a bad route: the HTTP probe above reached"
+    echo "        the API, and access log delivery is per stream and can lag."
+    echo "        Raise CARMODPICKER_LOG_WAIT and run again before treating it"
+    echo "        as a routing problem."
     FAILURES=$((FAILURES + 1))
     continue
   fi
