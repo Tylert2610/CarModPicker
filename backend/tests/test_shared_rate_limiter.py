@@ -9,12 +9,14 @@ limiter is exercised through exactly the calls it makes in production.
 
 from __future__ import annotations
 
+import io
 import json
 import logging
 from typing import Any, Mapping, Optional
 
 import pytest
 from botocore.exceptions import ClientError, EndpointConnectionError
+from webbpulse.logging import JsonFormatter
 
 from app.api.middleware.shared_rate_limiter import (
     COUNT_ATTRIBUTE,
@@ -22,6 +24,7 @@ from app.api.middleware.shared_rate_limiter import (
     TTL_ATTRIBUTE,
     SharedRateLimiter,
     client_identity,
+    request_route,
 )
 
 
@@ -201,8 +204,8 @@ def test_fail_open_is_logged_at_warning(
 ) -> None:
     """The WARNING is the compensating control, so it has to actually be emitted.
 
-    It carries `rate_limit_failed_open=True` so an alarm can match on it, and the error
-    type so the cause is visible without a redeploy.
+    It carries `rate_limit_failed_open` as a record attribute so an alarm can match on it,
+    and the error type so the cause is visible without a redeploy.
     """
     table = FakeTable()
     table.raises = ClientError(
@@ -216,9 +219,64 @@ def test_fail_open_is_logged_at_warning(
 
     records = [record for record in caplog.records if record.levelno == logging.WARNING]
     assert records, "the fail-open path must log at WARNING"
-    message = records[0].getMessage()
-    assert "rate_limit_failed_open=True" in message
-    assert "ClientError" in message
+    record = records[0]
+    assert record.rate_limit_failed_open is True
+    assert record.exception_type == "ClientError"
+    assert record.rate_limit_operation == "record_request"
+
+
+def test_fail_open_emits_a_top_level_json_boolean(
+    frozen_now: list[int],
+) -> None:
+    """The CloudWatch metric filter is `{ $.rate_limit_failed_open IS TRUE }`.
+
+    That pattern selects a real JSON boolean at the top level of the log event. It cannot
+    see inside the `message` string and it does not match the string "true", so this test
+    formats the record through the shared `JsonFormatter` the deployed process installs and
+    asserts on the parsed object rather than on the record attributes: an `extra=` key that
+    the formatter dropped, nested, or stringified would still pass an attribute assertion
+    while leaving the alarm flat at zero.
+    """
+    table = FakeTable()
+    table.raises = EndpointConnectionError(endpoint_url="https://dynamodb.us-west-2.amazonaws.com/")
+    limiter = make_limiter(table)
+
+    handler = logging.StreamHandler(io.StringIO())
+    handler.setFormatter(JsonFormatter(service="carmodpicker", environment="test"))
+    limiter_logger = logging.getLogger("app.api.middleware.shared_rate_limiter")
+    limiter_logger.addHandler(handler)
+    previous_level = limiter_logger.level
+    limiter_logger.setLevel(logging.WARNING)
+    try:
+        with request_route("/api/parts/{part_id}"):
+            limiter.check("1.2.3.4")
+    finally:
+        limiter_logger.removeHandler(handler)
+        limiter_logger.setLevel(previous_level)
+
+    lines = [line for line in handler.stream.getvalue().splitlines() if line.strip()]
+    assert lines, "the fail-open path must emit a formatted record"
+    payload = json.loads(lines[0])
+
+    # The flag: a top-level JSON boolean, not a string and not nested under anything.
+    assert payload["rate_limit_failed_open"] is True
+    assert payload["level"] == "WARNING"
+
+    # Context fields, so the alarm points somewhere.
+    assert payload["rate_limit_operation"] == "record_request"
+    assert payload["exception_type"] == "EndpointConnectionError"
+    assert payload["route"] == "/api/parts/{part_id}"
+
+    # The caller is identified by a truncated digest, never by the raw address.
+    assert payload["client_key"] == SharedRateLimiter.client_key("1.2.3.4")
+    assert "1.2.3.4" not in json.dumps(payload)
+
+
+def test_client_key_is_a_stable_non_reversible_digest() -> None:
+    """Same caller, same key; different callers, different keys; never the address."""
+    assert SharedRateLimiter.client_key("1.2.3.4") == SharedRateLimiter.client_key("1.2.3.4")
+    assert SharedRateLimiter.client_key("1.2.3.4") != SharedRateLimiter.client_key("1.2.3.5")
+    assert "1.2.3.4" not in SharedRateLimiter.client_key("1.2.3.4")
 
 
 def test_fail_open_never_raises_into_the_request_path(frozen_now: list[int]) -> None:

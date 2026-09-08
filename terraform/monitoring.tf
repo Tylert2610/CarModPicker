@@ -45,21 +45,16 @@ module "alarms" {
     { for name in keys(local.lambda_domains) : name => module.lambda_domain[name].log_group_name },
   )
 
-  # NOT the module default. The default { $.rate_limit_failed_open IS TRUE } matches a top level
-  # JSON field, and this service does not emit one: _failed_open in shared_rate_limiter.py builds
-  # a printf style message and interpolates the flag into the message text, so the record reads
+  # rate_limit_fail_open_filter_pattern is deliberately not set: the module default
+  # { $.rate_limit_failed_open IS TRUE } is now correct. _failed_open in shared_rate_limiter.py
+  # passes the flag through extra=, and webbpulse.logging.JsonFormatter copies every non-reserved
+  # LogRecord attribute to the top level of the emitted object, so the record reads
   #
-  #   {"level":"WARNING","message":"Shared rate limit check failed; allowing the request.
-  #    rate_limit_failed_open=True operation=check ...", ...}
+  #   {"level":"WARNING","message":"Shared rate limit check failed; allowing the request. ...",
+  #    "rate_limit_failed_open":true,"rate_limit_operation":"record_request","client_key":"...",
+  #    "route":"...","exception_type":"...",...}
   #
-  # A JSON filter pattern selects on fields and cannot see inside the message string, so the
-  # default would match nothing here: the metric would sit flat at 0 and the alarm would report
-  # healthy while the limiter was failing open. A quoted pattern is a plain substring match over
-  # the whole raw event, which does match. It is case sensitive, and Python's %s interpolation of
-  # a bool renders "True", not "true".
-  #
-  # The better fix is at the source: emit the flag as a real log record field, the way Portfolio's
-  # limiter does, and drop this override for the module default. That is a backend change and does
-  # not belong in the same PR as the alarm.
-  rate_limit_fail_open_filter_pattern = "\"rate_limit_failed_open=True\""
+  # which is a real JSON boolean at the top level, exactly what IS TRUE selects on. This replaces
+  # the "rate_limit_failed_open=True" substring override that stood in while the flag was still
+  # interpolated into the message text, where a JSON filter pattern could not see it.
 }

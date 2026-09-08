@@ -13,7 +13,7 @@ from fastapi import Request
 from fastapi.responses import JSONResponse, Response
 
 from ...core.config import settings
-from .shared_rate_limiter import client_identity, shared_rate_limiter
+from .shared_rate_limiter import client_identity, request_route, shared_rate_limiter
 
 logger = logging.getLogger(__name__)
 
@@ -303,7 +303,12 @@ async def rate_limit_middleware(request: Request, call_next: Callable[[Request],
     # raise into the request path or turn a DynamoDB problem into a 5xx.
     if settings.ENABLE_SHARED_RATE_LIMITING:
         identity = client_identity(request)
-        shared_limited, shared_retry_after = shared_rate_limiter.check(identity)
+        # The route, not the raw path: a fail-open record should group by endpoint rather
+        # than fan out over every id in a path. Falls back to the path when no route matched.
+        route = request.scope.get("route")
+        route_label = getattr(route, "path", None) or request.url.path
+        with request_route(route_label):
+            shared_limited, shared_retry_after = shared_rate_limiter.check(identity)
         if shared_limited:
             retry_after = shared_retry_after or 60
             logger.warning("Shared rate limit exceeded for %s", identity)
