@@ -77,7 +77,9 @@ Browser / Chrome Extension
 
 ### Backend (`backend/app/`)
 
-- **`main.py`** — App factory: registers all routers via `EndpointRegistry`, adds CORS, rate-limiting, and error-handler middleware.
+- **`main.py`** — The whole-surface application, kept as the import path everything already uses (`uvicorn app.main:app`, `lambda_handler.py`, the test suite). It is a thin wrapper over `app/composition/app.py` and holds no wiring of its own.
+- **`composition/`** — Root A, every domain in one process. `wiring.py` holds the `Domain` descriptor and the shared app building (CORS, rate limiting, error handlers, the five root routes); `domains.py` names the nine domains and, for each, the routers it owns, its prefixes and tags, and whether it needs `SECRET_KEY`; `app.py` composes all nine and is what `main.py` serves.
+- **`entrypoints/`** — Root B, one module per deployed function (`identity`, `users`, `catalog`, `vehicles`, `build_lists`, `build_logs`, `moderation`, `media`, `ingestion`). Each builds an application carrying one domain plus the five root routes. `domains.py` loads routers through a callable so importing a descriptor imports no endpoint module, which is what keeps a domain image to one domain; `backend/tests/entrypoints/` asserts it in a fresh interpreter with no AWS credentials.
 - **`api/endpoints/`** — One file per domain (`auth`, `users`, `car_generations`, `parts`, `build_lists`, `build_list_parts`, `build_list_phases`, `build_logs`, `votes`, `reports`, `images`, `search`, `admin`, `crawled_pages`, `part_manufacturers`, `categories`, `retailers`, `bug_reports`).
 - **`db/dynamo/`** — DynamoDB layer: `tables.py` (every table and GSI, one `TableSpec` each), `repository.py` (generic `DynamoRepository[TModel]`), and one module per domain (`users`, `catalog`, `build_lists`, `build_logs`, `moderation`, ...) holding the Pydantic item models and their repositories. `api/dependencies/repositories.py` bundles them into the `Repositories` dependency.
 - **`api/schemas/`** — Pydantic v2 request/response schemas.
@@ -139,9 +141,9 @@ Six workflows in `.github/workflows/`, three CI and three deploy, each scoped by
 
 | Workflow | Trigger | Paths |
 |---|---|---|
-| `backend-ci.yml` | `pull_request` → `main` | `backend/**` |
-| `frontend-ci.yml` | `pull_request` → `main` | `frontend/**` |
-| `chrome-extension-ci.yml` | `pull_request` → `main` | `chrome-extension/**` |
+| `backend-ci.yml` | `pull_request` → `main`, `staging` | `backend/**` |
+| `frontend-ci.yml` | `pull_request` → `main`, `staging` | `frontend/**` |
+| `chrome-extension-ci.yml` | `pull_request` → `main`, `staging` | `chrome-extension/**` |
 | `backend-deploy.yml` | `push` → `main`, `staging` | `backend/**` |
 | `frontend-deploy.yml` | `push` → `main`, `staging` | `frontend/**` |
 | `chrome-extension-deploy.yml` | `push` → `main` | `chrome-extension/**` |
@@ -149,8 +151,6 @@ Six workflows in `.github/workflows/`, three CI and three deploy, each scoped by
 The three deploy workflows are fully independent — a backend merge never rebuilds the frontend.
 
 `backend-deploy.yml` and `frontend-deploy.yml` pick their GitHub Environment from the branch (`main` → `production`, otherwise `staging`) and read every deploy-time value from that Environment. The backend deploy builds a Lambda zip (`requirements-lambda.txt` resolved for manylinux x86_64 / Python 3.13, plus `app/`), uploads it to the artifacts bucket keyed by commit SHA, waits for HCP Terraform to go idle, then runs `update-function-code` and `publish-version`.
-
-**Still to change:** the three CI workflows only run on PRs into `main`; PRs into `staging` run no checks until `staging` is added to their `pull_request: branches:`.
 
 **`chrome-extension-deploy.yml` stays `main`-only.** It publishes to the Chrome Web Store, not to AWS: patch-bump `manifest.json`, tag `chrome-extension-vX.Y.Z`, cut a GitHub Release, upload and publish the zip via the CWS API. A browser extension has no staging-account equivalent and there is no staging store listing, so a `staging` trigger would have nothing to deploy to. It is also the one sanctioned exception to "never commit directly to `main`" — it pushes its own version bump with `git push origin HEAD:main`.
 
@@ -184,5 +184,5 @@ The Lambda's code is not Terraform's: the function is created from a placeholder
 
 - **Tables:** Declare every table and index in `backend/app/db/dynamo/tables.py`, then run `python scripts/export_dynamo_tables.py` so `terraform/dynamodb_tables.json` matches (a test fails when they drift). There are no migrations; schema changes are additive attributes on Pydantic item models.
 - **pytest:** Always pass `-n auto` for parallel execution. Tests use moto's in-memory DynamoDB — no services required.
-- **New CRUD endpoints:** Extend `BaseDynamoEndpointRouter` + `BaseDynamoCRUDService`; register with `EndpointRegistry` in `main.py`.
+- **New CRUD endpoints:** Extend `BaseDynamoEndpointRouter` + `BaseDynamoCRUDService`, then add the router to its domain's loader in `backend/app/composition/domains.py` with the prefix and tags it should carry. Both composition roots pick it up from there. A new route changes the routing table, so regenerate `backend/tests/fixtures/route_contract.json` and bump the count for that domain in `backend/tests/entrypoints/test_route_split.py`; the diff on the fixture is the review artifact.
 - The backend CORS config explicitly allows `chrome-extension://` origins and `null` (for service workers).
