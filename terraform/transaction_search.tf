@@ -80,23 +80,22 @@ resource "aws_xray_trace_segment_destination" "main" {
 # X-Ray creates the aws/spans log group itself the first time it writes to the
 # CloudWatchLogs destination. It cannot be created ahead of time: CreateLogGroup
 # rejects the name with "Log groups starting with AWS/ are reserved for AWS".
-# The group does not exist in this account yet, confirmed against staging on
-# 2026-09-07, so retention has to be applied in a second step once the
-# destination above has applied and X-Ray has created the group. The import
-# block and resource below stay commented out until then; uncommenting them
-# before the group exists is the failure Portfolio hit on its first apply.
-#
-# import {
-#   to = aws_cloudwatch_log_group.spans
-#   id = "aws/spans"
-# }
-#
-# resource "aws_cloudwatch_log_group" "spans" {
-#   name              = "aws/spans"
-#   retention_in_days = 7
-#
-#   depends_on = [aws_xray_trace_segment_destination.main]
-# }
+# Step one (the destination above) applied on staging on 2026-09-08 and X-Ray
+# created the group with its own 30 day default, so step two adopts it into
+# state and puts the platform's 7 day retention on it. The import block is a
+# no-op once the group is in state and stays here so a fresh environment
+# converges in one apply after X-Ray has created the group.
+import {
+  to = aws_cloudwatch_log_group.spans
+  id = "aws/spans"
+}
+
+resource "aws_cloudwatch_log_group" "spans" {
+  name              = "aws/spans"
+  retention_in_days = 7
+
+  depends_on = [aws_xray_trace_segment_destination.main]
+}
 
 # Adopts the account's existing "Default" indexing rule rather than creating a
 # new named one: the provider's own example uses name = "Default" and imports by
