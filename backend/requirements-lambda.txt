@@ -4,12 +4,15 @@
 # passes every test and then fails at import inside the image.
 # `tests/test_requirements_lambda_subset.py` is what stops that recurring.
 #
-# `otel` rides along even though tracing is gated off until row 16. The gate is
-# an environment variable, so turning tracing on must not also require a
-# dependency change, and the extra is import light while unused. `dynamodb`
-# carries the botocore error handlers the composition root installs; the package
-# imports botocore lazily inside them, so it costs nothing at import time.
-webbpulse[fastapi,otel,dynamodb]==0.3.0
+# `otel` and `aws-otel` are both live as of row 16: the domain functions export
+# spans to the X-Ray OTLP endpoint, and `aws-otel` is the SigV4 signing exporter
+# that endpoint requires. This is the file the image installs, so an extra
+# present only in `requirements.txt` would pass every check and then fall back
+# to the unsigned exporter inside the running function, which is a silent 403
+# rather than a failure. `dynamodb` carries the botocore error handlers the
+# composition root installs; the package imports botocore lazily inside them, so
+# it costs nothing at import time.
+webbpulse[fastapi,otel,dynamodb,aws-otel]==0.3.0
 
 annotated-types==0.8.0
 anyio==4.15.0
