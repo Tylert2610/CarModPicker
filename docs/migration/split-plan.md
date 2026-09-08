@@ -346,34 +346,48 @@ is the whole point of the indirection and it is what keeps cold start down.
 
 ### 2.3 The blocker in the current code
 
-`app/api/dependencies/repositories.py` defines a frozen dataclass `Repositories`
-that instantiates all twenty-five repositories at module import, and
-`get_repositories()` returns it. Every route in the application depends on it.
-Left as it is, every one of the nine functions imports all twenty-five repository
-modules, and through them the entire data layer, on every cold start.
+**The repository half is unwound; PR 6 delivered it.**
+`app/api/dependencies/repositories.py` used to define a frozen dataclass
+`Repositories` that instantiated all twenty-five repositories at module import,
+and `get_repositories()` returned it. Every route in the application depends on
+it, so left as it was, every one of the nine functions would have imported all
+twenty-five repository modules, and through them the entire data layer, on every
+cold start.
 
-This has to be unwound before any domain is carved out, and it is the reason the
-source-layout PR is large and comes early. The replacement is a per-domain
-repository bundle: each domain declares the repositories it needs, and
-`get_repositories()` in that domain's process returns only those. The route
-signatures do not change, so the change is mechanical, but it touches every
-endpoint module.
+What replaced it is a per-domain repository bundle. `app/db/dynamo/registry.py`
+records each repository's defining module, class and table as strings, so reading
+the catalogue costs no import. `RepositoryBundle` carries a declared set of names
+and builds each one on first access; an access outside the set raises
+`RepositoryNotInBundle`, which names the domain, the repository and the table so
+the next question, which IAM grant is missing, is already answered.
+`app/composition/domains.py` gives each domain a `repositories` tuple, Root B
+builds a bundle from one domain's tuple and Root A from all twenty-five, and
+`bind_repositories` installs it in that application's `dependency_overrides`
+rather than in a process global, so nine applications can be built side by side
+in one interpreter. The route signatures did not change: `Repositories` is still
+the annotation on roughly two hundred call sites, now aliased to the bundle, so
+the OpenAPI document is byte-identical. A `media` process imports five repository
+modules instead of twenty-five and never imports `app.db.dynamo.app_settings` at
+all; `backend/tests/entrypoints/test_repository_bundles.py` asserts that in a
+fresh interpreter and checks each domain's declared bundle against the
+repositories its own routes actually reach.
 
-`app/core/config.py` has a related problem. `load_app_secrets()` runs at import
-time, so every function needs `secretsmanager:GetSecretValue` at cold start
-whether or not it uses a secret. Portfolio solved this by making secrets optional
-fields resolved lazily through a `_resolve_secret` helper, with a
-`require_secrets()` call at the point of use rather than a validator that raises
-at import. The same change applies here and it is what lets `vehicles`, which is
-entirely read-only and needs no secret, drop the grant.
+**The config half is delivered too; PR 7 shipped it.** `app/core/config.py`
+used to call `load_app_secrets()` at import time, so every function would have
+needed `secretsmanager:GetSecretValue` at cold start whether or not it used a
+secret. Portfolio solved this by making secrets optional fields resolved lazily
+through a `_resolve_secret` helper, with a `require_secrets()` call at the point
+of use rather than a validator that raises at import. The same change is now in
+place here, and it is what lets `vehicles`, which is entirely read-only and needs
+no secret, drop the grant.
 
-This is sharper than it sounds. Importing `app.core.config` today performs a
-network call to Secrets Manager and re-raises on failure, which means the module
-is un-importable without AWS credentials. Any tooling that imports the
-application without credentials fails, and that includes the contract test in
-section 2.7, which has to import all nine Root B applications. So the lazy
-resolution is not an optimisation, it is a prerequisite for the test that makes
-every cut verifiable.
+This was sharper than it sounded. Importing `app.core.config` used to perform a
+network call to Secrets Manager and re-raise on failure, which made the module
+un-importable without AWS credentials. Any tooling that imports the application
+without credentials failed, and that includes the contract test in section 2.7,
+which has to import all nine Root B applications. So the lazy resolution was not
+an optimisation, it was a prerequisite for the test that makes every cut
+verifiable.
 
 ### 2.4 Entrypoint shape
 
@@ -1011,6 +1025,27 @@ indistinguishable from a rename, so the two are separated.
 
 Every row that depended on "4" depends on 4a: what PRs 6, 7, 8 and 11 need is the
 domain boundary expressed in code, not the directory layout. Only 4b needs 4b.
+
+**Row 6 is delivered.** `app/db/dynamo/registry.py` is the catalogue of the
+twenty-five repositories, holding each one's defining module, class and table as
+strings so reading it constructs nothing and imports nothing.
+`app/api/dependencies/repositories.py` is now a `RepositoryBundle` that carries a
+declared set of those names and builds each on first access; an access outside
+the set raises `RepositoryNotInBundle`, naming the domain, the repository and the
+table. Each of the nine descriptors in `app/composition/domains.py` carries a
+`repositories` tuple, and `bind_repositories` installs a domain's bundle in that
+application's `dependency_overrides` rather than in a process global, so Root A
+still carries all twenty-five and the nine Root B applications can be built side
+by side in one interpreter. `Repositories` remains the annotation on roughly two
+hundred call sites, so no route signature moved and the OpenAPI document is
+byte-identical. `backend/tests/entrypoints/test_repository_bundles.py` compares
+each domain's declared bundle against the repositories its own routes actually
+reach, checks every table in section 1.2 against exactly one owning domain, and
+proves in a fresh interpreter that building `media` constructs no repository and
+imports no repository module outside its five.
+
+**Row 7 is delivered.** Secrets resolve lazily in `app/core/config.py`, and
+section 2.3 records what that changed.
 
 PRs 1, 2, 3, 9, 10, and 33 are independent of everything else and can run in
 parallel. PR 22 is the hard gate: nothing from 23 onward can start without it,
