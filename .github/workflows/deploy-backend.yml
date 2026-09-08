@@ -146,7 +146,7 @@ jobs:
           - build-logs
           - moderation
           - vehicles
-          - ingestion
+          - admin
           - build-lists
           - identity
           - catalog

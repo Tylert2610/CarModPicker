@@ -1,4 +1,4 @@
-"""The ingestion domain's entrypoint.
+"""The admin domain's entrypoint.
 
 Price-drop alerts, the Chrome extension's page parser and the two admin
 modules: 12 routes.
@@ -9,7 +9,7 @@ registered before the two `/{alert_id}` routes and must stay that way: it
 survives only because those two are PATCH and DELETE and there is no GET detail
 route, so adding `GET /{alert_id}` would break unsubscribe silently.
 
-Run by the image as `python -m app.entrypoints.ingestion`. `handler` is the
+Run by the image as `python -m app.entrypoints.admin`. `handler` is the
 Lambda entry point and is still Mangum, which is what `app/lambda_handler.py`
 uses today; the Lambda Web Adapter switch is a later PR in the plan and changing
 the adapter here would make this slice about two things at once.
@@ -40,7 +40,7 @@ from app.composition.wiring import (
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from fastapi import FastAPI
 
-DOMAIN = DOMAINS["ingestion"]
+DOMAIN = DOMAINS["admin"]
 
 
 def build_app() -> "FastAPI":

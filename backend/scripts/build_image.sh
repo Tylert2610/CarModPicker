@@ -44,7 +44,7 @@ usage() {
 usage: build_image.sh <domain> [tag]
 
   domain  one of identity, users, catalog, vehicles, build-lists, build-logs,
-          moderation, media, ingestion
+          moderation, media, admin
   tag     image tag, default "local". CI passes sha-<commit>, which is what the
           ECR repositories' immutable tag prefix expects.
 
@@ -71,7 +71,7 @@ USAGE
 }
 
 case "${DOMAIN}" in
-    identity|users|catalog|vehicles|build-lists|build-logs|moderation|media|ingestion) ;;
+    identity|users|catalog|vehicles|build-lists|build-logs|moderation|media|admin) ;;
     "") echo "error: no domain given." >&2; usage ;;
     *) echo "error: '${DOMAIN}' is not a domain." >&2; usage ;;
 esac

@@ -137,7 +137,7 @@ locals {
   # the four keys a domain function must not or need not carry:
   #
   #   - PORT and RUN_STARTUP_TASKS are baked into the image; see the file header.
-  #   - EMAIL_FROM and EMAIL_ENABLED are `identity`'s and `ingestion`'s, per
+  #   - EMAIL_FROM and EMAIL_ENABLED are `identity`'s and `admin`'s, per
   #     section 3.4's SES split. `media` sends no mail, and a configured sender
   #     on a function with no ses:SendEmail grant is a misleading configuration.
   #   - SENTRY_SERVICE_NAME becomes the domain's own name rather than the

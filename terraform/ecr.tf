@@ -42,7 +42,7 @@ locals {
     "build-logs",
     "moderation",
     "vehicles",
-    "ingestion",
+    "admin",
     "build-lists",
     "identity",
     "catalog",
@@ -61,5 +61,37 @@ module "registry" {
   # Immutability is what makes a sha- tag a reproducible deploy, and it is why
   # the build job in PR 12 needs a guard that skips a push when the tag already
   # exists rather than overwriting it.
+  #
+  # `force_delete` is back at the module default of false for every repository.
+  # The ingestion repository this change destroys had it set to true by the
+  # preceding apply (PR #342), which is what lets the destroy succeed. See the
+  # note on the ingestion rename below.
   repositories = { for domain in local.lambda_domain_names : domain => {} }
 }
+
+# ---------------------------------------------------------------------------
+# The ingestion to admin rename, and the one manual step it needs.
+#
+# `ingestion` left local.lambda_domain_names and `admin` joined it, so this
+# apply destroys carmodpicker-<env>/ingestion and creates carmodpicker-<env>/admin.
+# In staging the old repository is not empty: row 11 pushed three images into it
+# by hand and nothing has ever deployed from them.
+#
+# aws_ecr_repository refuses to delete a repository that still holds images
+# unless force_delete is true, and force_delete is read from the resource's
+# prior state at destroy time. A key removed from a for_each map has no
+# configuration left to evaluate, so a value set in this file cannot reach the
+# instance being destroyed. The module-wide switch would also drop the guardrail
+# on the eight repositories that Lambda really does pull from.
+#
+# So the rename took two applies. PR #342 set force_delete = true on the
+# ingestion repository alone and applied (a one attribute update). This change
+# then removes the key, and the destroy reads the flag from that prior state.
+# The three images it discards are disposable: sha- tags beginning ef2e455d,
+# d7a6eaf4 and 30531f63, no function was ever created from them, and
+# var.bootstrap_image_tag names a tag in every domain's own repository rather
+# than in this one.
+#
+# Production has no repositories yet, so nothing is destroyed there and the
+# first apply on main simply creates all nine under the new name.
+# ---------------------------------------------------------------------------
