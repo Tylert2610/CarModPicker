@@ -62,10 +62,10 @@ module "registry" {
   # the build job in PR 12 needs a guard that skips a push when the tag already
   # exists rather than overwriting it.
   #
-  # `force_delete` stays at the module default of false for every repository.
-  # It is a destroy-time flag and the provider reads it from prior state, not
-  # from configuration, so setting it here would not help the one repository
-  # this change destroys. See the note on the ingestion rename below.
+  # `force_delete` is back at the module default of false for every repository.
+  # The ingestion repository this change destroys had it set to true by the
+  # preceding apply (PR #342), which is what lets the destroy succeed. See the
+  # note on the ingestion rename below.
   repositories = { for domain in local.lambda_domain_names : domain => {} }
 }
 
@@ -81,27 +81,17 @@ module "registry" {
 # unless force_delete is true, and force_delete is read from the resource's
 # prior state at destroy time. A key removed from a for_each map has no
 # configuration left to evaluate, so a value set in this file cannot reach the
-# instance being destroyed. Flipping the module-wide switch in the same apply
-# would change nothing and would also drop the guardrail on the eight
-# repositories that Lambda really does pull from.
+# instance being destroyed. The module-wide switch would also drop the guardrail
+# on the eight repositories that Lambda really does pull from.
 #
-# So the three images are deleted first, out of band, and then this applies
-# cleanly. They are disposable: three sha- tags beginning ef2e455d, d7a6eaf4
-# and 30531f63, no function was ever created from them, and
+# So the rename took two applies. PR #342 set force_delete = true on the
+# ingestion repository alone and applied (a one attribute update). This change
+# then removes the key, and the destroy reads the flag from that prior state.
+# The three images it discards are disposable: sha- tags beginning ef2e455d,
+# d7a6eaf4 and 30531f63, no function was ever created from them, and
 # var.bootstrap_image_tag names a tag in every domain's own repository rather
 # than in this one.
 #
-#   aws ecr list-images --region us-west-2 \
-#     --repository-name carmodpicker-staging/ingestion \
-#     --query 'imageIds[*]' > ids.json
-#   aws ecr batch-delete-image --region us-west-2 \
-#     --repository-name carmodpicker-staging/ingestion \
-#     --image-ids file://ids.json
-#
 # Production has no repositories yet, so nothing is destroyed there and the
 # first apply on main simply creates all nine under the new name.
-#
-# The alternative, two applies with force_delete true in between, costs an
-# extra apply and leaves the flag on. Deleting three throwaway images is the
-# smaller change.
 # ---------------------------------------------------------------------------
