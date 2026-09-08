@@ -77,6 +77,7 @@ Most of this stack is now assembled from `app.terraform.io/WebbPulse/platform-mo
 | `http-api` | `apigateway.tf` | The HTTP API, its `$default` stage, integration, route, invoke permission, custom domain, mapping and alias record. |
 | `staging-access-gate` | `staging_access_gate.tf` | Cognito sign-in and CloudFront signed cookies in front of staging. See below. |
 | `spa-frontend` | `cloudfront.tf` | The frontend bucket, its public access block, the origin access control and bucket policy, the CloudFront distribution with the access-gate origins and behaviors, and the apex and `www` alias records. |
+| `ecr-repository` | `ecr.tf` | One ECR repository and lifecycle policy per per-domain Lambda, `carmodpicker-<env>/<domain>`. |
 | `github-actions-role` | `iam_github_actions.tf` | The GitHub Actions OIDC provider, the `github-actions-deploy` role and its inline deploy policy. |
 
 The adoption was a pure state move: the speculative plans on both workspaces read `0 to add, 0 to change, 0 to destroy`. The `moved` blocks that carried the state across have been applied in both workspaces and are no longer in the configuration.
@@ -106,6 +107,7 @@ What stays hand-written is what a single-provider module cannot own: the ACM cer
 | `route53.tf` | `module "staging_dns"` (`platform-modules/aws//modules/staging-dns`): the hosted zone for the served domain plus, in staging, the NS delegation into the parent zone through `aws.parent_dns`. Then the SES DKIM/MAIL-FROM/DMARC and verification records. The apex and `www` alias records live in `module "frontend"`, the `api` alias record in `module "api"`. |
 | `ses.tf` | SESv2 configuration set, domain identity (custom domain) or mailbox identity (`email_from`), custom MAIL FROM, SNS topic + subscription for bounces/complaints, account-level VDM. |
 | `secretsmanager.tf` | `<prefix>/app`, the one JSON secret per environment (`SECRET_KEY`, `SENTRY_DSN`), read by the Lambda at cold start through `APP_SECRETS_ARN`. |
+| `ecr.tf` | `module "registry"` (`platform-modules/aws//modules/ecr-repository`): one ECR repository plus lifecycle policy per entry in `local.lambda_domains`, named `carmodpicker-<env>/<domain>`, IMMUTABLE tags, scan on push, keep the last 10 `sha-` tagged images, untagged expired after a day. Nothing pulls from them yet. |
 | `iam_github_actions.tf` | `module "github_actions_role"` (`platform-modules/aws//modules/github-actions-role`): GitHub OIDC provider + `github-actions-deploy` role: Lambda code updates, artifacts upload, frontend sync, invalidation, and (gate on) reading the origin-verify SSM parameter. |
 | `monitoring.tf` | Alarms SNS topic; Lambda errors/throttles, HTTP API 5xx and p99 integration latency, one aggregate DynamoDB throttle alarm across every table. |
 | `management.tf` | Tag-based Resource Group, Cost Explorer anomaly monitor + daily email subscription, monthly cost budgets. |
