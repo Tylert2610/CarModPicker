@@ -416,6 +416,10 @@ the contract test imports all nine of them. Everything that needs AWS goes in
 
 One `backend/Dockerfile` for all nine domains, selected by `ARG DOMAIN`.
 
+**Delivered by row 11.** The sketch below is what was designed; section 8's row
+11 paragraph records the three places the shipped file departs from it, the
+`PORT` one being the only one that would have cost a debugging session.
+
 ```dockerfile
 ARG BASE_IMAGE=432410731887.dkr.ecr.us-west-2.amazonaws.com/webbpulse/python-lambda-base@sha256:b5298b4b773ad6c9e311057cf5d43f37ceb98f0367347d714c6817f250a5cef7
 
@@ -1046,6 +1050,48 @@ imports no repository module outside its five.
 
 **Row 7 is delivered.** Secrets resolve lazily in `app/core/config.py`, and
 section 2.3 records what that changed.
+
+**Row 11 is delivered.** `backend/Dockerfile` builds all nine images from one
+file, with `ARG DOMAIN` selecting the entrypoint and no default, so an image
+cannot silently be some other domain's. The domain name is mapped to its module
+name at build time rather than at container start, because domain names carry
+hyphens for ECR repositories, functions and log groups while Python modules must
+carry underscores, and `build-lists` and `build-logs` are the two that differ;
+the build then asserts that `app/entrypoints/<module>.py` is actually in the
+image, which turns what would otherwise be a `ModuleNotFoundError` on a
+deployed function's first cold start into a failed build.
+
+Three things differ from what section 2.5 sketched, and each is a correction
+rather than a preference. The install is `requirements-lambda.txt`, not
+`requirements.txt`: the latter is the development set and carries `pytest`,
+`moto`, `black`, `mypy`, `locust` and `curl_cffi`, and section 2.6 already
+requires `curl_cffi` to stay out. PyPI stays configured as an extra index behind
+the CodeArtifact one, so the build works whether or not the requirements yet
+name `webbpulse` and row 8's adoption changes this file not at all. And `PORT`
+is set alongside `AWS_LWA_PORT`, because `Settings.PORT` defaults to 8000 and it
+is the environment variable that overrides it; an entrypoint binding 8000 while
+the adapter polls 8080 presents as a readiness check that never passes, with no
+application logs to say why.
+
+`AWS_LWA_READINESS_CHECK_PATH=/health` holds for all nine, as section 2.5
+predicted: `/health` is a static dictionary and `/ready` is the one that calls
+`check_db_ready()`, so no domain needs Portfolio's `tcp` fallback. All nine were
+run under uvicorn against DynamoDB Local with the image's own environment and
+the `requirements-lambda.txt` closure, and all nine bind 8080, answer `/health`
+200 with no I/O, and answer `/ready` 200 with `database: up`. The dependency
+layer is about 99 MB uncompressed and `app/` about 1.9 MB, both identical across
+the nine, which is what keeps nine repositories close to the storage cost of
+one.
+
+`scripts/build_image.sh <domain>` and `scripts/run_image.sh <domain>` are the
+local helpers. The first exists so the CodeArtifact token reaches pip as a
+BuildKit secret rather than a build argument, where it would persist in
+`docker history`; the second runs an image with the environment its entrypoint
+needs and points it at `docker-compose.yml`'s DynamoDB Local. `arm64` is the
+default platform in both, which is open question 7 and still wants confirming;
+the three native pins that question names, `Pillow`, `bcrypt` and `webauthn`,
+all publish `aarch64` wheels, and the base image is Debian trixie, whose glibc
+satisfies the `manylinux_2_28` floor Pillow's wheel carries.
 
 PRs 1, 2, 3, 9, 10, and 33 are independent of everything else and can run in
 parallel. PR 22 is the hard gate: nothing from 23 onward can start without it,
