@@ -1,4 +1,5 @@
 import logging
+import warnings
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -70,6 +71,18 @@ logger = logging.getLogger(__name__)
 # StarletteIntegration can patch the route handlers. No-ops in dev / test (see
 # init_sentry env gates). D-12.
 init_sentry(server_name="apprunner-backend")
+
+# This root serves the auth routes, so it needs a signing key and says so once,
+# at startup, instead of failing per request inside jwt.encode. Outside a
+# deployed environment an empty key stays a warning, which is what keeps local
+# development and the test suite runnable without one.
+if settings.is_production:
+    settings.require_secrets("SECRET_KEY")
+elif not settings.SECRET_KEY:
+    warnings.warn(
+        "SECRET_KEY is empty. JWT tokens will be insecure. Set SECRET_KEY environment variable.",
+        UserWarning,
+    )
 
 
 def run_startup_tasks() -> None:
