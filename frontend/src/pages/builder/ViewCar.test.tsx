@@ -28,22 +28,12 @@ vi.mock('../../hooks/useAuth', () => ({
   useAuth: () => mockUseAuth(),
 }));
 
-// Extend the global setup.ts mock of `../services/Api` (which only exports
-// `default`) with the named exports ViewCar consumes (carGenerationsApi).
-// Re-exporting the real module resolves this cleanly because the domain APIs
-// internally call the globally-mocked `apiClient`.
-vi.mock('../../services/Api', async () => {
-  const actual =
-    await vi.importActual<typeof import('../../services/Api')>(
-      '../../services/Api'
-    );
-  return actual;
-});
+// ViewCar reaches the API through `carGenerationsApi` from
+// `../../api/car_generations`, which calls the apiClient that setup.ts mocks.
 
 // Auth fixture. Inlined equivalent of the canonical testScenarios.authenticated
-// shape from `src/test/utils/test-utils.tsx` (Phase 8 D-05) — we can't import
-// test-utils directly because its `vi.mock('../../services/Api', ...)` would
-// clobber our importActual-based extension above.
+// shape from `src/test/utils/test-utils.tsx` (Phase 8 D-05), so this file can
+// set the auth branch without going through customRender.
 const authenticatedAuthState = {
   isAuthenticated: true,
   isLoading: false,

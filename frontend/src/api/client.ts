@@ -1,9 +1,7 @@
-// Phase 6 D-22 / FE-04: shared Axios client extracted from services/Api.ts.
-// Carries the URL normalizer, base-URL resolver, axios instance (with
-// load-bearing paramsSerializer for array-valued query params like
-// `ids` / `category_ids`), token helpers, and request/response interceptors
-// VERBATIM from the original services/Api.ts (lines 65-194). Behavior must
-// not drift; this is a pure refactor.
+// Shared Axios client for every `api/<domain>` module. Carries the URL
+// normalizer, base-URL resolver, axios instance (with load-bearing
+// paramsSerializer for array-valued query params like `ids` / `category_ids`),
+// token helpers, and the request/response interceptors.
 import axios, { type AxiosError } from 'axios';
 
 // Normalize a base URL (ensure protocol, append /api)

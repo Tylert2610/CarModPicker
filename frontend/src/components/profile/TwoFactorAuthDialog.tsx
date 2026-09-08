@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { FaLock, FaShieldAlt } from 'react-icons/fa';
 import useApiRequest from '../../hooks/UseApiRequest';
-import { authApi } from '../../services/Api';
+import { authApi } from '../../api/auth';
 import type { TOTPSetupResponse } from '../../types/Api';
 import { ConfirmationAlert, ErrorAlert } from '../ui/alert';
 import { Button } from '../ui/button';

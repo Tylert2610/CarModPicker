@@ -22,12 +22,11 @@
 // "please log in" ErrorAlert; non-admin user shows the permission-denied
 // ErrorAlert.
 //
-// Mocking strategy: setup.ts registers the global `vi.mock('../api/client')`
-// (Phase 8 D-18) and test-utils.tsx registers `vi.mock('../../services/Api',
-// importOriginal)` so the real `adminApi`/`usersApi`/etc. domain modules run,
-// each calling `apiClient.get(...)` which lands on the shared mocked Axios
-// instance. Our `mockImplementation` below routes each URL substring to the
-// appropriate payload shape.
+// Mocking strategy: setup.ts registers the global `vi.mock('../api/client')`,
+// so the real `adminApi`/`usersApi`/etc. domain modules run, each calling
+// `apiClient.get(...)` which lands on the shared mocked Axios instance. Our
+// `mockImplementation` below routes each URL substring to the appropriate
+// payload shape.
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   render,

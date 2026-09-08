@@ -5,7 +5,6 @@ import {
 } from '@testing-library/react';
 import { type ReactElement } from 'react';
 import { expect, vi } from 'vitest';
-import { apiClient as sharedMockedApiClient } from '../../api/client';
 import type { UserRead } from '../../types/Api';
 import { setupApiMocks } from '../mocks/api';
 import { mockAdminUser, mockSuperuserUser, mockUseAuth } from './test-mocks';
@@ -21,31 +20,10 @@ interface CustomRenderOptions extends Omit<RenderOptions, 'wrapper'> {
   };
 }
 
-// Point both the services/Api shim AND any internal api-client consumers at
-// the SAME mock instance — the one setup.ts (D-18) registered under
-// `../api/client`. Importing `apiClient` above and re-using it below means
-// a test can assert on `vi.mocked(apiClient.post)` regardless of whether
-// the component imports `apiClient` directly from `../api/client` or reaches
-// the default export through the `../services/Api` shim (Register.tsx), and
-// the identity holds.
-const mockApiClient = sharedMockedApiClient;
-
-// Mock the API module. Phase 8 plan 08-10 fix: preserve the shim's named
-// re-exports (authApi, buildListsApi, etc.) via importOriginal so page tests
-// whose components call `authApi.login(...)` get the real domain-API object
-// whose internal `apiClient.<verb>(...)` lands on the mocked Axios client.
-// Previously this factory returned ONLY `default` (a fresh mock object), which
-// stripped every named export AND created a DIFFERENT apiClient instance than
-// setup.ts's mock of `../api/client`. Binding `default` to the shared mock
-// below makes every apiClient reference — direct, via services/Api default,
-// or via a domain API — point at the same `vi.fn()` so assertions converge.
-vi.mock('../../services/Api', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../services/Api')>();
-  return {
-    ...actual,
-    default: mockApiClient,
-  };
-});
+// setup.ts mocks `../api/client` for the whole suite, so every component
+// reaches the same mocked Axios instance whether it imports apiClient directly
+// or goes through a domain API module. Tests assert on
+// `vi.mocked(apiClient.post)` by importing it themselves.
 
 // Mock the useAuth hook
 vi.mock('../../hooks/useAuth', () => ({

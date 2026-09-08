@@ -1,5 +1,4 @@
 // Build Logs domain API. Mirrors backend endpoints/build_logs.py.
-// Extracted from services/Api.ts (lines 1038-1063) per Phase 6 D-22.
 import { apiClient } from './client';
 import type {
   BuildLogPostCreate,

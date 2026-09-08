@@ -1,5 +1,4 @@
 // Search domain API. Mirrors backend endpoints/search.py.
-// Extracted from services/Api.ts (lines 919-938) per Phase 6 D-22.
 //
 // Co-located response types per D-04 (these are not pydantic-generated; they
 // describe the bespoke search-result envelope produced by the search router).

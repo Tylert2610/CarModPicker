@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import { GOOGLE_CLIENT_ID } from '../config/google';
-import { authApi } from '../services/Api';
+import { authApi } from '../api/auth';
 import type {
   GoogleSignInLinkRequired,
   GoogleSignInResponse,

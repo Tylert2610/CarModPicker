@@ -1,7 +1,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useGoogleSignIn } from './useGoogleSignIn';
-import { authApi } from '../services/Api';
+import { authApi } from '../api/auth';
 import type { UserRead } from '../types/Api';
 import { mockUser } from '../test/mocks/api';
 
@@ -17,9 +17,9 @@ import { mockUser } from '../test/mocks/api';
 // so isGoogleConfigured() is always truthy at runtime — we validate both
 // branches by mocking the config module for the "disabled" branch.
 
-vi.mock('../services/Api', async () => {
+vi.mock('../api/auth', async () => {
   const actual =
-    await vi.importActual<typeof import('../services/Api')>('../services/Api');
+    await vi.importActual<typeof import('../api/auth')>('../api/auth');
   return {
     ...actual,
     authApi: {

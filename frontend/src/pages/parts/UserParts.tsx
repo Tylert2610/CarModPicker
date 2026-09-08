@@ -10,7 +10,8 @@ import { Input } from '../../components/ui/input';
 import Pagination from '../../components/ui/pagination';
 import { useAuth } from '../../hooks/useAuth';
 import { usePartsFilters } from '../../hooks/usePartsFilters';
-import { buildListPartsApi, partsApi } from '../../services/Api';
+import { buildListPartsApi } from '../../api/build_list_parts';
+import { partsApi } from '../../api/parts';
 import type { PartReadWithVotes, PaginationInfo } from '../../types/Api';
 
 const UserParts: React.FC = () => {

@@ -7,13 +7,13 @@
 // Phase 8 plan 08-14 (D-11) — Profile page: authenticated render + image
 // upload via FormData + upload error path.
 //
-// Profile uses `apiClient` (default export of services/Api) directly via
+// Profile uses `apiClient` from `../api/client` directly via
 // apiClient.put<UserRead> for profile updates, AND transitively via
-// ImageUpload → imageApi.uploadImage → apiClient.post(FormData).
+// ImageUpload -> imageApi.uploadImage -> apiClient.post(FormData). setup.ts
+// mocks the client, so both paths land on the same mocked Axios surface.
 //
-// NOTE: bypasses test-utils.tsx's customRender because that helper
-// registers its own vi.mock('../../services/Api', ...) with ONLY `default`,
-// which drops the `imageApi` named export that ImageUpload needs.
+// We render manually rather than through test-utils.tsx's customRender, so
+// this file controls the auth branch directly.
 
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -23,36 +23,6 @@ import { BrowserRouter } from 'react-router-dom';
 import { apiClient } from '../api/client';
 import { mockUser } from '../test/mocks/api';
 import { mockUseAuth } from '../test/utils/test-mocks';
-
-// Local services/Api mock that exposes BOTH `default: apiClient` AND `imageApi`
-// (for the ImageUpload child component, which calls imageApi.uploadImage).
-vi.mock('../services/Api', async () => {
-  const clientMod = await import('../api/client');
-  const client = clientMod.apiClient;
-  return {
-    default: client,
-    apiClient: client,
-    imageApi: {
-      uploadImage: async (
-        file: File,
-        entityType: string,
-        entityId?: string
-      ): Promise<unknown> => {
-        const formData = new FormData();
-        formData.append('file', file);
-        const params = new URLSearchParams();
-        params.append('entity_type', entityType);
-        if (entityId !== undefined) params.append('entity_id', entityId);
-        const response = await client.post<unknown>(
-          `/images/upload?${params.toString()}`,
-          formData,
-          { headers: { 'Content-Type': 'multipart/form-data' } }
-        );
-        return response.data;
-      },
-    },
-  };
-});
 
 vi.mock('../hooks/useAuth', () => ({
   useAuth: () => mockUseAuth(),

@@ -6,7 +6,7 @@ import { Button } from '../../components/ui/button';
 import { ConfirmationAlert, ErrorAlert } from '../../components/ui/alert';
 import { Input } from '../../components/ui/input';
 import useApiRequest from '../../hooks/UseApiRequest';
-import { authApi } from '../../services/Api';
+import { authApi } from '../../api/auth';
 
 function ForgotPassword() {
   const [email, setEmail] = useState('');

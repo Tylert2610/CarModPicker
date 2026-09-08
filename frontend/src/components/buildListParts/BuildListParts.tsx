@@ -2,14 +2,12 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { LARGE_FETCH_LIMIT } from '../../constants';
 import useApiRequest from '../../hooks/UseApiRequest';
 import { useAuth } from '../../hooks/useAuth';
-import {
-  partManufacturersApi,
-  buildListPartsApi,
-  buildListPhasesApi,
-  buildListsApi,
-  carGenerationsApi,
-  categoriesApi,
-} from '../../services/Api';
+import { buildListPartsApi } from '../../api/build_list_parts';
+import { buildListPhasesApi } from '../../api/build_list_phases';
+import { buildListsApi } from '../../api/build_lists';
+import { carGenerationsApi } from '../../api/car_generations';
+import { categoriesApi } from '../../api/categories';
+import { partManufacturersApi } from '../../api/part_manufacturers';
 import type {
   BuildListLaborEstimateRead,
   BuildListPartReadWithPart,

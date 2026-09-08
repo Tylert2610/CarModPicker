@@ -20,7 +20,7 @@ import { Input } from '../../components/ui/input';
 import useApiRequest from '../../hooks/UseApiRequest';
 import { useAuth } from '../../hooks/useAuth';
 import { isGoogleConfigured } from '../../hooks/useGoogleSignIn';
-import { authApi } from '../../services/Api';
+import { authApi } from '../../api/auth';
 
 /**
  * Only accept returnTo values that look like a local path. Blocks protocol-

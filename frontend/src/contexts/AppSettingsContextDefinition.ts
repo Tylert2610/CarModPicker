@@ -1,5 +1,5 @@
 import { createContext } from 'react';
-import type { AppSettings } from '../services/Api';
+import type { AppSettings } from '../api/app_settings';
 
 export interface AppSettingsContextType {
   settings: AppSettings | null;

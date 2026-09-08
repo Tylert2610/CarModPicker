@@ -16,13 +16,13 @@ import {
 import { Input } from '../../components/ui/input';
 import Spinner from '../../components/ui/spinner';
 import { useAuth } from '../../hooks/useAuth';
-import {
-  adminApi,
-  type CanonicalLinkGroupMember,
-  type CanonicalLinkGroupResponse,
-  type RescanResponse,
-  type UrlLookupMatch,
-} from '../../services/Api';
+import { adminApi } from '../../api/admin';
+import type {
+  CanonicalLinkGroupMember,
+  CanonicalLinkGroupResponse,
+  RescanResponse,
+  UrlLookupMatch,
+} from '../../api/admin';
 
 function formatAxiosError(err: unknown, fallback: string): string {
   if (err && typeof err === 'object' && 'response' in err) {

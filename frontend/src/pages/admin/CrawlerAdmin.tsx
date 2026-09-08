@@ -22,8 +22,9 @@ import type {
   CrawlerScheduleUpdate,
   RescrapeArchivesQueuedResponse,
   RescrapeArchivesRequest,
-} from '../../services/Api';
-import { adminApi, categoriesApi } from '../../services/Api';
+} from '../../api/admin';
+import { adminApi } from '../../api/admin';
+import { categoriesApi } from '../../api/categories';
 import type { CategoryResponse } from '../../types/Api';
 
 // ── Fetcher-tier visual system ───────────────────────────────────────────

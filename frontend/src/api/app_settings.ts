@@ -1,5 +1,4 @@
 // App Settings domain API. Mirrors backend endpoints/app_settings.py.
-// Extracted from services/Api.ts (lines 1368-1385) per Phase 6 D-22.
 //
 // Co-located response types per D-04 (these are not pydantic-generated and
 // only consumed via this domain module).

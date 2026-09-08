@@ -4,13 +4,12 @@
 
 // Phase 8 plan 08-14 (D-11) — BugReport page form render + submit + error.
 //
-// BugReport imports `bugReportsApi` from `../services/Api`. Global setup.ts
-// mock provides only `default: mockApiClient`. We extend with a local vi.mock
-// that forwards bugReportsApi.createBugReport through the mocked apiClient.
+// BugReport imports `bugReportsApi` from `../api/bug_reports`, which calls the
+// apiClient that setup.ts mocks, so the submit path is observable on
+// vi.mocked(apiClient.post).
 //
-// NOTE: bypasses test-utils.tsx's customRender because that helper
-// registers its own vi.mock('../../services/Api', ...) with ONLY `default`,
-// which shadows the test-file mock and drops `bugReportsApi`.
+// We render manually rather than through test-utils.tsx's customRender, so
+// this file controls the auth branch directly.
 
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -20,18 +19,6 @@ import { MemoryRouter } from 'react-router-dom';
 import { apiClient } from '../api/client';
 import { mockUseAuth } from '../test/utils/test-mocks';
 import { mockUser } from '../test/mocks/api';
-
-vi.mock('../services/Api', async () => {
-  const clientMod = await import('../api/client');
-  const client = clientMod.apiClient;
-  return {
-    default: client,
-    apiClient: client,
-    bugReportsApi: {
-      createBugReport: (data: unknown) => client.post('/bug-reports/', data),
-    },
-  };
-});
 
 vi.mock('../hooks/useAuth', () => ({
   useAuth: () => mockUseAuth(),

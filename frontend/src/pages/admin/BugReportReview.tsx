@@ -3,7 +3,8 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useApiRequest from '../../hooks/UseApiRequest';
 import { useAuth } from '../../hooks/useAuth';
-import apiClient, { bugReportsApi } from '../../services/Api';
+import { bugReportsApi } from '../../api/bug_reports';
+import { apiClient } from '../../api/client';
 import type {
   BugReportUpdate,
   BugReportWithDetails,

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../../hooks/useAuth';
-import { buildListPartsApi, buildListsApi } from '../../services/Api';
+import { buildListPartsApi } from '../../api/build_list_parts';
+import { buildListsApi } from '../../api/build_lists';
 import type {
   BuildListPartCreate,
   BuildListPhaseRead,

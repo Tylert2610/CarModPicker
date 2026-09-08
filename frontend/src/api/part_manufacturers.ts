@@ -1,5 +1,4 @@
 // Part Manufacturers domain API. Mirrors backend endpoints/part_manufacturers.py.
-// Extracted from services/Api.ts (lines 480-526) per Phase 6 D-22.
 import { apiClient } from './client';
 import type {
   PartManufacturerCreate,

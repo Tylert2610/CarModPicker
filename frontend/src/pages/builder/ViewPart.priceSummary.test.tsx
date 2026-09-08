@@ -41,14 +41,6 @@ vi.mock('../../hooks/useAuth', () => ({
   useAuth: () => mockUseAuth(),
 }));
 
-vi.mock('../../services/Api', async () => {
-  const actual =
-    await vi.importActual<typeof import('../../services/Api')>(
-      '../../services/Api'
-    );
-  return actual;
-});
-
 function seedAuthenticated(): void {
   mockUseAuth.mockReturnValue({
     isAuthenticated: true,

@@ -1,5 +1,4 @@
 // Users domain API. Mirrors backend endpoints/users.py.
-// Extracted from services/Api.ts (lines 197-233) per Phase 6 D-22.
 import { apiClient } from './client';
 import type {
   AdminUserUpdate,

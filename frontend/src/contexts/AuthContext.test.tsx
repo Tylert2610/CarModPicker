@@ -13,9 +13,9 @@
 // bare `render` from @testing-library/react so AuthProvider wires up the REAL
 // context, and our in-file <Consumer> exercises it through useContext.
 //
-// The global setup.ts mock of `../services/Api` only exposes `default`. This
-// file overrides that mock locally to also expose named `authApi` and
-// `removeStoredToken`, both of which AuthContext imports at module load.
+// AuthContext imports `authApi` from `../api/auth` and `apiClient` /
+// `removeStoredToken` from `../api/client`. This file mocks both directly so
+// it can assert on the logout and token-clearing calls.
 
 /* eslint-disable @typescript-eslint/unbound-method --
  * vi.mocked(apiClient.get) is the canonical Vitest pattern for typed mock
@@ -30,31 +30,46 @@ import type { ReactNode } from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import apiClient from '../services/Api';
+import { apiClient } from '../api/client';
 import { mockUser } from '../test/mocks/api';
 
 // Hoisted mocks so the vi.mock factory can close over them.
-const { mockLogout, mockRemoveStoredToken } = vi.hoisted(() => ({
+const { mockApiClient, mockLogout, mockRemoveStoredToken } = vi.hoisted(() => ({
+  mockApiClient: {
+    get: vi.fn().mockResolvedValue({ data: null }),
+    post: vi.fn().mockResolvedValue({ data: null }),
+    put: vi.fn().mockResolvedValue({ data: null }),
+    delete: vi.fn().mockResolvedValue({ data: null }),
+    patch: vi.fn().mockResolvedValue({ data: null }),
+  },
   mockLogout: vi.fn(),
   mockRemoveStoredToken: vi.fn(),
 }));
 
-// AuthContext.tsx imports from `../services/Api`:
-//   - default export (apiClient)  ← already mocked globally by setup.ts
-//   - named `authApi`              ← NOT in setup.ts mock, provide here
-//   - named `removeStoredToken`    ← NOT in setup.ts mock, provide here
-// We EXTEND the global mock via vi.importActual (which, under the global
-// setup.ts mock, resolves to the { default: mockApiClient } shape), merging
-// in the missing named exports with our hoisted vi.fn()s.
-vi.mock('../services/Api', async () => {
+// AuthContext.tsx imports `apiClient` and `removeStoredToken` from
+// `../api/client` (already mocked globally by setup.ts) and `authApi` from
+// `../api/auth`. Override the two named exports whose calls this file asserts
+// on with our hoisted vi.fn()s, leaving the rest of each module intact.
+vi.mock('../api/auth', async () => {
   const actual =
-    await vi.importActual<typeof import('../services/Api')>('../services/Api');
+    await vi.importActual<typeof import('../api/auth')>('../api/auth');
   return {
     ...actual,
     authApi: { logout: mockLogout },
-    removeStoredToken: mockRemoveStoredToken,
   };
 });
+
+// setup.ts mocks `../api/client` wholesale, so a file-level mock replaces it
+// rather than merging. Re-declare the same shape here, binding
+// `removeStoredToken` to the hoisted spy this file asserts on and keeping the
+// same mocked Axios surface so no request escapes to the network.
+vi.mock('../api/client', () => ({
+  default: mockApiClient,
+  apiClient: mockApiClient,
+  setStoredToken: vi.fn(),
+  getStoredToken: vi.fn(() => null),
+  removeStoredToken: mockRemoveStoredToken,
+}));
 
 // Silence Sentry.setUser — AuthContext calls it unconditionally on every user
 // change. Namespace import (`import * as Sentry`) only needs `setUser`.

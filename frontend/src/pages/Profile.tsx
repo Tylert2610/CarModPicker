@@ -15,7 +15,7 @@ import { Input } from '../components/ui/input';
 import Spinner from '../components/ui/spinner';
 import useApiRequest from '../hooks/UseApiRequest';
 import { useAuth } from '../hooks/useAuth';
-import apiClient from '../services/Api';
+import { apiClient } from '../api/client';
 import type { UserRead, UserUpdate } from '../types/Api';
 
 function Profile() {

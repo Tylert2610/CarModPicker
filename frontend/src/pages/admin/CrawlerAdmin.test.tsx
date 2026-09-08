@@ -6,13 +6,11 @@
 // 1874, 2043, 2290). Tests mirror that structure with one describe block per
 // section, plus an auth-gating describe block for the two early-return paths.
 //
-// Data flow: CrawlerAdmin imports `adminApi` + `categoriesApi` from
-// ../../services/Api. Those domain API modules internally call `apiClient`
-// from ../../api/client, which setup.ts (D-18) mocks globally. So each test
-// stubs `apiClient.{get,post,patch,delete}` resolved values via the dual-mock
-// and lets the real adminApi / categoriesApi methods run normally. The
-// services/Api barrel is re-exported (not replaced) so categoriesApi /
-// adminApi remain real domain objects pointing at the same mocked apiClient.
+// Data flow: CrawlerAdmin imports `adminApi` from ../../api/admin and
+// `categoriesApi` from ../../api/categories. Those modules internally call
+// `apiClient` from ../../api/client, which setup.ts mocks globally. So each
+// test stubs `apiClient.{get,post,patch,delete}` resolved values and lets the
+// real adminApi / categoriesApi methods run normally.
 //
 // Per RESEARCH.md §1 + PATTERNS.md §12 Background Jobs section alone uses the
 // fake-timer helpers from src/test/utils/async.ts (startFakeTimers,

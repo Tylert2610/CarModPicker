@@ -1,8 +1,6 @@
 // Reports domain API. Mirrors backend endpoints/reports.py (polymorphic).
-// Extracted from services/Api.ts (lines 563-599 + legacy entity-scoped
-// wrapper at 633-658) per Phase 6 D-22. Polymorphic `reportsApi` is the
-// canonical surface; `partReportsApi` is a thin entity-typed wrapper for
-// backwards compat.
+// Polymorphic `reportsApi` is the canonical surface; `partReportsApi` is a
+// thin entity-typed wrapper kept for existing callers.
 import { apiClient } from './client';
 import type {
   PaginatedResponse,

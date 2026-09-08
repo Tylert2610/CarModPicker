@@ -1,5 +1,4 @@
 // Build Lists domain API. Mirrors backend endpoints/build_lists.py.
-// Extracted from services/Api.ts (lines 276-342) per Phase 6 D-22.
 // Build-list-scoped vote/report wrappers (legacy) live in their respective
 // `votes.ts` / `reports.ts` modules, not here.
 import { apiClient } from './client';

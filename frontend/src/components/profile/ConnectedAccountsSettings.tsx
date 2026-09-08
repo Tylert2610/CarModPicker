@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { GoogleLogin, type CredentialResponse } from '@react-oauth/google';
 import { FaGoogle, FaTrash } from 'react-icons/fa';
-import { authApi } from '../../services/Api';
+import { authApi } from '../../api/auth';
 import { isGoogleConfigured } from '../../hooks/useGoogleSignIn';
 import type { OAuthAccountRead } from '../../types/Api';
 import { ConfirmationAlert, ErrorAlert } from '../ui/alert';

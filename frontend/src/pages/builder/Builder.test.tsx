@@ -58,16 +58,8 @@ vi.mock('../../hooks/useAuth', () => ({
   useAuth: () => mockUseAuth(),
 }));
 
-// The global setup.ts mock of `../services/Api` only exposes `default`. Builder
-// imports the named `buildListsApi`, so we extend the mock by re-exporting the
-// real domain module (which internally calls the already-mocked `apiClient`).
-vi.mock('../../services/Api', async () => {
-  const actual =
-    await vi.importActual<typeof import('../../services/Api')>(
-      '../../services/Api'
-    );
-  return actual;
-});
+// Builder imports `buildListsApi` from `../../api/build_lists`, which calls
+// the apiClient that setup.ts mocks, so no per-file module mock is needed.
 
 describe('Builder page', () => {
   beforeEach(() => {
