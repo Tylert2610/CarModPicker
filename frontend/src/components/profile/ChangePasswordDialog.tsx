@@ -5,6 +5,7 @@ import { ErrorAlert } from '../ui/alert';
 import { Button } from '../ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/dialog';
 import { Input } from '../ui/input';
+import { getApiErrorMessage } from '../../utils/apiError';
 
 interface ChangePasswordDialogProps {
   isOpen: boolean;
@@ -108,11 +109,7 @@ const ChangePasswordDialog: React.FC<ChangePasswordDialogProps> = ({
       if (err instanceof Error) {
         errorMessage = err.message;
       } else if (typeof err === 'object' && err !== null && 'response' in err) {
-        const response = (err as { response?: { data?: { detail?: string } } })
-          .response;
-        if (response?.data?.detail) {
-          errorMessage = response.data.detail;
-        }
+        errorMessage = getApiErrorMessage(err, errorMessage);
       }
       setError(errorMessage);
     } finally {

@@ -1,13 +1,3 @@
-export interface ValidationError {
-  loc: (string | number)[];
-  msg: string;
-  type: string;
-}
-
-export interface HTTPValidationError {
-  detail?: ValidationError[];
-}
-
 export interface UserRead {
   id: string;
   username: string;

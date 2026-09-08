@@ -2,11 +2,15 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.api.middleware.error_handler import register_error_handlers
+from app.api.middleware.request_context import request_context_middleware
 from app.db.dynamo.errors import ConditionFailed, ItemNotFound, TransactionCanceled
 
 
 def build_app() -> FastAPI:
     app = FastAPI()
+    # The request id middleware is what fills the envelope's `request_id`, so it
+    # belongs here too or every body would carry the "-" placeholder.
+    app.middleware("http")(request_context_middleware)
     register_error_handlers(app)
 
     @app.get("/missing")
@@ -32,7 +36,12 @@ def test_item_not_found_maps_to_404() -> None:
     client = TestClient(build_app(), raise_server_exceptions=False)
     response = client.get("/missing")
     assert response.status_code == 404
-    assert response.json() == {"success": False, "message": "Resource not found", "error_code": "NOT_FOUND"}
+    body = response.json()
+    assert body["success"] is False
+    assert body["status"] == 404
+    assert body["message"] == "Resource not found"
+    assert body["error_code"] == "NOT_FOUND"
+    assert body["request_id"] != "-"
 
 
 def test_condition_failed_maps_to_409() -> None:
@@ -55,4 +64,9 @@ def test_other_transaction_cancel_maps_to_500() -> None:
     client = TestClient(build_app(), raise_server_exceptions=False)
     response = client.get("/canceled-other")
     assert response.status_code == 500
-    assert response.json() == {"success": False, "message": "Internal server error", "error_code": "INTERNAL_ERROR"}
+    body = response.json()
+    assert body["success"] is False
+    assert body["status"] == 500
+    assert body["message"] == "Internal server error"
+    assert body["error_code"] == "INTERNAL_ERROR"
+    assert body["request_id"] != "-"

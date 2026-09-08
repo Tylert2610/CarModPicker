@@ -7,6 +7,7 @@ import { ConfirmationAlert, ErrorAlert } from '../ui/alert';
 import { Button } from '../ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/dialog';
 import { Input } from '../ui/input';
+import { getApiErrorMessage } from '../../utils/apiError';
 
 interface TwoFactorAuthDialogProps {
   isOpen: boolean;
@@ -72,10 +73,8 @@ function TwoFactorAuthDialog({
         onClose();
       }, 1500);
     } catch (err: unknown) {
-      const axiosError = err as { response?: { data?: { detail?: string } } };
       setError(
-        axiosError.response?.data?.detail ||
-          'Invalid OTP code. Please try again.'
+        getApiErrorMessage(err, 'Invalid OTP code. Please try again.')
       );
     } finally {
       setIsVerifying(false);
@@ -112,10 +111,8 @@ function TwoFactorAuthDialog({
         onClose();
       }, 1500);
     } catch (err: unknown) {
-      const axiosError = err as { response?: { data?: { detail?: string } } };
       setError(
-        axiosError.response?.data?.detail ||
-          'Failed to disable 2FA. Please try again.'
+        getApiErrorMessage(err, 'Failed to disable 2FA. Please try again.')
       );
     } finally {
       setIsDisabling(false);

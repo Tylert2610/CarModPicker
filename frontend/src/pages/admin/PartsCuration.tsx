@@ -23,15 +23,10 @@ import type {
   RescanResponse,
   UrlLookupMatch,
 } from '../../api/admin';
+import { getApiErrorMessage } from '../../utils/apiError';
 
 function formatAxiosError(err: unknown, fallback: string): string {
-  if (err && typeof err === 'object' && 'response' in err) {
-    const resp = (err as { response?: { data?: { detail?: string } } })
-      .response;
-    if (resp?.data?.detail) return resp.data.detail;
-  }
-  if (err instanceof Error) return err.message;
-  return fallback;
+  return getApiErrorMessage(err, err instanceof Error ? err.message : fallback);
 }
 
 function formatDate(iso: string): string {

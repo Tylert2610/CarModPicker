@@ -10,6 +10,7 @@ import { ConfirmationAlert, ErrorAlert } from '../ui/alert';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import Spinner from '../ui/spinner';
+import { getApiErrorMessage } from '../../utils/apiError';
 
 function formatDate(value?: string | null): string {
   if (!value) return '—';
@@ -37,8 +38,7 @@ function PasskeySettings() {
       const resp = await authApi.webauthnListCredentials();
       setCredentials(resp.data);
     } catch (err: unknown) {
-      const axiosError = err as { response?: { data?: { detail?: string } } };
-      setError(axiosError.response?.data?.detail || 'Failed to load passkeys.');
+      setError(getApiErrorMessage(err, 'Failed to load passkeys.'));
     } finally {
       setIsLoading(false);
     }
@@ -78,15 +78,7 @@ function PasskeySettings() {
       if (err instanceof Error && err.name === 'NotAllowedError') {
         setError('Registration was cancelled.');
       } else {
-        const axiosError = err as {
-          response?: { data?: { detail?: string } };
-          message?: string;
-        };
-        setError(
-          axiosError.response?.data?.detail ||
-            axiosError.message ||
-            'Failed to register passkey.'
-        );
+        setError(getApiErrorMessage(err, 'Failed to register passkey.'));
       }
     } finally {
       setIsRegistering(false);
@@ -102,9 +94,8 @@ function PasskeySettings() {
       setSuccess(`Passkey "${nickname}" removed.`);
       await loadCredentials();
     } catch (err: unknown) {
-      const axiosError = err as { response?: { data?: { detail?: string } } };
       setError(
-        axiosError.response?.data?.detail || 'Failed to remove passkey.'
+        getApiErrorMessage(err, 'Failed to remove passkey.')
       );
     }
   };

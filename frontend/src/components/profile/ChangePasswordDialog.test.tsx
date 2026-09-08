@@ -200,7 +200,16 @@ describe('ChangePasswordDialog', () => {
   it('surfaces the API error detail and leaves the dialog open', async () => {
     const { onPasswordChanged } = renderDialog();
     vi.mocked(apiClient.put).mockRejectedValueOnce({
-      response: { data: { detail: 'Incorrect current password' } },
+      isAxiosError: true,
+      response: {
+        data: {
+          success: false,
+          status: 400,
+          message: 'Incorrect current password',
+          request_id: 'req-1',
+          error_code: 'BAD_REQUEST',
+        },
+      },
     });
     fillValidPasswords();
 

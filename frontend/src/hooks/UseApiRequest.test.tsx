@@ -12,8 +12,8 @@ import useApiRequest from './UseApiRequest';
 
 // Phase 8 D-09 — useApiRequest is the generic wrapper around apiClient that
 // most pages/hooks use for loading/error bookkeeping. We exercise loading,
-// success, and three shapes of error (axios string detail, axios array
-// detail, plain Error) plus setError/reset.
+// success, and three shapes of error (an envelope message, an envelope
+// carrying per-field `details`, and a plain Error) plus setError/reset.
 //
 // apiClient is already mocked via setup.ts (D-18) — no per-file vi.mock
 // needed.
@@ -68,10 +68,16 @@ describe('useApiRequest', () => {
     expect(requestFn).toHaveBeenCalledTimes(1);
   });
 
-  it('transitions to error state and parses axios detail:string', async () => {
+  it('transitions to error state and reads the envelope message', async () => {
     const err = new AxiosError('Request failed', '400');
     err.response = {
-      data: { detail: 'Invalid request body' },
+      data: {
+        success: false,
+        status: 400,
+        message: 'Invalid request body',
+        request_id: 'req-1',
+        error_code: 'BAD_REQUEST',
+      },
       status: 400,
       statusText: 'Bad Request',
       headers: {},
@@ -91,13 +97,21 @@ describe('useApiRequest', () => {
     expect(result.current.isLoading).toBe(false);
   });
 
-  it('joins array-shaped validation errors into a single message', async () => {
+  it('shows the envelope message for a validation error', async () => {
+    // The per-field entries live in `details`; the hook surfaces one string, so
+    // it shows `message`. A caller that wants the fields reads
+    // `getApiValidationDetails` instead.
     const err = new AxiosError('Validation failed', '422');
     err.response = {
       data: {
-        detail: [
-          { loc: ['body', 'name'], msg: 'name is required', type: 'missing' },
-          { loc: ['body', 'price'], msg: 'must be positive', type: 'value' },
+        success: false,
+        status: 422,
+        message: 'Request validation failed.',
+        request_id: 'req-2',
+        error_code: 'VALIDATION_ERROR',
+        details: [
+          { field: 'name', message: 'name is required', type: 'missing' },
+          { field: 'price', message: 'must be positive', type: 'value' },
         ],
       },
       status: 422,
@@ -114,7 +128,7 @@ describe('useApiRequest', () => {
       await result.current.executeRequest();
     });
 
-    expect(result.current.error).toBe('name is required. must be positive');
+    expect(result.current.error).toBe('Request validation failed.');
   });
 
   it('falls back to err.message when the error is not an AxiosError', async () => {

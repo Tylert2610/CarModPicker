@@ -25,6 +25,7 @@ import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import Spinner from '../ui/spinner';
 import { LARGE_FETCH_LIMIT } from '../../constants';
+import { getApiErrorCode, getApiErrorDetails, getApiErrorMessage } from '../../utils/apiError';
 
 interface CreatePartFormProps {
   onPartCreated: () => void;
@@ -365,24 +366,25 @@ function CreatePartForm({ onPartCreated }: CreatePartFormProps) {
       setIsCreating(false);
       // Handle duplicate URL error
       if (err instanceof AxiosError && err.response?.data) {
-        const responseData = err.response.data as {
-          error_code?: string;
-          message?: string;
-          detail?: string;
-          details?: { existing_part_id?: string };
-        };
+        // `PART_ALREADY_EXISTS` is what the backend actually sends for a
+        // duplicate. The other two are kept because they cost nothing and this
+        // branch is the only thing standing between a duplicate and a dead-end
+        // error message.
+        const errorCode = getApiErrorCode(err);
         if (
-          responseData.error_code === 'DUPLICATE_PRODUCT_URL' ||
-          responseData.error_code === 'CONFLICT'
+          errorCode === 'PART_ALREADY_EXISTS' ||
+          errorCode === 'DUPLICATE_PRODUCT_URL' ||
+          errorCode === 'CONFLICT'
         ) {
           // Extract existing part ID from details or message
-          if (responseData.details?.existing_part_id) {
-            setDuplicatePartId(responseData.details.existing_part_id);
+          const existingPartId = getApiErrorDetails(err)?.['existing_part_id'];
+          if (typeof existingPartId === 'string') {
+            setDuplicatePartId(existingPartId);
             setValidationError(null);
             return;
           }
           // Try to extract from message if details not available
-          const message = responseData.message || responseData.detail || '';
+          const message = getApiErrorMessage(err, '');
           const match = message.match(/Part ID: ([\w-]+)/);
           if (match && match[1]) {
             setDuplicatePartId(match[1]);
@@ -391,11 +393,9 @@ function CreatePartForm({ onPartCreated }: CreatePartFormProps) {
           }
         }
         // For other errors, set validation error
-        const errorMessage =
-          responseData.message ||
-          responseData.detail ||
-          'Failed to create part. Please try again.';
-        setValidationError(errorMessage);
+        setValidationError(
+          getApiErrorMessage(err, 'Failed to create part. Please try again.')
+        );
       } else {
         setValidationError('Failed to create part. Please try again.');
       }
