@@ -73,9 +73,7 @@ function TwoFactorAuthDialog({
         onClose();
       }, 1500);
     } catch (err: unknown) {
-      setError(
-        getApiErrorMessage(err, 'Invalid OTP code. Please try again.')
-      );
+      setError(getApiErrorMessage(err, 'Invalid OTP code. Please try again.'));
     } finally {
       setIsVerifying(false);
     }

@@ -94,9 +94,7 @@ function PasskeySettings() {
       setSuccess(`Passkey "${nickname}" removed.`);
       await loadCredentials();
     } catch (err: unknown) {
-      setError(
-        getApiErrorMessage(err, 'Failed to remove passkey.')
-      );
+      setError(getApiErrorMessage(err, 'Failed to remove passkey.'));
     }
   };
 
