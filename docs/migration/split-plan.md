@@ -133,10 +133,14 @@ into roughly fifteen tables across five other domains: `oauth_accounts`,
 `users` is cut last.
 
 It becomes a tombstone. `users` writes `deleted_at` and `deleted` onto the user
-item and returns. A DynamoDB stream on `users` feeds an SQS queue per subscribing
-domain, and each domain drains its own queue and deletes its own rows with its
-own IAM. The tombstone is the contract: `users` owns it, and every domain that
-reads a user must treat a tombstoned user as absent.
+item and returns. A Lambda event source mapping on the `users` stream sees the
+tombstone and fans the work out onto the `user-delete` work queue, one message per
+unit of cleanup, and each domain drains what it owns and deletes its own rows with
+its own IAM. One queue rather than one per subscribing domain: the fan out is a
+message shape, not a queue per consumer, and eleven queues to say the same thing
+is eleven redrive policies and eleven alarms to maintain. The tombstone is the
+contract: `users` owns it, and every domain that reads a user must treat a
+tombstoned user as absent.
 
 The consequence is what makes this hard rather than tedious. Between the
 tombstone write and the last queue draining, the application is in a half-deleted
@@ -149,8 +153,9 @@ not with it.
 **Seam 2: the part purge.** `part_service.purge_related_rows_for_parts` deletes a
 part and then writes into `build_list_parts`, `votes`, `reports`, and
 `part_price_alerts`, owned by `build-lists`, `moderation` twice, and `admin`.
-Same mechanism, smaller blast radius: a tombstone on `parts` plus a stream, with
-`build-lists`, `moderation`, and `admin` each draining their own queue.
+Same mechanism, smaller blast radius: a tombstone on `parts` plus a stream, and a
+mapping that fans the cleanup onto the `part-purge` work queue for `build-lists`,
+`moderation`, and `admin` to drain.
 
 The read-path consequence is real here too and is more visible to users than the
 user cascade. A build list that contains a purged part must not render a hole; it
@@ -1047,13 +1052,49 @@ and on `parts`. Both are new attributes on existing items, so existing rows simp
 lack them and read as not deleted. No backfill.
 
 **Streams get enabled** on `users`, `parts`, `votes`, and `part_listings`, with
-`NEW_AND_OLD_IMAGES`, feeding one SQS queue per subscribing domain. Streams are
-not configured on any table today, and `dynamodb_tables.json` carries no stream
-field, so this is an addition to the module call rather than a per-table edit.
+`NEW_AND_OLD_IMAGES`. Streams are not configured on any table today, and
+`dynamodb_tables.json` carries no stream field, so the view type is set per table
+in `terraform/dynamodb.tf` through `local.dynamodb_stream_view_types`. Enabling a
+stream is an in-place `UpdateTable` and never replaces a table. The view type is
+the part to get right first: it cannot be edited once a stream exists, so changing
+it later mints a new stream ARN and silently detaches every consumer reading the
+old one.
 
-Each queue gets a dead letter queue. A cleanup handler that fails repeatedly must
-not silently drop a delete, because the visible symptom is a user who deleted
-their account and whose build lists are still public.
+**A stream is read by a Lambda, not by a queue.** The earlier draft of this plan
+had each stream feeding one SQS queue per subscribing domain. There is no such
+path. An event source mapping targets a Lambda function and nothing else, and
+DynamoDB Streams has no native delivery to SQS, so those queues would have had
+nothing writing to them. The pattern the seams actually use is an event source
+mapping directly on the stream, with the batch size and window set per consumer,
+`bisect_batch_on_function_error`, `maximum_retry_attempts`,
+`function_response_types = ["ReportBatchItemFailures"]` so a partial batch failure
+retries only the records that failed, and an `on_failure` destination pointing at
+an SQS dead letter queue.
+
+Those mappings and their consumer functions arrive with the seams that need them,
+rows 24 and 25, so **row 22 creates no event source mappings and no consumer
+Lambdas**. What it does create is the four dead letter queues the mappings will
+name, one per streamed table, because a destination that does not exist is an
+apply time failure rather than a plan time one. Note what an `on_failure` record
+holds: metadata about the failed batch and the shard position it came from, not
+the stream records themselves. A responder draining one of these re-reads the
+stream at that position, which only works inside the stream's own 24 hour
+retention.
+
+**SQS work queues are for the asynchronous jobs only**, not for stream fan out.
+Two of them, `part-purge` for seam 2 in row 28 and `user-delete` for seam 1 in
+row 30, each with its own dead letter queue and a redrive policy with
+`maxReceiveCount` 5. A cleanup handler that fails repeatedly must not silently
+drop a delete, because the visible symptom is a user who deleted their account and
+whose build lists are still public.
+
+Six queues in total, all standard rather than FIFO, all with SSE-SQS on. The
+visibility timeout on the two work queues is six times the intended consumer
+timeout, which is assumed to be the same 29 seconds every domain function uses;
+that assumption is written down in `terraform/sqs.tf` because the timeout has to
+move if a consumer is ever given a longer one. Dead letter queue depth is one
+aggregate alarm over all six queues using metric math, never one alarm per
+queue.
 
 **Ordering and idempotency.** DynamoDB streams guarantee order per partition key,
 which for these tables is the item id, so all events for one user or one part
@@ -1111,10 +1152,10 @@ infrastructure.
 | 19 | `moderation`: function, routes, OTel. **Delivered** | medium | 15 add, 4 change | 18 |
 | 20 | `vehicles`: function, routes, OTel. **Delivered** | medium | 13 add, 4 change | 19 |
 | 21 | `admin`: function, routes, OTel. **Delivered** | medium | 17 add, 4 change | 20 |
-| 22 | Streams on `users`, `parts`, `votes`, `part_listings`, plus queues and DLQs | large | 16 add | 21 |
+| 22 | Streams on `users`, `parts`, `votes`, `part_listings`, plus the six queues and the DLQ alarm. **Delivered** | large | 4 change, 9 add (recorded 16 add at the time, before the queue count was settled) | 21 |
 | 23 | Tombstone attributes and tombstone-aware reads in four domains | large | 0 | 22 |
-| 24 | Seam 3: `net_votes` handler moves to `catalog`'s stream consumer | medium | 2 add | 22 |
-| 25 | Seam 4: price alert email moves to an `admin` stream handler | medium | 2 add | 22 |
+| 24 | Seam 3: `net_votes` handler moves to `catalog`'s stream consumer, on an event source mapping | medium | est. 3 add | 22 |
+| 25 | Seam 4: price alert email moves to an `admin` stream handler, on an event source mapping | medium | est. 3 add | 22 |
 | 26 | `build-lists`: function, routes, OTel | large | est. 17 add, 4 change | 23 |
 | 27 | `identity`: function, routes, OTel | medium | est. 11 add, 4 change | 23 |
 | 28 | Seam 2: part purge goes async | large | 2 add | 23 |
