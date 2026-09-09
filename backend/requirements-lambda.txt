@@ -12,7 +12,7 @@
 # rather than a failure. `dynamodb` carries the botocore error handlers the
 # composition root installs; the package imports botocore lazily inside them, so
 # it costs nothing at import time.
-webbpulse[fastapi,otel,dynamodb,aws-otel]==0.3.0
+webbpulse[fastapi,otel,dynamodb,aws-otel]==0.4.0
 
 annotated-types==0.8.0
 anyio==4.15.0
