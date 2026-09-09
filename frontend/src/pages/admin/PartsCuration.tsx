@@ -16,22 +16,17 @@ import {
 import { Input } from '../../components/ui/input';
 import Spinner from '../../components/ui/spinner';
 import { useAuth } from '../../hooks/useAuth';
-import {
-  adminApi,
-  type CanonicalLinkGroupMember,
-  type CanonicalLinkGroupResponse,
-  type RescanResponse,
-  type UrlLookupMatch,
-} from '../../services/Api';
+import { adminApi } from '../../api/admin';
+import type {
+  CanonicalLinkGroupMember,
+  CanonicalLinkGroupResponse,
+  RescanResponse,
+  UrlLookupMatch,
+} from '../../api/admin';
+import { getApiErrorMessage } from '../../utils/apiError';
 
-function formatAxiosError(err: unknown, fallback: string): string {
-  if (err && typeof err === 'object' && 'response' in err) {
-    const resp = (err as { response?: { data?: { detail?: string } } })
-      .response;
-    if (resp?.data?.detail) return resp.data.detail;
-  }
-  if (err instanceof Error) return err.message;
-  return fallback;
+function formatAdminError(err: unknown, fallback: string): string {
+  return getApiErrorMessage(err, err instanceof Error ? err.message : fallback);
 }
 
 function formatDate(iso: string): string {
@@ -202,7 +197,7 @@ function PartsCuration() {
       setLinkGroup(resp.data);
     } catch (err) {
       setLinkGroup(null);
-      setGroupError(formatAxiosError(err, 'Failed to load link group.'));
+      setGroupError(formatAdminError(err, 'Failed to load link group.'));
     } finally {
       setIsLoadingGroup(false);
     }
@@ -256,7 +251,7 @@ function PartsCuration() {
       }
     } catch (err) {
       setUrlLookupError(
-        formatAxiosError(err, 'Failed to look up parts by URL.')
+        formatAdminError(err, 'Failed to look up parts by URL.')
       );
     } finally {
       setIsLookingUpUrl(false);
@@ -272,7 +267,7 @@ function PartsCuration() {
       setLookupId(resp.data.canonical_id);
       setSearchParams({ part: resp.data.canonical_id }, { replace: true });
     } catch (err) {
-      setActionError(formatAxiosError(err, 'Promote failed.'));
+      setActionError(formatAdminError(err, 'Promote failed.'));
     } finally {
       setIsActionBusy(false);
     }
@@ -289,7 +284,7 @@ function PartsCuration() {
         setLinkGroup(resp.data);
       }
     } catch (err) {
-      setActionError(formatAxiosError(err, 'Unlink failed.'));
+      setActionError(formatAdminError(err, 'Unlink failed.'));
     } finally {
       setIsActionBusy(false);
     }
@@ -330,7 +325,7 @@ function PartsCuration() {
       setManualDuplicateId('');
       setManualCanonicalId('');
     } catch (err) {
-      setManualLinkError(formatAxiosError(err, 'Manual link failed.'));
+      setManualLinkError(formatAdminError(err, 'Manual link failed.'));
     } finally {
       setIsManualLinking(false);
     }
@@ -348,7 +343,7 @@ function PartsCuration() {
       });
       setRescanResult(resp.data);
     } catch (err) {
-      setRescanError(formatAxiosError(err, 'Rescan failed.'));
+      setRescanError(formatAdminError(err, 'Rescan failed.'));
     } finally {
       setIsRescanning(false);
     }

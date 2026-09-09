@@ -1,7 +1,7 @@
-/* eslint-disable @typescript-eslint/unbound-method */
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '../../test/utils/test-utils';
 import { apiClient } from '../../api/client';
+import { buildApiError } from '../../test/apiResponse';
 import { mockUser } from '../../test/mocks/api';
 import ChangePasswordDialog from './ChangePasswordDialog';
 
@@ -199,9 +199,15 @@ describe('ChangePasswordDialog', () => {
 
   it('surfaces the API error detail and leaves the dialog open', async () => {
     const { onPasswordChanged } = renderDialog();
-    vi.mocked(apiClient.put).mockRejectedValueOnce({
-      response: { data: { detail: 'Incorrect current password' } },
-    });
+    vi.mocked(apiClient.put).mockRejectedValueOnce(
+      buildApiError(400, {
+        success: false,
+        status: 400,
+        message: 'Incorrect current password',
+        request_id: 'req-1',
+        error_code: 'BAD_REQUEST',
+      })
+    );
     fillValidPasswords();
 
     submitForm();
@@ -217,7 +223,7 @@ describe('ChangePasswordDialog', () => {
 
   it('falls back to a generic message when the failure carries no detail', async () => {
     renderDialog();
-    vi.mocked(apiClient.put).mockRejectedValueOnce({ response: {} });
+    vi.mocked(apiClient.put).mockRejectedValueOnce(buildApiError(500, {}));
     fillValidPasswords();
 
     submitForm();

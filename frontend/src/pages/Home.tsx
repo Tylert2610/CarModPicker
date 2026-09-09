@@ -12,12 +12,10 @@ import { HOME_FEATURED_ITEMS_LIMIT } from '../constants';
 import useApiRequest from '../hooks/UseApiRequest';
 import { useAuth } from '../hooks/useAuth';
 import { useDocumentMeta } from '../hooks/useDocumentMeta';
-import {
-  partManufacturersApi,
-  buildListsApi,
-  partsApi,
-  retailersApi,
-} from '../services/Api';
+import { buildListsApi } from '../api/build_lists';
+import { partManufacturersApi } from '../api/part_manufacturers';
+import { partsApi } from '../api/parts';
+import { retailersApi } from '../api/retailers';
 import type { BuildListReadWithVotes } from '../types/Api';
 
 export default function HomePage() {

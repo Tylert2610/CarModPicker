@@ -1,12 +1,13 @@
 import os
+import uuid
 from typing import Any
 
 from fastapi.testclient import TestClient
 
 from app.core.config import settings
-from app.db.dynamo.catalog import Category, PartManufacturer
+from app.db.dynamo.catalog import Category, PartManufacturer, Retailer
 from app.db.dynamo.users import User, UserRepository
-from tests.conftest import INVALID_UUID_STR
+from tests.conftest import INVALID_UUID_STR, save_catalog
 
 
 def get_unique_name(base_name: str) -> str:
@@ -679,3 +680,98 @@ class TestParts:
         assert "count" in data
         assert isinstance(data["count"], int)
         assert data["count"] >= 0
+
+
+class TestPartListingsAuth:
+    """`POST /api/parts/{part_id}/listings` was public until it was brought in
+    line with every other mutating route and put behind `get_current_user`."""
+
+    def _make_retailer(self) -> Retailer:
+        retailer = Retailer(
+            name=get_unique_name(f"retailer_{uuid.uuid4().hex[:8]}"),
+            domain=f"{uuid.uuid4().hex[:8]}.example.com",
+            base_url="https://retailer.example.com",
+            is_active=True,
+        )
+        return save_catalog(retailer)
+
+    def _make_part(
+        self,
+        client: TestClient,
+        test_user: User,
+        test_category: Category,
+        test_part_manufacturer: PartManufacturer,
+    ) -> dict[str, Any]:
+        headers = get_auth_token_and_headers(client, test_user.username)
+        part_data = {
+            "name": get_unique_name(f"listing_part_{uuid.uuid4().hex[:8]}"),
+            "description": "Part used for listing auth coverage",
+            "category_id": str(test_category.id),
+            "part_manufacturer_id": str(test_part_manufacturer.id),
+        }
+        response = client.post(f"{settings.API_STR}/parts/", json=part_data, headers=headers)
+        assert response.status_code == 200, response.text
+        created: dict[str, Any] = response.json()
+        return created
+
+    def test_create_listing_anonymous_returns_401(
+        self, client: TestClient, test_user: User, test_category: Category, test_part_manufacturer: PartManufacturer
+    ) -> None:
+        """No Authorization header -> 401, same as every other authed route."""
+        part = self._make_part(client, test_user, test_category, test_part_manufacturer)
+        retailer = self._make_retailer()
+
+        response = client.post(
+            f"{settings.API_STR}/parts/{part['id']}/listings",
+            json={
+                "part_id": part["id"],
+                "retailer_id": str(retailer.id),
+                "product_url": "https://retailer.example.com/p/anon",
+                "price_cents": 4999,
+            },
+        )
+        assert response.status_code == 401, response.text
+
+    def test_create_listing_authenticated_succeeds(
+        self, client: TestClient, test_user: User, test_category: Category, test_part_manufacturer: PartManufacturer
+    ) -> None:
+        """A valid Bearer token still gets the unchanged 200 response shape."""
+        part = self._make_part(client, test_user, test_category, test_part_manufacturer)
+        retailer = self._make_retailer()
+        headers = get_auth_token_and_headers(client, test_user.username)
+
+        response = client.post(
+            f"{settings.API_STR}/parts/{part['id']}/listings",
+            json={
+                "part_id": part["id"],
+                "retailer_id": str(retailer.id),
+                "product_url": "https://retailer.example.com/p/authed",
+                "price_cents": 4999,
+            },
+            headers=headers,
+        )
+        assert response.status_code == 200, response.text
+        data = response.json()
+        assert data["part_id"] == part["id"]
+        assert data["retailer_id"] == str(retailer.id)
+        assert data["last_known_price_cents"] == 4999
+        # Response shape is unchanged: the retailer is still embedded.
+        assert data["retailer"]["id"] == str(retailer.id)
+
+    def test_create_listing_still_404s_for_unknown_part_when_authenticated(
+        self, client: TestClient, test_user: User
+    ) -> None:
+        """Auth runs before the handler, but a valid token still reaches the 404 path."""
+        retailer = self._make_retailer()
+        headers = get_auth_token_and_headers(client, test_user.username)
+
+        response = client.post(
+            f"{settings.API_STR}/parts/{INVALID_UUID_STR}/listings",
+            json={
+                "part_id": INVALID_UUID_STR,
+                "retailer_id": str(retailer.id),
+                "product_url": "https://retailer.example.com/p/missing",
+            },
+            headers=headers,
+        )
+        assert response.status_code == 404, response.text

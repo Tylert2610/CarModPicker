@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import { GOOGLE_CLIENT_ID } from '../config/google';
-import { authApi } from '../services/Api';
+import { authApi } from '../api/auth';
 import type {
   GoogleSignInLinkRequired,
   GoogleSignInResponse,
@@ -8,6 +8,7 @@ import type {
   OAuthTwoFactorRequired,
   UserRead,
 } from '../types/Api';
+import { getApiErrorMessage } from '../utils/apiError';
 
 // Kept as a function for symmetry with future per-environment toggles, even though
 // the client id is currently always present. Components call this to decide whether
@@ -78,13 +79,7 @@ export const useGoogleSignIn = ({
         });
         handleResponse(resp.data);
       } catch (err: unknown) {
-        const ax = err as {
-          response?: { data?: { detail?: string; message?: string } };
-        };
-        const message =
-          ax.response?.data?.message ||
-          ax.response?.data?.detail ||
-          'Google sign-in failed.';
+        const message = getApiErrorMessage(err, 'Google sign-in failed.');
         onError(message);
         setState({ kind: 'idle' });
       }

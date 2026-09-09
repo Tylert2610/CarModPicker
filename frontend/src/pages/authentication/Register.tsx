@@ -9,7 +9,7 @@ import { Input } from '../../components/ui/input';
 import useApiRequest from '../../hooks/UseApiRequest';
 import { useAuth } from '../../hooks/useAuth';
 import { isGoogleConfigured } from '../../hooks/useGoogleSignIn';
-import apiClient from '../../services/Api';
+import { apiClient } from '../../api/client';
 import type { UserCreate, UserRead } from '../../types/Api';
 
 function Register() {

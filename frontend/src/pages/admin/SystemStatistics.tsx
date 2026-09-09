@@ -1,4 +1,3 @@
-import axios from 'axios';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
@@ -11,31 +10,27 @@ import { Card } from '../../components/ui/card';
 import Spinner from '../../components/ui/spinner';
 import type {
   AdminTableCountsResponse,
-  BucketEntityTypeCountResponse,
   CrawlBucketSummaryResponse,
-} from '../../services/Api';
-import {
-  adminApi,
-  partManufacturersApi,
-  bugReportsApi,
-  buildListPartsApi,
-  buildListsApi,
-  buildLogsApi,
-  carGenerationsApi,
-  categoriesApi,
-  partsApi,
-  imageApi,
-  reportsApi,
-  retailersApi,
-  usersApi,
-  votesApi,
-} from '../../services/Api';
+} from '../../api/admin';
+import type { BucketEntityTypeCountResponse } from '../../api/images';
+import { adminApi } from '../../api/admin';
+import { isApiErrorWithStatus } from '../../api/client';
+import { bugReportsApi } from '../../api/bug_reports';
+import { buildListPartsApi } from '../../api/build_list_parts';
+import { buildListsApi } from '../../api/build_lists';
+import { buildLogsApi } from '../../api/build_logs';
+import { carGenerationsApi } from '../../api/car_generations';
+import { categoriesApi } from '../../api/categories';
+import { imageApi } from '../../api/images';
+import { partManufacturersApi } from '../../api/part_manufacturers';
+import { partsApi } from '../../api/parts';
+import { reportsApi } from '../../api/reports';
+import { retailersApi } from '../../api/retailers';
+import { usersApi } from '../../api/users';
+import { votesApi } from '../../api/votes';
 
 function getHttpStatus(error: unknown): number | undefined {
-  if (axios.isAxiosError(error)) {
-    return error.response?.status;
-  }
-  return undefined;
+  return isApiErrorWithStatus(error) ? error.status : undefined;
 }
 
 /** Preferred order for S3 key prefix labels (matches upload entity_type values). */

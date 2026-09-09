@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { buildListVotesApi, carGenerationsApi } from '../../services/Api';
+import { carGenerationsApi } from '../../api/car_generations';
+import { buildListVotesApi } from '../../api/votes';
 import type {
   BuildListRead,
   BuildListReadWithVotes,

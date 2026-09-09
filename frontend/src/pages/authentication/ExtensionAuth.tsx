@@ -8,7 +8,7 @@ import { Navigate, useSearchParams } from 'react-router-dom';
 import { Alert, AlertDescription } from '../../components/ui/alert';
 import Spinner from '../../components/ui/spinner';
 import { useAuth } from '../../hooks/useAuth';
-import { getStoredToken } from '../../services/Api';
+import { getStoredToken } from '../../api/client';
 
 type ExtensionRuntime = {
   sendMessage: (

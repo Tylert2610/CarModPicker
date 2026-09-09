@@ -20,7 +20,7 @@ import { utilityApi } from './utility';
 // setup.ts (D-18) installs `vi.fn()` for every HTTP verb; the cast below
 // reflects the mocked reality. apiClient IS the mock object here, so the
 // cast is safe.
-/* eslint-disable-next-line @typescript-eslint/unbound-method */
+
 const getMock = apiClient.get as MockedFunction<typeof apiClient.get>;
 
 describe('utilityApi', () => {

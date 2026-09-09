@@ -1,11 +1,7 @@
-/* eslint-disable @typescript-eslint/unbound-method --
- * vi.mocked(apiClient.get/post) is the canonical Phase 8 mocking pattern.
- */
-
 // Phase 8 plan 08-18 (Wave 4 — D-02) — PartsCuration admin page test.
 //
 // PartsCuration is the admin canonical-part curation workflow page (762 lines).
-// It uses adminApi (from services/Api) for its core actions:
+// It uses adminApi (from ../../api/admin) for its core actions:
 //   - getPartLinkGroup(partId)        — GET  /admin/parts/:id/link-group
 //   - promotePartToCanonical(partId)  — POST /admin/parts/promote-canonical
 //   - unlinkPartFromCanonical(partId) — POST /admin/parts/unlink
@@ -23,9 +19,8 @@
 // re-installs default mock implementations inside customRender, which clobbers
 // per-test `mockResolvedValueOnce` chains set in beforeEach. Follows the
 // Builder.test.tsx + Profile.test.tsx pattern: local MemoryRouter + explicit
-// `mockUseAuth.mockReturnValue(...)` + importActual on services/Api to preserve
-// the real `adminApi` named export (whose internal apiClient.* calls land on
-// the shared mock from setup.ts).
+// `mockUseAuth.mockReturnValue(...)`, letting the real `adminApi` run so its
+// internal apiClient.* calls land on the shared mock from setup.ts.
 
 import userEvent from '@testing-library/user-event';
 import { render, screen, waitFor } from '@testing-library/react';
@@ -40,17 +35,6 @@ import {
 import { mockAdminUser, mockUseAuth } from '../../test/utils/test-mocks';
 import { mockUser } from '../../test/mocks/api';
 import PartsCuration from './PartsCuration';
-
-// This page imports adminApi from ../../services/Api (re-export shim). Extend
-// the services/Api mock with importActual so the real adminApi methods remain
-// callable while their internal apiClient.* calls hit the setup.ts mock.
-vi.mock('../../services/Api', async () => {
-  const actual =
-    await vi.importActual<typeof import('../../services/Api')>(
-      '../../services/Api'
-    );
-  return actual;
-});
 
 // Same rationale as Builder.test.tsx — test-utils.tsx registers the useAuth
 // mock only when imported; this test doesn't import test-utils (we bypass

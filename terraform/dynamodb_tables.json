@@ -636,6 +636,18 @@
     "range_key": null,
     "ttl_attribute": null
   },
+  "rate-limits": {
+    "attributes": [
+      {
+        "name": "pk",
+        "type": "S"
+      }
+    ],
+    "global_secondary_indexes": [],
+    "hash_key": "pk",
+    "range_key": null,
+    "ttl_attribute": "expires_at"
+  },
   "reports": {
     "attributes": [
       {

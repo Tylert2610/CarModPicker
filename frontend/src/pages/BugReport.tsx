@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { bugReportsApi } from '../services/Api';
+import { bugReportsApi } from '../api/bug_reports';
 import type { BugReportCreate } from '../types/Api';
 
 import { ErrorAlert, SuccessAlert } from '../components/ui/alert';

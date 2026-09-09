@@ -1,32 +1,16 @@
-/* eslint-disable @typescript-eslint/unbound-method --
- * vi.mocked(apiClient.get).mockResolvedValueOnce(...) is the canonical
- * Wave 1 mocking pattern (see api/votes.test.ts). The unbound-method rule
- * flags the reference syntactically but vi.mocked returns a spy wrapper, so
- * `this` binding is not a concern in practice.
- */
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { AxiosError, AxiosHeaders, type AxiosResponse } from 'axios';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiClient } from '../api/client';
+import { buildApiError, buildResponse } from '../test/apiResponse';
 import useApiRequest from './UseApiRequest';
 
 // Phase 8 D-09 — useApiRequest is the generic wrapper around apiClient that
 // most pages/hooks use for loading/error bookkeeping. We exercise loading,
-// success, and three shapes of error (axios string detail, axios array
-// detail, plain Error) plus setError/reset.
+// success, and three shapes of error (an envelope message, an envelope
+// carrying per-field `details`, and a plain Error) plus setError/reset.
 //
 // apiClient is already mocked via setup.ts (D-18) — no per-file vi.mock
 // needed.
-
-function buildResponse<T>(data: T): AxiosResponse<T> {
-  return {
-    data,
-    status: 200,
-    statusText: 'OK',
-    headers: {},
-    config: { headers: new AxiosHeaders() },
-  };
-}
 
 describe('useApiRequest', () => {
   beforeEach(() => {
@@ -47,7 +31,7 @@ describe('useApiRequest', () => {
   it('transitions to success state when the request resolves', async () => {
     const payload = { items: ['a', 'b'] };
     vi.mocked(apiClient.get).mockResolvedValueOnce(buildResponse(payload));
-    const requestFn = vi.fn(() => apiClient.get('/x'));
+    const requestFn = vi.fn(() => apiClient.get<typeof payload>('/x'));
 
     const { result } = renderHook(() =>
       useApiRequest<typeof payload, unknown>(requestFn)
@@ -68,16 +52,18 @@ describe('useApiRequest', () => {
     expect(requestFn).toHaveBeenCalledTimes(1);
   });
 
-  it('transitions to error state and parses axios detail:string', async () => {
-    const err = new AxiosError('Request failed', '400');
-    err.response = {
-      data: { detail: 'Invalid request body' },
-      status: 400,
-      statusText: 'Bad Request',
-      headers: {},
-      config: { headers: new AxiosHeaders() },
-    };
-    err.isAxiosError = true;
+  it('transitions to error state and reads the envelope message', async () => {
+    const err = buildApiError(
+      400,
+      {
+        success: false,
+        status: 400,
+        message: 'Invalid request body',
+        request_id: 'req-1',
+        error_code: 'BAD_REQUEST',
+      },
+      { statusText: 'Bad Request' }
+    );
     const requestFn = vi.fn().mockRejectedValue(err);
 
     const { result } = renderHook(() => useApiRequest(requestFn));
@@ -91,21 +77,25 @@ describe('useApiRequest', () => {
     expect(result.current.isLoading).toBe(false);
   });
 
-  it('joins array-shaped validation errors into a single message', async () => {
-    const err = new AxiosError('Validation failed', '422');
-    err.response = {
-      data: {
-        detail: [
-          { loc: ['body', 'name'], msg: 'name is required', type: 'missing' },
-          { loc: ['body', 'price'], msg: 'must be positive', type: 'value' },
+  it('shows the envelope message for a validation error', async () => {
+    // The per-field entries live in `details`; the hook surfaces one string, so
+    // it shows `message`. A caller that wants the fields reads
+    // `getApiValidationDetails` instead.
+    const err = buildApiError(
+      422,
+      {
+        success: false,
+        status: 422,
+        message: 'Request validation failed.',
+        request_id: 'req-2',
+        error_code: 'VALIDATION_ERROR',
+        details: [
+          { field: 'name', message: 'name is required', type: 'missing' },
+          { field: 'price', message: 'must be positive', type: 'value' },
         ],
       },
-      status: 422,
-      statusText: 'Unprocessable Entity',
-      headers: {},
-      config: { headers: new AxiosHeaders() },
-    };
-    err.isAxiosError = true;
+      { statusText: 'Unprocessable Entity' }
+    );
     const requestFn = vi.fn().mockRejectedValue(err);
 
     const { result } = renderHook(() => useApiRequest(requestFn));
@@ -114,10 +104,10 @@ describe('useApiRequest', () => {
       await result.current.executeRequest();
     });
 
-    expect(result.current.error).toBe('name is required. must be positive');
+    expect(result.current.error).toBe('Request validation failed.');
   });
 
-  it('falls back to err.message when the error is not an AxiosError', async () => {
+  it('falls back to err.message when the error is not an ApiError', async () => {
     const requestFn = vi.fn().mockRejectedValue(new Error('boom'));
 
     const { result } = renderHook(() => useApiRequest(requestFn));

@@ -9,7 +9,7 @@
 // Authenticated state is constructed from the canonical UserRead mockUser
 // (testScenarios.authenticated's user shape is incompatible with UserRead —
 // see ExtensionAuth.test.tsx for the same workaround).
-/* eslint-disable @typescript-eslint/unbound-method */
+
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   render,

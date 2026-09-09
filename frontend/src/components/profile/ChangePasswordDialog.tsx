@@ -5,6 +5,7 @@ import { ErrorAlert } from '../ui/alert';
 import { Button } from '../ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/dialog';
 import { Input } from '../ui/input';
+import { getApiErrorMessage } from '../../utils/apiError';
 
 interface ChangePasswordDialogProps {
   isOpen: boolean;
@@ -82,7 +83,7 @@ const ChangePasswordDialog: React.FC<ChangePasswordDialogProps> = ({
     setIsSubmitting(true);
 
     try {
-      const { usersApi } = await import('../../services/Api');
+      const { usersApi } = await import('../../api/users');
       const updateData: {
         current_password: string;
         password: string;
@@ -104,17 +105,10 @@ const ChangePasswordDialog: React.FC<ChangePasswordDialogProps> = ({
         onPasswordChanged();
       }
     } catch (err: unknown) {
-      let errorMessage = 'Failed to change password';
-      if (err instanceof Error) {
-        errorMessage = err.message;
-      } else if (typeof err === 'object' && err !== null && 'response' in err) {
-        const response = (err as { response?: { data?: { detail?: string } } })
-          .response;
-        if (response?.data?.detail) {
-          errorMessage = response.data.detail;
-        }
-      }
-      setError(errorMessage);
+      // `getApiErrorMessage` already prefers the envelope's message for an
+      // ApiError and a plain Error's own message otherwise, so the branching
+      // this used to do by hand is the helper's job now.
+      setError(getApiErrorMessage(err, 'Failed to change password'));
     } finally {
       setIsSubmitting(false);
     }

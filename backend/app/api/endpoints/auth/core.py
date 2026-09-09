@@ -5,16 +5,15 @@ from __future__ import annotations
 import logging
 from datetime import timedelta
 
-import jwt
 import pyotp
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from fastapi.responses import RedirectResponse
 from fastapi.security import OAuth2PasswordRequestForm
-from jwt import InvalidTokenError
+from webbpulse.security import TokenError
 
 from app.api.dependencies.auth import (
-    ALGORITHM,
     create_access_token,
+    decode_access_token,
     get_access_token_expires_delta_for_user,
     get_current_user,
     get_password_hash,
@@ -150,10 +149,7 @@ async def verify_email(
         expires_delta=timedelta(hours=1),
     )
 
-    if settings.DEBUG:
-        verify_url = f"http://localhost:8000/api/auth/verify-email/confirm?token={token}"
-    else:
-        verify_url = f"https://api.carmodpicker.com/api/auth/verify-email/confirm?token={token}"
+    verify_url = f"{settings.api_base_url}/api/auth/verify-email/confirm?token={token}"
 
     if not send_verify_email(user.email, verify_url):
         ResponsePatterns.raise_internal_server_error("Failed to send verification email")
@@ -170,7 +166,7 @@ async def verify_email_confirm(
     frontend_base_url = f"{settings.frontend_base_url}/verify-email/confirm"
 
     try:
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[ALGORITHM])
+        payload = decode_access_token(token)
         email = payload.get("sub")
         purpose = payload.get("purpose")
 
@@ -203,7 +199,7 @@ async def verify_email_confirm(
             status_code=302,
         )
 
-    except InvalidTokenError as e:
+    except TokenError as e:
         logger.warning(f"JWT error during email verification: {e}")
         return RedirectResponse(
             url=f"{frontend_base_url}?status=error&message=Invalid+or+expired+verification+link",
@@ -250,7 +246,7 @@ async def reset_password_confirm(
 ) -> dict[str, str]:
     """Confirm password reset with token and new password."""
     try:
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[ALGORITHM])
+        payload = decode_access_token(token)
         email = payload.get("sub")
         purpose = payload.get("purpose")
 
@@ -270,7 +266,7 @@ async def reset_password_confirm(
         logger.info(f"Password reset successfully for user: {email}")
         return {"message": "Password reset successfully"}
 
-    except InvalidTokenError as e:
+    except TokenError as e:
         logger.warning(f"JWT error during password reset: {e}")
         ResponsePatterns.raise_bad_request("Invalid or expired reset token")
     except HTTPException:

@@ -1,12 +1,41 @@
+# The shared WebbPulse package. It lives only in CodeArtifact (domain
+# `webbpulse`, repository `python`, us-west-2), not on PyPI, so anything that
+# installs this file needs a CodeArtifact token first. CI gets one from the
+# `aws codeartifact login --tool pip` step in `backend-ci.yml`.
+#
+# Extras, and why each one: `fastapi` for the app factory and `run_uvicorn`,
+# `otel` for `configure_tracing`, `dynamodb` for the botocore error handlers
+# `register_error_handlers(dynamodb=True)` installs. That extra used to be
+# absent because CarModPicker has its own repository layer and secret loader,
+# but the handlers are what turn a DynamoDB throttle into a 503 with
+# `Retry-After` instead of a flat 500, so it earns its place now. It adds no
+# new pins: boto3 is already pinned below.
+#
+# `aws-otel` is what row 16 added, and it is not optional once tracing is on.
+# The X-Ray OTLP endpoint authenticates with SigV4 and answers 403 to an
+# unsigned POST, and the OTLP exporter retries a 403 in silence, so the symptom
+# of leaving this out is traces that never appear with nothing in the logs to
+# say why. The extra carries `aws-opentelemetry-distro`, from which only the
+# `OTLPAwsSpanExporter` class is used: `webbpulse.otel` builds the pipeline
+# itself rather than launching under `opentelemetry-instrument`, so the
+# distribution is a library here and not a wrapper. It is additive to `otel`
+# rather than a replacement for it, and both must be present.
+#
+# `security` is what row 19 added: `webbpulse.security` now provides this app's
+# password hashing and JWT signing, replacing the local bcrypt and PyJWT calls.
+# It pulls PyJWT and bcrypt, both of which were already pinned below and stay
+# pinned here, because this file is the resolved set and the package's own
+# ranges must not be allowed to float a different major into the image.
+webbpulse[fastapi,otel,dynamodb,aws-otel,security]==0.5.0
+
 # Core FastAPI and web framework dependencies
 annotated-types==0.8.0
-anyio==4.14.2
+anyio==4.15.0
 click==8.5.0
 fastapi==0.141.1
 h11==0.16.0
 idna==3.19
-pydantic==2.13.3
-pydantic[email]
+pydantic[email]==2.13.3
 pydantic-settings==2.15.0
 python-dotenv==1.2.3
 python-json-logger==4.2.0
@@ -28,7 +57,7 @@ python-multipart==0.0.32
 pyotp==2.10.0
 qrcode[pil]==8.2
 webauthn==2.7.1
-google-auth==2.57.0
+google-auth==2.57.1
 
 requests==2.34.2
 beautifulsoup4==4.15.0
@@ -42,15 +71,15 @@ pybreaker==1.4.1
 # Python's handshake is flagged (e.g. Vivid Racing). Ships native libcurl-
 # impersonate binaries — Linux x86_64 wheels available on PyPI. Not required
 # for Tier 0 adapters; safe to install regardless. See app/crawlers/fetchers.py.
-curl_cffi==0.16.2
+curl_cffi==0.16.3
 
 # Image storage and processing
-boto3==1.43.83
-boto3-stubs[s3,sesv2,dynamodb]==1.43.83  # Type stubs for boto3 S3, SES, and DynamoDB clients
+boto3==1.43.88
+boto3-stubs[s3,sesv2,dynamodb]==1.43.88  # Type stubs for boto3 S3, SES, and DynamoDB clients
 Pillow==12.3.0
 
 # Observability (Phase 2 / OBS-01 + OBS-02)
-sentry-sdk>=2.60.0,<3
+sentry-sdk>=2.68.1,<3
 # aws-embedded-metrics: EMF emitter for CloudWatch custom metrics from the
 # crawler. Rides the existing awslogs CloudWatch Logs path so no extra IAM
 # or PutMetricData API calls are required. `AWS_EMF_ENVIRONMENT=Local` must
@@ -79,4 +108,4 @@ watchdog==6.0.0
 # script under backend/scripts/perf/ wraps it and parses the CSV output.
 # Dev-only — never imported by app code or run in production. See
 # backend/scripts/perf/README.md and D004 / R019 for the gate context.
-locust>=2.44.0
+locust>=2.46.4

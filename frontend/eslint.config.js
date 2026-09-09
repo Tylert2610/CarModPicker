@@ -1,75 +1,44 @@
-import globals from 'globals';
+// Lint configuration, layered on @webbpulse/eslint-config.
+//
+// The shared `reactConfig` supplies what used to be spelled out here: the
+// ignores, `js.configs.recommended` plus `recommendedTypeChecked`, the browser
+// globals, the five `no-unsafe-*` rules promoted to errors, the react-hooks and
+// react-refresh rules, the Node override for config files, and
+// `eslint-config-prettier` last. CarModPicker's level of strictness is what the
+// shared base was set to, so nothing was relaxed to adopt it.
+//
+// What stays here is what is genuinely local: the react-x and react-dom rule
+// sets (the shared config takes the plugins from the consumer rather than
+// forcing them on Portfolio, which does not use them) and the M002/S12
+// enforcement gate below.
 import reactHooks from 'eslint-plugin-react-hooks';
 import reactRefresh from 'eslint-plugin-react-refresh';
-import tseslint from 'typescript-eslint';
-
 import reactX from 'eslint-plugin-react-x';
 import reactDom from 'eslint-plugin-react-dom';
-import eslintConfigPrettier from 'eslint-config-prettier'; // Import eslint-config-prettier
+import { reactConfig } from '@webbpulse/eslint-config/react';
 
-export default tseslint.config(
-  {
-    ignores: ['dist/', 'node_modules/', 'coverage/', '*.config.js'],
-  },
-  // Base config for non-type-checked files
-  {
-    files: ['*.config.ts', 'vite.config.ts'],
-    extends: [...tseslint.configs.recommended],
-    languageOptions: {
-      globals: {
-        ...globals.node,
-      },
-    },
-    rules: {
-      '@typescript-eslint/no-unused-vars': 'warn',
-    },
-  },
-  // Main application files with full type checking
-  {
-    files: ['src/**/*.ts', 'src/**/*.tsx'],
-    extends: [...tseslint.configs.recommendedTypeChecked],
-    languageOptions: {
-      globals: {
-        ...globals.browser,
-        ...globals.es2021,
-      },
-      parserOptions: {
-        project: ['./tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-    },
+export default [
+  // The Playwright specs sit outside every tsconfig project, so the typed rules
+  // cannot parse them, and they were not linted before this migration either.
+  // Ignored rather than narrowing `files`, because narrowing would also drop
+  // the shared config's Node override for `vite.config.ts`.
+  { ignores: ['e2e/'] },
+  ...reactConfig({
+    project: ['./tsconfig.app.json'],
+    tsconfigRootDir: import.meta.dirname,
     plugins: {
       'react-refresh': reactRefresh,
       'react-hooks': reactHooks,
-      // Add the react-x and react-dom plugins
       'react-x': reactX,
       'react-dom': reactDom,
     },
     rules: {
-      'react-refresh/only-export-components': [
-        'warn',
-        { allowConstantExport: true },
-      ],
-      'react-hooks/rules-of-hooks': 'error',
-      'react-hooks/exhaustive-deps': 'warn',
-      // Enable its recommended typescript rules
       ...reactX.configs['recommended-typescript'].rules,
       ...reactDom.configs.recommended.rules,
-      // Disable React 19 warnings for now since we're not using React 19
+      // Rules that assume a React version this application is not on.
       'react-x/no-use-context': 'off',
       'react-x/no-context-provider': 'off',
       'react-x/unsupported-syntax': 'off',
-      // Phase 6 FE-01: strict typing rules flipped to error (Plan 06-01).
-      // Per D-05, the test-file override block was removed so src/test/** also
-      // runs strict rules. Plan 06-02 owns the violation fix sweep — between
-      // these two plans landing, `npm run lint` will be red on main if they
-      // do not co-merge (see 06-01 PLAN.md verification §Notes on Merge Ordering).
-      '@typescript-eslint/no-explicit-any': 'error',
-      '@typescript-eslint/no-unsafe-assignment': 'error',
-      '@typescript-eslint/no-unsafe-call': 'error',
-      '@typescript-eslint/no-unsafe-return': 'error',
-      '@typescript-eslint/no-unsafe-member-access': 'error',
-      '@typescript-eslint/no-unsafe-argument': 'error',
       // M002/S12 R017 enforcement gate (redundant safety alongside the
       // src/__tests__/no-legacy-primitives.test.ts vitest guard). Blocks
       // any future PR from re-importing the retired legacy primitives at
@@ -87,6 +56,23 @@ export default tseslint.config(
         },
       ],
     },
+  }),
+  // `vi.importActual<typeof import('./mod')>()` is vitest's documented way to
+  // type a partial mock, and an inline `import()` type is the only spelling of
+  // it. The shared base bans those in favour of top level type imports, which
+  // is right for application code and impossible here, so the rule is relaxed
+  // for test files only.
+  {
+    files: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
+    rules: {
+      '@typescript-eslint/consistent-type-imports': [
+        'error',
+        {
+          prefer: 'type-imports',
+          fixStyle: 'inline-type-imports',
+          disallowTypeAnnotations: false,
+        },
+      ],
+    },
   },
-  eslintConfigPrettier // Add this last
-);
+];

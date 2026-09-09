@@ -9,10 +9,10 @@ Single entry point (`init_sentry(*, server_name)`) called from every process:
 
 # DSN source
 
-DSN is pulled from `SENTRY_DSN` env var at init time. In production the Lambda
-API reads the `${prefix}/app` JSON secret at cold start (via `APP_SECRETS_ARN`)
-and applies `SENTRY_DSN` from it; in local dev the value is simply unset so
-`init_sentry()` no-ops. Never hard-code the DSN, see `terraform/secretsmanager.tf`
+DSN comes from `settings.SENTRY_DSN`, which prefers the `SENTRY_DSN` env var and
+otherwise resolves the `${prefix}/app` JSON secret named by `APP_SECRETS_ARN` on
+first read. In local dev neither is set so `init_sentry()` no-ops and no Secrets
+Manager call is made. Never hard-code the DSN, see `terraform/secretsmanager.tf`
 and `app/core/secrets.py` for the injection path (D-01, D-55).
 
 # Release tag
@@ -122,7 +122,11 @@ def init_sentry(*, server_name: str) -> None:
     env = (settings.APP_ENVIRONMENT or "").lower()
     if env not in {"staging", "production"}:
         return
-    dsn = os.environ.get("SENTRY_DSN", "").strip()
+    # settings.SENTRY_DSN is the lazily resolved property: an env var wins, and
+    # otherwise it reads the APP_SECRETS_ARN blob on this first touch. Reading it
+    # through settings rather than os.environ is what lets config.py stop
+    # exporting the whole secret into the process environment at import.
+    dsn = settings.SENTRY_DSN.strip()
     if not dsn:
         return
     sentry_sdk.init(

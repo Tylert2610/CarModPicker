@@ -115,14 +115,19 @@ class PartService(BaseDynamoCRUDService[Part, PartCreate, PartUpdate]):
             message = "A part with this manufacturer and part number already exists."
         else:
             message = "A part with these identifiers already exists."
+        # The extras go under `details`, which is the key both the error envelope
+        # and the frontend's duplicate-part handling read. They used to sit at the
+        # top level of the detail dict, where the handler dropped them and
+        # `CreatePartForm` never saw the id it looks for.
+        details: Dict[str, Any] = {"reason": "duplicate_identifier"}
+        if existing is not None:
+            details["existing_part_id"] = str(existing.id)
+            details["existing_part_name"] = existing.name
         detail: Dict[str, Any] = {
             "error_code": "PART_ALREADY_EXISTS",
-            "reason": "duplicate_identifier",
             "message": message,
+            "details": details,
         }
-        if existing is not None:
-            detail["existing_part_id"] = str(existing.id)
-            detail["existing_part_name"] = existing.name
         return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
 
     def create_part(
@@ -140,10 +145,12 @@ class PartService(BaseDynamoCRUDService[Part, PartCreate, PartUpdate]):
                     status_code=status.HTTP_409_CONFLICT,
                     detail={
                         "error_code": "PART_ALREADY_EXISTS",
-                        "reason": reason,
                         "message": "You already have a part for this product.",
-                        "existing_part_id": str(existing.id),
-                        "existing_part_name": existing.name,
+                        "details": {
+                            "reason": reason,
+                            "existing_part_id": str(existing.id),
+                            "existing_part_name": existing.name,
+                        },
                     },
                 )
 

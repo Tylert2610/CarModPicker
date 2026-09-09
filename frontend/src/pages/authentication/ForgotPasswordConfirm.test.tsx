@@ -4,7 +4,7 @@
 // page shows an error + "Request new reset link" CTA. If token is present the
 // form accepts a new password + confirmation and posts via
 // authApi.resetPasswordConfirm(token, { password }).
-/* eslint-disable @typescript-eslint/unbound-method */
+
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   render,

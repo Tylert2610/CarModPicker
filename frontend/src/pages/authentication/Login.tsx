@@ -20,7 +20,8 @@ import { Input } from '../../components/ui/input';
 import useApiRequest from '../../hooks/UseApiRequest';
 import { useAuth } from '../../hooks/useAuth';
 import { isGoogleConfigured } from '../../hooks/useGoogleSignIn';
-import { authApi } from '../../services/Api';
+import { authApi } from '../../api/auth';
+import { getApiErrorMessage } from '../../utils/apiError';
 
 /**
  * Only accept returnTo values that look like a local path. Blocks protocol-
@@ -81,15 +82,7 @@ function Login() {
       if (err instanceof Error && err.name === 'NotAllowedError') {
         setApiError('Passkey sign-in was cancelled.');
       } else {
-        const axiosError = err as {
-          response?: { data?: { detail?: string } };
-          message?: string;
-        };
-        setApiError(
-          axiosError.response?.data?.detail ||
-            axiosError.message ||
-            'Passkey sign-in failed.'
-        );
+        setApiError(getApiErrorMessage(err, 'Passkey sign-in failed.'));
       }
     } finally {
       setIsPasskeyLoading(false);
@@ -123,12 +116,8 @@ function Login() {
           void navigate(returnTo);
         }
       } catch (error: unknown) {
-        const axiosError = error as {
-          response?: { data?: { detail?: string } };
-        };
         setApiError(
-          axiosError.response?.data?.detail ||
-            'Invalid OTP code. Please try again.'
+          getApiErrorMessage(error, 'Invalid OTP code. Please try again.')
         );
       }
       return;

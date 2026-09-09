@@ -10,7 +10,9 @@ import { Button } from '../../components/ui/button';
 import { Card } from '../../components/ui/card';
 import { ConfirmDialog } from '../../components/ui/confirm-dialog';
 import Spinner from '../../components/ui/spinner';
-import { adminApi, appSettingsApi, imageApi } from '../../services/Api';
+import { adminApi } from '../../api/admin';
+import { appSettingsApi } from '../../api/app_settings';
+import { imageApi } from '../../api/images';
 
 function SystemAdmin() {
   const { user } = useAuth();

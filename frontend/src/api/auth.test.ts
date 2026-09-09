@@ -29,13 +29,12 @@ import { apiClient, setStoredToken, removeStoredToken } from './client';
 import { authApi } from './auth';
 import { mockUser } from '../test/mocks/api';
 
-/* eslint-disable-next-line @typescript-eslint/unbound-method */
 const postMock = apiClient.post as MockedFunction<typeof apiClient.post>;
-/* eslint-disable-next-line @typescript-eslint/unbound-method */
+
 const getMock = apiClient.get as MockedFunction<typeof apiClient.get>;
-/* eslint-disable-next-line @typescript-eslint/unbound-method */
+
 const patchMock = apiClient.patch as MockedFunction<typeof apiClient.patch>;
-/* eslint-disable-next-line @typescript-eslint/unbound-method */
+
 const deleteMock = apiClient.delete as MockedFunction<typeof apiClient.delete>;
 const setStoredTokenMock = setStoredToken as MockedFunction<
   typeof setStoredToken

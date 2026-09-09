@@ -1,8 +1,7 @@
 // Votes domain API. Mirrors backend endpoints/votes.py (polymorphic).
-// Extracted from services/Api.ts (lines 534-560 + legacy entity-scoped
-// wrappers 602-631) per Phase 6 D-22. The polymorphic `votesApi` is the
-// canonical surface; `partVotesApi` / `buildListVotesApi` are kept as
-// thin entity-typed wrappers for backwards compat with existing callers.
+// The polymorphic `votesApi` is the canonical surface; `partVotesApi` /
+// `buildListVotesApi` are thin entity-typed wrappers kept for existing
+// callers.
 import { apiClient } from './client';
 import type {
   FlaggedEntitySummary,

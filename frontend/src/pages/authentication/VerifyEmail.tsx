@@ -6,7 +6,7 @@ import { ConfirmationAlert, ErrorAlert } from '../../components/ui/alert';
 import Spinner from '../../components/ui/spinner';
 import useApiRequest from '../../hooks/UseApiRequest';
 import { useAuth } from '../../hooks/useAuth';
-import apiClient from '../../services/Api';
+import { apiClient } from '../../api/client';
 
 function VerifyEmail() {
   const [isSubmitted, setIsSubmitted] = useState(false);

@@ -12,7 +12,7 @@ import UserCard from '../components/users/UserCard';
 import { SEARCH_INITIAL_LIMITS, SEARCH_RESULTS_LIMIT } from '../constants';
 import useApiRequest from '../hooks/UseApiRequest';
 import { useDocumentMeta } from '../hooks/useDocumentMeta';
-import { searchApi } from '../services/Api';
+import { searchApi } from '../api/search';
 import type { BuildListRead, UserRead } from '../types/Api';
 
 const fetchSearchResultsRequestFn = (params: {

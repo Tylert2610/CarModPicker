@@ -1,14 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import useApiRequest from '../../hooks/UseApiRequest';
-import {
-  partManufacturersApi,
-  buildListPartsApi,
-  buildListsApi,
-  carGenerationsApi,
-  categoriesApi,
-  partsApi,
-} from '../../services/Api';
+import { buildListPartsApi } from '../../api/build_list_parts';
+import { buildListsApi } from '../../api/build_lists';
+import { carGenerationsApi } from '../../api/car_generations';
+import { categoriesApi } from '../../api/categories';
+import { partManufacturersApi } from '../../api/part_manufacturers';
+import { partsApi } from '../../api/parts';
 import type {
   PartManufacturerCreate,
   PartManufacturerResponse,

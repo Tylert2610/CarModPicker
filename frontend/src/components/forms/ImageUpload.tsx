@@ -1,5 +1,6 @@
 import React, { useRef, useState } from 'react';
-import { imageApi, type ImageUploadResponse } from '../../services/Api';
+import { imageApi } from '../../api/images';
+import type { ImageUploadResponse } from '../../api/images';
 import ImageWithPlaceholder from '../images/ImageWithPlaceholder';
 import { ErrorAlert } from '../ui/alert';
 import Spinner from '../ui/spinner';

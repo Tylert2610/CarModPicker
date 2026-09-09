@@ -3,10 +3,9 @@ import { useNavigate, useParams } from 'react-router-dom';
 import useApiRequest from '../../hooks/UseApiRequest';
 import { useAuth } from '../../hooks/useAuth';
 import { useDocumentMeta } from '../../hooks/useDocumentMeta';
-import apiClient, {
-  buildListsApi,
-  buildListVotesApi,
-} from '../../services/Api';
+import { buildListsApi } from '../../api/build_lists';
+import { apiClient } from '../../api/client';
+import { buildListVotesApi } from '../../api/votes';
 import type {
   BuildListLaborEstimateRead,
   BuildListPartReadWithPart,
@@ -180,9 +179,8 @@ function ViewBuildList() {
   }, [voteSummaryData]);
 
   const handleVoteUpdate = (
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _entityId: string,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+
     _newVote: 'upvote' | 'downvote' | null
   ) => {
     // Refresh vote summary after voting

@@ -1,5 +1,4 @@
 // Car Generations domain API. Mirrors backend endpoints/car_generations.py.
-// Extracted from services/Api.ts (lines 236-273) per Phase 6 D-22.
 // Read-only; cars are seeded from backend car_generations_data.
 import { apiClient } from './client';
 import type { CarGenerationRead } from '../types/Api';

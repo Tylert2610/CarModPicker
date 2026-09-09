@@ -1,11 +1,32 @@
+# The shared WebbPulse package, published only to CodeArtifact. It has to be
+# here as well as in `requirements.txt`, because this is the file the Lambda
+# image and the deploy zip install: a runtime pin present only in the other file
+# passes every test and then fails at import inside the image.
+# `tests/test_requirements_lambda_subset.py` is what stops that recurring.
+#
+# `otel` and `aws-otel` are both live as of row 16: the domain functions export
+# spans to the X-Ray OTLP endpoint, and `aws-otel` is the SigV4 signing exporter
+# that endpoint requires. This is the file the image installs, so an extra
+# present only in `requirements.txt` would pass every check and then fall back
+# to the unsigned exporter inside the running function, which is a silent 403
+# rather than a failure. `dynamodb` carries the botocore error handlers the
+# composition root installs; the package imports botocore lazily inside them, so
+# it costs nothing at import time.
+#
+# `security` is what row 19 added: `webbpulse.security` now provides this app's
+# password hashing and JWT signing, replacing the local bcrypt and PyJWT calls.
+# It pulls PyJWT and bcrypt, both of which were already pinned below and stay
+# pinned here, because this file is the resolved set and the package's own
+# ranges must not be allowed to float a different major into the image.
+webbpulse[fastapi,otel,dynamodb,aws-otel,security]==0.5.0
+
 annotated-types==0.8.0
-anyio==4.14.2
+anyio==4.15.0
 click==8.5.0
 fastapi==0.141.1
 h11==0.16.0
 idna==3.19
-pydantic==2.13.3
-pydantic[email]
+pydantic[email]==2.13.3
 pydantic-settings==2.15.0
 python-dotenv==1.2.3
 python-json-logger==4.2.0
@@ -23,15 +44,15 @@ python-multipart==0.0.32
 pyotp==2.10.0
 qrcode[pil]==8.2
 webauthn==2.7.1
-google-auth==2.57.0
+google-auth==2.57.1
 
 requests==2.34.2
 beautifulsoup4==4.15.0
 defusedxml==0.7.1
 pybreaker==1.4.1
 
-boto3==1.43.83
+boto3==1.43.88
 Pillow==12.3.0
 
-sentry-sdk>=2.60.0,<3
+sentry-sdk>=2.68.1,<3
 aws-embedded-metrics>=3.5.0,<4

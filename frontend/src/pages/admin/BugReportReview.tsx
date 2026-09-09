@@ -1,9 +1,10 @@
-import type { AxiosResponse } from 'axios';
+import type { ApiClientResponse } from '../../api/client';
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useApiRequest from '../../hooks/UseApiRequest';
 import { useAuth } from '../../hooks/useAuth';
-import apiClient, { bugReportsApi } from '../../services/Api';
+import { bugReportsApi } from '../../api/bug_reports';
+import { apiClient } from '../../api/client';
 import type {
   BugReportUpdate,
   BugReportWithDetails,
@@ -33,18 +34,18 @@ const fetchBugReportsRequestFn = (params?: {
   priority?: string;
   skip?: number;
   limit?: number;
-}): Promise<AxiosResponse<PaginatedResponse<BugReportWithDetails>>> =>
+}): Promise<ApiClientResponse<PaginatedResponse<BugReportWithDetails>>> =>
   bugReportsApi.getBugReportsWithDetails(params);
 const updateBugReportRequestFn = (payload: {
   bugReportId: string;
   data: BugReportUpdate;
-}): Promise<AxiosResponse<BugReportWithDetails>> =>
+}): Promise<ApiClientResponse<BugReportWithDetails>> =>
   apiClient.put<BugReportWithDetails>(
     `/bug-reports/${payload.bugReportId}`,
     payload.data
   );
 const getPendingBugReportsCountRequestFn = (): Promise<
-  AxiosResponse<PaginatedResponse<BugReportWithDetails>>
+  ApiClientResponse<PaginatedResponse<BugReportWithDetails>>
 > =>
   bugReportsApi.getBugReportsWithDetails({
     status: 'pending',

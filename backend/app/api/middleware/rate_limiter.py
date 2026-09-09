@@ -13,6 +13,7 @@ from fastapi import Request
 from fastapi.responses import JSONResponse, Response
 
 from ...core.config import settings
+from .shared_rate_limiter import client_identity, request_route, shared_rate_limiter
 
 logger = logging.getLogger(__name__)
 
@@ -226,6 +227,31 @@ rate_limiter = SophisticatedRateLimiter(
 )
 
 
+# Paths that must match exactly to be exempt from rate limiting. These are single
+# endpoints, so a prefix test would wrongly exempt unrelated paths. In particular "/"
+# is a prefix of every path, so testing it with startswith exempts the entire API.
+RATE_LIMIT_EXEMPT_EXACT: Tuple[str, ...] = ("/", "/health", "/ready", "/openapi.json")
+
+# Paths that are exempt along with everything beneath them. The documentation UIs serve
+# their own sub-resources (for example /docs/oauth2-redirect), so they match as prefixes.
+RATE_LIMIT_EXEMPT_PREFIXES: Tuple[str, ...] = ("/docs", "/redoc")
+
+
+def is_rate_limit_exempt(path: str) -> bool:
+    """Return True when ``path`` is exempt from rate limiting.
+
+    Exemption is deliberately split into two kinds. Entries in
+    ``RATE_LIMIT_EXEMPT_EXACT`` are matched exactly, so the root path "/" exempts only
+    the root and not every path that begins with it. Entries in
+    ``RATE_LIMIT_EXEMPT_PREFIXES`` are matched as prefixes, so the docs UIs also exempt
+    the sub-resources they load.
+    """
+    if path in RATE_LIMIT_EXEMPT_EXACT:
+        return True
+
+    return any(path == prefix or path.startswith(f"{prefix}/") for prefix in RATE_LIMIT_EXEMPT_PREFIXES)
+
+
 async def rate_limit_middleware(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
     """
     FastAPI middleware for sophisticated rate limiting.
@@ -235,9 +261,8 @@ async def rate_limit_middleware(request: Request, call_next: Callable[[Request],
         response = await call_next(request)
         return response
 
-    # Skip rate limiting for health checks, readiness, static files, and documentation
-    skip_paths = ["/", "/health", "/ready", "/docs", "/openapi.json", "/redoc"]
-    if any(request.url.path.startswith(path) for path in skip_paths):
+    # Skip rate limiting for health checks, readiness, the root, and documentation
+    if is_rate_limit_exempt(request.url.path):
         response = await call_next(request)
         return response
 
@@ -267,6 +292,38 @@ async def rate_limit_middleware(request: Request, call_next: Callable[[Request],
                 "X-RateLimit-Remaining-Hour": str(max(0, limits_info["hour_limit"] - limits_info["hour_count"])),
             },
         )
+
+    # Layer 2: the shared limiter. Layer 1 above is in-memory, so it only sees the
+    # traffic that reached this execution environment; the shared counter is what makes
+    # a limit hold across environments and, after the split, across the nine functions.
+    # It runs only once layer 1 has allowed the request, so a burst that layer 1 already
+    # rejected costs no DynamoDB call.
+    #
+    # Every failure mode inside is swallowed and logged at WARNING, so this call cannot
+    # raise into the request path or turn a DynamoDB problem into a 5xx.
+    if settings.ENABLE_SHARED_RATE_LIMITING:
+        identity = client_identity(request)
+        # The route, not the raw path: a fail-open record should group by endpoint rather
+        # than fan out over every id in a path. Falls back to the path when no route matched.
+        route = request.scope.get("route")
+        route_label = getattr(route, "path", None) or request.url.path
+        with request_route(route_label):
+            shared_limited, shared_retry_after = shared_rate_limiter.check(identity)
+        if shared_limited:
+            retry_after = shared_retry_after or 60
+            logger.warning("Shared rate limit exceeded for %s", identity)
+            return JSONResponse(
+                status_code=429,
+                content={
+                    "detail": "Too many requests",
+                    "message": "Rate limit exceeded",
+                    "retry_after": retry_after,
+                },
+                headers={
+                    "Retry-After": str(retry_after),
+                    "X-RateLimit-Remaining-Minute": "0",
+                },
+            )
 
     # Add rate limit headers to response
     response = await call_next(request)

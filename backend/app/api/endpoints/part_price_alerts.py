@@ -8,17 +8,24 @@ T03 also lands the public, unauth `GET /unsubscribe?token=...` route — the JWT
 *is* the auth (purpose='price_alert_unsubscribe'), mirroring the verify-email
 confirm idiom. Both DEBUG and prod redirect to the frontend /account/alerts
 page with a status query string.
+
+Route ordering is load-bearing here. FastAPI resolves in registration order, so
+the literal `/unsubscribe` is declared ahead of the parameterised `/{alert_id}`
+routes. It previously sat after them and was reachable only by accident:
+`/{alert_id}` carries PATCH and DELETE and no GET, so a GET fell through to the
+literal. Adding a `GET /{alert_id}` detail route would have shadowed unsubscribe
+silently. Keep `/unsubscribe` above `/{alert_id}`, and keep any future literal
+segment above it too.
 """
 
 import logging
 from uuid import UUID
 
-import jwt
 from fastapi import APIRouter, Depends, Query, status
 from fastapi.responses import RedirectResponse
-from jwt import InvalidTokenError
+from webbpulse.security import TokenError
 
-from app.api.dependencies.auth import ALGORITHM, get_current_user
+from app.api.dependencies.auth import decode_access_token, get_current_user
 from app.api.dependencies.repositories import get_repositories
 from app.api.schemas.part_price_alert import (
     PartPriceAlertCreate,
@@ -89,6 +96,85 @@ async def list_my_active_alerts(current_user: DBUser = Depends(get_current_user)
     return [PartPriceAlertRead.model_validate(a) for a in alerts]
 
 
+def _unsubscribe_redirect_url(success: bool, message: str) -> str:
+    """Build the redirect target for the unsubscribe-via-token flow.
+
+    Uses ``settings.frontend_base_url``, the same per-environment SPA origin
+    verify_email_confirm redirects to, so each environment sends users back to
+    its own frontend. ``status`` is `success` or `error`.
+    """
+    base = f"{settings.frontend_base_url}/account/alerts"
+    status_word = "success" if success else "error"
+    # Treat the message as already-form-friendly (caller passes a `+`-joined
+    # string) — we never put user-controlled text here, only fixed phrases.
+    return f"{base}?status={status_word}&message={message}"
+
+
+@router.get(
+    "/unsubscribe",
+    include_in_schema=True,
+    responses={
+        302: {"description": "Redirected to /account/alerts with a status flag"},
+    },
+)
+async def unsubscribe_via_token(token: str = Query(...)) -> RedirectResponse:
+    """One-click unsubscribe via signed JWT (no auth dependency — token IS the auth).
+
+    Decodes the token, requires ``purpose == 'price_alert_unsubscribe'``, looks
+    up the alert by id, sets ``active=False``, and redirects the browser to the
+    frontend ``/account/alerts`` page. Invalid/expired tokens redirect to the
+    same page with ``status=error`` so the user gets a coherent UI in either
+    case (we never reveal why decode failed).
+    """
+    try:
+        payload = decode_access_token(token)
+        purpose = payload.get("purpose")
+        sub = payload.get("sub")
+
+        if purpose != "price_alert_unsubscribe" or not sub:
+            logger.warning("price_alert_unsubscribe_invalid_purpose")
+            return RedirectResponse(
+                url=_unsubscribe_redirect_url(False, "Invalid+or+expired+link"),
+                status_code=302,
+            )
+
+        try:
+            alert_id = UUID(sub)
+        except ValueError:
+            logger.warning("price_alert_unsubscribe_invalid_sub")
+            return RedirectResponse(
+                url=_unsubscribe_redirect_url(False, "Invalid+or+expired+link"),
+                status_code=302,
+            )
+
+        # Idempotent — flipping an already-inactive alert to inactive is fine
+        # and still reports success to the user (link clicked twice in inbox).
+        alert = part_price_alert_service.deactivate_by_id(alert_id)
+        if alert is None:
+            logger.warning("price_alert_unsubscribe_alert_missing: alert_id=%s", alert_id)
+            return RedirectResponse(
+                url=_unsubscribe_redirect_url(False, "Invalid+or+expired+link"),
+                status_code=302,
+            )
+
+        logger.info(
+            "price_alert_unsubscribe_success: alert_id=%s user_id=%s",
+            alert.id,
+            alert.user_id,
+        )
+        return RedirectResponse(
+            url=_unsubscribe_redirect_url(True, "Unsubscribed"),
+            status_code=302,
+        )
+
+    except TokenError as e:
+        logger.warning("price_alert_unsubscribe_jwt_error: %s", e)
+        return RedirectResponse(
+            url=_unsubscribe_redirect_url(False, "Invalid+or+expired+link"),
+            status_code=302,
+        )
+
+
 @router.patch(
     "/{alert_id}",
     response_model=PartPriceAlertRead,
@@ -142,81 +228,3 @@ async def delete_my_alert(
     if not deactivated:
         ResponsePatterns.raise_not_found("Price alert", alert_id)
     return None
-
-
-def _unsubscribe_redirect_url(success: bool, message: str) -> str:
-    """Build the redirect target for the unsubscribe-via-token flow.
-
-    Mirrors the DEBUG/prod branch in verify_email_confirm: localhost frontend
-    in dev, www.carmodpicker.com in prod. ``status`` is `success` or `error`.
-    """
-    base = "http://localhost:4000/account/alerts" if settings.DEBUG else "https://www.carmodpicker.com/account/alerts"
-    status_word = "success" if success else "error"
-    # Treat the message as already-form-friendly (caller passes a `+`-joined
-    # string) — we never put user-controlled text here, only fixed phrases.
-    return f"{base}?status={status_word}&message={message}"
-
-
-@router.get(
-    "/unsubscribe",
-    include_in_schema=True,
-    responses={
-        302: {"description": "Redirected to /account/alerts with a status flag"},
-    },
-)
-async def unsubscribe_via_token(token: str = Query(...)) -> RedirectResponse:
-    """One-click unsubscribe via signed JWT (no auth dependency — token IS the auth).
-
-    Decodes the token, requires ``purpose == 'price_alert_unsubscribe'``, looks
-    up the alert by id, sets ``active=False``, and redirects the browser to the
-    frontend ``/account/alerts`` page. Invalid/expired tokens redirect to the
-    same page with ``status=error`` so the user gets a coherent UI in either
-    case (we never reveal why decode failed).
-    """
-    try:
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[ALGORITHM])
-        purpose = payload.get("purpose")
-        sub = payload.get("sub")
-
-        if purpose != "price_alert_unsubscribe" or not sub:
-            logger.warning("price_alert_unsubscribe_invalid_purpose")
-            return RedirectResponse(
-                url=_unsubscribe_redirect_url(False, "Invalid+or+expired+link"),
-                status_code=302,
-            )
-
-        try:
-            alert_id = UUID(sub)
-        except ValueError:
-            logger.warning("price_alert_unsubscribe_invalid_sub")
-            return RedirectResponse(
-                url=_unsubscribe_redirect_url(False, "Invalid+or+expired+link"),
-                status_code=302,
-            )
-
-        # Idempotent — flipping an already-inactive alert to inactive is fine
-        # and still reports success to the user (link clicked twice in inbox).
-        alert = part_price_alert_service.deactivate_by_id(alert_id)
-        if alert is None:
-            logger.warning("price_alert_unsubscribe_alert_missing: alert_id=%s", alert_id)
-            return RedirectResponse(
-                url=_unsubscribe_redirect_url(False, "Invalid+or+expired+link"),
-                status_code=302,
-            )
-
-        logger.info(
-            "price_alert_unsubscribe_success: alert_id=%s user_id=%s",
-            alert.id,
-            alert.user_id,
-        )
-        return RedirectResponse(
-            url=_unsubscribe_redirect_url(True, "Unsubscribed"),
-            status_code=302,
-        )
-
-    except InvalidTokenError as e:
-        logger.warning("price_alert_unsubscribe_jwt_error: %s", e)
-        return RedirectResponse(
-            url=_unsubscribe_redirect_url(False, "Invalid+or+expired+link"),
-            status_code=302,
-        )

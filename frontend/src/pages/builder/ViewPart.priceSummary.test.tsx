@@ -1,8 +1,3 @@
-/* eslint-disable @typescript-eslint/unbound-method --
- * vi.mocked(apiClient.*) is the canonical Vitest mock-introspection pattern;
- * matches sibling tests under src/components/parts/ and src/pages/builder/.
- */
-
 import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -40,14 +35,6 @@ import ViewPart from './ViewPart';
 vi.mock('../../hooks/useAuth', () => ({
   useAuth: () => mockUseAuth(),
 }));
-
-vi.mock('../../services/Api', async () => {
-  const actual =
-    await vi.importActual<typeof import('../../services/Api')>(
-      '../../services/Api'
-    );
-  return actual;
-});
 
 function seedAuthenticated(): void {
   mockUseAuth.mockReturnValue({

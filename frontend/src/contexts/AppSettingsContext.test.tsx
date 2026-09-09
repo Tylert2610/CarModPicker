@@ -8,11 +8,9 @@
 //
 // The provider does NOT call useNavigate, so no MemoryRouter wrap is needed.
 //
-// The global setup.ts mock of `../services/Api` only exposes `default`. This
-// file overrides that mock locally to also expose the named `appSettingsApi`,
-// and also mocks `../api/app_settings` directly so that the underlying export
-// (which is re-exported through services/Api via `export * from ...`) keeps
-// type identity.
+// The provider reads settings through `appSettingsApi` from
+// `../api/app_settings`, so this file mocks that module directly and swaps its
+// two methods for hoisted spies.
 
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
@@ -23,12 +21,12 @@ const { mockGet, mockUpdate } = vi.hoisted(() => ({
   mockUpdate: vi.fn(),
 }));
 
-// Extend the global services/Api mock to expose appSettingsApi and the
-// AppSettings named type re-export. vi.importActual pulls the setup.ts-mocked
-// module (which has just { default: mockApiClient }).
-vi.mock('../services/Api', async () => {
-  const actual =
-    await vi.importActual<typeof import('../services/Api')>('../services/Api');
+// Replace appSettingsApi's two methods with hoisted spies so the provider's
+// fetch and refresh paths are observable, keeping the module's other exports.
+vi.mock('../api/app_settings', async () => {
+  const actual = await vi.importActual<typeof import('../api/app_settings')>(
+    '../api/app_settings'
+  );
   return {
     ...actual,
     appSettingsApi: {

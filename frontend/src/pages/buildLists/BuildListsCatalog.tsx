@@ -25,7 +25,8 @@ import {
 } from '../../constants';
 import useApiRequest from '../../hooks/UseApiRequest';
 import { useDocumentMeta } from '../../hooks/useDocumentMeta';
-import { buildListsApi, carGenerationsApi } from '../../services/Api';
+import { buildListsApi } from '../../api/build_lists';
+import { carGenerationsApi } from '../../api/car_generations';
 import type {
   BuildListReadWithVotes,
   CarGenerationRead,

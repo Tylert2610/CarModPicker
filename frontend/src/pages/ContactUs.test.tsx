@@ -10,7 +10,6 @@ import { apiClient } from '../api/client';
 import { render, screen, testScenarios } from '../test/utils/test-utils';
 import ContactUs from './ContactUs';
 
-// eslint-disable-next-line @typescript-eslint/unbound-method
 const getMock = vi.mocked(apiClient.get);
 
 describe('ContactUs page', () => {
@@ -46,7 +45,7 @@ describe('ContactUs page', () => {
 
   it('does not call the API (pure static page with no form submit)', () => {
     render(<ContactUs />, testScenarios.unauthenticated);
-    // eslint-disable-next-line @typescript-eslint/unbound-method
+
     expect(vi.mocked(apiClient.post)).not.toHaveBeenCalled();
     expect(getMock).not.toHaveBeenCalled();
   });

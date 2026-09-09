@@ -7,12 +7,14 @@ import {
 } from 'react-icons/fa';
 import useApiRequest from '../../hooks/UseApiRequest';
 import { useAuth } from '../../hooks/useAuth';
-import { authApi, usersApi } from '../../services/Api';
+import { authApi } from '../../api/auth';
+import { usersApi } from '../../api/users';
 import type { TOTPSetupResponse } from '../../types/Api';
 import SectionHeader from '../layout/SectionHeader';
 import { ConfirmationAlert, ErrorAlert } from '../ui/alert';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
+import { getApiErrorMessage } from '../../utils/apiError';
 
 interface SecuritySettingsProps {
   onPasswordChanged: () => void;
@@ -179,11 +181,7 @@ function SecuritySettings({
       if (err instanceof Error) {
         errorMessage = err.message;
       } else if (typeof err === 'object' && err !== null && 'response' in err) {
-        const response = (err as { response?: { data?: { detail?: string } } })
-          .response;
-        if (response?.data?.detail) {
-          errorMessage = response.data.detail;
-        }
+        errorMessage = getApiErrorMessage(err, errorMessage);
       }
       setPasswordError(errorMessage);
     } finally {
@@ -224,10 +222,8 @@ function SecuritySettings({
         on2FAEnabled();
       }, 1500);
     } catch (err: unknown) {
-      const axiosError = err as { response?: { data?: { detail?: string } } };
       setTwoFAError(
-        axiosError.response?.data?.detail ||
-          'Invalid OTP code. Please try again.'
+        getApiErrorMessage(err, 'Invalid OTP code. Please try again.')
       );
     } finally {
       setIsVerifying(false);
@@ -262,10 +258,8 @@ function SecuritySettings({
         on2FADisabled();
       }, 1500);
     } catch (err: unknown) {
-      const axiosError = err as { response?: { data?: { detail?: string } } };
       setTwoFAError(
-        axiosError.response?.data?.detail ||
-          'Failed to disable 2FA. Please try again.'
+        getApiErrorMessage(err, 'Failed to disable 2FA. Please try again.')
       );
     } finally {
       setIsDisabling(false);

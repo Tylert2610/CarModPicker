@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/unbound-method */
 // Phase 8 Plan 10 (D-11 Wave 3) — Login page coverage.
 //
 // Login.tsx wires together three sign-in surfaces: the password form (posts to
@@ -9,12 +8,10 @@
 // renders but their flows are not invoked (D-11 "happy-path + one error", not
 // OAuth flow).
 //
-// Mocking: setup.ts installs `vi.mock('../services/Api', importOriginal)` which
-// preserves every domain-API re-export (authApi, buildListsApi, etc.) while
-// mocking `default` (the shared Axios instance). setup.ts ALSO mocks
-// `../api/client` — so when Login.tsx calls authApi.login(...), the real
-// authApi code runs and internally hits `apiClient.post(...)` which lands on
-// the mocked client. We therefore assert on `apiClient.post`, not on authApi.
+// Mocking: setup.ts mocks `../api/client`, so when Login.tsx calls
+// authApi.login(...), the real authApi code runs and internally hits
+// `apiClient.post(...)` which lands on the mocked client. We therefore assert
+// on `apiClient.post`, not on authApi.
 //
 // We use `fireEvent` (not userEvent) for form submission — jsdom +
 // `userEvent.click` on a submit button inside nested containers is flaky
@@ -29,6 +26,7 @@ import {
   testScenarios,
 } from '../../test/utils/test-utils';
 import { apiClient } from '../../api/client';
+import { buildApiError } from '../../test/apiResponse';
 import { mockUser } from '../../test/mocks/api';
 import Login from './Login';
 
@@ -129,15 +127,17 @@ describe('Login page', () => {
   });
 
   it('surfaces an error message when credentials are invalid (401)', async () => {
-    // parseApiError in useApiRequest requires isAxiosError=true to pull
-    // `detail` out of response.data.
-    vi.mocked(apiClient.post).mockRejectedValueOnce({
-      isAxiosError: true,
-      response: {
+    // parseApiError in useApiRequest reads `message` off the error envelope,
+    // which the client hands over on `ApiError.body`.
+    vi.mocked(apiClient.post).mockRejectedValueOnce(
+      buildApiError(401, {
+        success: false,
         status: 401,
-        data: { detail: 'Invalid credentials' },
-      },
-    });
+        message: 'Invalid credentials',
+        request_id: 'req-1',
+        error_code: 'UNAUTHORIZED',
+      })
+    );
 
     render(<Login />, testScenarios.unauthenticated);
     fillAndSubmit('baduser', 'badpass');

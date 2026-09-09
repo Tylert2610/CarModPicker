@@ -6,7 +6,7 @@ import {
   AppSettingsContext,
   type AppSettingsContextType,
 } from '../contexts/AppSettingsContextDefinition';
-import type { AppSettings } from '../services/Api';
+import type { AppSettings } from '../api/app_settings';
 
 // Phase 8 D-09 — hook that consumes AppSettingsContext. We wrap renderHook in
 // a plain AppSettingsContext.Provider to exercise the real hook against a

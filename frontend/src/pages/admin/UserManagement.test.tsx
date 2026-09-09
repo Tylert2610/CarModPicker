@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/unbound-method, @typescript-eslint/no-unsafe-assignment --
+/* eslint-disable @typescript-eslint/no-unsafe-assignment --
  * vi.mocked(apiClient.*) is the canonical Phase 8 mocking pattern.
  * `expect.objectContaining(...)` returns `any` and trips no-unsafe-assignment
  * when nested as a property value — false positive in this matcher pattern.
@@ -6,16 +6,13 @@
 
 // Phase 8 plan 08-16 (Wave 4) — UserManagement admin page coverage.
 //
-// UserManagement imports `usersApi` from `../../services/Api` and uses the
-// domain API's `getAllUsers`, `adminUpdateUser`, `adminDeleteUser` methods.
-// Global setup.ts + test-utils.tsx only mock `default: mockApiClient` on the
-// shim; to let domain-API calls reach the mocked apiClient we extend with a
-// local vi.mock of `../../services/Api` that forwards `usersApi` through the
-// globally-mocked `../../api/client` apiClient.
+// UserManagement imports `usersApi` from `../../api/users` and uses that
+// module's `getAllUsers`, `adminUpdateUser`, `adminDeleteUser` methods, which
+// call the apiClient that setup.ts mocks.
 //
-// Bypasses test-utils.tsx's customRender (which re-mocks services/Api and
-// shadows `usersApi`). Manual BrowserRouter + mockUseAuth wire-up per the
-// Phase 8 wave-3 pattern established in Profile.test.tsx / BugReport.test.tsx.
+// Manual BrowserRouter + mockUseAuth wire-up per the pattern established in
+// Profile.test.tsx / BugReport.test.tsx, so this file controls the auth
+// branch directly.
 
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -31,26 +28,6 @@ import type { PaginatedResponse, UserRead } from '../../types/Api';
 
 // Use the canonical admin scenario fixture for the authenticated-admin user.
 const adminUser = testScenarios.adminAuthenticated.initialAuthState.user;
-
-vi.mock('../../services/Api', async () => {
-  const clientMod = await import('../../api/client');
-  const client = clientMod.apiClient;
-  return {
-    default: client,
-    apiClient: client,
-    usersApi: {
-      getAllUsers: (params?: {
-        skip?: number;
-        limit?: number;
-        search?: string;
-      }) => client.get('/users/admin/users', { params }),
-      adminUpdateUser: (userId: string, data: unknown) =>
-        client.put(`/users/admin/users/${userId}`, data),
-      adminDeleteUser: (userId: string) =>
-        client.delete(`/users/admin/users/${userId}`),
-    },
-  };
-});
 
 vi.mock('../../hooks/useAuth', () => ({
   useAuth: () => mockUseAuth(),

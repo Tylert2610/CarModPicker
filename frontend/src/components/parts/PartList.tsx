@@ -3,7 +3,9 @@ import { Link } from 'react-router-dom';
 import useApiRequest from '../../hooks/UseApiRequest';
 import { useContainerWidth } from '../../hooks/useContainerWidth';
 import { useResponsiveColumns } from '../../hooks/useResponsiveColumns';
-import { carGenerationsApi, partVotesApi, partsApi } from '../../services/Api';
+import { carGenerationsApi } from '../../api/car_generations';
+import { partsApi } from '../../api/parts';
+import { partVotesApi } from '../../api/votes';
 import type {
   CarGenerationRead,
   CategoryResponse,

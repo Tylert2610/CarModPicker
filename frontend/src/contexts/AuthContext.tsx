@@ -3,7 +3,12 @@ import * as Sentry from '@sentry/react';
 import type { ReactNode } from 'react';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import apiClient, { authApi, removeStoredToken } from '../services/Api';
+import { authApi } from '../api/auth';
+import {
+  apiClient,
+  isApiErrorWithStatus,
+  removeStoredToken,
+} from '../api/client';
 import type { UserRead } from '../types/Api';
 import { AuthContext } from './AuthContextDefinition';
 
@@ -30,18 +35,17 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
       // Silently handle auth errors - user might not be logged in
       setUser(null);
       setIsAuthenticated(false);
+      // The status only exists when the API answered. A network failure or a
+      // timeout throws a different error class carrying none, which is why this
+      // narrows rather than reaching for a status that may not be there.
+      const status = isApiErrorWithStatus(error) ? error.status : undefined;
       // Clear invalid token on 401
-      if (
-        (error as { response?: { status?: number } }).response?.status === 401
-      ) {
+      if (status === 401) {
         removeStoredToken();
       }
       // Don't log network errors in console to avoid noise
       // Only log unexpected errors
-      if (
-        (error as { response?: { status?: number } }).response?.status &&
-        (error as { response?: { status?: number } }).response?.status !== 401
-      ) {
+      if (status !== undefined && status !== 401) {
         console.error('Auth check failed:', error);
       }
     } finally {

@@ -20,7 +20,7 @@ import {
 } from '../../constants';
 import useApiRequest from '../../hooks/UseApiRequest';
 import { useAuth } from '../../hooks/useAuth';
-import { buildListsApi } from '../../services/Api';
+import { buildListsApi } from '../../api/build_lists';
 import type { BuildListRead } from '../../types/Api';
 
 function Builder() {

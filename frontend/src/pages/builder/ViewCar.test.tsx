@@ -7,19 +7,12 @@
 // We route responses by URL prefix via a single vi.mocked(apiClient.get)
 // implementation so all effects settle with deterministic data.
 
-/* eslint-disable @typescript-eslint/unbound-method, @typescript-eslint/prefer-promise-reject-errors --
- * vi.mocked(apiClient.get) is the canonical Vitest pattern for typed mock
- * introspection (same rationale as AuthContext.test.tsx). The AxiosError-shaped
- * rejection object is intentionally plain (not an Error instance) so it mimics
- * the exact shape Axios passes to useApiRequest's parseApiError — wrapping it
- * in an Error would defeat the point of exercising that branch.
- */
-
 import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { apiClient } from '../../api/client';
+import { buildApiError } from '../../test/apiResponse';
 import { mockBuildList, mockCar, mockUser } from '../../test/mocks/api';
 import { mockUseAuth } from '../../test/utils/test-mocks';
 import ViewCar from './ViewCar';
@@ -28,22 +21,12 @@ vi.mock('../../hooks/useAuth', () => ({
   useAuth: () => mockUseAuth(),
 }));
 
-// Extend the global setup.ts mock of `../services/Api` (which only exports
-// `default`) with the named exports ViewCar consumes (carGenerationsApi).
-// Re-exporting the real module resolves this cleanly because the domain APIs
-// internally call the globally-mocked `apiClient`.
-vi.mock('../../services/Api', async () => {
-  const actual =
-    await vi.importActual<typeof import('../../services/Api')>(
-      '../../services/Api'
-    );
-  return actual;
-});
+// ViewCar reaches the API through `carGenerationsApi` from
+// `../../api/car_generations`, which calls the apiClient that setup.ts mocks.
 
 // Auth fixture. Inlined equivalent of the canonical testScenarios.authenticated
-// shape from `src/test/utils/test-utils.tsx` (Phase 8 D-05) — we can't import
-// test-utils directly because its `vi.mock('../../services/Api', ...)` would
-// clobber our importActual-based extension above.
+// shape from `src/test/utils/test-utils.tsx` (Phase 8 D-05), so this file can
+// set the auth branch without going through customRender.
 const authenticatedAuthState = {
   isAuthenticated: true,
   isLoading: false,
@@ -124,10 +107,15 @@ describe('ViewCar page', () => {
   it('renders an error alert when the car fetch rejects', async () => {
     vi.mocked(apiClient.get).mockImplementation((url: string) => {
       if (url === `/car-generations/${mockCar.id}`) {
-        return Promise.reject({
-          isAxiosError: true,
-          response: { data: { detail: 'Car not found' }, status: 404 },
-        });
+        return Promise.reject(
+          buildApiError(404, {
+            success: false,
+            status: 404,
+            message: 'Car not found',
+            request_id: 'req-1',
+            error_code: 'NOT_FOUND',
+          })
+        );
       }
       return Promise.resolve({ data: null });
     });

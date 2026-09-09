@@ -96,4 +96,7 @@ class TestResponsePatterns:
             assert "message" in e.detail
             assert "error_code" in e.detail
             assert "Server error" in e.detail["message"]
-            assert e.detail["error_code"] == "INTERNAL_SERVER_ERROR"
+            # `INTERNAL_ERROR` is the shared envelope's code for a 500. The old
+            # handler overrode every 5xx code, so the previous default never
+            # reached a client; the envelope honours a route's own code.
+            assert e.detail["error_code"] == "INTERNAL_ERROR"

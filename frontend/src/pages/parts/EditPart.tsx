@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import useApiRequest from '../../hooks/UseApiRequest';
 import { useAuth } from '../../hooks/useAuth';
-import { partsApi } from '../../services/Api';
+import { partsApi } from '../../api/parts';
 
 import EditPartForm from '../../components/parts/EditPartForm';
 import PageHeader from '../../components/layout/PageHeader';

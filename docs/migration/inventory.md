@@ -65,13 +65,13 @@ The frontend is 283 TypeScript files under `frontend/src`, about 41,400 source
 lines plus 14,300 lines of colocated tests, on React 19, React Router 7, Tailwind
 4, and Vitest.
 
-Two facts shape most of the recommendations below. First, the platform
-`lambda-function` module cannot actually deploy an OCI image today even though it
-accepts an `image_uri`, and the `http-api` module supports many routes but only
-one integration, so both need changes before a single domain can be cut over.
-Second, the genuine cross-repository duplication with WebbPulse-Portfolio sits in
-the backend plumbing and in the frontend tooling configuration, not in the
-frontend application code.
+Two facts shape most of the recommendations below. First, the platform modules
+that a per-domain split needs have since been built and shipped for
+WebbPulse-Portfolio, so the two blockers this document originally recorded are
+closed; see the amendments section immediately below. Second, the genuine
+cross-repository duplication with WebbPulse-Portfolio sits in the backend
+plumbing and in the frontend tooling configuration, not in the frontend
+application code.
 
 Every count in this document was re-verified against the code after the first
 draft. The route totals in particular come from importing the app and
@@ -79,6 +79,35 @@ enumerating `app.routes`, because three modules generate CRUD routes at runtime
 that a decorator grep does not see. Where the first draft was wrong, the
 corrected figure is used and the error is noted inline so the reasoning that
 depended on it can be re-checked rather than silently inherited.
+
+## 0. Amendments since this inventory was first written
+
+WebbPulse-Portfolio was split into per-domain functions after this document was
+drafted. That work closed several questions this inventory left open and proved
+out the platform modules. Six corrections apply, and the body of the document
+has been edited to match.
+
+| Claim as originally written | Corrected |
+|---|---|
+| The shared Python package is named `webbpulse-core` | It is named `webbpulse`. The CodeArtifact domain is `webbpulse`, owner `432410731887`, repository `python` |
+| The `lambda-function` module cannot deploy an OCI image | It can. `package_type` is derived from the `code` shape, `runtime` and `handler` accept `null`, `image_config` is exposed, and `image_uri` is on `ignore_changes` |
+| The `http-api` module supports only one integration | It takes an `integrations` map and a `routes` map keyed by route key, plus `default_integration`. CarModPicker already consumes the fixed major version |
+| A new ECR module is needed | An `ecr-repository` module exists and is in use |
+| Alarms should extend the aggregate pattern to Lambda | `api-alarms` v2.1.0 does this through `lambda_function_names`, but the list is capped at ten functions. Nine domains plus the monolith is exactly ten, so the ceiling is reached on the last cut. See the split plan |
+| Nothing said about the base image | The shared base image is pinned by digest: `432410731887.dkr.ecr.us-west-2.amazonaws.com/webbpulse/python-lambda-base@sha256:b5298b4b773ad6c9e311057cf5d43f37ceb98f0367347d714c6817f250a5cef7` |
+
+Two further facts from the Portfolio work are recorded in
+`docs/migration/container-image-workflow-gaps.md` in that repository and are
+carried into the split plan rather than repeated here: the CodeArtifact token
+must reach the build as a BuildKit secret mount and never as a build argument,
+and `environment:` is not legal on a job that carries `uses:`, which is why the
+`resolve-env` job pattern exists.
+
+One correction of the opposite kind. CarModPicker's API prefix is `/api`, not
+`/api/v1`. Every route key in the API Gateway `routes` map differs from
+Portfolio's by that one segment, and the difference is easy to copy wrong.
+
+---
 
 ---
 
@@ -91,7 +120,7 @@ Classification key:
 - **lambda** means shareable but a Lambda or AWS-hosting adapter.
 - **app** means CarModPicker-specific and stays in this repository.
 
-The proposed shared package is named `webbpulse-core` in the new Python package
+The proposed shared package is named `webbpulse` in the new Python package
 repository. Module paths below are inside that distribution.
 
 ### Core, configuration, and observability
@@ -140,7 +169,7 @@ isolate even though they are not shareable across applications.
 | `app/db/dynamo/app_settings.py` | 47 | Singleton settings item | app | n/a | No |
 
 The repository layer is the agreed seam for the data store, so the generic half
-moving to `webbpulse-core` matters more than its line count suggests. It is also
+moving to `webbpulse` matters more than its line count suggests. It is also
 the single largest genuine duplication with Portfolio.
 
 ### API plumbing
@@ -680,7 +709,7 @@ built from `requirements-lambda.txt`, holding the interpreter and every third
 party dependency, including the heavy ones, Pillow, boto3, and the WebAuthn and
 crypto libraries. The nine domain images then add only first-party source, so
 each is small and each rebuild is fast. The base is rebuilt only when
-dependencies change, which is also where the `webbpulse-core` package from
+dependencies change, which is also where the `webbpulse` package from
 CodeArtifact is installed. Given nine images per deploy, this is the difference
 between a rebuild that ships a few hundred kilobytes and one that ships hundreds
 of megabytes nine times.
@@ -827,7 +856,7 @@ PostCSS pipeline.
 
 | File | Lines | Change |
 |---|---|---|
-| `lambda.tf` | 142 | Largest change. One `module "lambda_api"` becomes nine image-based functions, most naturally a `for_each` over a domains map. The four inline `aws_iam_role_policy` resources become per-domain policies scoped to the tables in section 2 instead of the current wildcard `table/carmodpicker-<env>-*`. `archive_file` and the `lambda_placeholder` directory are deleted. Every one of the nine policies keeps `secretsmanager:GetSecretValue`, because `load_app_secrets()` runs at import time in `config.py` and so every function needs it at cold start. `log_retention_days` 14 becomes 7 |
+| `lambda.tf` | 142 | Largest change. One `module "lambda_api"` becomes nine image-based functions, most naturally a `for_each` over a domains map. The four inline `aws_iam_role_policy` resources become per-domain policies scoped to the tables in section 2 instead of the current wildcard `table/carmodpicker-<env>-*`. `archive_file` and the `lambda_placeholder` directory are deleted. Only the domains that actually read a secret need `secretsmanager:GetSecretValue`. The import time `load_app_secrets()` in `config.py` is gone as of the lazy secret resolution PR, so a read only domain such as `vehicles` makes no Secrets Manager call and drops the grant. `log_retention_days` 14 becomes 7 |
 | `apigateway.tf` | 33 | `route_keys = ["$default"]` becomes an explicit path-prefix route map, one route per domain, each bound to its own integration. Per-route throttling is set here as layer 1 of the rate limiting standard. `access_log_retention_days` 14 becomes 7. Keep `$default` pointing at the monolith throughout the strangler migration |
 | New `ecr.tf` | n/a | One repository per domain per environment, each with a lifecycle rule, plus the base image repository. Nine domain repositories plus the base, per environment. Needs a new platform module |
 | `s3.tf` | 65 | `module "lambda_artifacts"` and the `carmodpicker-<env>-lambda-artifacts` bucket are removed once zips are gone. Keep until the last domain is cut over |
@@ -843,33 +872,27 @@ PostCSS pipeline.
 The registry is at v1.7.1 and all twelve modules are already consumed by this
 application. Three changes are needed.
 
-**`lambda-function` needs real image support, and this is a blocker.** The module
-looks like it already supports OCI images, since `code.image_uri` is accepted by
-the variable validation and passed to the resource. It does not work. Verified
-directly in the module source: `package_type` appears nowhere in the entire
-repository, so the function is always created as a Zip package; `runtime` and
-`handler` are both required variables with non-empty validations, and both are
-invalid on an Image function; `image_config` is not exposed; and `image_uri` is
-absent from the `ignore_changes` list, which today covers only `filename`,
-`source_code_hash`, `s3_bucket`, `s3_key`, and `s3_object_version`, so a CI
-`update-function-code --image-uri` would drift back on the next plan. Required
-new inputs and behaviour: set `package_type` from the `code` shape, make
-`runtime` and `handler` optional when `image_uri` is set, expose `image_config`,
-and add `image_uri` to `ignore_changes`.
+**`lambda-function` already supports OCI images.** When this inventory was first
+written the module was Zip-only: `package_type` appeared nowhere, `runtime` and
+`handler` were both required with non-empty validations, `image_config` was not
+exposed, and `image_uri` was absent from `ignore_changes`. All four were fixed
+while Portfolio was split. The module now sets `package_type` from the shape of
+the `code` object, accepts `runtime = null` and `handler = null` on an image
+function, exposes `image_config`, and carries `image_uri` on `ignore_changes` so
+a CI `UpdateFunctionCode` survives the next plan. Nothing further is needed here.
 
-**`http-api` needs multiple integrations.** `aws_apigatewayv2_integration.lambda`
-is a single non-iterated resource pointed at one `lambda_invoke_arn`.
-`route_keys` is a list with `for_each`, so many routes already work, but every
-route targets that one integration, and `authorizer_id` applies uniformly to all
-routes. Routing by path prefix to nine functions needs a route-to-integration map
-as a new input, ideally with an optional per-route authorizer.
+**`http-api` already supports a route-to-integration map.** The module took an
+`integrations` map and a `routes` map keyed by route key during the Portfolio
+split, alongside `default_integration`. CarModPicker already consumes the fixed
+major version, `~> 2.0`, and already passes a single integration under the key
+`legacy` with `default_integration = "legacy"` and `routes = {}`. Adding a
+domain is adding one entry to each map; the `legacy` key must be preserved
+verbatim because the module's `moved` blocks target it.
 
-**A new `ecr` module is needed.** No module under `modules/` creates an ECR
-repository. It needs a lifecycle policy input, image tag mutability, scan on
-push, and a repository policy allowing the application accounts to pull. It is
-called once per domain per environment, so it should take a single repository
-name and be invoked from a `for_each` in the application, rather than trying to
-own the whole set itself.
+**An `ecr-repository` module exists.** It creates one repository per call with a
+lifecycle policy input, image tag mutability, scan on push, and a repository
+policy allowing named accounts to pull. It is invoked from a `for_each` in the
+application, once per domain per environment.
 
 Also worth doing while the modules are open: `lambda-function` and `http-api`
 both validate `log_retention_days` and `access_log_retention_days` against the
@@ -947,8 +970,7 @@ rather than GitHub Actions.
 
 ## 6. Risks and open questions
 
-- The platform `lambda-function` module cannot deploy an OCI image today, so no domain can be cut over until that module ships a new version.
-- The `http-api` module supports one integration only, so path-prefix routing to nine functions is blocked on a second module change.
+- Resolved. The platform `lambda-function` module gained real image support, and `http-api` gained a route-to-integration map, both during the Portfolio split. Neither is a blocker any more.
 - Nine cold starts replace one, and the current 29 second integration timeout leaves no headroom if an image is large; the shared base image is the mitigation but needs measuring.
 - The user delete in `users.py` cascades writes into five other domains' tables. Section 2.1 settles the mechanism, a tombstone plus stream fan-out to per-domain cleanup handlers, but the eventual consistency it introduces means every read path must tolerate a half-cleaned entity.
 - `part_service.purge_related_rows_for_parts` writes to three other domains' tables and goes async by the same mechanism as the user cascade.
@@ -1000,12 +1022,12 @@ Sizes are rough: small is under 200 lines changed, medium 200 to 800, large abov
 | 23 | `users` domain, including the delete cascade going async | large | Deliberately last, it is the hardest coupling. Depends on PR 20 |
 | 24 | Retire the `$default` monolith route, the artifacts bucket, and the zip path | small | Only after every domain has run in production |
 | 25 | Log retention to 7 days everywhere | small | Single input change once the function set is stable |
-| 26 | `webbpulse-core` tier 1: secrets, Dynamo client, serialization, settings base, CORS, health and ready | medium | The near-identical, framework-neutral set. No conflicts to settle first. Blocked on the Platform account and CodeArtifact existing |
-| 27 | `webbpulse-core` OpenTelemetry module with lazy Lambda init | medium | Neutral core plus FastAPI and Lambda adapters. Land before the domain carve-outs so each domain adopts it on the way through |
+| 26 | `webbpulse` tier 1: secrets, Dynamo client, serialization, settings base, CORS, health and ready | medium | The near-identical, framework-neutral set. No conflicts to settle first. Blocked on the Platform account and CodeArtifact existing |
+| 27 | `webbpulse` OpenTelemetry module with lazy Lambda init | medium | Neutral core plus FastAPI and Lambda adapters. Land before the domain carve-outs so each domain adopts it on the way through |
 | 28 | Terraform: X-Ray, the error metric filter, and `api-alarms` wiring | small | Completes the observability path before the first domain relies on it. The Lambda role already carries the X-Ray write permissions |
-| 29 | `webbpulse-core` tier 2: repository, table specs, CRUD router | large | Requires the PyJWT decision and Portfolio's data-model migration to be scoped first |
-| 30 | CarModPicker consumes `webbpulse-core` | medium | Deletes the duplicated modules here |
-| 31 | Portfolio consumes `webbpulse-core` | medium | Proves the package is genuinely shared, not just extracted |
+| 29 | `webbpulse` tier 2: repository, table specs, CRUD router | large | Requires the PyJWT decision and Portfolio's data-model migration to be scoped first |
+| 30 | CarModPicker consumes `webbpulse` | medium | Deletes the duplicated modules here |
+| 31 | Portfolio consumes `webbpulse` | medium | Proves the package is genuinely shared, not just extracted |
 | 32 | Frontend: delete the `services/Api.ts` shim | medium | Rewrites 53 import sites onto `src/api/*`. Prerequisite for any HTTP package extraction |
 | 33 | `@webbpulse/tsconfig`, `eslint-config`, `prettier-config` | small | The real near-term frontend win, no runtime risk |
 | 34 | `@webbpulse/ui` and `@webbpulse/react` | large | Blocked on aligning Tailwind versions with Portfolio |

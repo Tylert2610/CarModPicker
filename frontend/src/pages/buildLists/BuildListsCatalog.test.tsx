@@ -9,25 +9,11 @@
 // Tests exercise: (1) render with data, (2) empty state, (3) car_id URL
 // deeplink forwards to API.
 //
-// Per PATTERNS.md Gotcha #8 the global setup.ts vi.mock('../services/Api',
-// { default: mockApiClient }) strips named re-exports; restore them via
-// vi.importActual so buildListsApi / carGenerationsApi resolve to real
-// domain objects that call through the mocked ../api/client.
-
-/* eslint-disable @typescript-eslint/unbound-method --
- * vi.mocked(apiClient.get) is the canonical Vitest pattern for typed mock
- * introspection; ESLint's unbound-method rule is a false positive here.
- */
+// buildListsApi and carGenerationsApi come from their `../../api/<domain>`
+// modules, which call through the apiClient that setup.ts mocks, so no
+// per-file module mock is needed.
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-
-vi.mock('../../services/Api', async () => {
-  const actual =
-    await vi.importActual<typeof import('../../services/Api')>(
-      '../../services/Api'
-    );
-  return actual;
-});
 
 import { MemoryRouter } from 'react-router-dom';
 import { render, screen, waitFor } from '@testing-library/react';

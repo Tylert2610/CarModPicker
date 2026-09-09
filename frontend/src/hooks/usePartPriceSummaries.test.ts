@@ -1,12 +1,6 @@
-/* eslint-disable @typescript-eslint/unbound-method --
- * vi.mocked(apiClient.post).mockResolvedValueOnce(...) is the canonical
- * Wave 1 mocking pattern. The unbound-method rule flags the reference
- * syntactically but vi.mocked returns a spy wrapper, so `this` binding is
- * not a concern in practice.
- */
 import { renderHook, waitFor, act } from '@testing-library/react';
-import { AxiosHeaders, type AxiosResponse } from 'axios';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { buildResponse } from '../test/apiResponse';
 import { apiClient } from '../api/client';
 import { usePartPriceSummaries } from './usePartPriceSummaries';
 import type {
@@ -16,16 +10,6 @@ import type {
 
 // apiClient is mocked globally via setup.ts (D-18) — extend per-test with
 // vi.mocked(apiClient.post).mockResolvedValueOnce(...) / mockRejectedValueOnce.
-
-function buildResponse<T>(data: T): AxiosResponse<T> {
-  return {
-    data,
-    status: 200,
-    statusText: 'OK',
-    headers: {},
-    config: { headers: new AxiosHeaders() },
-  };
-}
 
 function makeSummary(
   overrides: Partial<PriceHistorySummary> = {}

@@ -25,6 +25,33 @@ data "aws_iam_policy_document" "user_images_rw" {
   }
 }
 
+# The shared rate limiter's grant, layer 2 of the rate limiting standard.
+#
+# The wildcard statement below already covers `<prefix>-rate-limits`, so this adds no
+# effective permission today. It is written separately and scoped to the one table,
+# with only the four actions the limiter actually calls, because the per-domain split
+# replaces that wildcard with per-function policies: at that point every domain needs
+# the limiter grant and no domain should inherit read/write on every other domain's
+# tables to get it. Having the narrow statement already named and tested means the
+# split moves a known-good block rather than deriving a new one under time pressure.
+#
+# DescribeTable is deliberately absent. The limiter never calls it, and a limiter that
+# fails open has no reason to probe the table's existence.
+data "aws_iam_policy_document" "dynamodb_rate_limits_rw" {
+  statement {
+    sid = "SharedRateLimiterCounters"
+
+    actions = [
+      "dynamodb:GetItem",
+      "dynamodb:PutItem",
+      "dynamodb:UpdateItem",
+      "dynamodb:DeleteItem",
+    ]
+
+    resources = [module.dynamodb.table_arns["rate-limits"]]
+  }
+}
+
 data "aws_iam_policy_document" "dynamodb_tables_rw" {
   statement {
     actions = [
@@ -69,6 +96,12 @@ resource "aws_iam_role_policy" "lambda_api_dynamodb" {
   policy = data.aws_iam_policy_document.dynamodb_tables_rw.json
 }
 
+resource "aws_iam_role_policy" "lambda_api_rate_limits" {
+  name   = "dynamodb-rate-limits"
+  role   = module.lambda_api.role_id
+  policy = data.aws_iam_policy_document.dynamodb_rate_limits_rw.json
+}
+
 resource "aws_iam_role_policy" "lambda_api_ses" {
   name   = "ses-send"
   role   = module.lambda_api.role_id
@@ -107,9 +140,14 @@ locals {
     AWS_EMF_ENVIRONMENT   = "Local"
     RUN_STARTUP_TASKS     = "false"
     DYNAMODB_TABLE_PREFIX = local.prefix
-    APP_SECRETS_ARN       = module.app_secrets.arns["app"]
-    FRONTEND_URL          = local.frontend_url
-    ALLOWED_ORIGINS       = local.allowed_origins
+    # Layer 2 of the rate limiting standard. The name is passed explicitly rather than
+    # left to the prefix convention so the function and the table cannot drift to
+    # different names, and so a plan error rather than a runtime fail-open is what
+    # surfaces if the table is ever renamed or re-keyed.
+    RATE_LIMITS_TABLE = module.dynamodb.table_names["rate-limits"]
+    APP_SECRETS_ARN   = module.app_secrets.arns["app"]
+    FRONTEND_URL      = local.frontend_url
+    ALLOWED_ORIGINS   = local.allowed_origins
   } : key => value if value != "" }
 }
 
@@ -140,7 +178,7 @@ module "lambda_api" {
 
   environment_variables = local.lambda_environment
 
-  log_retention_days    = 14
+  log_retention_days    = 7
   log_format            = "JSON"
   application_log_level = "INFO"
   system_log_level      = "INFO"

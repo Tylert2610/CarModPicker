@@ -16,10 +16,10 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",
-    "@types/chrome": "^0.2.7",
+    "@types/chrome": "^0.2.8",
     "@types/node": "^25.8.0",
     "@types/react": "^19.2.18",
-    "@types/react-dom": "^19.2.5",
+    "@types/react-dom": "^19.2.7",
     "@vitejs/plugin-react-swc": "^4.3.3",
     "canvas": "^3.2.3",
     "sharp": "^0.35.3",

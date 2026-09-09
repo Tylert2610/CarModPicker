@@ -43,6 +43,32 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # The frontend depends on the private @webbpulse/* packages, so npm needs
+      # a CodeArtifact token before `npm ci` can resolve them.
+      #
+      # Run from the repository root, NOT from frontend/. Inside a package that
+      # is part of a workspace the CLI writes the registry line into that
+      # package's .npmrc, which is the checked-in file, and the token would then
+      # land in a tracked path. From the root it writes ~/.npmrc, where the
+      # token belongs.
+      - name: Log in to CodeArtifact for npm
+        env:
+          CODEARTIFACT_DOMAIN_OWNER: ${{ vars.CODEARTIFACT_DOMAIN_OWNER }}
+        run: |
+          set -euo pipefail
+          aws codeartifact login \
+            --tool npm \
+            --domain webbpulse \
+            --domain-owner "$CODEARTIFACT_DOMAIN_OWNER" \
+            --repository npm \
+            --namespace @webbpulse
+
       - name: Install dependencies
         working-directory: frontend
         run: npm ci
@@ -56,12 +82,6 @@ jobs:
           # page refuses to send the JWT to any extension in production builds.
           VITE_ALLOWED_EXTENSION_IDS: ${{ vars.CWS_EXTENSION_ID }}
         run: npm run build
-
-      - name: Configure AWS credentials via OIDC
-        uses: aws-actions/configure-aws-credentials@v6
-        with:
-          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
 
       # Wait for HCP Terraform to finish before touching S3/CloudFront.
       # Polls every 15 s for up to 10 min (40 attempts).

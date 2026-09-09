@@ -1,8 +1,3 @@
-/* eslint-disable @typescript-eslint/unbound-method --
- * vi.mocked(apiClient.get) is the canonical Wave 1 mocking pattern. The
- * unbound-method rule flags the reference syntactically; vi.mocked returns
- * a spy so `this` binding is not a real concern here.
- */
 import type { ReactNode } from 'react';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
@@ -20,43 +15,9 @@ import { usePartsFilters } from './usePartsFilters';
 // URL-derived initialization, setter branches, and clearAllFilters reset.
 //
 // The hook imports `partsApi`, `categoriesApi`, `carGenerationsApi`, and
-// `partManufacturersApi` from `../services/Api` (the re-export shim). The
-// global setup.ts mock only exposes the default apiClient — it does not
-// replicate the per-domain named exports the shim re-exports. So we mock
-// services/Api here with thin proxies that forward through apiClient.
-vi.mock('../services/Api', async () => {
-  // Import the ALREADY-MOCKED apiClient from api/client (setup.ts D-18).
-  // Using vi.importActual here would hit the real axios instance against
-  // localhost:3000 in jsdom — we want the same spy-backed mock everywhere.
-  const clientMod = await import('../api/client');
-  const client = clientMod.apiClient;
-  return {
-    default: client,
-    apiClient: client,
-    partsApi: {
-      getFilterOptions: (params?: unknown) =>
-        client.get('/parts/filter-options', { params }),
-    },
-    categoriesApi: {
-      getCategories: () => client.get('/categories/'),
-    },
-    partManufacturersApi: {
-      getPartManufacturers: (active = true) =>
-        client.get('/part-manufacturers/', {
-          params: { active_only: active },
-        }),
-    },
-    carGenerationsApi: {
-      getCar: (id: string) => client.get(`/car-generations/${id}`),
-      getCarsByMake: (make: string, params?: unknown) =>
-        client.get(`/car-generations/make/${make}`, { params }),
-      getCarMakeStats: () => client.get('/car-generations/stats/makes'),
-    },
-  };
-});
-
-// The hook also pulls apiClient through `../api/client`, which is already
-// globally mocked via setup.ts — no per-file mock needed there.
+// `partManufacturersApi` from their `../api/<domain>` modules. Those modules
+// call the shared apiClient, which setup.ts already mocks, so no per-file
+// module mock is needed.
 
 function routerWrapper(initialEntries: string[]) {
   const Wrapper = ({ children }: { children: ReactNode }) => (
@@ -76,7 +37,7 @@ beforeEach(() => {
     if (url === '/part-manufacturers/') {
       return Promise.resolve({ data: [] });
     }
-    if (url.startsWith('/car-generations/stats/makes')) {
+    if (url.startsWith('/car-generations/stats/car-makes')) {
       return Promise.resolve({ data: { Toyota: 1 } });
     }
     if (url.startsWith('/car-generations/') && !url.includes('filter')) {

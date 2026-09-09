@@ -1,0 +1,748 @@
+# Deploy Backend: the per-domain container image build and deploy.
+#
+# This is section 4 of `docs/migration/split-plan.md`, row 12 of section 8. The
+# chain is `resolve-env`, `build-images`, `image-map`, `deploy-images`,
+# `smoke-domains`: it builds the nine domain images from the one
+# `backend/Dockerfile`, collects their digest pinned URIs into a map, points the
+# domain functions at them and probes each one.
+#
+# **It does not deploy the monolith, and it does not replace the job that does.**
+# `backend-deploy.yml` still builds `function.zip`, waits on HCP Terraform, calls
+# `update-function-code` on `carmodpicker-staging-api` and publishes a version.
+# That function is the only one serving traffic: the nine domain functions do not
+# exist until row 13, and no API Gateway route points at one until row 14. So the
+# zip chain is untouched and lives in its own workflow file, and this one runs
+# beside it rather than in it. An image build or an image deploy that fails must
+# never hold back or roll back the deploy that actually serves requests, and two
+# separate workflow files is the strongest form of that guarantee: they cannot
+# share a `needs` edge even by accident.
+#
+# Section 4 describes this as replacing `backend-deploy.yml`'s build half while
+# leaving its zip chain intact. Splitting the file is how that is done here.
+# Section 6.5 retires the zip chain, and that is the PR that deletes
+# `backend-deploy.yml` outright; until then editing it at all would put the
+# monolith's deploy at risk for no gain.
+#
+# Two repository variables gate the two halves separately, matching what
+# Portfolio ran while its own monolith was still serving:
+#
+# - `BACKEND_IMAGE_BUILD_ENABLED` turns on the build. An enabled run leaves nine
+#   images in ECR and changes no behaviour anywhere, because nothing pulls them.
+# - `BACKEND_IMAGE_DEPLOY_ENABLED` turns on the deploy. It needs the functions to
+#   exist, so it stays off until row 13 is applied.
+#
+# Both default to off by absence: an unset variable is the empty string and
+# neither `if` matches it. That is deliberate. The first enabled run of either
+# half should be a deliberate act rather than a side effect of this merge.
+#
+# `deploy-images` and `smoke-domains` additionally filter the map down to the
+# functions that actually exist, so the estate row 13 leaves half built (one
+# domain function created, eight not) deploys the one and skips the eight rather
+# than failing on `ResourceNotFoundException`. See the `existing-functions` job.
+name: Deploy Backend
+
+on:
+  # Manual runs matter more than usual here. This workflow triggers on push to
+  # `staging` and `main`, never on a pull request, so its first real execution is
+  # after a merge. `workflow_dispatch` is what lets the first build of the nine
+  # images be started and watched on purpose.
+  workflow_dispatch:
+  push:
+    branches: [main, staging]
+    paths:
+      - "backend/**"
+      - ".github/workflows/deploy-backend.yml"
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  # Deliberately not `backend-deploy-${{ github.ref_name }}`, which is what
+  # `backend-deploy.yml` uses. Sharing a group would make the zip deploy and the
+  # image build queue behind one another, which is the coupling this file exists
+  # to avoid.
+  group: backend-images-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  # The environment scoped values the image jobs need, read in a job that can
+  # actually see them.
+  #
+  # `vars.AWS_DEPLOY_ROLE_ARN` is defined on the GitHub Environment, not at the
+  # repository level, so only a job with an `environment:` key resolves it. The
+  # `build-images` job cannot have one: it calls a reusable workflow with `uses:`,
+  # and that form rejects every key outside a short allowlist. The reusable
+  # workflow binds the environment itself from its `environment` input, but
+  # `role-to-assume` is a required secret the caller must still pass, and the
+  # caller is exactly the job that cannot read it.
+  #
+  # So this job reads it. It runs no build and touches no AWS: it exists to move
+  # one environment scoped value into a job output the later jobs interpolate.
+  # That keeps the ARN on the environment where it belongs rather than duplicated
+  # into a repository level variable where staging and production would drift.
+  #
+  # Section 4 warns about this specifically: putting `environment:` on a `uses:`
+  # job fails in a way that is easy to miss, and Portfolio lost an hour to it with
+  # actionlint reporting it correctly and the report dismissed. Run actionlint on
+  # this workflow and believe it.
+  resolve-env:
+    if: vars.BACKEND_IMAGE_BUILD_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    environment: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
+    permissions: {}
+    outputs:
+      name: ${{ steps.values.outputs.name }}
+      role-arn: ${{ steps.values.outputs.role-arn }}
+    steps:
+      # The ARN is an identifier rather than a credential, which is why it is held
+      # in `vars` rather than `secrets`, so passing it through a job output
+      # discloses nothing `vars` did not already. A job output cannot carry a
+      # secret's masking anyway, which is the other half of why this works only
+      # because the value is a var.
+      - name: Resolve the environment values
+        id: values
+        env:
+          ENVIRONMENT: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
+          ROLE_TO_ASSUME: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+        run: |
+          set -euo pipefail
+          if [ -z "$ROLE_TO_ASSUME" ]; then
+            echo "vars.AWS_DEPLOY_ROLE_ARN is not set on the ${ENVIRONMENT} environment."
+            exit 1
+          fi
+          echo "Environment: ${ENVIRONMENT}"
+          echo "name=${ENVIRONMENT}" >> "$GITHUB_OUTPUT"
+          echo "role-arn=${ROLE_TO_ASSUME}" >> "$GITHUB_OUTPUT"
+
+  # The nine domain images. A matrix over the domains rather than nine copies of
+  # one job, `fail-fast: false` so one domain's failure still reports on the other
+  # eight: at this stage the point of the job is the information, since nothing
+  # pulls the images yet.
+  #
+  # The domain list is `local.lambda_domains` from `terraform/ecr.tf`, in the
+  # order section 6.1 cuts them over. The same nine names are the ECR repository
+  # suffixes, the function name suffixes and the `DOMAIN` build argument, which is
+  # what lets one list serve all three.
+  #
+  # The environment is bound inside the reusable workflow via its `environment`
+  # input rather than by a job level `environment:` key here, because a job
+  # calling a reusable workflow with `uses:` may only carry `name`, `uses`,
+  # `with`, `secrets`, `needs`, `if` and `permissions`. Adding `environment:`
+  # alongside `uses:` makes GitHub reject the whole workflow file, which fails the
+  # run with zero jobs and an error naming no job at all.
+  #
+  # The deploy role already carries the three grants this needs, all from PR #327:
+  # ECR push on the nine `carmodpicker-<env>/<domain>` repositories, ECR pull on
+  # `webbpulse/python-lambda-base` in the Artifacts account, and CodeArtifact read
+  # plus `sts:GetServiceBearerToken`.
+  build-images:
+    needs: resolve-env
+    strategy:
+      fail-fast: false
+      matrix:
+        domain:
+          - media
+          - build-logs
+          - moderation
+          - vehicles
+          - admin
+          - build-lists
+          - identity
+          - catalog
+          - users
+    # A called workflow cannot hold permissions wider than the caller's grant, and
+    # a job level block replaces rather than merges with the top level one, so
+    # both are named here even though the top level block already says this.
+    # Getting it wrong fails the run before any step, with an error naming the
+    # permission rather than the credential.
+    permissions:
+      contents: read
+      id-token: write
+    # Pinned to the exact tag section 4 names rather than to the `v1` moving tag.
+    # v1.2.1 is the first release carrying every input below; a floating major
+    # would make this workflow's behaviour change without a commit here.
+    uses: WebbPulse/.github/.github/workflows/container-image.yml@v1.2.1
+    with:
+      # Binds the called job to the GitHub Environment, which is what the deploy
+      # role's OIDC subject requires. It cannot be a job level `environment:` key
+      # here, for the reason in the comment above.
+      environment: ${{ needs.resolve-env.outputs.name }}
+      # Repository names come from `terraform/ecr.tf`: `name_prefix` is
+      # `carmodpicker-<environment>` and the nine map keys are the domains, so the
+      # repository is `carmodpicker-<env>/<domain>`. The registry host is not
+      # spelled here at all. The reusable workflow resolves the caller's own
+      # account from the assumed identity, so the account id stays out of the
+      # repository and staging and production do not drift apart.
+      ecr-repository: carmodpicker-${{ needs.resolve-env.outputs.name }}/${{ matrix.domain }}
+      aws-region: us-west-2
+      context: backend
+      dockerfile: backend/Dockerfile
+      # Single platform. Lambda rejects an OCI image index, and the reusable
+      # workflow disables provenance and SBOM attestations for the same reason.
+      # arm64 matches the base image and what `terraform/lambda_domains.tf` will
+      # declare in row 13; open question 7 in the plan is confirmed by this build
+      # succeeding, since Pillow, bcrypt and webauthn are the three native pins.
+      platform: linux/arm64
+      # The only build argument the Dockerfile takes. There is no
+      # `READINESS_PROTOCOL` here, unlike Portfolio's caller: CarModPicker's
+      # `/health` is a static dictionary in `add_root_routes` and `/ready` is the
+      # one that reads DynamoDB, so all nine poll `/health` over HTTP and none
+      # needs Portfolio's `tcp` fallback. The Dockerfile sets
+      # `AWS_LWA_READINESS_CHECK_PROTOCOL=http` unconditionally and takes no
+      # argument for it, so passing one would fail the build on an unused
+      # argument warning at best and be silently ignored at worst.
+      build-args: |
+        DOMAIN=${{ matrix.domain }}
+      # The token is minted after the credentials step and handed to buildx as a
+      # BuildKit secret named `codeartifact_token`, which is the id the
+      # Dockerfile's `RUN --mount=type=secret,id=codeartifact_token` reads. The
+      # default `codeartifact-secret-id` already spells that, so it is not
+      # repeated here. It is never a build argument: a build argument lands in
+      # `docker history` and is readable by anyone who can pull the image.
+      #
+      # `CODEARTIFACT_DOMAIN_OWNER` is a repository level variable rather than an
+      # environment one, because the Artifacts account is the same account for
+      # both environments. `resolve-env` therefore does not need to carry it.
+      codeartifact-domain: webbpulse
+      codeartifact-domain-owner: ${{ vars.CODEARTIFACT_DOMAIN_OWNER }}
+      codeartifact-repository: python
+      # The Artifacts account. The Dockerfile's `FROM` pins the shared
+      # `webbpulse/python-lambda-base` image there by digest, and without a Docker
+      # credential for that host the pull fails with a 401 that looks nothing like
+      # the IAM grant it is not missing. The caller's own account is added by the
+      # reusable workflow, so only the second one is named.
+      additional-ecr-registries: "432410731887"
+      # `terraform/ecr.tf` sets IMMUTABLE tags, so a rerun of a workflow for the
+      # same commit would fail the push rather than overwrite. The guard skips the
+      # build and emits the existing digest instead. It resolves the tag with
+      # `aws ecr batch-get-image` rather than `describe-images`, which is the
+      # distinction section 4 calls out: `describe-images` can return metadata for
+      # a tag that has no manifest, so it reports a false positive and the deploy
+      # then points a function at nothing. This is the reusable workflow's default;
+      # it is named explicitly because the immutability that makes it necessary is
+      # this estate's choice rather than the workflow's.
+      skip-if-tag-exists: true
+      # One JSON manifest per matrix leg, named `image-*`, because a matrix of
+      # reusable workflow calls collapses to a single `needs` entry whose
+      # `outputs` hold whichever leg finished last. The artifacts are how
+      # `image-map` below reads all nine digests back.
+      upload-manifest-artifact: true
+    secrets:
+      # From `resolve-env`, not from `vars` directly: this job has no
+      # `environment:` key, so it cannot see an environment scoped variable.
+      role-to-assume: ${{ needs.resolve-env.outputs.role-arn }}
+
+  # The digest pinned URIs, collected into the one JSON object `deploy-images`
+  # hands to `lambda-image-deploy.yml` as `function-image-map`. Written to the job
+  # summary so it is visible on every run, and uploaded as the `function-image-map`
+  # artifact so a person can read it off a run without re-deriving anything.
+  #
+  # Keyed by function name. `terraform/lambda_domains.tf` does not exist yet, so
+  # these names are what row 13 will create: section 3.3 specifies
+  # `function_name = "${local.prefix}-${each.key}"`, which is
+  # `carmodpicker-<env>-<domain>`. The nine names already appear in the deploy
+  # role's policy from PR #327, so they are settled rather than guessed.
+  #
+  # `always()` so a partial matrix still reports the domains that did build: the
+  # download picks up whatever artifacts the successful legs uploaded, and a
+  # missing domain is a missing key rather than a failed job.
+  image-map:
+    needs: [resolve-env, build-images]
+    if: always() && needs.build-images.result != 'skipped'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      function-image-map: ${{ steps.map.outputs.function-image-map }}
+    steps:
+      # `merge-multiple: true` lands one JSON file per leg in `manifests/` without
+      # a per artifact subdirectory. Each file is named after its artifact,
+      # `image-<sanitised repository>-<tag>.json`, so the nine cannot collide.
+      #
+      # `continue-on-error` because this job runs under `always()`: if every matrix
+      # leg failed there are no `image-*` artifacts at all, and the download errors
+      # on finding nothing. The right outcome then is an empty map and a summary
+      # saying so, not a second red job restating what `build-images` reported.
+      - name: Download the per-domain image manifests
+        continue-on-error: true
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          path: manifests
+          pattern: image-*
+          merge-multiple: true
+
+      - name: Assemble the function image map
+        id: map
+        env:
+          ENVIRONMENT: ${{ needs.resolve-env.outputs.name }}
+        run: |
+          set -euo pipefail
+          mkdir -p manifests
+          python3 - <<'PY' > function-image-map.json
+          import json, os, pathlib
+
+          env = os.environ["ENVIRONMENT"]
+          out = {}
+          for path in sorted(pathlib.Path("manifests").glob("*.json")):
+              manifest = json.loads(path.read_text())
+              # "carmodpicker-staging/media" -> "media"
+              domain = manifest["repository"].rsplit("/", 1)[-1]
+              out[f"carmodpicker-{env}-{domain}"] = manifest["image_uri"]
+          print(json.dumps(out, indent=2))
+          PY
+          cat function-image-map.json
+
+          # The step output is the compact form, because it is a workflow output
+          # rather than something a person reads.
+          MAP=$(python3 -c 'import json,sys; print(json.dumps(json.load(open("function-image-map.json"))))')
+          echo "function-image-map=${MAP}" >> "$GITHUB_OUTPUT"
+
+      - name: Write the image map to the summary
+        env:
+          RESULT: ${{ needs.build-images.result }}
+        run: |
+          set -euo pipefail
+          {
+            echo "## Domain images"
+            echo
+            echo "Matrix result: \`${RESULT}\`. Tag: \`sha-${GITHUB_SHA}\`."
+            echo
+            echo "The map passed to \`lambda-image-deploy.yml\` as"
+            echo "\`function-image-map\`, filtered to the functions that exist."
+            echo "Every value is pinned by digest, not by tag."
+            echo
+            echo '```json'
+            cat function-image-map.json
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Uploaded so a person reading a run can see the map without re-deriving it.
+      # The name is fixed, not `image-*`, so the download above never picks its own
+      # output up on a rerun.
+      - name: Upload the function image map
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: function-image-map
+          path: function-image-map.json
+          if-no-files-found: error
+          retention-days: 7
+          overwrite: true
+
+  # The map, narrowed to the functions that actually exist right now.
+  #
+  # This job is the whole answer to the sequencing constraint, and it is the one
+  # thing here Portfolio did not need. Portfolio applied the Terraform that created
+  # all four of its functions before it ever turned its deploy gate on, so its
+  # `deploy-images` was either fully off or fully on. CarModPicker's row 13 creates
+  # `media` alone and rows 18 through 31 add the other eight one at a time, so for
+  # most of this migration the truthful state is "some of the nine exist". A map
+  # naming a function that does not exist fails
+  # `aws lambda wait function-updated-v2` with `ResourceNotFoundException` and
+  # takes the whole deploy job red, including the domains that would have
+  # succeeded.
+  #
+  # So the map is filtered before it is handed over. `GetFunctionConfiguration` is
+  # already granted on all nine plus the monolith by PR #327's policy, and it is
+  # the cheapest call that distinguishes "exists" from "does not". A 404 is the
+  # expected answer for eight of nine today and is not an error here.
+  #
+  # The filter is a `needs` dependency of both `deploy-images` and
+  # `smoke-domains`, so both skip cleanly when nothing exists: the map is `{}` and
+  # the string comparison below catches it.
+  existing-functions:
+    needs: [resolve-env, image-map]
+    if: >-
+      always()
+      && needs.image-map.result == 'success'
+      && vars.BACKEND_IMAGE_DEPLOY_ENABLED == 'true'
+      && needs.image-map.outputs.function-image-map != ''
+      && needs.image-map.outputs.function-image-map != '{}'
+    runs-on: ubuntu-latest
+    environment: ${{ needs.resolve-env.outputs.name }}
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      function-image-map: ${{ steps.filter.outputs.function-image-map }}
+    steps:
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c # v6.2.4
+        with:
+          role-to-assume: ${{ needs.resolve-env.outputs.role-arn }}
+          aws-region: us-west-2
+
+      - name: Drop the functions that do not exist yet
+        id: filter
+        env:
+          FUNCTION_IMAGE_MAP: ${{ needs.image-map.outputs.function-image-map }}
+        run: |
+          set -euo pipefail
+
+          FUNCTIONS=$(printf '%s' "$FUNCTION_IMAGE_MAP" \
+            | python3 -c 'import json,sys; print("\n".join(sorted(json.load(sys.stdin))))')
+
+          PRESENT=""
+          MISSING=""
+          while IFS= read -r FUNCTION; do
+            [ -n "$FUNCTION" ] || continue
+            # Only a genuine 404 means "not created yet". Any other failure, an
+            # expired credential or a denied call, must not be read as absence:
+            # that would silently deploy nothing and report success. So the error
+            # text is matched rather than the exit status alone.
+            set +e
+            ERR=$(aws lambda get-function-configuration \
+              --function-name "$FUNCTION" \
+              --query 'FunctionName' --output text 2>&1 >/dev/null)
+            STATUS=$?
+            set -e
+
+            if [ "$STATUS" -eq 0 ]; then
+              PRESENT="${PRESENT}${FUNCTION}\n"
+              continue
+            fi
+
+            case "$ERR" in
+              *ResourceNotFoundException*|*"Function not found"*)
+                MISSING="${MISSING}${FUNCTION}\n"
+                ;;
+              *)
+                echo "$ERR"
+                echo "get-function-configuration failed for ${FUNCTION} for a reason other than the function not existing."
+                exit 1
+                ;;
+            esac
+          done <<< "$FUNCTIONS"
+
+          printf '%s' "$FUNCTION_IMAGE_MAP" \
+            | PRESENT="$(printf "%b" "$PRESENT")" python3 -c '
+          import json, os, sys
+
+          full = json.load(sys.stdin)
+          present = {n for n in os.environ["PRESENT"].split("\n") if n}
+          json.dump({k: v for k, v in full.items() if k in present}, open("deploy-map.json", "w"), indent=2)
+          '
+
+          MAP=$(python3 -c 'import json; print(json.dumps(json.load(open("deploy-map.json"))))')
+          echo "function-image-map=${MAP}" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "## Deploy targets"
+            echo
+            if [ -n "$PRESENT" ]; then
+              echo "Deploying:"
+              echo
+              printf "%b" "$PRESENT" | sed 's/^/- `/; s/$/`/'
+            else
+              echo "No domain function exists yet, so nothing is deployed. The images"
+              echo "are built and pushed; row 13 of the split plan creates the first"
+              echo "function and the next run deploys it."
+            fi
+            if [ -n "$MISSING" ]; then
+              echo
+              echo "Not created yet, skipped:"
+              echo
+              printf "%b" "$MISSING" | sed 's/^/- `/; s/$/`/'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # The domain functions that exist, pointed at the images `image-map` assembled.
+  #
+  # This calls the org reusable workflow rather than running `update-function-code`
+  # here, because that workflow already holds the two things this deploy needs and
+  # a hand written step would have to grow: it waits with `function-updated-v2`
+  # before the update as well as after, and it retries `ResourceConflictException`
+  # with a backoff. Terraform owns the function configuration in this estate, so an
+  # apply in flight when a deploy starts is the ordinary case rather than the
+  # exceptional one, and while `LastUpdateStatus` is `InProgress` every one of
+  # `UpdateFunctionCode`, `UpdateFunctionConfiguration` and `PublishVersion` fails.
+  #
+  # Section 4 requires the HCP Terraform wait to be taken **once**, before the
+  # deploys, rather than once per domain. That is satisfied by construction: this
+  # is a single job deploying every function in one loop, not a matrix, so there is
+  # one gate and the window an apply can race holds only the update calls. The
+  # reusable workflow's own `function-updated-v2` wait is that gate.
+  #
+  # `function-image-map` goes in as a string input, not as an artifact. The
+  # reusable workflow takes only the string form, parses it with `json.loads` and
+  # rejects anything that is not a non empty JSON object, which is exactly why
+  # `existing-functions` filters it first and why the `if` below tests the filtered
+  # map against `'{}'`.
+  #
+  # `smoke-url` is deliberately not passed. The reusable workflow's smoke test is a
+  # `curl` against one URL, and these functions have no API Gateway route until row
+  # 14: a request to `api.staging.carmodpicker.com` reaches the monolith and passes
+  # whether or not the domain image works at all. That is the false confidence
+  # section 4 names. The probes live in `smoke-domains` below.
+  deploy-images:
+    needs: [resolve-env, existing-functions]
+    # Every domain's build can succeed and the deploy still have nothing to do,
+    # because no function exists yet. That is the ordinary state until row 13, so
+    # it is a skip rather than a failure. The comparison is textual because a job
+    # level `if` cannot call `fromJSON` and get an empty-object test any more
+    # cheaply.
+    if: >-
+      needs.existing-functions.result == 'success'
+      && needs.existing-functions.outputs.function-image-map != ''
+      && needs.existing-functions.outputs.function-image-map != '{}'
+    # A called workflow cannot hold permissions wider than the caller's grant, and
+    # a job level block replaces rather than merges with the top level one.
+    permissions:
+      contents: read
+      id-token: write
+    uses: WebbPulse/.github/.github/workflows/lambda-image-deploy.yml@v1.2.1
+    with:
+      # Binds the called job to the GitHub Environment, for the same reason
+      # `build-images` does.
+      environment: ${{ needs.resolve-env.outputs.name }}
+      aws-region: us-west-2
+      # Every value is `<registry>/<repository>@sha256:...`, pinned by digest
+      # rather than by tag, and every key is `carmodpicker-<env>-<domain>`. The map
+      # is assembled from the per leg manifests and then filtered to what exists,
+      # so a domain whose build failed and a domain not yet created are both simply
+      # absent, and the rest still deploy.
+      function-image-map: ${{ needs.existing-functions.outputs.function-image-map }}
+      # Publish a version per deploy, matching what the monolith's
+      # `update-function-code --publish` already does in `backend-deploy.yml`, so a
+      # bad image can be rolled back to a numbered version rather than to a tag.
+      publish-version: true
+      # Named rather than left to the default, which is the workflow name plus the
+      # ref. Two deploys for the same environment must not overlap, and the
+      # environment is the thing that makes them collide.
+      concurrency-group: backend-image-deploy-${{ needs.resolve-env.outputs.name }}
+    secrets:
+      # From `resolve-env`, not from `vars` directly: this job has no
+      # `environment:` key, so it cannot see an environment scoped variable.
+      role-to-assume: ${{ needs.resolve-env.outputs.role-arn }}
+
+  # One probe per deployed domain, against the function itself.
+  #
+  # Section 4 says the smoke test must probe one path per domain, and section 6.3
+  # says a route flip is only verified when the request actually reaches the new
+  # function. Neither is possible over HTTP yet: the domain functions have no API
+  # Gateway route until row 14, so a `curl` at `api.staging.carmodpicker.com`
+  # reaches the monolith and passes whether or not the domain image works at all.
+  #
+  # So the probe is `lambda invoke` with a synthesised API Gateway HTTP API v2
+  # payload. The Lambda Web Adapter reads that shape directly: it turns `rawPath`,
+  # `requestContext.http.method` and the headers into an ordinary HTTP request
+  # against `127.0.0.1:$AWS_LWA_PORT` and turns the response back into the
+  # `{statusCode, headers, body}` object this step asserts on. Invoking the
+  # function is therefore the same code path a real request takes once the route
+  # exists, minus the gateway. This is what needs the `lambda:InvokeFunction` grant
+  # from section 3.2, which PR #327 added on all nine.
+  #
+  # `GET /health` is the route for all nine. `add_root_routes` in
+  # `app/composition/wiring.py` gives every application the same static `/health`,
+  # so no domain needs a credential, a body or a path parameter to answer it. It is
+  # also the path `AWS_LWA_READINESS_CHECK_PATH` names in the Dockerfile, so a
+  # function that fails this probe would never have passed its own readiness check
+  # either.
+  smoke-domains:
+    needs: [resolve-env, existing-functions, deploy-images]
+    if: needs.deploy-images.result == 'success'
+    runs-on: ubuntu-latest
+    environment: ${{ needs.resolve-env.outputs.name }}
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c # v6.2.4
+        with:
+          role-to-assume: ${{ needs.resolve-env.outputs.role-arn }}
+          aws-region: us-west-2
+
+      # One loop rather than nine near identical steps: the probes differ only in
+      # the function name, and a loop keeps the assertion in one place. The loop
+      # does not stop at the first failure, so a run reports every broken domain
+      # rather than only the first alphabetically.
+      - name: Probe each deployed domain function
+        env:
+          FUNCTION_IMAGE_MAP: ${{ needs.existing-functions.outputs.function-image-map }}
+        run: |
+          set -euo pipefail
+
+          # The payload the Web Adapter expects. `version: "2.0"` is what selects
+          # the HTTP API format; the adapter ignores an unknown shape and the
+          # invoke then returns a 500 that looks like an application error rather
+          # than a malformed event.
+          cat > event.json <<'JSON'
+          {
+            "version": "2.0",
+            "routeKey": "GET /health",
+            "rawPath": "/health",
+            "rawQueryString": "",
+            "headers": {
+              "accept": "application/json",
+              "host": "smoke.invoke.local",
+              "user-agent": "carmodpicker-deploy-smoke"
+            },
+            "requestContext": {
+              "accountId": "anonymous",
+              "apiId": "smoke",
+              "domainName": "smoke.invoke.local",
+              "http": {
+                "method": "GET",
+                "path": "/health",
+                "protocol": "HTTP/1.1",
+                "sourceIp": "127.0.0.1",
+                "userAgent": "carmodpicker-deploy-smoke"
+              },
+              "requestId": "smoke",
+              "routeKey": "GET /health",
+              "stage": "$default",
+              "time": "01/Jan/2026:00:00:00 +0000",
+              "timeEpoch": 1767225600000
+            },
+            "isBase64Encoded": false
+          }
+          JSON
+
+          # Probe only the functions the filtered map carries. A domain whose build
+          # leg failed was never deployed, and a domain whose function does not
+          # exist was never created, so probing either would report a second
+          # failure for a cause already reported.
+          FUNCTIONS=$(printf '%s' "$FUNCTION_IMAGE_MAP" \
+            | python3 -c 'import json,sys; print("\n".join(sorted(json.load(sys.stdin))))')
+
+          FAILED=0
+          while IFS= read -r FUNCTION; do
+            [ -n "$FUNCTION" ] || continue
+            echo "::group::${FUNCTION} GET /health"
+
+            # A function level error, an unhandled exception or a timeout, sets
+            # FunctionError in the response metadata and still exits zero, so the
+            # metadata is read rather than the exit status trusted.
+            META=$(aws lambda invoke \
+              --function-name "$FUNCTION" \
+              --cli-binary-format raw-in-base64-out \
+              --payload file://event.json \
+              --cli-read-timeout 60 \
+              response.json)
+            echo "$META"
+
+            STATUS=$(python3 -c '
+          import json, sys
+
+          try:
+              payload = json.load(open("response.json"))
+          except (OSError, ValueError):
+              print("unparseable")
+              sys.exit(0)
+          print(payload.get("statusCode", "missing") if isinstance(payload, dict) else "not-an-object")
+          ')
+
+            if [ "$STATUS" = "200" ]; then
+              echo "${FUNCTION} answered GET /health with 200."
+            else
+              echo "${FUNCTION} answered GET /health with ${STATUS}, expected 200."
+              echo "Response payload:"
+              cat response.json
+              echo
+              FAILED=1
+            fi
+            echo "::endgroup::"
+          done <<< "$FUNCTIONS"
+
+          if [ "$FAILED" -ne 0 ]; then
+            echo "One or more domain functions failed the /health probe."
+            exit 1
+          fi
+          echo "Every deployed domain function answered GET /health with 200."
+
+  # Row 14 onward: prove each cut domain is reached through its own API Gateway
+  # route rather than still falling through to the monolith on $default.
+  #
+  # Section 6.3 says a flip is verified by the access log's `routeKey`, and
+  # `scripts/verify_route_cut.sh` is what reads it. This job is the scheduled
+  # caller: it runs after the images are deployed and each function has answered
+  # its own `/health`, so a failure here is about routing rather than about the
+  # image.
+  #
+  # It is deliberately additive. It adds no `needs` edge to `build-images`,
+  # `image-map` or `deploy-images` beyond the one it reads through
+  # `smoke-domains`, and it changes none of them. A failure here reports a
+  # routing problem and does not roll anything back, which is correct: the
+  # rollback for a bad cut is deleting the routes entry in Terraform, not
+  # reverting an image.
+  #
+  # `always()` plus the explicit result tests, matching `existing-functions` and
+  # `deploy-images`: the ordinary state until every domain is cut is that some of
+  # the chain skipped, and a skip upstream must not silently skip this.
+  verify-route-cuts:
+    needs: [resolve-env, deploy-images, smoke-domains]
+    if: >-
+      always()
+      && needs.resolve-env.result == 'success'
+      && needs.deploy-images.result == 'success'
+      && needs.smoke-domains.result == 'success'
+    runs-on: ubuntu-latest
+    environment: ${{ needs.resolve-env.outputs.name }}
+    permissions:
+      contents: read
+      id-token: write
+
+    env:
+      AWS_REGION: us-west-2
+      # The credential path is staging only. Production has no access gate, so
+      # the parameter name is empty on `main` and the read below is skipped; the
+      # script then calls the API host with no gate header at all, which is what
+      # production wants.
+      ORIGIN_VERIFY_PARAMETER: ${{ github.ref_name == 'main' && '' || '/carmodpicker-staging/access-gate/origin-verify' }}
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c # v6.2.4
+        with:
+          role-to-assume: ${{ needs.resolve-env.outputs.role-arn }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # The deploy role already carries `ssm:GetParameter` on this parameter,
+      # from the staging access gate wiring in `iam_github_actions.tf`. Masked
+      # before it can reach a log. `CARMODPICKER_ORIGIN_VERIFY` is the name the
+      # script reads; leaving it unset makes the script fall back to a direct
+      # invoke, which would report a warning rather than a verification, so a
+      # missing parameter is worth the explicit message.
+      - name: Read the staging access gate origin-verify value
+        if: env.ORIGIN_VERIFY_PARAMETER != ''
+        run: |
+          set -uo pipefail
+          if VALUE=$(aws ssm get-parameter --with-decryption --name "$ORIGIN_VERIFY_PARAMETER" \
+              --query Parameter.Value --output text 2>/dev/null) && [ -n "$VALUE" ]; then
+            echo "::add-mask::$VALUE"
+            echo "CARMODPICKER_ORIGIN_VERIFY=$VALUE" >> "$GITHUB_ENV"
+            echo "Using the staging access gate origin-verify header."
+          else
+            echo "No origin-verify parameter found; the script will fall back to a direct invoke."
+          fi
+
+      - name: Verify each cut domain
+        env:
+          ENVIRONMENT: ${{ needs.resolve-env.outputs.name }}
+          # Edit this line, and only this line, when a cut lands. The names are
+          # the ones `scripts/verify_route_cut.sh` knows, which are the keys of
+          # `local.lambda_domains` in terraform/lambda_domains.tf.
+          DOMAINS: "media build-logs moderation vehicles admin"
+        run: |
+          set -uo pipefail
+
+          FAILED=0
+          for DOMAIN in $DOMAINS; do
+            echo "::group::${ENVIRONMENT} ${DOMAIN}"
+            if bash scripts/verify_route_cut.sh "$ENVIRONMENT" "$DOMAIN"; then
+              echo "The '${DOMAIN}' cut verified."
+            else
+              echo "The '${DOMAIN}' cut did not verify."
+              FAILED=1
+            fi
+            echo "::endgroup::"
+          done
+
+          if [ "$FAILED" -ne 0 ]; then
+            echo "One or more route cuts did not verify."
+            exit 1
+          fi
+          echo "Every cut domain is served by its own function."

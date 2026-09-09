@@ -455,7 +455,12 @@ class ResponsePatterns:
     @staticmethod
     def raise_internal_server_error(
         message: str = "Internal server error",
-        error_code: str = "INTERNAL_SERVER_ERROR",
+        # `INTERNAL_ERROR` is the code the shared envelope uses for a 500, and it
+        # is what every 5xx already returned: the old handler overrode whatever
+        # a 5xx raise site passed, so the `INTERNAL_SERVER_ERROR` default here
+        # never reached a caller. The envelope honours a route's own code, so
+        # leaving it would have started emitting a second code for one status.
+        error_code: str = "INTERNAL_ERROR",
         details: Any = None,
     ) -> NoReturn:
         """

@@ -1,41 +1,83 @@
-// Phase 8 plan 08-02: client.ts coverage tests.
+// Coverage for the real `client.ts`, the adapter between this application's
+// call sites and `@webbpulse/api-client`.
 //
-// CRITICAL: setup.ts globally mocks `../api/client` via D-18 so other test
-// files get a mocked apiClient. THIS test file must exercise the REAL client
-// module — token helpers, interceptors, paramsSerializer, and env-driven
-// baseURL resolution. Pattern copied from `src/lib/sentry.test.ts`: call
-// `vi.doUnmock('./client')` + `vi.resetModules()` in beforeEach, then use
-// dynamic `await import('./client')` inside each test so the real module
-// (re-)evaluates with current stubbed env.
+// CRITICAL: setup.ts globally mocks `../api/client` so every other test file
+// gets a stubbed apiClient. This file must exercise the REAL module, so each
+// test calls `vi.doUnmock('./client')` + `vi.resetModules()` and then imports
+// dynamically.
 //
-// See PATTERNS.md §8 for the canonical env-driven baseURL pattern.
-//
-// Lint note: tests below access the axios internal
-// `interceptors.request.handlers[N].fulfilled` shape to directly drive the
-// request/response interceptor functions. Axios does not type this on the
-// public Axios surface, so we cast through `as any`. The runtime shape is
-// stable across axios 1.x versions. Disable the relevant rules file-wide
-// because the interceptor tests need this cast repeatedly.
-/* eslint-disable @typescript-eslint/no-explicit-any,
-   @typescript-eslint/no-unsafe-member-access,
-   @typescript-eslint/no-unsafe-assignment,
-   @typescript-eslint/no-unsafe-call */
+// These tests used to reach into axios internals (`defaults.paramsSerializer`,
+// `interceptors.request.handlers[0].fulfilled`) to drive behaviour directly.
+// The shared client has no such surface, and it does not need one: every
+// behaviour below is observable on the `fetch` call the client makes, which is
+// a stronger assertion than calling an interceptor by hand ever was. The
+// env-driven base URL cases moved to `src/config/app.test.ts` along with the
+// resolution logic itself.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-describe('client.ts — token helpers (real module)', () => {
-  beforeEach(() => {
-    vi.doUnmock('./client');
-    vi.resetModules();
-    localStorage.clear();
-  });
+/** The Request the client handed to fetch, for asserting on. */
+interface Captured {
+  url: string;
+  init: RequestInit;
+}
 
-  afterEach(() => {
-    localStorage.clear();
-  });
+/**
+ * Installs a fetch stub and returns the calls it captured.
+ *
+ * Resolves 200 with an empty JSON body by default, which is enough for every
+ * request-shaping assertion here; cases that care about the response pass their
+ * own.
+ */
+function stubFetch(response?: Response): Captured[] {
+  const calls: Captured[] = [];
+  vi.stubGlobal(
+    'fetch',
+    // The client always calls fetch with a string URL. Typing the parameter as
+    // one rather than the full `RequestInfo | URL` keeps the capture honest: a
+    // `Request` object has no meaningful string form, so `String()` on the
+    // wider type would quietly produce "[object Object]".
+    vi.fn((input: string, init?: RequestInit) => {
+      calls.push({ url: input, init: init ?? {} });
+      return Promise.resolve(
+        response ??
+          new Response(JSON.stringify({}), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          })
+      );
+    })
+  );
+  return calls;
+}
 
-  it('setStoredToken writes to localStorage under access_token key', async () => {
+/** The single captured call, failing loudly rather than returning undefined. */
+function only(calls: Captured[]): Captured {
+  expect(calls).toHaveLength(1);
+  const call = calls[0];
+  if (call === undefined) throw new Error('no fetch call captured');
+  return call;
+}
+
+const headerValue = (init: RequestInit, name: string): string | null =>
+  new Headers(init.headers).get(name);
+
+beforeEach(() => {
+  vi.doUnmock('./client');
+  vi.resetModules();
+  localStorage.clear();
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  localStorage.clear();
+});
+
+describe('client.ts — token helpers', () => {
+  it('setStoredToken writes to localStorage under the access_token key', async () => {
     const { setStoredToken } = await import('./client');
     setStoredToken('abc-123');
+    // The key is asserted literally: changing it signs every existing user out
+    // on the deploy that changed it.
     expect(localStorage.getItem('access_token')).toBe('abc-123');
   });
 
@@ -59,235 +101,234 @@ describe('client.ts — token helpers (real module)', () => {
   });
 });
 
-describe('client.ts — credentials (real module)', () => {
-  beforeEach(() => {
-    vi.doUnmock('./client');
-    vi.resetModules();
-  });
-
+describe('client.ts — credentials', () => {
   // Staging sits behind the access gate. Its CloudFront signed cookies are set
   // on the staging apex, so a call from www.staging to api.staging only carries
   // them when the client asks for credentials. Without this the gated staging
   // API answers 401.
   it('sends credentials so cross-subdomain cookies reach the API host', async () => {
+    const calls = stubFetch();
     const { apiClient } = await import('./client');
-    expect(apiClient.defaults.withCredentials).toBe(true);
+    await apiClient.get('/health');
+    expect(only(calls).init.credentials).toBe('include');
   });
 });
 
-describe('client.ts — paramsSerializer (real module)', () => {
-  beforeEach(() => {
-    vi.doUnmock('./client');
-    vi.resetModules();
-  });
-
+describe('client.ts — query parameters', () => {
   it('expands array values as repeated keys (ids=1&ids=2&ids=3)', async () => {
+    // The backend reads `ids` and `category_ids` as repeated keys. Bracket or
+    // comma serialization would arrive as one unparseable value.
+    const calls = stubFetch();
     const { apiClient } = await import('./client');
-    const serializer = apiClient.defaults.paramsSerializer as
-      | ((p: Record<string, unknown>) => string)
-      | { serialize: (p: Record<string, unknown>) => string }
-      | undefined;
-    expect(serializer).toBeDefined();
-
-    const serialize =
-      typeof serializer === 'function'
-        ? serializer
-        : (serializer as { serialize: (p: Record<string, unknown>) => string })
-            .serialize;
-
-    expect(serialize({ ids: [1, 2, 3] })).toBe('ids=1&ids=2&ids=3');
+    await apiClient.get('/parts', { params: { ids: [1, 2, 3] } });
+    expect(only(calls).url).toContain('ids=1&ids=2&ids=3');
   });
 
-  it('passes URLSearchParams through via .toString()', async () => {
+  it('passes URLSearchParams through, repeating keys it already holds', async () => {
+    const calls = stubFetch();
     const { apiClient } = await import('./client');
-    const serializer = apiClient.defaults.paramsSerializer as
-      ((p: unknown) => string) | { serialize: (p: unknown) => string };
-    const serialize =
-      typeof serializer === 'function' ? serializer : serializer.serialize;
+    const params = new URLSearchParams();
+    params.append('ids', '7');
+    params.append('ids', '8');
+    params.append('q', 'brake');
+    await apiClient.get('/parts', { params });
 
-    const usp = new URLSearchParams({ a: '1', b: '2' });
-    expect(serialize(usp)).toBe('a=1&b=2');
+    const { url } = only(calls);
+    expect(url).toContain('ids=7&ids=8');
+    expect(url).toContain('q=brake');
   });
 
-  it('skips undefined and null values but keeps falsy 0 / empty string', async () => {
+  it('skips undefined and null values but keeps falsy 0 and empty string', async () => {
+    const calls = stubFetch();
     const { apiClient } = await import('./client');
-    const serializer = apiClient.defaults.paramsSerializer as
-      | ((p: Record<string, unknown>) => string)
-      | { serialize: (p: Record<string, unknown>) => string };
-    const serialize =
-      typeof serializer === 'function' ? serializer : serializer.serialize;
-
-    const result = serialize({
-      a: 1,
-      b: undefined,
-      c: null,
-      d: 0,
+    await apiClient.get('/parts', {
+      params: {
+        skip: 0,
+        name: '',
+        missing: undefined,
+        absent: null,
+      },
     });
-    // undefined and null dropped; 0 kept
-    expect(result).toBe('a=1&d=0');
+
+    const { url } = only(calls);
+    expect(url).toContain('skip=0');
+    expect(url).toContain('name=');
+    expect(url).not.toContain('missing');
+    expect(url).not.toContain('absent');
   });
 
   it('URL-encodes special characters in scalar values', async () => {
+    const calls = stubFetch();
     const { apiClient } = await import('./client');
-    const serializer = apiClient.defaults.paramsSerializer as
-      | ((p: Record<string, unknown>) => string)
-      | { serialize: (p: Record<string, unknown>) => string };
-    const serialize =
-      typeof serializer === 'function' ? serializer : serializer.serialize;
-
-    expect(serialize({ q: 'honda civic' })).toBe('q=honda%20civic');
+    // Percent encoding throughout, including the space: the shared client uses
+    // encodeURIComponent rather than form encoding, so a space is %20 and not +.
+    await apiClient.get('/search', { params: { q: 'a b&c=d' } });
+    expect(only(calls).url).toContain('q=a%20b%26c%3Dd');
   });
 });
 
-describe('client.ts — request interceptor (real module)', () => {
-  beforeEach(() => {
-    vi.doUnmock('./client');
-    vi.resetModules();
-    localStorage.clear();
-  });
-
-  afterEach(() => {
-    localStorage.clear();
-  });
-
-  it('attaches Authorization: Bearer <token> header when a token is stored', async () => {
+describe('client.ts — authorization header', () => {
+  it('attaches Authorization: Bearer <token> when a token is stored', async () => {
+    const calls = stubFetch();
     const { apiClient, setStoredToken } = await import('./client');
-    setStoredToken('bearer-abc');
-
-    const requestInterceptor = (apiClient.interceptors.request as any)
-      .handlers[0].fulfilled;
-    const config: any = { headers: {} };
-    const result = await requestInterceptor(config);
-
-    expect(result.headers.Authorization).toBe('Bearer bearer-abc');
+    setStoredToken('jwt-token');
+    await apiClient.get('/users/me');
+    expect(headerValue(only(calls).init, 'authorization')).toBe(
+      'Bearer jwt-token'
+    );
   });
 
-  it('does not attach Authorization header when no token is stored', async () => {
+  it('does not attach an Authorization header when no token is stored', async () => {
+    const calls = stubFetch();
     const { apiClient } = await import('./client');
-
-    const requestInterceptor = (apiClient.interceptors.request as any)
-      .handlers[0].fulfilled;
-    const config: any = { headers: {} };
-    const result = await requestInterceptor(config);
-
-    expect(result.headers.Authorization).toBeUndefined();
-  });
-
-  it('request interceptor rejected branch wraps non-Error into Error', async () => {
-    const { apiClient } = await import('./client');
-
-    const rejected = (apiClient.interceptors.request as any).handlers[0]
-      .rejected;
-    await expect(rejected('boom')).rejects.toThrow('boom');
+    await apiClient.get('/users/me');
+    expect(headerValue(only(calls).init, 'authorization')).toBeNull();
   });
 });
 
-describe('client.ts — response interceptor (real module)', () => {
-  beforeEach(() => {
-    vi.doUnmock('./client');
-    vi.resetModules();
-    localStorage.clear();
-  });
-
-  afterEach(() => {
-    localStorage.clear();
-  });
-
-  it('stores x-new-access-token header into localStorage on success', async () => {
+describe('client.ts — token rotation', () => {
+  it('stores an x-new-access-token header into localStorage', async () => {
+    // The API issues a replacement token mid-session, for example after a
+    // username change. Storing it is what keeps that from signing the user out.
+    stubFetch(
+      new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: {
+          'content-type': 'application/json',
+          'x-new-access-token': 'rotated-token',
+        },
+      })
+    );
     const { apiClient, getStoredToken } = await import('./client');
-
-    const responseInterceptor = (apiClient.interceptors.response as any)
-      .handlers[0].fulfilled;
-    const response: any = {
-      headers: { 'x-new-access-token': 'rotated-token' },
-      data: null,
-    };
-    await responseInterceptor(response);
-
+    await apiClient.get('/users/me');
     expect(getStoredToken()).toBe('rotated-token');
   });
 
-  it('does not store anything when x-new-access-token header is absent', async () => {
-    const { apiClient, getStoredToken } = await import('./client');
-
-    const responseInterceptor = (apiClient.interceptors.response as any)
-      .handlers[0].fulfilled;
-    const response: any = { headers: {}, data: null };
-    await responseInterceptor(response);
-
-    expect(getStoredToken()).toBeNull();
-  });
-
-  it('response interceptor rejected branch does NOT redirect on 401 (behavior preserved)', async () => {
-    const { apiClient } = await import('./client');
-
-    const rejected = (apiClient.interceptors.response as any).handlers[0]
-      .rejected;
-    const err = { response: { status: 401 } };
-    // window.location.href assignment commented out in client.ts per line ~132
-    // — this test simply confirms the rejected handler rethrows the error.
-    await expect(rejected(err)).rejects.toThrow();
+  it('leaves the stored token alone when the header is absent', async () => {
+    stubFetch();
+    const { apiClient, setStoredToken, getStoredToken } =
+      await import('./client');
+    setStoredToken('original-token');
+    await apiClient.get('/users/me');
+    expect(getStoredToken()).toBe('original-token');
   });
 });
 
-describe('client.ts — env-driven baseURL (real module)', () => {
-  beforeEach(() => {
-    vi.unstubAllEnvs();
-    vi.resetModules();
-    vi.doUnmock('./client');
+describe('client.ts — error contract', () => {
+  it('rejects with an ApiError carrying the status and the envelope body', async () => {
+    const envelope = {
+      success: false,
+      status: 404,
+      message: 'Part not found',
+      request_id: 'req-9',
+      error_code: 'NOT_FOUND',
+    };
+    stubFetch(
+      new Response(JSON.stringify(envelope), {
+        status: 404,
+        headers: { 'content-type': 'application/json' },
+      })
+    );
+    const { apiClient, isApiErrorWithStatus } = await import('./client');
+
+    const error: unknown = await apiClient
+      .get('/parts/missing')
+      .catch((caught: unknown) => caught);
+
+    expect(isApiErrorWithStatus(error)).toBe(true);
+    if (!isApiErrorWithStatus(error)) throw new Error('expected an ApiError');
+    expect(error.status).toBe(404);
+    expect(error.body).toEqual(envelope);
   });
 
-  afterEach(() => {
-    vi.unstubAllEnvs();
-  });
-
-  it('resolves staging URL when DEV=true and VITE_BACKEND=staging', async () => {
-    vi.stubEnv('DEV', true);
-    vi.stubEnv('VITE_BACKEND', 'staging');
-    vi.stubEnv('VITE_STAGING_API_URL', 'staging.example.com');
-
+  // A 401 is reported to the caller, not acted on here. Redirecting from the
+  // transport would fight the router; AuthContext owns that decision.
+  it('does not redirect on a 401', async () => {
+    const { location } = window;
+    stubFetch(new Response('{}', { status: 401 }));
     const { apiClient } = await import('./client');
-    expect(apiClient.defaults.baseURL).toBe('https://staging.example.com/api');
+    await expect(apiClient.get('/users/me')).rejects.toThrow();
+    expect(window.location).toBe(location);
+  });
+});
+
+describe('client.ts — request bodies', () => {
+  it('sends a plain object as JSON', async () => {
+    const calls = stubFetch();
+    const { apiClient } = await import('./client');
+    await apiClient.post('/parts', { name: 'Coilovers' });
+
+    const { init } = only(calls);
+    expect(headerValue(init, 'content-type')).toContain('application/json');
+    expect(init.body).toBe(JSON.stringify({ name: 'Coilovers' }));
   });
 
-  it('resolves production URL when DEV=true and VITE_BACKEND=production', async () => {
-    vi.stubEnv('DEV', true);
-    vi.stubEnv('VITE_BACKEND', 'production');
-    vi.stubEnv('VITE_PROD_API_URL', 'prod.example.com');
-
+  it('encodes a plain object as form-urlencoded when the caller asks for it', async () => {
+    // The login endpoint is an OAuth2 password form. Axios inferred the
+    // encoding from this header; the shared client infers it from the body
+    // type, so the adapter converts the body rather than forwarding the header.
+    const calls = stubFetch();
     const { apiClient } = await import('./client');
-    expect(apiClient.defaults.baseURL).toBe('https://prod.example.com/api');
+    await apiClient.post(
+      '/auth/token',
+      { username: 'alice', password: 'p@ss word' },
+      { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+    );
+
+    const { init } = only(calls);
+    // No explicit header: a URLSearchParams body makes fetch set
+    // `application/x-www-form-urlencoded;charset=UTF-8` itself, the same way it
+    // supplies a boundary for FormData.
+    expect(init.body).toBeInstanceOf(URLSearchParams);
+    expect(headerValue(init, 'content-type')).toBeNull();
+    expect((init.body as URLSearchParams).toString()).toBe(
+      'username=alice&password=p%40ss+word'
+    );
   });
 
-  it('defaults to /api when DEV=true and no VITE_BACKEND override is set', async () => {
-    vi.stubEnv('DEV', true);
-    vi.stubEnv('VITE_BACKEND', '');
-
+  it('passes FormData through without a Content-Type so the browser sets the boundary', async () => {
+    // Image upload. A multipart request needs a boundary parameter in its
+    // Content-Type, and only the runtime that serializes the body knows it.
+    // Forwarding a bare `multipart/form-data` header would produce a request
+    // the backend cannot parse, so the adapter drops it.
+    const calls = stubFetch();
     const { apiClient } = await import('./client');
-    expect(apiClient.defaults.baseURL).toBe('/api');
+    const form = new FormData();
+    form.append('file', new Blob(['bytes'], { type: 'image/png' }), 'car.png');
+
+    await apiClient.post('/images', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+
+    const { init } = only(calls);
+    expect(init.body).toBeInstanceOf(FormData);
+    expect(headerValue(init, 'content-type')).toBeNull();
   });
 
-  it('uses VITE_API_URL in production (DEV=false)', async () => {
-    vi.stubEnv('DEV', false);
-    vi.stubEnv('VITE_API_URL', 'api.prod.example.com');
-
+  it('forwards headers that are not content encoding directives', async () => {
+    const calls = stubFetch();
     const { apiClient } = await import('./client');
-    expect(apiClient.defaults.baseURL).toBe('https://api.prod.example.com/api');
+    await apiClient.post(
+      '/parts',
+      { name: 'x' },
+      { headers: { 'X-Trace': 'abc' } }
+    );
+    expect(headerValue(only(calls).init, 'x-trace')).toBe('abc');
   });
+});
 
-  it('falls back to /api in production when VITE_API_URL is not set', async () => {
-    vi.stubEnv('DEV', false);
-    vi.stubEnv('VITE_API_URL', '');
-
+describe('client.ts — response shape', () => {
+  it('resolves with the parsed body under data', async () => {
+    stubFetch(
+      new Response(JSON.stringify({ id: 5, name: 'Coilovers' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    );
     const { apiClient } = await import('./client');
-    expect(apiClient.defaults.baseURL).toBe('/api');
-  });
-
-  it('preserves explicit https:// protocol in normalizeApiUrl', async () => {
-    vi.stubEnv('DEV', false);
-    vi.stubEnv('VITE_API_URL', 'https://secure.example.com');
-
-    const { apiClient } = await import('./client');
-    expect(apiClient.defaults.baseURL).toBe('https://secure.example.com/api');
+    const response = await apiClient.get<{ id: number; name: string }>(
+      '/parts/5'
+    );
+    expect(response.data).toEqual({ id: 5, name: 'Coilovers' });
   });
 });

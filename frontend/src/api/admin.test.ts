@@ -4,10 +4,10 @@
 // gets its own plan so the PR stays reviewable. Tests cover every method on
 // `adminApi` (~32 methods across 10 sub-surfaces).
 //
-// The setup.ts D-18 mock installs a shared `mockApiClient` for both
-// `../api/client` and `../services/Api`, so importing `apiClient` from
-// `./client` gives us the mocked surface automatically — no per-file vi.mock
-// needed. Fixture factories come from plan 08-01's `src/test/mocks/admin/*.ts`.
+// setup.ts installs a shared `mockApiClient` for `../api/client`, so importing
+// `apiClient` from `./client` gives us the mocked surface automatically — no
+// per-file vi.mock needed. Fixture factories come from
+// `src/test/mocks/admin/*.ts`.
 //
 // Lint note: `@typescript-eslint/unbound-method` (enabled by the recommended-
 // type-checked preset + Phase 6 D-05 removing the test-file override) fires on
@@ -17,7 +17,7 @@
 // This is the canonical vitest pattern for API-module tests (we MUST reference
 // the method to set up mocks and assert call shape), so we disable the rule
 // file-wide here. Matches the pattern every Wave 1 API test file will adopt.
-/* eslint-disable @typescript-eslint/unbound-method */
+
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiClient } from './client';
 import { adminApi, type ExtractionHealthResponse } from './admin';

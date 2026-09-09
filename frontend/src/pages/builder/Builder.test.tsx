@@ -11,7 +11,7 @@
 // apiClient mocks BEFORE mount — the customRender in test-utils.tsx calls
 // setupApiMocks() which would clobber per-test mock impls otherwise.
 
-/* eslint-disable @typescript-eslint/unbound-method, @typescript-eslint/no-unsafe-assignment --
+/* eslint-disable @typescript-eslint/no-unsafe-assignment --
  * vi.mocked(apiClient.get) is the canonical Vitest pattern for typed mock
  * introspection (mirrors AuthContext.test.tsx). The unsafe-assignment warning
  * fires on the nested `data: { data: [...], pagination: {...} }` literal used
@@ -58,16 +58,8 @@ vi.mock('../../hooks/useAuth', () => ({
   useAuth: () => mockUseAuth(),
 }));
 
-// The global setup.ts mock of `../services/Api` only exposes `default`. Builder
-// imports the named `buildListsApi`, so we extend the mock by re-exporting the
-// real domain module (which internally calls the already-mocked `apiClient`).
-vi.mock('../../services/Api', async () => {
-  const actual =
-    await vi.importActual<typeof import('../../services/Api')>(
-      '../../services/Api'
-    );
-  return actual;
-});
+// Builder imports `buildListsApi` from `../../api/build_lists`, which calls
+// the apiClient that setup.ts mocks, so no per-file module mock is needed.
 
 describe('Builder page', () => {
   beforeEach(() => {

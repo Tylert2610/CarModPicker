@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { GoogleLogin, type CredentialResponse } from '@react-oauth/google';
 import { FaGoogle, FaTrash } from 'react-icons/fa';
-import { authApi } from '../../services/Api';
+import { authApi } from '../../api/auth';
 import { isGoogleConfigured } from '../../hooks/useGoogleSignIn';
 import type { OAuthAccountRead } from '../../types/Api';
 import { ConfirmationAlert, ErrorAlert } from '../ui/alert';
 import { Button } from '../ui/button';
 import Spinner from '../ui/spinner';
+import { getApiErrorMessage } from '../../utils/apiError';
 
 const formatDate = (value?: string | null): string => {
   if (!value) return '—';
@@ -23,13 +24,6 @@ const makeNonce = (): string => {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
 };
 
-const errMessage = (err: unknown, fallback: string): string => {
-  const ax = err as {
-    response?: { data?: { detail?: string; message?: string } };
-  };
-  return ax.response?.data?.message || ax.response?.data?.detail || fallback;
-};
-
 function ConnectedAccountsSettings() {
   const [accounts, setAccounts] = useState<OAuthAccountRead[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -44,7 +38,7 @@ function ConnectedAccountsSettings() {
       const resp = await authApi.listOAuthAccounts();
       setAccounts(resp.data);
     } catch (err) {
-      setError(errMessage(err, 'Failed to load connected accounts.'));
+      setError(getApiErrorMessage(err, 'Failed to load connected accounts.'));
     } finally {
       setIsLoading(false);
     }
@@ -69,7 +63,7 @@ function ConnectedAccountsSettings() {
       setSuccess('Google account connected.');
       await load();
     } catch (err) {
-      setError(errMessage(err, 'Could not connect Google account.'));
+      setError(getApiErrorMessage(err, 'Could not connect Google account.'));
     } finally {
       setBusy(false);
     }
@@ -84,7 +78,7 @@ function ConnectedAccountsSettings() {
       setSuccess('Connected account removed.');
       await load();
     } catch (err) {
-      setError(errMessage(err, 'Could not remove connected account.'));
+      setError(getApiErrorMessage(err, 'Could not remove connected account.'));
     } finally {
       setBusy(false);
     }

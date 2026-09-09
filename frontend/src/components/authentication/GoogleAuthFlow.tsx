@@ -8,21 +8,15 @@ import {
   isGoogleConfigured,
   useGoogleSignIn,
 } from '../../hooks/useGoogleSignIn';
-import { authApi } from '../../services/Api';
+import { authApi } from '../../api/auth';
 import type { UserRead } from '../../types/Api';
+import { getApiErrorMessage } from '../../utils/apiError';
 
 interface GoogleAuthFlowProps {
   onLoggedIn: (user: UserRead) => void;
   onError: (message: string) => void;
   disabled?: boolean;
 }
-
-const errMessage = (err: unknown, fallback: string): string => {
-  const ax = err as {
-    response?: { data?: { detail?: string; message?: string } };
-  };
-  return ax.response?.data?.message || ax.response?.data?.detail || fallback;
-};
 
 const GoogleAuthFlow: React.FC<GoogleAuthFlowProps> = ({
   onLoggedIn,
@@ -84,7 +78,7 @@ const GoogleAuthFlow: React.FC<GoogleAuthFlowProps> = ({
       onLoggedIn(result.data);
       closeDialog();
     } catch (err) {
-      onError(errMessage(err, 'Linking failed. Please try again.'));
+      onError(getApiErrorMessage(err, 'Linking failed. Please try again.'));
     } finally {
       setSubmitting(false);
     }
@@ -102,7 +96,7 @@ const GoogleAuthFlow: React.FC<GoogleAuthFlowProps> = ({
       onLoggedIn(result.data);
       closeDialog();
     } catch (err) {
-      onError(errMessage(err, 'Could not finish account creation.'));
+      onError(getApiErrorMessage(err, 'Could not finish account creation.'));
     } finally {
       setSubmitting(false);
     }
@@ -120,7 +114,7 @@ const GoogleAuthFlow: React.FC<GoogleAuthFlowProps> = ({
       onLoggedIn(result.data);
       closeDialog();
     } catch (err) {
-      onError(errMessage(err, 'Invalid code. Please try again.'));
+      onError(getApiErrorMessage(err, 'Invalid code. Please try again.'));
     } finally {
       setSubmitting(false);
     }

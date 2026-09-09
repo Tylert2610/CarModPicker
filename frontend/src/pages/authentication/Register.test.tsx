@@ -6,11 +6,10 @@
 // gated by isGoogleConfigured() — we force that off so the test only exercises
 // the password-form submission.
 //
-// Like Login.test.tsx we rely on the shared importOriginal mock of
-// `services/Api` (setup.ts + test-utils.tsx) so the default apiClient is the
-// shared mock while named re-exports stay real. Assertions target
-// `apiClient.post` directly.
-/* eslint-disable @typescript-eslint/unbound-method */
+// Like Login.test.tsx we rely on setup.ts's mock of `../../api/client`, so the
+// real domain API modules run while their Axios calls land on the shared mock.
+// Assertions target `apiClient.post` directly.
+
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   render,

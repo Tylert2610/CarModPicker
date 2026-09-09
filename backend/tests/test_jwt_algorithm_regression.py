@@ -32,3 +32,27 @@ def test_every_jwt_decode_specifies_algorithms() -> None:
     assert not offenders, "jwt.decode() calls without algorithms=[...] detected (CWE-327 risk):\n" + "\n".join(
         f"  {f}:{ln} -> {code}" for f, ln, code in offenders
     )
+
+
+def test_the_app_decodes_only_through_decode_access_token() -> None:
+    """After the `webbpulse.security` swap there are no raw `jwt.decode` calls left.
+
+    The test above guards the shape of a call that no longer exists in `app/`:
+    every decode now goes through `app.api.dependencies.auth.decode_access_token`,
+    which passes `algorithms=[ALGORITHM]` in exactly one place. That is a stronger
+    position than auditing call sites, but only while it stays true, so this pins
+    it. A new bare `jwt.decode` would be caught by the test above; a new *decode
+    helper* that forgets the algorithm list would not, and this is what notices
+    the import reappearing at all.
+    """
+    offenders: list[str] = []
+    for pyfile in APP_DIR.rglob("*.py"):
+        for lineno, line in enumerate(pyfile.read_text(encoding="utf-8").splitlines(), start=1):
+            stripped = line.strip()
+            if stripped.startswith(("import jwt", "from jwt import")):
+                offenders.append(f"  {pyfile.relative_to(APP_DIR)}:{lineno} -> {stripped}")
+    assert not offenders, (
+        "PyJWT is imported directly in app/ again. Decoding belongs in "
+        "app.api.dependencies.auth.decode_access_token, which is the one place "
+        "the algorithm list is set:\n" + "\n".join(offenders)
+    )

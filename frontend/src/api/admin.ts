@@ -1,5 +1,4 @@
 // Admin domain API. Mirrors backend endpoints/admin/*.
-// Extracted from services/Api.ts (lines 1099-1518) per Phase 6 D-22.
 //
 // All admin-specific response types are co-located here per D-04. Re-imports
 // `BucketEntityTypeCountResponse` from `./images` to avoid duplicating the
@@ -7,8 +6,8 @@
 import { apiClient } from './client';
 import type { BucketEntityTypeCountResponse } from './images';
 
-// Re-export the cross-domain images bucket type so call sites that previously
-// imported it from `services/Api` still resolve through the shim's wildcard.
+// Re-export the cross-domain images bucket type so admin call sites can pull
+// it from this module alongside the admin-specific types.
 export type { BucketEntityTypeCountResponse };
 
 export interface MigrationResult {

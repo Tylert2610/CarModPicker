@@ -10,7 +10,7 @@ import {
   AppSettingsContext,
   type AppSettingsContextType,
 } from '../contexts/AppSettingsContextDefinition';
-import type { AppSettings } from '../services/Api';
+import type { AppSettings } from '../api/app_settings';
 import type { UserRead } from '../types/Api';
 import { mockUser } from '../test/mocks/api';
 import { testScenarios } from '../test/utils/test-utils';

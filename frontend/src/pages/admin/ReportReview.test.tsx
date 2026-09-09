@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/unbound-method, @typescript-eslint/no-unsafe-assignment --
+/* eslint-disable @typescript-eslint/no-unsafe-assignment --
  * vi.mocked(apiClient.put) is the canonical Phase 8 mocking pattern.
  * `expect.objectContaining(...)` returns `any` and trips no-unsafe-assignment
  * when nested as a property value — false positive in this matcher pattern.
@@ -7,10 +7,10 @@
 // Phase 8 plan 08-17 (D-02) — ReportReview admin page: pending-list render +
 // resolve (approve) + dismiss (reject) + auth-deny for non-admin.
 //
-// ReportReview imports `apiClient` (default export) + `reportsApi` from
-// `../../services/Api`. The customRender in test-utils.tsx uses `importOriginal`
-// so the shim's named exports (reportsApi.getReportsWithDetails → apiClient.get)
-// still route through the mocked apiClient — no per-file vi.mock needed.
+// ReportReview imports `apiClient` from `../../api/client` and `reportsApi`
+// from `../../api/reports`. setup.ts mocks the client and the domain module
+// calls through it (reportsApi.getReportsWithDetails -> apiClient.get), so no
+// per-file vi.mock is needed.
 //
 // Update path: page calls `apiClient.put('/reports/<id>', { status, admin_notes })`
 // with status='resolved' (Resolve Report button) or status='dismissed' (Dismiss

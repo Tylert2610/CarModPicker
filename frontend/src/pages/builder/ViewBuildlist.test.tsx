@@ -11,13 +11,8 @@
 //   - /build-lists/{id}/phases          (phases fetch from BuildListParts)
 //
 // testScenarios.authenticated is the canonical auth fixture (Phase 8 D-05);
-// we inline its shape locally to avoid test-utils' own vi.mock clobbering
-// our importActual-extended services/Api mock.
-
-/* eslint-disable @typescript-eslint/unbound-method --
- * vi.mocked(apiClient.get) is the canonical Vitest pattern for typed mock
- * introspection; same rationale as AuthContext.test.tsx.
- */
+// we inline its shape locally so this file sets the auth branch without going
+// through customRender.
 
 import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
@@ -54,15 +49,6 @@ import ViewBuildList from './ViewBuildlist';
 vi.mock('../../hooks/useAuth', () => ({
   useAuth: () => mockUseAuth(),
 }));
-
-// Extend the global services/Api mock to expose named domain APIs.
-vi.mock('../../services/Api', async () => {
-  const actual =
-    await vi.importActual<typeof import('../../services/Api')>(
-      '../../services/Api'
-    );
-  return actual;
-});
 
 // Inlined equivalent of testScenarios.authenticated (D-05).
 const authenticatedAuthState = {

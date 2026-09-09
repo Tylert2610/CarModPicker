@@ -2,15 +2,21 @@
 Tests for sophisticated rate limiting functionality.
 """
 
+import os
 import time
 import unittest.mock
+from contextlib import contextmanager
+from typing import Iterator
 from unittest.mock import Mock
 
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+import app.api.middleware.rate_limiter as rate_limiter_module
 from app.api.middleware.rate_limiter import (
     RateLimitConfig,
     SophisticatedRateLimiter,
+    is_rate_limit_exempt,
     rate_limit_middleware,
 )
 from app.main import app
@@ -378,3 +384,130 @@ class TestRateLimitMiddleware:
         finally:
             # Restore original rate limiter
             rate_limiter_module.rate_limiter = original_limiter
+
+
+class TestRateLimitExemptPaths:
+    """Test cases for the skip list used by the middleware.
+
+    The skip list used to be tested with ``startswith`` against a list containing
+    "/", which is a prefix of every path. That exempted the whole API and disabled
+    the limiter in production, so these cases pin the exact/prefix split down.
+    """
+
+    def test_root_is_exempt(self) -> None:
+        """The root path itself is exempt."""
+        assert is_rate_limit_exempt("/")
+
+    def test_exact_paths_are_exempt(self) -> None:
+        """Single-endpoint skip paths are exempt when matched exactly."""
+        for path in ("/health", "/ready", "/openapi.json"):
+            assert is_rate_limit_exempt(path), path
+
+    def test_docs_prefixes_are_exempt(self) -> None:
+        """The documentation UIs are exempt along with their sub-resources."""
+        for path in ("/docs", "/redoc", "/docs/oauth2-redirect"):
+            assert is_rate_limit_exempt(path), path
+
+    def test_api_paths_are_not_exempt(self) -> None:
+        """API paths are not exempted by the root entry "/"."""
+        for path in ("/api/parts", "/api/cars", "/api/auth/login", "/api/admin/users"):
+            assert not is_rate_limit_exempt(path), path
+
+    def test_paths_merely_prefixed_by_exact_entries_are_not_exempt(self) -> None:
+        """Exact entries do not exempt longer paths that merely start with them."""
+        for path in ("/healthcheck", "/ready-set-go", "/openapi.json.bak"):
+            assert not is_rate_limit_exempt(path), path
+
+
+class TestRateLimitMiddlewareEnforcement:
+    """Test cases proving the middleware actually limits non-exempt paths."""
+
+    @staticmethod
+    def _build_app(config: RateLimitConfig) -> tuple[FastAPI, object]:
+        """Build a test app whose middleware uses a limiter with low limits."""
+        test_app = FastAPI()
+        test_app.middleware("http")(rate_limit_middleware)
+
+        @test_app.get("/api/parts")
+        def parts_endpoint() -> dict[str, str]:  # pyright: ignore[reportUnusedFunction]
+            return {"message": "parts"}
+
+        @test_app.get("/health")
+        def health_endpoint() -> dict[str, str]:  # pyright: ignore[reportUnusedFunction]
+            return {"status": "healthy"}
+
+        @test_app.get("/docs/oauth2-redirect")
+        def docs_endpoint() -> dict[str, str]:  # pyright: ignore[reportUnusedFunction]
+            return {"message": "docs"}
+
+        return test_app, SophisticatedRateLimiter(config)
+
+    @contextmanager
+    def _limiter_enabled(self, limiter: object) -> Iterator[None]:
+        """Enable rate limiting and install ``limiter`` as the global limiter.
+
+        The test suite disables rate limiting globally via conftest, through both the
+        ENABLE_RATE_LIMITING environment variable and the settings object, so both
+        have to be overridden for the middleware to run at all.
+        """
+        original_limiter = rate_limiter_module.rate_limiter
+        rate_limiter_module.rate_limiter = limiter  # type: ignore[assignment]
+        with (
+            unittest.mock.patch.dict(os.environ, {"ENABLE_RATE_LIMITING": "true"}),
+            unittest.mock.patch.object(rate_limiter_module.settings, "ENABLE_RATE_LIMITING", True),
+        ):
+            try:
+                yield
+            finally:
+                rate_limiter_module.rate_limiter = original_limiter
+
+    def test_api_path_is_rate_limited(self) -> None:
+        """A normal API path is limited once the threshold is exceeded."""
+        test_app, limiter = self._build_app(RateLimitConfig(get_requests_per_minute=2, get_requests_per_hour=100))
+
+        with self._limiter_enabled(limiter):
+            client = TestClient(test_app)
+
+            assert client.get("/api/parts").status_code == 200
+            assert client.get("/api/parts").status_code == 200
+
+            response = client.get("/api/parts")
+            assert response.status_code == 429
+            assert response.json()["detail"] == "Too many requests"
+            assert response.headers["Retry-After"] == "60"
+
+    def test_rate_limited_response_carries_limit_headers(self) -> None:
+        """A successful request advertises the remaining allowance."""
+        test_app, limiter = self._build_app(RateLimitConfig(get_requests_per_minute=5, get_requests_per_hour=100))
+
+        with self._limiter_enabled(limiter):
+            response = TestClient(test_app).get("/api/parts")
+
+        assert response.status_code == 200
+        assert response.headers["X-RateLimit-Limit-Minute"] == "5"
+        assert response.headers["X-RateLimit-Remaining-Minute"] == "4"
+
+    def test_exempt_paths_are_never_limited(self) -> None:
+        """Exempt paths stay unlimited even well past the threshold."""
+        test_app, limiter = self._build_app(RateLimitConfig(get_requests_per_minute=1, get_requests_per_hour=2))
+
+        with self._limiter_enabled(limiter):
+            client = TestClient(test_app)
+
+            for _ in range(5):
+                assert client.get("/health").status_code == 200
+                assert client.get("/docs/oauth2-redirect").status_code == 200
+
+    def test_exempt_paths_do_not_consume_the_api_allowance(self) -> None:
+        """Requests to exempt paths do not count against a non-exempt path."""
+        test_app, limiter = self._build_app(RateLimitConfig(get_requests_per_minute=2, get_requests_per_hour=100))
+
+        with self._limiter_enabled(limiter):
+            client = TestClient(test_app)
+
+            for _ in range(5):
+                assert client.get("/health").status_code == 200
+
+            assert client.get("/api/parts").status_code == 200
+            assert client.get("/api/parts").status_code == 200
+            assert client.get("/api/parts").status_code == 429
