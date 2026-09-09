@@ -137,7 +137,6 @@ locals {
     EMAIL_ENABLED         = "true"
     SENTRY_RELEASE        = var.sentry_release
     SENTRY_SERVICE_NAME   = "lambda-api"
-    AWS_EMF_ENVIRONMENT   = "Local"
     RUN_STARTUP_TASKS     = "false"
     DYNAMODB_TABLE_PREFIX = local.prefix
     # Layer 2 of the rate limiting standard. The name is passed explicitly rather than

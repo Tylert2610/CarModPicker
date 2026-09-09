@@ -1,12 +1,17 @@
 """OBS-04 regression guard — every log record during a request scope MUST have
 non-default request_id + user_id. Fails CI if a future dev adds a handler that
-drops RequestContextFilter coverage or uses print() instead of logger.
+drops LogContextFilter coverage or uses print() instead of logger.
 
 Decision refs: 02-CONTEXT.md D-44 (audit, not redesign), D-45 (regression guard),
-D-46 (bg_log_context), D-47 (CLI context).
+D-46 (background task context), D-47 (CLI context).
+
+`task_context` is `webbpulse.log_context`'s name for what used to be
+CarModPicker's `bg_log_context`; the package emits the identical
+`bg:{task}:{job or "-"}` request id and `user_id="bg"`, so the CloudWatch
+Insights queries and the assertions below are unchanged.
 
 Landmine: pytest caplog does NOT inherit root-logger filters — the
-`caplog_with_context` fixture (conftest.py) attaches RequestContextFilter
+`caplog_with_context` fixture (conftest.py) attaches `LogContextFilter`
 to caplog.handler so records carry request_id + user_id attributes.
 Without this fixture, every assertion below AttributeErrors.
 """
@@ -17,12 +22,12 @@ import logging
 
 import pytest
 from fastapi.testclient import TestClient
-
-from app.core.log_context import (
-    bg_log_context,
+from webbpulse.log_context import (
     request_id_var,
+    task_context,
     user_id_var,
 )
+
 from app.db.dynamo.users import User
 from tests.conftest import login_user
 
@@ -61,7 +66,7 @@ def test_log_propagation_request_scope(
 
       * request_context_middleware populated request_id_var (per-request UUID)
       * get_current_user populated user_id_var (authenticated user UUID)
-      * RequestContextFilter wired both ContextVars into the LogRecord
+      * LogContextFilter wired both ContextVars into the LogRecord
 
     "In-scope" = records emitted by application code (not TestClient plumbing).
     """
@@ -116,11 +121,11 @@ def test_log_propagation_request_scope(
         assert getattr(rec, "user_id", "-") != "-", f"missing user_id on '{rec.getMessage()}' (logger={rec.name})"
 
 
-def test_bg_log_context(caplog_with_context) -> None:
-    """bg_log_context sets request_id=bg:{task}:{job} + user_id=bg."""
+def test_task_context(caplog_with_context) -> None:
+    """task_context sets request_id=bg:{task}:{job} + user_id=bg."""
     caplog_with_context.set_level(logging.DEBUG)
     logger = logging.getLogger("app.test.bg")
-    with bg_log_context("crawler", "job-1"):
+    with task_context("crawler", "job-1"):
         logger.info("running bg task")
     matches = [r for r in caplog_with_context.records if "running bg task" in r.getMessage()]
     assert len(matches) == 1
@@ -129,19 +134,19 @@ def test_bg_log_context(caplog_with_context) -> None:
     assert rec.user_id == "bg"
 
 
-def test_bg_log_context_job_id_none(caplog_with_context) -> None:
-    """bg_log_context with no job_id renders 'bg:{task}:-'."""
+def test_task_context_job_id_none(caplog_with_context) -> None:
+    """task_context with no job_id renders 'bg:{task}:-'."""
     caplog_with_context.set_level(logging.DEBUG)
     logger = logging.getLogger("app.test.bg")
-    with bg_log_context("sweep"):
+    with task_context("sweep"):
         logger.info("sweep running")
     rec = next(r for r in caplog_with_context.records if "sweep running" in r.getMessage())
     assert rec.request_id == "bg:sweep:-"
 
 
-def test_bg_log_context_resets(caplog_with_context) -> None:
+def test_task_context_resets(caplog_with_context) -> None:
     """Token-based reset leaves ContextVars at default after exit."""
-    with bg_log_context("scope", "1"):
+    with task_context("scope", "1"):
         assert request_id_var.get() == "bg:scope:1"
     assert request_id_var.get() == "-"
     assert user_id_var.get() == "-"

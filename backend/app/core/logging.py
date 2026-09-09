@@ -12,13 +12,15 @@ metric filter behind the `api-alarms` module. The hand-rolled
 
 ## What stayed here, and why
 
-`RequestContextFilter` is CarModPicker's own and the package has no equivalent.
-It copies `request_id` and `user_id` off the two ContextVars onto every record,
-which is what OBS-04 and `tests/test_log_propagation.py` assert, and what makes
-`filter @message like /req=bg:crawler/` work in CloudWatch Insights. The package
-merges OpenTelemetry trace and span ids instead, which is a different pair for a
-different purpose, so the filter is attached to the package's handler here rather
-than dropped.
+The request context filter is now the package's. `webbpulse.log_context`
+0.7.0 hoisted what used to be CarModPicker's `RequestContextFilter` and
+`log_context.py`, so `LogContextFilter` and `attach_log_context` replace
+both. They copy `request_id` and `user_id` off the same two ContextVars
+onto every record, which is what OBS-04 and `tests/test_log_propagation.py`
+assert, and what keeps `filter @message like /req=bg:crawler/` working in
+CloudWatch Insights. The package's JSON formatter merges the same context
+itself, so the filter matters only for the TTY branch below, whose format
+string references `%(request_id)s` and would raise without the attributes.
 
 The TTY path also stayed. `configure_logging` is unconditionally JSON, and a
 developer running the application locally wants the colorized single line, so
@@ -40,9 +42,8 @@ import sys
 from copy import copy
 
 import click
+from webbpulse.log_context import attach_log_context
 from webbpulse.logging import configure_logging as _configure_json_logging
-
-from app.core.log_context import RequestContextFilter
 
 # Human-readable format for TTY (local dev)
 LOG_FORMAT = "%(asctime)s - %(levelname)s - %(name)s - [req=%(request_id)s user=%(user_id)s] - %(message)s"
@@ -106,18 +107,6 @@ def _redirect_handlers_to_stderr(root: logging.Logger) -> None:
             handler.setStream(sys.stderr)
 
 
-def _attach_request_context(root: logging.Logger) -> None:
-    """Put `RequestContextFilter` on every root handler, exactly once each.
-
-    A filter instance stacked twice would evaluate twice per record for no gain,
-    and `configure_app_logging` is called at import by Root A and again by an
-    entrypoint's `main()`, so the guard is load bearing rather than defensive.
-    """
-    for handler in root.handlers:
-        if not any(isinstance(existing, RequestContextFilter) for existing in handler.filters):
-            handler.addFilter(RequestContextFilter())
-
-
 def configure_app_logging(level: str = "INFO", service: str | None = None, environment: str | None = None) -> None:
     """Configure the root logger: shared JSON when deployed, colorized on a TTY.
 
@@ -143,7 +132,7 @@ def configure_app_logging(level: str = "INFO", service: str | None = None, envir
 
     root = logging.getLogger()
     _redirect_handlers_to_stderr(root)
-    _attach_request_context(root)
+    attach_log_context(root)
 
 
 # Logger setup. `get_logger` is still exported per D-36; the `Depends(get_logger)`

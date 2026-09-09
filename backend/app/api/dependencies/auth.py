@@ -4,6 +4,7 @@ from typing import Any, Optional
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import APIKeyHeader, OAuth2PasswordBearer
+from webbpulse.log_context import user_id_var
 from webbpulse.security import (
     TokenError,
     create_token,
@@ -14,7 +15,6 @@ from webbpulse.security import verify_password as _verify_password
 
 from app.api.dependencies.repositories import Repositories, get_repositories
 from app.core.config import settings
-from app.core.log_context import user_id_var
 from app.db.dynamo.users import User as DBUser
 
 ALGORITHM = settings.JWT_ALGORITHM

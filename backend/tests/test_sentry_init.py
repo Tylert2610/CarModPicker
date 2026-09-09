@@ -12,8 +12,8 @@ import logging
 from unittest.mock import MagicMock
 
 import pytest
+from webbpulse.log_context import request_id_var, user_id_var
 
-from app.core.log_context import request_id_var, user_id_var
 from app.core.sentry import _before_send, _traces_sampler, init_sentry
 
 

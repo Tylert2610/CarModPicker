@@ -198,17 +198,17 @@ def test_json_logging_carries_the_keys_lambda_and_the_alarms_need() -> None:
     `{ $.level = "ERROR" }` metric filter behind `api-alarms` select on; an
     unparseable timestamp makes Lambda stamp its own and assign INFO, which
     defeats both silently. `request_id` and `user_id` come from
-    `RequestContextFilter`, which the package has no equivalent for, so this is
-    the assertion that it is still attached to the package's handler.
+    `webbpulse.log_context`'s `LogContextFilter`, which 0.7.0 hoisted from
+    CarModPicker, so this is the assertion that it is still attached to the
+    package's handler.
     """
+    from webbpulse.log_context import LogContextFilter
     from webbpulse.logging import JsonFormatter
-
-    from app.core.log_context import RequestContextFilter
 
     record = logging.LogRecord(
         name="app.test", level=logging.ERROR, pathname=__file__, lineno=1, msg="boom", args=(), exc_info=None
     )
-    RequestContextFilter().filter(record)
+    LogContextFilter().filter(record)
     payload = json.loads(JsonFormatter(service="CarModPicker", environment="test").format(record))
 
     assert payload["level"] == "ERROR"
