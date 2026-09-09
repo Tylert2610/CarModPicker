@@ -39,6 +39,14 @@
 # functions that actually exist, so the estate row 13 leaves half built (one
 # domain function created, eight not) deploys the one and skips the eight rather
 # than failing on `ResourceNotFoundException`. See the `existing-functions` job.
+#
+# The map is not one entry per image. Split plan row 24 added the first function
+# that runs a domain's image without being a domain: `catalog-votes-consumer` is
+# the votes stream consumer, built from the `catalog` image with its container
+# command overridden in Terraform. `image-map` emits it alongside `catalog` from
+# the same manifest, `deploy-images` updates it with the same digest, and
+# `smoke-domains` skips it, because a stream consumer serves no HTTP and has no
+# `/health` to probe.
 name: Deploy Backend
 
 on:
@@ -282,6 +290,22 @@ jobs:
           python3 - <<'PY' > function-image-map.json
           import json, os, pathlib
 
+          # Functions that are not a domain of their own but run a domain's image,
+          # mapped to the domain whose image they run. Split plan row 24 added the
+          # first: `catalog-votes-consumer` is the votes stream consumer, and it is
+          # the same image as `catalog` with the container command overridden by
+          # `image_config.command` in terraform/lambda_stream_consumers.tf.
+          #
+          # Sharing an image is the point rather than a shortcut. One build, one
+          # push and one digest means the deploy that updates a domain updates its
+          # consumers with the identical bytes, so the two can never skew and there
+          # is no second image to keep in step. The cost is exactly this map: the
+          # manifests are per repository, so the extra functions have to be named
+          # somewhere, and here is the only place that knows about functions at all.
+          EXTRA_FUNCTIONS = {
+              "catalog-votes-consumer": "catalog",
+          }
+
           env = os.environ["ENVIRONMENT"]
           out = {}
           for path in sorted(pathlib.Path("manifests").glob("*.json")):
@@ -289,6 +313,16 @@ jobs:
               # "carmodpicker-staging/media" -> "media"
               domain = manifest["repository"].rsplit("/", 1)[-1]
               out[f"carmodpicker-{env}-{domain}"] = manifest["image_uri"]
+
+          # Added after the loop so a consumer whose domain image did not build is
+          # simply absent, the same way a failed domain leg is absent. Reading the
+          # URI out of `out` rather than off the manifest again is what guarantees
+          # that: a missing domain key means no consumer key either.
+          for suffix, domain in sorted(EXTRA_FUNCTIONS.items()):
+              image_uri = out.get(f"carmodpicker-{env}-{domain}")
+              if image_uri is not None:
+                  out[f"carmodpicker-{env}-{suffix}"] = image_uri
+
           print(json.dumps(out, indent=2))
           PY
           cat function-image-map.json
@@ -603,8 +637,34 @@ jobs:
           # leg failed was never deployed, and a domain whose function does not
           # exist was never created, so probing either would report a second
           # failure for a cause already reported.
+          #
+          # The stream consumers are dropped here, and they are the one kind of
+          # function in the map this probe cannot be run against. Split plan row 24
+          # added the first: `catalog-votes-consumer` runs `catalog`'s image with
+          # the container command overridden to a plain Lambda handler, so there is
+          # no uvicorn process, no Web Adapter and no `/health` to answer. Invoking
+          # it with the HTTP payload below would hand a DynamoDB stream handler an
+          # API Gateway event and fail on a shape mismatch, which would report a
+          # broken deploy on a function that is fine.
+          #
+          # They are matched by the `-consumer` suffix rather than listed, which is
+          # the same rule terraform/lambda_stream_consumers.tf names them by, so a
+          # consumer added in a later row is excluded without an edit here. Note
+          # that this means the consumers are deployed without a smoke probe of
+          # their own: `deploy-images` still points them at the new image and still
+          # waits for the update to settle, so a failed deploy is caught, but a
+          # consumer whose handler is broken is caught by the aggregate Lambda
+          # error alarm and its stream DLQ rather than by this workflow. A real
+          # probe would mean synthesising a stream record and asserting on the
+          # `batchItemFailures` response, which is worth doing when there is more
+          # than one consumer to justify it.
           FUNCTIONS=$(printf '%s' "$FUNCTION_IMAGE_MAP" \
-            | python3 -c 'import json,sys; print("\n".join(sorted(json.load(sys.stdin))))')
+            | python3 -c '
+          import json, sys
+
+          names = sorted(json.load(sys.stdin))
+          print("\n".join(n for n in names if not n.endswith("-consumer")))
+          ')
 
           FAILED=0
           while IFS= read -r FUNCTION; do
@@ -650,6 +710,7 @@ jobs:
             exit 1
           fi
           echo "Every deployed domain function answered GET /health with 200."
+          echo "Stream consumers are excluded: they serve no HTTP and have no /health."
 
   # Row 14 onward: prove each cut domain is reached through its own API Gateway
   # route rather than still falling through to the monolith on $default.

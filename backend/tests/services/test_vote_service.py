@@ -7,7 +7,7 @@ from typing import Any
 from app.api.schemas.vote import EntityType, VoteCreate, VoteType
 from app.api.services.vote_service import VoteService
 from app.db.dynamo.build_lists import BuildList, BuildListRepository
-from app.db.dynamo.catalog import Part
+from app.db.dynamo.catalog import Part, PartRepository
 from app.db.dynamo.moderation import VoteRepository
 from app.db.dynamo.users import User, UserRepository
 from tests.conftest import save_catalog
@@ -40,12 +40,15 @@ class TestVoteService:
         service = VoteService()
         logger = logging.getLogger(__name__)
         vote_data = VoteCreate(vote_type=VoteType.UPVOTE)
-        vote = service.vote_on_entity(EntityType.CAR_GENERATION, car.id, test_user.id, vote_data, logger)
+        result = service.vote_on_entity(EntityType.CAR_GENERATION, car.id, test_user.id, vote_data, logger)
 
+        assert result.vote is not None
+        vote = result.vote
         assert vote.entity_type == "car_generation"
         assert vote.entity_id == car.id
         assert vote.user_id == test_user.id
         assert vote.vote_type == "upvote"
+        assert (result.upvotes, result.downvotes, result.total_votes, result.vote_score) == (1, 0, 1, 1)
 
     def test_vote_on_build_list(self, db_session: Any, test_user: User) -> None:
         """Test voting on a build list."""
@@ -62,12 +65,15 @@ class TestVoteService:
         service = VoteService()
         logger = logging.getLogger(__name__)
         vote_data = VoteCreate(vote_type=VoteType.UPVOTE)
-        vote = service.vote_on_entity(EntityType.BUILD_LIST, build_list.id, test_user.id, vote_data, logger)
+        result = service.vote_on_entity(EntityType.BUILD_LIST, build_list.id, test_user.id, vote_data, logger)
 
+        assert result.vote is not None
+        vote = result.vote
         assert vote.entity_type == "build_list"
         assert vote.entity_id == build_list.id
         assert vote.user_id == test_user.id
         assert vote.vote_type == "upvote"
+        assert (result.upvotes, result.downvotes, result.total_votes, result.vote_score) == (1, 0, 1, 1)
 
     def test_vote_on_part(self, db_session: Any, test_user: User) -> None:
         """Test voting on a global part."""
@@ -97,12 +103,20 @@ class TestVoteService:
         service = VoteService()
         logger = logging.getLogger(__name__)
         vote_data = VoteCreate(vote_type=VoteType.DOWNVOTE)
-        vote = service.vote_on_entity(EntityType.PART, part.id, test_user.id, vote_data, logger)
+        result = service.vote_on_entity(EntityType.PART, part.id, test_user.id, vote_data, logger)
 
+        assert result.vote is not None
+        vote = result.vote
         assert vote.entity_type == "part"
         assert vote.entity_id == part.id
         assert vote.user_id == test_user.id
         assert vote.vote_type == "downvote"
+        assert (result.upvotes, result.downvotes, result.total_votes, result.vote_score) == (0, 1, 1, -1)
+
+        # Row 24 inverted seam 3: the vote path no longer writes the part. The
+        # aggregate is the stream consumer's job now, so the column is untouched
+        # here and the caller reads the count off the response instead.
+        assert PartRepository().get(part.id).net_votes == 0
 
     def test_vote_update_existing(self, db_session: Any, test_user: User) -> None:
         """Test updating an existing vote."""
@@ -119,14 +133,17 @@ class TestVoteService:
         service = VoteService()
         logger = logging.getLogger(__name__)
         vote_data1 = VoteCreate(vote_type=VoteType.UPVOTE)
-        vote1 = service.vote_on_entity(EntityType.BUILD_LIST, build_list.id, test_user.id, vote_data1, logger)
+        first = service.vote_on_entity(EntityType.BUILD_LIST, build_list.id, test_user.id, vote_data1, logger)
 
         # Update vote
         vote_data2 = VoteCreate(vote_type=VoteType.DOWNVOTE)
-        vote2 = service.vote_on_entity(EntityType.BUILD_LIST, build_list.id, test_user.id, vote_data2, logger)
+        second = service.vote_on_entity(EntityType.BUILD_LIST, build_list.id, test_user.id, vote_data2, logger)
 
-        assert vote2.id == vote1.id  # Same vote, updated
-        assert vote2.vote_type == "downvote"
+        assert first.vote is not None and second.vote is not None
+        assert second.vote.id == first.vote.id  # Same vote, updated
+        assert second.vote.vote_type == "downvote"
+        # The tally moves rather than growing: still one vote, now negative.
+        assert (second.upvotes, second.downvotes, second.total_votes, second.vote_score) == (0, 1, 1, -1)
 
     def test_remove_vote(self, db_session: Any, test_user: User) -> None:
         """Test removing a vote."""
@@ -143,15 +160,19 @@ class TestVoteService:
         service = VoteService()
         logger = logging.getLogger(__name__)
         vote_data = VoteCreate(vote_type=VoteType.UPVOTE)
-        vote = service.vote_on_entity(EntityType.BUILD_LIST, build_list.id, test_user.id, vote_data, logger)
+        created = service.vote_on_entity(EntityType.BUILD_LIST, build_list.id, test_user.id, vote_data, logger)
+        assert created.vote is not None
 
         # Remove vote
         result = service.remove_vote(EntityType.BUILD_LIST, build_list.id, test_user.id, logger)
 
-        assert result is True
+        assert result is not None
+        # There is no vote left to hand back, but the tallies are still needed.
+        assert result.vote is None
+        assert (result.upvotes, result.downvotes, result.total_votes, result.vote_score) == (0, 0, 0, 0)
 
         # Verify vote is removed
-        db_vote = VoteRepository().get(vote.id)
+        db_vote = VoteRepository().get(created.vote.id)
         assert db_vote is None
 
     def test_remove_vote_not_exists(self, db_session: Any, test_user: User) -> None:
@@ -170,7 +191,8 @@ class TestVoteService:
         logger = logging.getLogger(__name__)
         result = service.remove_vote(EntityType.BUILD_LIST, build_list.id, test_user.id, logger)
 
-        assert result is False
+        # ``None`` rather than ``False``: the route turns it into the 404.
+        assert result is None
 
     def test_get_vote_summary(self, db_session: Any, test_user: User) -> None:
         """Test getting vote summary."""

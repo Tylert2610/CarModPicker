@@ -23,21 +23,53 @@ locals {
   # `bootstrap_image_tag`, which is why `lambda_aggregate_alarm` below is conditional rather than
   # true.
   #
-  # Nine is under the module's chunk size of 10, so this is one errors alarm and one throttles
-  # alarm for the whole estate for the life of the migration, with no chunking and no second alarm
-  # pair to subscribe or document.
-  alarm_lambda_function_names = [
-    for name in local.lambda_domain_names : module.lambda_domain[name].function_name
-    if contains(keys(local.lambda_domains), name)
-  ]
+  # Nine domains plus row 24's stream consumer is ten, which is exactly the module's chunk size,
+  # so this is still one errors alarm and one throttles alarm for the whole estate with no
+  # chunking and no second alarm pair to subscribe or document. It is also the ceiling. The next
+  # function this estate adds, which is row 25's consumer, is the eleventh and will chunk into a
+  # second alarm pair. That is a real change rather than a detail: it doubles the alarms to
+  # subscribe, and it splits "the backend is erroring" across two notifications. Whoever cuts row
+  # 25 should decide deliberately whether to accept the second pair or to fold the consumers into
+  # a separate aggregate of their own, and should not discover the ceiling from a plan diff.
+  #
+  # The consumers are appended after the domains rather than sorted in among them, and that is the
+  # order rule above rather than a preference. `catalog-votes-consumer` sorts before `media` and
+  # `moderation`, so an alphabetical merge would renumber the metric ids of every function after
+  # it and rewrite the expressions on both existing alarms. Appending gives the new function the
+  # next free id and leaves m0 through m8 exactly where they are.
+  alarm_lambda_function_names = concat(
+    [
+      for name in local.lambda_domain_names : module.lambda_domain[name].function_name
+      if contains(keys(local.lambda_domains), name)
+    ],
+    [
+      for name in sort(keys(local.lambda_stream_consumers)) :
+      module.lambda_stream_consumer[name].function_name
+    ],
+  )
 
   # The log groups the error metric filters read: the monolith's, plus one per created domain
   # function, the same shape and the same source as the fail open list below. A metric filter is
   # created against a named log group that must already exist, so this keys off
   # `local.lambda_domains` and not off the nine names.
+  #
+  # The stream consumer's group is in here too. Its handler logs through the same
+  # app/core/logging.py JsonFormatter every domain function uses, so the { $.level = "ERROR" }
+  # filter reads it unchanged, and a consumer that cannot write a part logs exactly the kind of
+  # handled error this alarm exists to catch: the invocation itself succeeds, having reported the
+  # record as a batch item failure, so AWS/Lambda Errors stays at zero and only the log says
+  # anything went wrong.
+  #
+  # The keys are prefixed so a consumer can never collide with a domain of the same name. Nothing
+  # collides today, and the filters are named from these keys, so a silent overwrite here would be
+  # a metric filter quietly missing rather than a plan error.
   alarm_error_log_groups = merge(
     { api = module.lambda_api.log_group_name },
     { for name in keys(local.lambda_domains) : name => module.lambda_domain[name].log_group_name },
+    {
+      for name in keys(local.lambda_stream_consumers) :
+      "consumer-${name}" => module.lambda_stream_consumer[name].log_group_name
+    },
   )
 }
 
@@ -125,6 +157,13 @@ module "alarms" {
   # in every domain function. This is the same set of log groups the error filters read, and it is
   # given explicitly rather than left to default to error_log_groups so that the two lists stay
   # independently readable if one of them ever needs to diverge.
+  #
+  # Row 24's consumer group is in the shared list and is the one group here where the filter can
+  # never match: a stream consumer builds no application, installs no middleware and has no caller
+  # to limit. It is left in rather than filtered out because a metric filter that matches nothing
+  # costs nothing and adds no metric data, while diverging the two lists to exclude it would trade
+  # that for a second list to keep correct. If a later row gives a consumer something the limiter
+  # touches, the group is already here.
   rate_limit_fail_open_log_groups = local.alarm_error_log_groups
 
   # rate_limit_fail_open_filter_pattern is deliberately not set: the module default

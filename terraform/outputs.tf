@@ -150,3 +150,30 @@ output "work_queue_dlq_arns" {
   description = "Work queue dead letter queue ARN keyed by job. Named by the redrive policy on the queue itself, so a consumer needs this only to drain one by hand."
   value       = { for key, q in aws_sqs_queue.work_dlq : key => q.arn }
 }
+
+# ---------------------------------------------------------------------------
+# The stream consumers from lambda_stream_consumers.tf, row 24 onward. Same
+# shape as the domain function outputs above and for the same reasons: the maps
+# carry only what exists in this environment, and the deploy workflow reads the
+# names off here rather than rebuilding them.
+# ---------------------------------------------------------------------------
+
+output "stream_consumer_function_names" {
+  description = "Stream consumer Lambda function name keyed by consumer. deploy-backend.yml adds these to the function-image map it hands to UpdateFunctionCode, pointing each at the image of the domain it runs, and its existing-functions job probes them the same way it probes a domain function."
+  value       = { for name, fn in module.lambda_stream_consumer : name => fn.function_name }
+}
+
+output "stream_consumer_function_arns" {
+  description = "Stream consumer Lambda function ARN keyed by consumer. The event source mappings read this in-module; it is exported so an operator can find the function behind a stalled shard without a console lookup."
+  value       = { for name, fn in module.lambda_stream_consumer : name => fn.function_arn }
+}
+
+output "stream_consumer_log_group_names" {
+  description = "Stream consumer CloudWatch log group name keyed by consumer. Folded into the alarm module's error_log_groups in monitoring.tf, and the group to tail when the votes stream DLQ is not empty."
+  value       = { for name, fn in module.lambda_stream_consumer : name => fn.log_group_name }
+}
+
+output "stream_consumer_event_source_mapping_uuids" {
+  description = "Event source mapping UUID keyed by consumer. This is the id `aws lambda get-event-source-mapping` takes, which is how you read the mapping's LastProcessingResult and its state when records are not being consumed."
+  value       = { for name, mapping in aws_lambda_event_source_mapping.stream_consumer : name => mapping.uuid }
+}

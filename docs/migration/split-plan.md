@@ -1198,7 +1198,7 @@ infrastructure.
 | 21 | `admin`: function, routes, OTel. **Delivered** | medium | 17 add, 4 change | 20 |
 | 22 | Streams on `users`, `parts`, `votes`, `part_listings`, plus the six queues and the DLQ alarm. **Delivered** | large | 4 change, 9 add (recorded 16 add at the time, before the queue count was settled) | 21 |
 | 23 | Tombstone attributes and tombstone-aware reads. **Delivered** | large | 0 | 22 |
-| 24 | Seam 3: `net_votes` handler moves to `catalog`'s stream consumer, on an event source mapping | medium | est. 3 add | 22 |
+| 24 | Seam 3: `net_votes` handler moves to `catalog`'s stream consumer, on an event source mapping. **Delivered** | medium | 6 add, 3 change (est. 3 add) | 22 |
 | 25 | Seam 4: price alert email moves to an `admin` stream handler, on an event source mapping | medium | est. 3 add | 22 |
 | 26 | `build-lists`: function, routes, OTel | large | est. 17 add, 4 change | 23 |
 | 27 | `identity`: function, routes, OTel | medium | est. 11 add, 4 change | 23 |
@@ -2369,6 +2369,106 @@ nothing recorded what that state was. The read tests include a regression test
 for the hard-delete drop in `get_parts_in_build_list`, which was the behaviour
 the tombstone filter had to preserve and which was untested.
 
+**Row 24 is delivered, and it is the first row that runs code off a stream.**
+Seam 3 is inverted. `vote_service._sync_part_net_votes` is gone, the vote path
+writes only `votes`, and `carmodpicker-<env>-catalog-votes-consumer` recomputes
+`parts.net_votes` from the `votes` stream that row 22 turned on. `moderation`'s
+`parts` grant moved from `tables` to `read_tables` in the same commit, which is
+the narrowing every row from 19 onward has been promising.
+
+**The two halves have to land in one apply, and they do.** Removing the grant
+before the consumer exists leaves the aggregate with nothing writing it; adding
+the consumer before removing the grant leaves two writers racing on the same
+attribute. Both are in `terraform/`, so the only way to separate them is to split
+the commit, which is why the commit is not split. There is no backfill and no
+cutover window either: the synchronous write and the consumer compute the
+identical number, `upvotes - downvotes`, so the column is correct on both sides
+of the apply and the mapping starts at `LATEST` rather than replaying a day of
+records to recompute values that are already right.
+
+**Recount, never increment.** The handler reads the vote count for a part and
+writes the difference; it does not adjust `net_votes` by the delta a record
+implies. This is the whole idempotency argument. A DynamoDB stream is
+at-least-once and is ordered only within a partition key, which here is the vote
+id, so records for one part arrive from many shards with no order between them
+and any record may be delivered twice. An increment would drift on every
+redelivery and could not be repaired without a full rebuild. A recount converges:
+replaying a batch, or the whole day, produces the same number. The handler also
+skips the write when the recomputed value equals the stored one, which keeps a
+replay from writing at all.
+
+**It is a second function on `catalog`'s image, not a second handler in
+`catalog`.** A Lambda function has one handler, and `catalog` is a uvicorn
+process behind the Web Adapter, so an event source mapping has no way to reach a
+second entry point inside it. The consumer is its own function running the same
+image with `image_config.command` overriding the container CMD to
+`app.entrypoints.catalog_votes_consumer.handler`. That was the smallest correct
+option, and it is better than a tenth ECR repository would have been: one build,
+one push and one digest means the deploy that updates `catalog` updates the
+consumer with the identical bytes and the two cannot skew. The platform module
+has supported `image_config` since v2.0.1, so the existing `~> 2.1` pin already
+covers it. `deploy-backend.yml` gained an `EXTRA_FUNCTIONS` map that emits the
+consumer alongside `catalog` from the same manifest, and `smoke-domains` skips
+anything whose name ends in `-consumer`, because a stream consumer serves no HTTP
+and has no `/health` to probe.
+
+**The mapping's settings are all failure handling, because the defaults stall a
+shard.** A DynamoDB stream shard is ordered and a failing batch blocks it, and
+the default `maximum_retry_attempts` of -1 retries until the record expires, so
+one poison record with the defaults stops every later record on that shard for 24
+hours. The mapping therefore sets `bisect_batch_on_function_error`,
+`maximum_retry_attempts = 2`, `maximum_record_age_in_seconds = 3600`,
+`function_response_types = ["ReportBatchItemFailures"]` and an `on_failure`
+destination of `carmodpicker-<env>-votes-stream-dlq`, the queue row 22 created for
+exactly this. The handler returns `batchItemFailures` naming only the sequence
+numbers of the records for the part it could not write, so one unwritable part
+does not cause every other part in the batch to be recomputed again. Bisecting is
+the backstop for the case the response cannot cover: a timeout or an out-of-memory
+kill returns no response at all, so there is no failure list to read and the whole
+batch retries.
+
+**Alarms: folded in, no new alarm, and the ceiling is now reached.** Consumer
+errors join `lambda_function_names` and its log group joins `error_log_groups`,
+so the existing `<prefix>-lambda-errors`, `<prefix>-lambda-throttles` and
+`<prefix>-application-errors` alarms cover it with no per-resource alarm added.
+The DLQ is already covered: the single `<prefix>-dlq-depth` alarm row 22 created
+spans all six queues including this one. The consumer is appended after the nine
+domains rather than sorted among them, because the aggregate alarms are metric
+math over positional ids and `catalog-votes-consumer` sorts before `media`, so an
+alphabetical merge would rewrite every expression on both existing alarms.
+
+That makes ten functions, which is exactly the module's chunk size. **Row 25's
+consumer is the eleventh and will chunk into a second alarm pair.** That is worth
+deciding rather than discovering: it doubles the alarms to subscribe and splits
+"the backend is erroring" across two notifications, which is the outcome open
+question 1 was protecting against. Whoever cuts row 25 should choose deliberately
+between accepting the second pair and giving the consumers an aggregate of their
+own.
+
+**The frontend change is smaller than open question 2 assumed, and better.** See
+that question's answer: the frontend never read `net_votes`, so there was no
+stale aggregate on screen to fix. What changed instead is that the vote routes
+now return the authoritative counts and `VoteButtons.tsx` uses them, which
+removes a round trip rather than adding one.
+
+**Expected plan: 6 add, 3 change, 0 destroy.** The adds are the four resources
+the `lambda-function` module creates for
+`carmodpicker-<env>-catalog-votes-consumer` (`aws_lambda_function`,
+`aws_iam_role`, `aws_cloudwatch_log_group`, and the X-Ray write policy), plus its
+runtime `aws_iam_role_policy` and the `aws_lambda_event_source_mapping`. The
+changes are the two aggregate Lambda alarms gaining a tenth metric and the
+GitHub Actions deploy policy gaining the eleventh function ARN; a new metric
+filter for the consumer's log group and the `application-errors` alarm's
+description are folded into those. **`bootstrap_image_tag` must be refreshed to a
+tag that currently resolves in the catalog ECR repository before this is
+applied.** It seeds `image_uri` on function creation, Lambda pulls the image at
+`CreateFunction`, and the keep-last-10 lifecycle policy expires old tags: the
+plan is green either way and the apply is what fails.
+
+The estimate in the table said 3 add. It counted the mapping, the function and
+its policy and did not count the three resources the module creates alongside a
+function, which is the same undercount row 22's estimate made.
+
 PRs 1, 2, 3, 9, 10, and 33 are independent of everything else and can run in
 parallel. PR 22 is the hard gate: nothing from 23 onward can start without it,
 which is why the five uncoupled domains are cut first, buying time for the
@@ -2397,12 +2497,29 @@ exclusive; until row 31 retires it, its invocation failures surface through
 `<prefix>-api-5xx` and its logged errors through `<prefix>-application-errors`.
 Section 3.6's paragraph on row 15 has the full reasoning.
 
-**2. `net_votes` eventual consistency.** Seam 3 makes the denormalised vote count
-lag the vote by the stream latency, so a user who votes and immediately reloads
-may see the old number. Accept the lag, or change the vote route to return the
-computed count and have the frontend use the response rather than re-reading?
-The second is a small frontend change and removes the problem, but it is a
-frontend change in the middle of a backend migration.
+**2. `net_votes` eventual consistency. Answered: return the count, and done.**
+Taken by row 24, which took the second option. The vote and un-vote routes now
+answer with `VoteMutationResult`, the vote plus the entity's `upvotes`,
+`downvotes`, `total_votes` and `vote_score` read from the `votes` table in the
+same request, and `VoteButtons.tsx` overwrites its optimistic guess with those
+numbers. The lag is real but nothing displays it.
+
+The question's own reservation, that this is a frontend change in the middle of
+a backend migration, turned out to be smaller than it reads, for a reason the
+question could not have known: **the frontend never read `net_votes` at all.** It
+renders `upvotes - downvotes` from `VoteSummary`, and `net_votes` is used only
+server-side, as the `rating` sort key in `PartService`. So the stale-number
+problem the question describes was never going to appear in the UI, and the
+change that was worth making was a different one. The old client updated its
+counts optimistically and had no authoritative number until something else
+re-fetched; it now gets the true count on the write it already makes. That
+removes a round trip rather than adding one, and it is a strict improvement
+whether or not the aggregate lags.
+
+The response also carries the counts for car generations and build lists, which
+have no denormalised aggregate to go stale. One response shape across the three
+entity types is worth more than saving a query on two of them, and it keeps the
+frontend from branching on which entity it voted for.
 
 **3. The two unauthenticated write routes.** `POST /api/parts/{part_id}/listings`
 and `POST /api/parts/price-history` take no user dependency, unlike every other

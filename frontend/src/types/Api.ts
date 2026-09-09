@@ -461,6 +461,26 @@ export interface VoteRead {
   updated_at: string;
 }
 
+/**
+ * What the vote and unvote routes return.
+ *
+ * Split plan row 24 moved `parts.net_votes` onto the votes stream, so that
+ * column now lags the write. The counts here do not: the backend reads them
+ * from the votes table in the same request that writes the vote, so a client
+ * can render the new total straight off the response instead of re-fetching a
+ * summary that might still hold the old number.
+ *
+ * `vote` is null on a removal, where there is no vote left to return.
+ */
+export interface VoteMutationResult {
+  vote: VoteRead | null;
+  upvotes: number;
+  downvotes: number;
+  total_votes: number;
+  /** upvotes - downvotes, the same field name VoteSummary uses. */
+  vote_score: number;
+}
+
 export interface VoteSummary {
   entity_id: string;
   entity_type: string;

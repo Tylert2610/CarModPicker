@@ -18,7 +18,7 @@ from app.api.schemas.vote import (
     EntityType,
     FlaggedEntitySummary,
     VoteCreate,
-    VoteRead,
+    VoteMutationResult,
     VoteSummary,
 )
 from app.api.services.vote_service import VoteService
@@ -57,9 +57,9 @@ async def count_votes(
 
 @router.post(
     "/{entity_type}/{entity_id}",
-    response_model=VoteRead,
+    response_model=VoteMutationResult,
     responses=standard_responses(
-        success_description="Vote created/updated successfully",
+        success_description="Vote created/updated successfully, with the entity's tallies as of this write",
         validation_error=True,
         not_found=True,
         conflict=True,
@@ -70,22 +70,29 @@ async def vote_on_entity(
     entity_id: UUID,
     vote_data: VoteCreate,
     current_user: DBUser = Depends(get_current_user),
-) -> VoteRead:
-    """Vote on an entity (car, build list, or global part)."""
-    vote = vote_service.vote_on_entity(
+) -> VoteMutationResult:
+    """Vote on an entity (car, build list, or global part).
+
+    The response carries the entity's recomputed tallies alongside the vote.
+    Split plan row 24 moved the `parts.net_votes` aggregate onto the `votes`
+    stream, so that column now lags the vote; these counts are read from the
+    `votes` table in this request and do not, which is what lets a client render
+    the new total without a follow-up read.
+    """
+    return vote_service.vote_on_entity(
         entity_type=entity_type,
         entity_id=entity_id,
         user_id=current_user.id,
         vote_data=vote_data,
         logger=logger,
     )
-    return VoteRead.model_validate(vote)
 
 
 @router.delete(
     "/{entity_type}/{entity_id}",
+    response_model=VoteMutationResult,
     responses=standard_responses(
-        success_description="Vote removed successfully",
+        success_description="Vote removed successfully, with the entity's tallies after the removal",
         not_found=True,
     ),
 )
@@ -93,22 +100,26 @@ async def remove_vote(
     entity_type: EntityType,
     entity_id: UUID,
     current_user: DBUser = Depends(get_current_user),
-) -> dict[str, str]:
-    """Remove a vote from an entity."""
-    removed = vote_service.remove_vote(
+) -> VoteMutationResult:
+    """Remove a vote from an entity.
+
+    Returns the same shape the vote route does, with `vote` set to null because
+    there is no vote left. A client removing a vote needs the new total for
+    exactly the same reason a client casting one does.
+    """
+    result = vote_service.remove_vote(
         entity_type=entity_type,
         entity_id=entity_id,
         user_id=current_user.id,
         logger=logger,
     )
 
-    if removed:
-        return {"message": "Vote removed successfully"}
-    else:
+    if result is None:
         # IN-06: use the centralized error-shape helper instead of raw
         # ``HTTPException`` so the response follows the same {message,
         # error_code, details} contract as the rest of the module.
         ResponsePatterns.raise_not_found("Vote")
+    return result
 
 
 @router.get(
