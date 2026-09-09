@@ -70,3 +70,14 @@ def test_create_access_token_custom_expiry() -> None:
     expected_exp_datetime = datetime.now(timezone.utc) + custom_delta
     actual_exp_datetime = datetime.fromtimestamp(payload["exp"], tz=timezone.utc)
     assert abs((expected_exp_datetime - actual_exp_datetime).total_seconds()) < 5
+
+
+def test_verify_password_with_no_stored_hash() -> None:
+    """An OAuth-only account has no password at all. False, never an exception."""
+    assert verify_password("anything", None) is False
+    assert verify_password("anything", "") is False
+
+
+def test_verify_password_with_a_corrupt_stored_hash() -> None:
+    """A stored value that is not a parseable bcrypt hash is a failed login, not a 500."""
+    assert verify_password("anything", "not-a-bcrypt-hash") is False

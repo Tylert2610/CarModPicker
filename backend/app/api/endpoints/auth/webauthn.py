@@ -10,9 +10,7 @@ import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
 
-import jwt
 from fastapi import APIRouter, Depends
-from jwt import InvalidTokenError
 from webauthn import (
     generate_authentication_options,
     generate_registration_options,
@@ -27,10 +25,11 @@ from webauthn.helpers.structs import (
     ResidentKeyRequirement,
     UserVerificationRequirement,
 )
+from webbpulse.security import TokenError
 
 from app.api.dependencies.auth import (
-    ALGORITHM,
     create_access_token,
+    decode_access_token,
     get_access_token_expires_delta_for_user,
     get_current_user,
 )
@@ -81,8 +80,8 @@ def _build_challenge_token(purpose: str, challenge: bytes, user_id: str | None =
 
 def _decode_challenge_token(token: str, expected_purpose: str) -> tuple[bytes, str | None]:
     try:
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[ALGORITHM])
-    except InvalidTokenError:
+        payload = decode_access_token(token)
+    except TokenError:
         ResponsePatterns.raise_bad_request("Invalid or expired challenge")
     if payload.get("purpose") != expected_purpose:
         ResponsePatterns.raise_bad_request("Invalid challenge")
