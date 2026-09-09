@@ -27,6 +27,7 @@ from app.api.utils.image_utils import get_presigned_url_from_file_key
 from app.api.utils.response_patterns import ResponsePatterns
 from app.db.dynamo.build_lists import BuildList
 from app.db.dynamo.build_logs import BuildLog, BuildLogPost
+from app.db.dynamo.tombstones import live_or_none
 from app.db.dynamo.users import User as DBUser
 
 # Create router
@@ -63,6 +64,12 @@ def _require_post(repos: Repositories, post_id: UUID) -> BuildLogPost:
 
 
 def _post_with_author(post: BuildLogPost, author: Optional[DBUser]) -> BuildLogPostRead:
+    # Seam 1's read consequence: a tombstoned author renders exactly like an
+    # absent one. Both call sites pass their author through here, so collapsing
+    # the tombstone to None once covers the batch join and the single get
+    # without either of them repeating the predicate. `author_username` and
+    # `author_image_url` are already Optional, so no schema change follows.
+    author = live_or_none(author)
     post_data = BuildLogPostRead.model_validate(post)
     post_data.author_username = author.username if author else None
     post_data.author_image_url = (

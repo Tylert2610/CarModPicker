@@ -113,6 +113,12 @@ class Part(TimestampedDynamoModel):
     car_ids: list[UUID] = Field(default_factory=list)
     best_price_cents: int | None = None
     net_votes: int = 0
+    #: Seam 2's tombstone pair. Row 23 adds the attributes and the reads that
+    #: honour them; row 28 is what starts writing them, when the `part-purge`
+    #: stream consumer exists to drain the cascade. Rows written before row 23
+    #: lack both and read as not deleted.
+    deleted: bool = False
+    deleted_at: datetime | None = None
 
 
 class PartCar(DynamoModel):

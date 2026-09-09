@@ -150,6 +150,25 @@ attach an author, and all four must filter tombstoned users out rather than
 rendering a blank author. That filtering has to land **before** `users` is cut,
 not with it.
 
+Row 23 delivered that filtering and found the four-domain list wrong; its
+delivery note in section 8 has the corrected surface, which is `build-logs` and
+`moderation` plus `search`, not `build-lists` and `vehicles`.
+
+**Open item for row 30: when are the uniqueness reservations released?** The
+hard delete does it in the same transaction as the row delete.
+`UserRepository.delete_user` is a `transact_write` of three actions, the item
+delete plus `release_unique_action` on `USERNAME` and on `EMAIL`, so the moment a
+user is gone the username and email are reusable. A tombstone has no such moment.
+Hold the reservations until the queue drains and a user who deletes their account
+cannot re-register with their own address for as long as the cleanup takes;
+release them with the tombstone write and there is a window in which a live
+reservation points at an id whose row still exists and still reads as a user to
+anything that has not been taught the predicate. The tombstone write and the
+release are also no longer one transaction, so a partial failure leaves the pair
+inconsistent in whichever direction is chosen. This has to be decided in row 30
+rather than discovered in it. The same question applies to `oauth_accounts`,
+whose `delete_link` releases `PROVIDER_ACCOUNT` and `USER_PROVIDER` the same way.
+
 **Seam 2: the part purge.** `part_service.purge_related_rows_for_parts` deletes a
 part and then writes into `build_list_parts`, `votes`, `reports`, and
 `part_price_alerts`, owned by `build-lists`, `moderation` twice, and `admin`.
@@ -160,7 +179,32 @@ mapping that fans the cleanup onto the `part-purge` work queue for `build-lists`
 The read-path consequence is real here too and is more visible to users than the
 user cascade. A build list that contains a purged part must not render a hole; it
 must drop the row. So `build-lists` gains a tombstone check on the part join
-before `catalog` is cut.
+before `catalog` is cut. Row 23 delivered that check, and found the join
+wider than this paragraph implies: the cost sum in `build_lists.py` prices parts
+too, and a purged part must not be priced into a total any more than it should be
+rendered as a row.
+
+**Open item for row 28: the part purge releases two things a tombstone does
+not.** Both are in the synchronous path today and neither has an owner once the
+delete becomes a tombstone write.
+
+- **The uniqueness reservations on `parts`.** `PartService.purge` ends in
+  `repos.parts.delete_unique`, which releases the `gtin` reservation and the
+  `manufacturer + part_number` reservation alongside the row. Tombstone the part
+  and those reservations outlive it, so a genuinely new part carrying the same
+  GTIN as a purged one is rejected as a duplicate of a row no user can see. It is
+  the same question as seam 1's username and email and should be answered the same
+  way, but the blast radius is different: a blocked GTIN is a catalog data problem
+  rather than an account problem, and it fails closed rather than open.
+- **The S3 objects behind `image_urls`.** A purged part's images are handled by
+  `bucket_orphan_utils.py` rather than by the purge itself, which sweeps for
+  objects no row references. A tombstoned part still has a row and still
+  references its objects, so the sweep will not collect them and the storage is
+  held for as long as the tombstone is. Whether the tombstone should clear
+  `image_urls` at write time, or the sweep should learn the predicate, is a
+  decision for row 28. Open question 6 already notes the sweep is a full-table
+  scan behind an HTTP route and will time out as the tables grow, so the two are
+  worth deciding together.
 
 **Seam 3: the vote denormalisation.** `vote_service._sync_part_net_votes` writes
 `parts.net_votes` after every vote create, update, and remove. `moderation` owns
@@ -1153,7 +1197,7 @@ infrastructure.
 | 20 | `vehicles`: function, routes, OTel. **Delivered** | medium | 13 add, 4 change | 19 |
 | 21 | `admin`: function, routes, OTel. **Delivered** | medium | 17 add, 4 change | 20 |
 | 22 | Streams on `users`, `parts`, `votes`, `part_listings`, plus the six queues and the DLQ alarm. **Delivered** | large | 4 change, 9 add (recorded 16 add at the time, before the queue count was settled) | 21 |
-| 23 | Tombstone attributes and tombstone-aware reads in four domains | large | 0 | 22 |
+| 23 | Tombstone attributes and tombstone-aware reads. **Delivered** | large | 0 | 22 |
 | 24 | Seam 3: `net_votes` handler moves to `catalog`'s stream consumer, on an event source mapping | medium | est. 3 add | 22 |
 | 25 | Seam 4: price alert email moves to an `admin` stream handler, on an event source mapping | medium | est. 3 add | 22 |
 | 26 | `build-lists`: function, routes, OTel | large | est. 17 add, 4 change | 23 |
@@ -2247,6 +2291,83 @@ live Lambda function, its log group, its execution role and inline policy, its
 alarm dimensions, and the image tags of everything already deployed, and the
 rename would have meant recreating a function that was serving traffic. That is
 the difference the open question was pointing at.
+
+**Row 23 is delivered, and the row's own description of it was wrong.** The
+plan said "`build-lists`, `build-logs`, `moderation`, and `vehicles` all read
+`users` to attach an author, and all four must filter tombstoned users out". Two
+of those four read no users at all. `build-lists` joins to `parts`, not to
+`users`; `vehicles` has no user concept anywhere in `car_generations`. The
+four-domain framing was a guess at the shape of the join graph rather than a
+reading of it, and the real surface is both narrower on users and wider on parts
+than the row implied. Corrected, the read sites are:
+
+- **`build-lists` joins to `parts`, not to `users`.** Two `get_many` hops in
+  `get_parts_in_build_list` (`app/api/endpoints/build_list_parts.py`), the stored
+  parts and the canonical parts a duplicate resolves to, plus `_require_part` on
+  the add and update routes, plus the cost sum in `app/api/endpoints/build_lists.py`
+  that would otherwise price a purged part into a build list total.
+- **`build-logs` is the one domain that genuinely attaches an author.** Both its
+  sites, the batch join in `get_build_log_by_build_list` and the single get on
+  the create path, funnel through `_post_with_author`, so the filter is one line
+  there rather than two at the call sites.
+- **`moderation` reads both users and parts, at eight sites.**
+  `report_service.py` has four: the reporter and the reviewer in the batch list,
+  the same pair in `get_report_by_id`, and the part in `_get_entity_or_404` and
+  `_get_entity_details`. `bug_report_service.py` has three, the `username()`
+  closure and both single gets. `vote_service.py` has one, `_get_entities`, which
+  is the chokepoint both the vote route and the flagged-entity listing share.
+- **`catalog` filters its own reads,** which the row did not mention at all but
+  which is where a tombstoned part would otherwise be most visible: `_matches` in
+  `PartService` (every `candidates()` branch ends there), `page_by_category`,
+  `list_page_read`, `search_parts`, a `get_by_id` override because the route is
+  generated by `BaseDynamoEndpointRouter`, and `_get_part_or_404` in
+  `app/api/endpoints/parts.py` for the listing, image and price-history routes.
+- **`search.py` covers both users and parts** through
+  `UserRepository.search`, which is the one path that filters server-side.
+
+**The predicate is one function, not a repository concern.** It lives in
+`app/db/dynamo/tombstones.py` beside the models that carry the attributes. The
+obvious home, a filter inside `DynamoRepository` applied to every read, does not
+work: the widest join in the application goes through `CatalogRepository.get_many`,
+which is a `BatchGetItem`, and that API takes no filter expression. So the
+predicate is applied in Python after the batch get everywhere a batch get is
+involved, and as a `filter_expression` only on `UserRepository.search`, which is
+a scan and where it keeps behaviour identical. Hiding it in the repository layer
+would have silently missed the one path that matters most.
+
+**This row adds the attributes and the reads, and deliberately not the writes.**
+`deleted` and `deleted_at` are on the `User` and `Part` models and nothing sets
+them. Both deletes are still hard deletes that cascade synchronously inside the
+request: `_delete_user_everywhere` in `app/api/endpoints/users.py` and
+`PartService.purge` plus `purge_related_rows_for_parts`. Flipping either write
+here would strand rows across eleven tables, because the stream consumers that
+drain the cascade off a work queue do not exist until rows 28 and 30 and row 22
+created the queues without any event source mapping. The predicate is therefore
+live ahead of its producer on purpose: every row reads as not deleted today, and
+the read paths stay correct the moment a tombstone first appears.
+
+**Expected plan: 0, and it held.** No Terraform changed. `deleted` and
+`deleted_at` are non-key attributes, DynamoDB is schemaless for those, and
+`terraform/dynamodb_tables.json` carries only key attributes, secondary indexes
+and the TTL field. No GSI is needed either: nothing queries by tombstone, every
+read that filters had already reached its rows by another index. Existing rows
+lack both attributes and read as live, so there is no backfill.
+
+No response schema changed. `UserRead`, `PublicUserRead` and `PartRead` are
+explicit field allowlists rather than model dumps, so the two attributes cannot
+leak into a public response, and the OpenAPI snapshot and the extension contract
+tests both pass untouched. They are internal attributes and should stay that way.
+
+Twenty-five tests were added: eight on the predicate itself
+(`tests/db/test_dynamo_tombstones.py`), thirteen on the read paths
+(`tests/api/endpoints/test_tombstone_aware_reads.py`), and four pinning what the
+two synchronous cascades currently remove
+(`tests/api/endpoints/test_delete_cascades.py`). That last file exists because
+neither cascade had a test, which is a bad position from which to make one
+asynchronous: rows 28 and 30 are correct only if they end in the same state, and
+nothing recorded what that state was. The read tests include a regression test
+for the hard-delete drop in `get_parts_in_build_list`, which was the behaviour
+the tombstone filter had to preserve and which was untested.
 
 PRs 1, 2, 3, 9, 10, and 33 are independent of everything else and can run in
 parallel. PR 22 is the hard gate: nothing from 23 onward can start without it,

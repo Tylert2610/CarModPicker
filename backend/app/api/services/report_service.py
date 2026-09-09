@@ -19,6 +19,7 @@ from app.api.schemas.report import (
 from app.db.dynamo.build_lists import BuildList as DBBuildList
 from app.db.dynamo.catalog import Part
 from app.db.dynamo.moderation import Report
+from app.db.dynamo.tombstones import live_or_none
 
 
 class ReportService:
@@ -101,8 +102,10 @@ class ReportService:
 
         details: List[ReportWithDetails] = []
         for report in reports:
-            reporter = users_by_id.get(report.user_id)
-            reviewer = users_by_id.get(report.reviewed_by) if report.reviewed_by else None
+            # A tombstoned reporter or reviewer reads as absent, which the two
+            # existing fallbacks below already render ("" and None respectively).
+            reporter = live_or_none(users_by_id.get(report.user_id))
+            reviewer = live_or_none(users_by_id.get(report.reviewed_by)) if report.reviewed_by else None
             details.append(
                 self._with_details(
                     report,
@@ -179,8 +182,8 @@ class ReportService:
         if not is_admin and report.user_id != current_user_id:
             return None
 
-        reporter = self.repos.users.get(report.user_id)
-        reviewer = self.repos.users.get(report.reviewed_by) if report.reviewed_by else None
+        reporter = live_or_none(self.repos.users.get(report.user_id))
+        reviewer = live_or_none(self.repos.users.get(report.reviewed_by)) if report.reviewed_by else None
         return self._with_details(
             report,
             reporter_username=reporter.username if reporter else "",
@@ -210,7 +213,9 @@ class ReportService:
         if entity_type == EntityType.BUILD_LIST:
             entity = self.repos.build_lists.get(entity_id)
         elif entity_type == EntityType.PART:
-            entity = self.repos.parts.get(str(entity_id))
+            # A tombstoned part cannot be reported: it is absent, so this is the
+            # same 404 as an id that was never there.
+            entity = live_or_none(self.repos.parts.get(str(entity_id)))
         else:
             raise ValueError(f"Unknown entity type: {entity_type}")
         if entity is None:
@@ -224,7 +229,9 @@ class ReportService:
             if bl:
                 return {"name": bl.name, "description": bl.description}
         elif entity_type == "part":
-            part = self.repos.parts.get(str(entity_id))
+            # A report whose target was purged keeps rendering, but falls through
+            # to the "Unknown part" label below rather than naming the tombstone.
+            part = live_or_none(self.repos.parts.get(str(entity_id)))
             if part:
                 return {"name": part.name, "description": part.description}
 
