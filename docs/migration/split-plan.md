@@ -1108,7 +1108,7 @@ infrastructure.
 | 16 | Observability: OpenTelemetry in the domain functions, Sentry removed from them. **Delivered** | medium | 1 change | 14 |
 | 17 | Terraform: log retention 14 to 7 days. **Delivered** | small | 2 change | 15 |
 | 18 | `build-logs`: function, routes, OTel. **Delivered** | medium | 11 add, 4 change | 16 |
-| 19 | `moderation`: function, routes, OTel | medium | est. 15 add, 4 change | 18 |
+| 19 | `moderation`: function, routes, OTel. **Delivered** | medium | 15 add, 4 change | 18 |
 | 20 | `vehicles`: function, routes, OTel | medium | est. 13 add, 4 change | 19 |
 | 21 | `admin`: function, routes, OTel | medium | est. 17 add, 4 change | 20 |
 | 22 | Streams on `users`, `parts`, `votes`, `part_listings`, plus queues and DLQs | large | 16 add | 21 |

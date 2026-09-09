@@ -110,6 +110,69 @@ locals {
   # size. It is also the cheapest thing to raise if the cold start or the
   # duration says otherwise, since memory is the only tuning knob on a function
   # this simple.
+  # How `moderation`'s two table lists were derived, by row 19 and by the same
+  # method as the two above, from the code rather than from the ownership
+  # column:
+  #
+  #   - `app/composition/domains.py` declares `_MODERATION_REPOSITORIES` as
+  #     `users`, `car_makes`, `car_models`, `car_generations`, `parts`,
+  #     `build_lists`, `votes`, `reports` and `bug_reports`, and
+  #     `app/db/dynamo/registry.py`'s `tables_for` maps each of those nine to a
+  #     table suffix of the same name.
+  #     `backend/tests/entrypoints/test_repository_bundles.py` recomputes that
+  #     tuple from the real import graph, so the bundle is a checked statement
+  #     of what this function can reach.
+  #   - Nine repositories, seven tables granted. `car_makes` and `car_models`
+  #     are in the bundle and in neither list here, and that is the gap between
+  #     what the import graph reaches and what a code path calls. The bundle
+  #     test computes reachability through imports, and those two arrive with
+  #     the catalogue types the vote and report schemas name; no route, service
+  #     or utility under this domain calls `repos.car_makes` or
+  #     `repos.car_models` at all. Granting a table on the strength of an import
+  #     rather than a call would hand this function two tables no request can
+  #     touch, which is the opposite of what a per-domain split is for.
+  #   - Four tables are written. `app/api/services/vote_service.py` calls
+  #     `.create`, `.update` and `.delete` on `repos.votes`;
+  #     `app/api/services/report_service.py` calls `.create`, `.update` and
+  #     `.delete` on `repos.reports`; and
+  #     `app/api/services/bug_report_service.py` calls `.create`, `.update` and
+  #     `.delete` on `repos.bug_reports`. Those three are the domain's own, per
+  #     section 1.2.
+  #   - The fourth written table is `parts`, and it is a cross-domain write
+  #     rather than an oversight. `vote_service._sync_part_net_votes` calls
+  #     `self.repos.parts.update(str(entity_id), net_votes=upvotes - downvotes)`
+  #     after every vote create, update and remove on a part. That is seam 3 of
+  #     section 1.3, the one cross-domain write in the application that is not a
+  #     delete, and it is still synchronous today: row 24 is what inverts it
+  #     into a stream handler `catalog` owns, at which point `moderation` stops
+  #     writing `parts` and this grant narrows to a read.
+  #
+  #     Withholding the grant now would not make the split cleaner, it would
+  #     break voting on a part. The failure is also worse than a plain denial:
+  #     `_sync_part_net_votes` runs after the vote row is already committed, so
+  #     an AccessDenied there would leave the vote written and `net_votes`
+  #     stale, with a 500 on a request that half succeeded. The grant follows
+  #     the writer, and row 24 is where the writer moves.
+  #   - Three tables are read only. `users` for the reporter and the author
+  #     (`repos.users.get` and `.get_many` in `report_service`), and
+  #     `build_lists`, `car_generations` and `parts` for the vote and report
+  #     targets, which are polymorphic over `entity_type`: `_get_entities`
+  #     dispatches to `repos.build_lists.get_many`,
+  #     `repos.car_generations.get_many` or `repos.parts.get_many`. `parts` is
+  #     in `tables` rather than `read_tables` because a table appears in exactly
+  #     one of the two lists and the write set is the wider grant; the twelve
+  #     write actions include the five read ones, so the read path is covered.
+  #   - `rate-limits` is in `tables` for the reason both entries above record:
+  #     it is the shared limiter's counter table, reached from the middleware
+  #     stack rather than from a repository, so the bundle cannot name it, and
+  #     the limiter fails open, so withholding it would silently turn layer 2
+  #     off for this domain rather than failing.
+  #
+  # 256 MB, the same as `build-logs` and for the same reason. This domain's
+  # twenty routes are JSON over DynamoDB: no Pillow, no image decoding and no
+  # native work anywhere in `votes.py`, `reports.py`, `bug_reports.py` or their
+  # three services, which import nothing beyond FastAPI, the schemas and the
+  # repositories. Only `media` needs 512.
   lambda_domains_declared = {
     media = {
       secrets     = true
@@ -124,6 +187,13 @@ locals {
       memory      = 256
       tables      = ["build_log_posts", "rate-limits"]
       read_tables = ["users", "build_lists", "build_logs"]
+    }
+    moderation = {
+      secrets     = true
+      s3          = false
+      memory      = 256
+      tables      = ["votes", "reports", "bug_reports", "parts", "rate-limits"]
+      read_tables = ["users", "build_lists", "car_generations"]
     }
   }
 
