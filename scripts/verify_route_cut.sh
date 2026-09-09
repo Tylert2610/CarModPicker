@@ -123,10 +123,10 @@ esac
 # prefix listed here must appear there for that domain, or this script will
 # correctly report it as still on the monolith.
 #
-# `media` from row 14, `build-logs` from row 18 and `moderation` from row 19 are
-# cut today. The other six are filled in by rows 20 through 31 and are listed
-# empty so the script fails loudly with "no prefixes" rather than passing
-# silently on an empty loop.
+# `media` from row 14, `build-logs` from row 18, `moderation` from row 19 and
+# `vehicles` from row 20 are cut today. The other five are filled in by rows 21
+# through 31 and are listed empty so the script fails loudly with "no prefixes"
+# rather than passing silently on an empty loop.
 case "$DOMAIN" in
 media)
   PREFIXES=(/api/images)
@@ -141,8 +141,9 @@ moderation)
   PREFIXES=(/api/votes /api/reports /api/bug-reports)
   ;;
 vehicles)
-  # Row 20.
-  PREFIXES=()
+  # Row 20. Two prefixes: the car-generations read tree and the unified search,
+  # which lives in this domain as seam 5's read fan-out.
+  PREFIXES=(/api/car-generations /api/search)
   ;;
 admin)
   # Row 21.
