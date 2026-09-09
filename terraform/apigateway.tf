@@ -12,9 +12,9 @@ locals {
   # once local.lambda_domain_route_keys names its route keys: the module's every_integration_is_routed
   # check fails the plan on an integration no route can reach, so the two move together.
   #
-  # Row 14 is `media`. Rows 18 through 31 append build-logs, moderation, vehicles, admin,
-  # build-lists, identity, catalog and users.
-  routed_lambda_domains = ["media"]
+  # Row 14 is `media` and row 18 is `build-logs`. Rows 19 through 31 append moderation,
+  # vehicles, admin, build-lists, identity, catalog and users.
+  routed_lambda_domains = ["media", "build-logs"]
 
   # The path prefixes each domain serves, from section 1.1's "Path prefixes served" column. Only a
   # routed domain needs an entry; the rest arrive with their own row.
@@ -29,6 +29,18 @@ locals {
   # therefore carry no trailing slash and the keys are built from them directly.
   lambda_domain_path_prefixes = {
     media = ["/api/images"]
+    # Row 18. One prefix, and all five of this domain's routes sit under it:
+    # /api/build-logs/posts/count, /api/build-logs/build-list/{id},
+    # /api/build-logs/build-list/{id}/posts, and the two on
+    # /api/build-logs/posts/{post_id}. The bare key matches none of those five
+    # and is still required, because without it the collection path falls to
+    # $default while the rest of the prefix moves, which is the half-working
+    # split the comment above describes.
+    #
+    # `/api/build-logs` and `/api/build-lists` are different prefixes and API
+    # Gateway matches a route key literally, so this cut cannot pull any of
+    # build-lists' 34 routes with it. Those stay on $default until row 26.
+    build-logs = ["/api/build-logs"]
   }
 
   # Two route keys per prefix, generated rather than written out, so a domain added above cannot be
@@ -88,10 +100,11 @@ module "api" {
   # falling through to the monolith and a rollback is deleting the routes entry again. Section 6.4.
   default_integration = "legacy"
 
-  # Row 14, the first cut: `media`'s two keys. No authorization_type is set on either, which means
-  # the module's own choice, CUSTOM whenever authorizer_id is set, so each one sits behind the
-  # staging access gate exactly as $default does. Setting NONE here would punch a hole straight past
-  # the gate, which is the failure the module's own comment records from the Portfolio inventory.
+  # Two keys per cut prefix: `media`'s pair from row 14 and `build-logs`' pair from row 18. No
+  # authorization_type is set on any of them, which means the module's own choice, CUSTOM whenever
+  # authorizer_id is set, so each one sits behind the staging access gate exactly as $default does.
+  # Setting NONE here would punch a hole straight past the gate, which is the failure the module's
+  # own comment records from the Portfolio inventory.
   routes = local.lambda_domain_route_keys
 
   throttling_burst_limit    = var.api_throttle_burst_limit

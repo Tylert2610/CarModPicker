@@ -999,7 +999,7 @@ infrastructure.
 | 15 | Terraform: alarms to `lambda_function_names`, aggregated. **Delivered** | small | 3 add, 1 change, 2 destroy | 14 |
 | 16 | Observability: OpenTelemetry in the domain functions, Sentry removed from them. **Delivered** | medium | 1 change | 14 |
 | 17 | Terraform: log retention 14 to 7 days. **Delivered** | small | 2 change | 15 |
-| 18 | `build-logs`: function, routes, OTel | medium | 6 add | 16 |
+| 18 | `build-logs`: function, routes, OTel. **Delivered** | medium | 7 add, 1 change | 16 |
 | 19 | `moderation`: function, routes, OTel | medium | 8 add | 18 |
 | 20 | `vehicles`: function, routes, OTel | medium | 7 add | 19 |
 | 21 | `admin`: function, routes, OTel | medium | 11 add | 20 |
@@ -1504,6 +1504,70 @@ carrying the estate. Every filter writes the same dimensionless metric, so
 grows to and has no metric math ceiling to run into, which is what section 3.6
 recommended before the ceiling was lifted upstream and is still the right shape
 now that it has been.
+
+**Row 18 is delivered, and it is the second cut.** `build-logs` gets a function,
+a route pair and its OTel wiring, and every one of those three arrives by adding
+a name to a list rather than by writing a resource. `local.lambda_domains` in
+`terraform/lambda_domains.tf` gains a `build-logs` entry, which creates the
+function, its role and its runtime policy; `local.routed_lambda_domains` and
+`local.lambda_domain_path_prefixes` in `terraform/apigateway.tf` gain the name
+and the one prefix, which creates the integration, the invoke permission and the
+two route keys; and the alarm lists in `terraform/monitoring.tf` pick the domain
+up for free, because both are derived rather than written out. Nothing in
+`backend/` changed at all, which is the part worth stating plainly: rows 8 and 16
+had already built and instrumented all nine entrypoints, so the OTel third of
+this row was done before the row was reached, and `app/entrypoints/build_logs.py`
+is byte for byte what row 16 left. `backend/tests/entrypoints/test_otel_wiring.py`
+needed no extension for the same reason: it parametrises over `DOMAIN_NAMES`, so
+it has been asserting the four wiring properties on this entrypoint since row 16.
+
+One prefix, `/api/build-logs`, and both keys of its pair. All five of the
+domain's routes sit under it: `GET /api/build-logs/posts/count`,
+`GET /api/build-logs/build-list/{build_list_id}`,
+`POST /api/build-logs/build-list/{build_list_id}/posts`, and the `PUT` and
+`DELETE` on `/api/build-logs/posts/{post_id}`. None of the five is the bare
+collection path, and `ANY /api/build-logs` is still created, because the pair is
+what section 3.5 requires and half a pair is the failure mode that half works.
+`/api/build-logs` and `/api/build-lists` are distinct route keys and API Gateway
+matches literally, so this cut cannot pull any of `build-lists`' 34 routes with
+it; those stay on `$default` until row 26.
+
+The table split is the one judgement call in the row, and it is narrower than the
+ownership column would suggest. Section 1.2 gives `build-logs` ownership of both
+`build_logs` and `build_log_posts`, but only `build_log_posts` is in `tables`.
+The domain's five routes call `.create`, `.update` and `.delete` on
+`repos.build_log_posts` and nothing else; `build_logs` is reached only through
+`.get` and `.for_build_list`, both reads. The writes to `build_logs` are real but
+they are somewhere else: `app/api/services/build_list_service.py` creates the
+thread when a build list is created, and `build_log_delete_actions` in
+`app/db/dynamo/build_logs.py` deletes it in the build list cascade, and both run
+in `build-lists`. Ownership says who may write a table, not who does today, so
+granting this function write on a table no code path here writes would be an
+action nobody takes, which is what a per-domain split exists to stop. Row 26
+moves that seam and the grant follows the writer then. `users` and `build_lists`
+are ordinary cross-domain reads, and `rate-limits` is in `tables` for the reason
+`media`'s entry records: the limiter is reached from the middleware rather than
+from a repository, and it fails open, so withholding it would turn layer 2 off
+silently instead of failing.
+
+Memory is 256 MB against `media`'s 512. `media` is sized for Pillow decoding an
+uploaded image in memory; this domain serves five JSON routes over DynamoDB with
+no native work in the path, so it starts at the smaller size, which is also the
+cheapest thing to raise if the duration says otherwise.
+
+PLACEHOLDER_COUNTS
+
+`scripts/verify_route_cut.sh` gains `/api/build-logs` in its `build-logs` case,
+which was already present and empty so the script would fail loudly rather than
+pass on an empty loop, and the `verify-route-cuts` job in
+`.github/workflows/deploy-backend.yml` gains the name in its one-line `DOMAINS`
+list. The `build-images` matrix needed nothing: it has carried all nine domains
+since row 12, because building an image for a function that does not exist yet
+costs an ECR push and no behaviour. Two comments in the verify script that read
+"most of `media`'s routes require a token" are now written domain neutrally,
+since a second domain runs through the same probe and the statement is true of
+both.
+
 
 **Ingestion is now admin.** Open question 4 asked whether the domain should be
 renamed and the answer is yes, taken on 2026-09-07. Section 1.5 had already

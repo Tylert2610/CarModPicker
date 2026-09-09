@@ -3,16 +3,16 @@
 # the AWS Lambda Web Adapter. Section 3.3 and section 3.4 of
 # docs/migration/split-plan.md, row 13 of section 8.
 #
-# `media` is the only entry today. Rows 18 through 31 add the other eight, one
-# per row, and the shape here is built for that: everything a domain needs is
-# one entry in `local.lambda_domains`, and the module call, the IAM policy and
-# the outputs all key off it, so adding a domain is adding a map entry.
+# `media` from row 13 and `build-logs` from row 18 are the entries today. Rows
+# 19 through 31 add the other seven, one per row, and the shape here is built
+# for that: everything a domain needs is one entry in `local.lambda_domains`,
+# and the module call, the IAM policy and the outputs all key off it, so adding
+# a domain is adding a map entry.
 #
 # The monolith in lambda.tf is deliberately untouched. It still serves every
-# route, because this file creates a function and nothing routes to it:
-# apigateway.tf keeps its single `legacy` integration until row 14. That is what
-# makes this change additive, and what makes it safe to apply before a single
-# request has ever reached this image.
+# route this file has not cut away from it, because a function here is only
+# reached once apigateway.tf names its prefixes. That is what keeps each row
+# additive and its rollback a matter of deleting the route entry again.
 #
 # Every AWS_LWA_* setting is baked into the image by backend/Dockerfile
 # (AWS_LWA_PORT, AWS_LWA_READINESS_CHECK_PATH, AWS_LWA_READINESS_CHECK_PROTOCOL
@@ -69,6 +69,44 @@ locals {
   # `s3` is whether the function gets the user images bucket. Only `media` and,
   # from row 31, `users` do; section 3.4 gives `users` the three object actions
   # for avatars and `media` the full set including ListBucket.
+  # How `build-logs`'s two table lists were derived, by row 18 and by the same
+  # method as `media`'s above, from the code rather than from the ownership
+  # column:
+  #
+  #   - `app/composition/domains.py` declares `_BUILD_LOGS_REPOSITORIES` as
+  #     `users`, `build_lists`, `build_logs` and `build_log_posts`, and
+  #     `app/db/dynamo/registry.py`'s `tables_for` maps each of those four to a
+  #     table suffix of the same name, so the four repositories are four tables.
+  #     `backend/tests/entrypoints/test_repository_bundles.py` recomputes that
+  #     tuple from the real import graph, so the bundle is a checked statement
+  #     of what this function can reach.
+  #   - Of the four, only `build_log_posts` is written. The domain has five
+  #     routes and `app/api/endpoints/build_logs.py` calls `.create`, `.update`
+  #     and `.delete` on `repos.build_log_posts` alone; `build_logs`,
+  #     `build_lists` and `users` are reached through `.get`, `.get_many`,
+  #     `.for_build_list`, `.all_for_build_log` and `.count`, every one a read.
+  #   - `build_logs` is in `read_tables` even though section 1.2 gives this
+  #     domain ownership of it, and that is deliberate rather than an oversight.
+  #     Ownership is about who may write a table, not about who does today, and
+  #     nothing in this domain's own five routes writes it: the thread row is
+  #     created by `app/api/services/build_list_service.py` when a build list is
+  #     created and deleted by `build_log_delete_actions` in the same cascade,
+  #     both of which run in `build-lists` and are seam work for row 26. Until
+  #     that seam moves, granting this function write on `build_logs` would
+  #     grant an action no code path here takes, which is the opposite of what
+  #     a per-domain split is for. Row 26 is where the grant follows the writer.
+  #   - `rate-limits` is in `tables` for the reason `media`'s entry above
+  #     records: it is the shared limiter's counter table, reached from the
+  #     middleware stack rather than from a repository, so the bundle cannot
+  #     name it, and the limiter fails open, so withholding it would silently
+  #     turn layer 2 off for this domain rather than failing.
+  #
+  # 256 MB rather than `media`'s 512. `media` is sized for Pillow decoding
+  # uploaded images in memory; this domain serves five JSON routes over
+  # DynamoDB with no image handling and no native work, so it takes the smaller
+  # size. It is also the cheapest thing to raise if the cold start or the
+  # duration says otherwise, since memory is the only tuning knob on a function
+  # this simple.
   lambda_domains = {
     media = {
       secrets     = true
@@ -76,6 +114,13 @@ locals {
       memory      = 512
       tables      = ["image_source_mappings", "rate-limits"]
       read_tables = ["users", "car_generations", "parts", "build_lists"]
+    }
+    build-logs = {
+      secrets     = true
+      s3          = false
+      memory      = 256
+      tables      = ["build_log_posts", "rate-limits"]
+      read_tables = ["users", "build_lists", "build_logs"]
     }
   }
 
