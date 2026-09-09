@@ -999,7 +999,7 @@ infrastructure.
 | 15 | Terraform: alarms to `lambda_function_names`, aggregated. **Delivered** | small | 3 add, 1 change, 2 destroy | 14 |
 | 16 | Observability: OpenTelemetry in the domain functions, Sentry removed from them. **Delivered** | medium | 1 change | 14 |
 | 17 | Terraform: log retention 14 to 7 days. **Delivered** | small | 2 change | 15 |
-| 18 | `build-logs`: function, routes, OTel. **Delivered** | medium | 7 add, 1 change | 16 |
+| 18 | `build-logs`: function, routes, OTel. **Delivered** | medium | 11 add, 4 change | 16 |
 | 19 | `moderation`: function, routes, OTel | medium | 8 add | 18 |
 | 20 | `vehicles`: function, routes, OTel | medium | 7 add | 19 |
 | 21 | `admin`: function, routes, OTel | medium | 11 add | 20 |
@@ -1555,7 +1555,60 @@ uploaded image in memory; this domain serves five JSON routes over DynamoDB with
 no native work in the path, so it starts at the smaller size, which is also the
 cheapest thing to raise if the duration says otherwise.
 
-PLACEHOLDER_COUNTS
+The speculative plan is 11 to add, 4 to change and 0 to destroy, against the
+table's estimate of 6 add, and the whole of the gap is resources the estimate did
+not know it was buying rather than anything unexpected in the row. Four of them
+are the alarms, which row 15's own delivery note predicted for exactly this row.
+
+The eleven adds, grouped by what put them there:
+
+*The function, four resources rather than one.* `module.lambda_domain["build-logs"].aws_lambda_function.this`,
+`module.lambda_domain["build-logs"].aws_iam_role.this`,
+`module.lambda_domain["build-logs"].aws_cloudwatch_log_group.this` and
+`module.lambda_domain["build-logs"].aws_iam_role_policy.xray_write[0]`, plus
+`aws_iam_role_policy.lambda_domain["build-logs"]`, the runtime policy this
+repository writes rather than the module. Row 13 recorded its own count as 3 for
+the same shape, which was the module's function, role and runtime policy; the log
+group and the X-Ray policy are the module's too, and they were not counted then
+either. Five is the real per-function number and rows 19 through 31 should be
+estimated on it.
+
+*The routes, four resources, exactly as row 14 found.*
+`module.api.aws_apigatewayv2_integration.this["build-logs"]`,
+`module.api.aws_lambda_permission.this["build-logs"]`, and the pair
+`module.api.aws_apigatewayv2_route.this["ANY /api/build-logs"]` and
+`module.api.aws_apigatewayv2_route.this["ANY /api/build-logs/{proxy+}"]`. One
+integration, one permission and two keys per prefix is the shape row 14 wrote
+down, and a one-prefix domain lands on it exactly.
+
+*The alarms, two adds and four changes, and none of it was in the table.*
+`module.alarms.aws_cloudwatch_log_metric_filter.errors["build-logs"]` and
+`module.alarms.aws_cloudwatch_log_metric_filter.rate_limit_failed_open["build-logs"]`
+are the new function's log group joining the two log-based alarms. The four
+changes are the two description strings tracking the count, "2 log groups" to
+"3 log groups" on `module.alarms.aws_cloudwatch_metric_alarm.errors[0]` and on
+`module.alarms.aws_cloudwatch_metric_alarm.rate_limit_failed_open[0]`, and the
+two aggregate alarms
+`module.alarms.aws_cloudwatch_metric_alarm.lambda_aggregate_errors[0]` and
+`module.alarms.aws_cloudwatch_metric_alarm.lambda_aggregate_throttles[0]`, whose
+descriptions move from "1 function" to "2 functions" and whose metric math grows
+a term. Row 15 predicted the metric filter and the description change and called
+a plan of two rather than one there expected; what it did not say is that
+`rate_limit_fail_open_log_groups` is a second list of the same shape, so a cut
+adds two filters and moves two descriptions, not one of each.
+
+The aggregate metric math is the part worth reading, because it is the first
+evidence that row 15's ordering argument holds. `m0` stays
+`carmodpicker-staging-media` and `build-logs` arrives as `m1`, and the expression
+goes from `m0` to `m0 + m1`. That is an append rather than a rewrite, which is
+what filtering section 6.1's ordered `local.lambda_domain_names` was for: reading
+`keys()` off the map instead would have put `build-logs` before `media`
+lexicographically and renumbered the existing term. Rows 19 through 31 can expect
+the same append, and a plan that shows `m0` changing its label is the signal that
+something reordered the list.
+
+Nothing is destroyed and nothing on `media` or on the monolith moves, which is
+the property that makes this row's rollback deleting a list entry again.
 
 `scripts/verify_route_cut.sh` gains `/api/build-logs` in its `build-logs` case,
 which was already present and empty so the script would fail loudly rather than
