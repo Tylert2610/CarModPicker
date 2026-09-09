@@ -998,7 +998,7 @@ infrastructure.
 | 14 | Terraform: `media` API Gateway routes. **First cut** | small | 4 add | 13 |
 | 15 | Terraform: alarms to `lambda_function_names`, aggregated. **Delivered** | small | 3 add, 1 change, 2 destroy | 14 |
 | 16 | Observability: OpenTelemetry in the domain functions, Sentry removed from them. **Delivered** | medium | 1 change | 14 |
-| 17 | Terraform: log retention 14 to 7 days | small | 2 change | 15 |
+| 17 | Terraform: log retention 14 to 7 days. **Delivered** | small | 2 change | 15 |
 | 18 | `build-logs`: function, routes, OTel | medium | 6 add | 16 |
 | 19 | `moderation`: function, routes, OTel | medium | 8 add | 18 |
 | 20 | `vehicles`: function, routes, OTel | medium | 7 add | 19 |
@@ -1604,7 +1604,22 @@ now, or leave it and accept that it breaks later?
 first. Confirm the intent before that PR.
 
 **8. Log retention 14 to 7 days.** A real loss of debugging window in exchange
-for storage across nine log groups. Confirm it is wanted.
+for storage across nine log groups. Confirm it is wanted. **Answered by row 17,
+which is delivered:** 7 days everywhere, and the two groups the question was
+really about were the monolith's, not the nine. The nine domain functions were
+created on 7 from the start, in row 13, and `aws/spans` was imported on 7, so the
+only groups still carrying the old value were the ones the pre-migration stack
+built. The speculative plan is 0 add, 2 change, 0 destroy, matching the estimate,
+and `retention_in_days` is the only attribute that moves on either resource:
+`module.lambda_api.aws_cloudwatch_log_group.this`
+(`/aws/lambda/carmodpicker-staging-api`) and
+`module.api.aws_cloudwatch_log_group.access`
+(`/aws/apigateway/carmodpicker-staging-api`), both 14 to 7. Retention is a
+property of the group rather than of the events in it, so the apply reprices the
+existing backlog as well: anything already older than 7 days ages out on the next
+sweep instead of at 14. The monolith is the function still serving every route
+that has not been cut, so this is the window that shrinks in practice, and it
+shrinks while the cuts in rows 18 through 31 are still landing.
 
 **9. Frontend and extension routing.** The plan keeps one edge hostname in front
 of every function, so neither the frontend nor the extension needs a change. The
