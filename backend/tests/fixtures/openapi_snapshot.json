@@ -5423,6 +5423,45 @@
         "title": "VoteEntityType",
         "type": "string"
       },
+      "VoteMutationResult": {
+        "description": "A vote write, plus the entity's tallies as of that write.\n\nSplit plan row 24 and its open question 2. Once the `net_votes` aggregate is\nrecomputed off the `votes` stream it lags the vote by the stream latency, so\na client that votes and then re-reads can see the old number. Carrying the\ncounts on the write response removes the re-read entirely: the vote itself\nis synchronous and strongly consistent, so the tallies computed in the same\nrequest are the authoritative ones and the client has no reason to ask\nagain.\n\n`vote` is `None` on a removal, where there is no vote left to return. The\ncounts are always present, which is what lets one response shape serve both\nroutes and keeps the frontend from branching on which call it made.\n\nThe counts are read from the `votes` table, not from `parts.net_votes`.\nReading the denormalised column would hand back exactly the stale number\nthis schema exists to avoid.",
+        "properties": {
+          "downvotes": {
+            "title": "Downvotes",
+            "type": "integer"
+          },
+          "total_votes": {
+            "title": "Total Votes",
+            "type": "integer"
+          },
+          "upvotes": {
+            "title": "Upvotes",
+            "type": "integer"
+          },
+          "vote": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VoteRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "vote_score": {
+            "title": "Vote Score",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "upvotes",
+          "downvotes",
+          "total_votes",
+          "vote_score"
+        ],
+        "title": "VoteMutationResult",
+        "type": "object"
+      },
       "VoteRead": {
         "properties": {
           "created_at": {
@@ -15334,7 +15373,7 @@
     },
     "/api/votes/{entity_type}/{entity_id}": {
       "delete": {
-        "description": "Remove a vote from an entity.",
+        "description": "Remove a vote from an entity.\n\nReturns the same shape the vote route does, with `vote` set to null because\nthere is no vote left. A client removing a vote needs the new total for\nexactly the same reason a client casting one does.",
         "operationId": "remove_vote_api_votes__entity_type___entity_id__delete",
         "parameters": [
           {
@@ -15361,15 +15400,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": {
-                    "type": "string"
-                  },
-                  "title": "Response Remove Vote Api Votes  Entity Type   Entity Id  Delete",
-                  "type": "object"
+                  "$ref": "#/components/schemas/VoteMutationResult"
                 }
               }
             },
-            "description": "Vote removed successfully"
+            "description": "Vote removed successfully, with the entity's tallies after the removal"
           },
           "404": {
             "description": "Resource not found"
@@ -15396,7 +15431,7 @@
         ]
       },
       "post": {
-        "description": "Vote on an entity (car, build list, or global part).",
+        "description": "Vote on an entity (car, build list, or global part).\n\nThe response carries the entity's recomputed tallies alongside the vote.\nSplit plan row 24 moved the `parts.net_votes` aggregate onto the `votes`\nstream, so that column now lags the vote; these counts are read from the\n`votes` table in this request and do not, which is what lets a client render\nthe new total without a follow-up read.",
         "operationId": "vote_on_entity_api_votes__entity_type___entity_id__post",
         "parameters": [
           {
@@ -15433,11 +15468,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/VoteRead"
+                  "$ref": "#/components/schemas/VoteMutationResult"
                 }
               }
             },
-            "description": "Vote created/updated successfully"
+            "description": "Vote created/updated successfully, with the entity's tallies as of this write"
           },
           "404": {
             "description": "Resource not found"

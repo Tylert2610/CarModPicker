@@ -139,30 +139,34 @@ locals {
   #     `app/api/services/bug_report_service.py` calls `.create`, `.update` and
   #     `.delete` on `repos.bug_reports`. Those three are the domain's own, per
   #     section 1.2.
-  #   - The fourth written table is `parts`, and it is a cross-domain write
-  #     rather than an oversight. `vote_service._sync_part_net_votes` calls
-  #     `self.repos.parts.update(str(entity_id), net_votes=upvotes - downvotes)`
-  #     after every vote create, update and remove on a part. That is seam 3 of
-  #     section 1.3, the one cross-domain write in the application that is not a
-  #     delete, and it is still synchronous today: row 24 is what inverts it
-  #     into a stream handler `catalog` owns, at which point `moderation` stops
-  #     writing `parts` and this grant narrows to a read.
+  #   - There was a fourth written table until row 24, and its removal is the
+  #     visible half of that row. `vote_service._sync_part_net_votes` used to
+  #     call `self.repos.parts.update(str(entity_id), net_votes=upvotes -
+  #     downvotes)` after every vote create, update and remove on a part, which
+  #     is seam 3 of section 1.3: the one cross-domain write in the application
+  #     that was not a delete. Row 24 inverted it. The vote path now writes only
+  #     `votes`, the votes stream carries the change to
+  #     `carmodpicker-<env>-catalog-votes-consumer` in
+  #     lambda_stream_consumers.tf, and that function recomputes the aggregate
+  #     and writes the part. So `parts` moved from `tables` to `read_tables`
+  #     here, which is the narrowing this comment used to promise.
   #
-  #     Withholding the grant now would not make the split cleaner, it would
-  #     break voting on a part. The failure is also worse than a plain denial:
-  #     `_sync_part_net_votes` runs after the vote row is already committed, so
-  #     an AccessDenied there would leave the vote written and `net_votes`
-  #     stale, with a 500 on a request that half succeeded. The grant follows
-  #     the writer, and row 24 is where the writer moves.
+  #     The two halves have to land in the same apply. Removing the grant before
+  #     the consumer exists leaves `net_votes` with nothing writing it; adding
+  #     the consumer before removing the grant leaves two writers racing on the
+  #     same attribute. Terraform applies both from this one configuration, so
+  #     the only way to get one without the other is to split them across
+  #     commits, which is why they are not split.
   #   - Three tables are read only. `users` for the reporter and the author
   #     (`repos.users.get` and `.get_many` in `report_service`), and
   #     `build_lists`, `car_generations` and `parts` for the vote and report
   #     targets, which are polymorphic over `entity_type`: `_get_entities`
   #     dispatches to `repos.build_lists.get_many`,
-  #     `repos.car_generations.get_many` or `repos.parts.get_many`. `parts` is
-  #     in `tables` rather than `read_tables` because a table appears in exactly
-  #     one of the two lists and the write set is the wider grant; the twelve
-  #     write actions include the five read ones, so the read path is covered.
+  #     `repos.car_generations.get_many` or `repos.parts.get_many`. `parts` sat
+  #     in `tables` rather than `read_tables` until row 24, because a table
+  #     appears in exactly one of the two lists and the write set was the wider
+  #     grant it then needed. With the write gone it takes the narrower list,
+  #     which is where the read path alone belongs.
   #   - `rate-limits` is in `tables` for the reason both entries above record:
   #     it is the shared limiter's counter table, reached from the middleware
   #     stack rather than from a repository, so the bundle cannot name it, and
@@ -407,11 +411,14 @@ locals {
       read_tables = ["users", "build_lists", "build_logs"]
     }
     moderation = {
-      secrets     = true
-      s3          = false
-      memory      = 256
-      tables      = ["votes", "reports", "bug_reports", "parts", "rate-limits"]
-      read_tables = ["users", "build_lists", "car_generations"]
+      secrets = true
+      s3      = false
+      memory  = 256
+      # Three written tables, down from four. Row 24 moved `parts` to
+      # `read_tables`; see the derivation above for why it was ever written and
+      # what replaced the write.
+      tables      = ["votes", "reports", "bug_reports", "rate-limits"]
+      read_tables = ["users", "build_lists", "car_generations", "parts"]
     }
     vehicles = {
       secrets = false

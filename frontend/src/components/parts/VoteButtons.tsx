@@ -1,11 +1,20 @@
 import React, { useState } from 'react';
 
+import type { VoteMutationResult } from '../../types/Api';
+
+/**
+ * Both calls resolve to `{ data: VoteMutationResult }`, which carries the
+ * entity's tallies as of the write. Split plan row 24 moved the parts
+ * aggregate onto the votes stream, so the counts on the write response are the
+ * authoritative ones and this component applies them over its optimistic guess
+ * rather than re-reading a summary that may still be behind.
+ */
 interface VoteApi {
   voteOnEntity: (
     entityId: string,
     data: { vote_type: 'upvote' | 'downvote' }
-  ) => Promise<unknown>;
-  removeVote: (entityId: string) => Promise<unknown>;
+  ) => Promise<{ data: VoteMutationResult }>;
+  removeVote: (entityId: string) => Promise<{ data: VoteMutationResult }>;
 }
 
 interface VoteButtonsProps {
@@ -71,14 +80,22 @@ const VoteButtons: React.FC<VoteButtonsProps> = ({
       setLocalDownvotes(newDownvotes);
       setLocalUserVote(newUserVote);
 
-      // Make the API call
+      // Make the API call, then replace the optimistic guess with the counts
+      // the server actually recorded. The two agree whenever this client is
+      // the only one voting; they diverge as soon as anyone else votes on the
+      // same entity between the render and the click, and the server's numbers
+      // are the right ones in that case.
       if (localUserVote === voteType) {
-        await voteApi.removeVote(entityId);
+        const { data } = await voteApi.removeVote(entityId);
+        setLocalUpvotes(data.upvotes);
+        setLocalDownvotes(data.downvotes);
         onVoteUpdate(entityId, null);
       } else {
-        await voteApi.voteOnEntity(entityId, {
+        const { data } = await voteApi.voteOnEntity(entityId, {
           vote_type: voteType,
         });
+        setLocalUpvotes(data.upvotes);
+        setLocalDownvotes(data.downvotes);
         onVoteUpdate(entityId, voteType);
       }
     } catch {
