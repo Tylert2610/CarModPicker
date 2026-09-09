@@ -108,6 +108,11 @@ class Settings(BaseServiceSettings):
         description="Public origin of the user-facing SPA. Empty = per-environment default derived from APP_ENVIRONMENT.",
     )
 
+    API_URL: str = Field(
+        default="",
+        description="Public origin of this backend API. Empty = per-environment default derived from APP_ENVIRONMENT.",
+    )
+
     # WebAuthn / passkeys — RP ID and origins are derived from FRONTEND_URL when
     # it is set, otherwise from APP_ENVIRONMENT.
     # RP ID is the registrable domain users see; origins are the frontend URLs
@@ -162,6 +167,25 @@ class Settings(BaseServiceSettings):
         if self.APP_ENVIRONMENT.lower() == "staging":
             return "https://staging.carmodpicker.com"
         return "https://www.carmodpicker.com"
+
+    @property
+    def api_base_url(self) -> str:
+        """Public origin of this backend API, used to build absolute URLs that
+        point back at the API itself (email verification links, price alert
+        unsubscribe links, sitemap index child entries).
+
+        The backend and frontend live on separate domains, so this is the API
+        host rather than `frontend_base_url`, and it comes from API_URL when set
+        and otherwise from APP_ENVIRONMENT rather than the request host. Deriving
+        it from the environment is what keeps staging from mailing production
+        links. No trailing slash."""
+        if self.API_URL:
+            return self.API_URL.strip().rstrip("/")
+        if not self.is_production:
+            return f"http://localhost:{self.PORT}"
+        if self.APP_ENVIRONMENT.lower() == "staging":
+            return "https://api.staging.carmodpicker.com"
+        return "https://api.carmodpicker.com"
 
     @model_validator(mode="after")
     def validate_and_normalize_settings(self) -> "Settings":
@@ -238,16 +262,61 @@ class Settings(BaseServiceSettings):
         description="Comma-separated list of allowed origins",
     )
 
+    # The Chrome Web Store id of the CarModPicker Browser Companion. Public, not
+    # a secret: it is in every store URL and in the `CWS_EXTENSION_ID` GitHub
+    # variable on both the staging and production environments (they share one
+    # listing). Defaulted here so no Terraform or Lambda env change is needed to
+    # keep the shipped extension working; override the variable to add an
+    # unpacked development id, which changes per developer profile.
+    CHROME_EXTENSION_IDS: str = Field(
+        default="dbglgmnnfandmnacdpibkfggkadjikkg",
+        description=(
+            "Comma-separated Chrome extension ids allowed as CORS origins. Each becomes a "
+            "chrome-extension://<id> entry. Set to add an unpacked development id."
+        ),
+    )
+
+    @property
+    def chrome_extension_origins_list(self) -> list[str]:
+        """`chrome-extension://<id>` origins built from CHROME_EXTENSION_IDS.
+
+        An explicit list rather than a `chrome-extension://.*` regex. The old
+        regex combined with `allow_credentials=True` handed credentialed CORS to
+        every extension a user had installed, so any extension could read
+        authenticated responses from this API.
+        """
+        ids = [value.strip() for value in self.CHROME_EXTENSION_IDS.split(",") if value.strip()]
+        # Preserve order, drop duplicates, and tolerate an id supplied with the
+        # scheme already on it.
+        origins: list[str] = []
+        for extension_id in ids:
+            origin = (
+                extension_id if extension_id.startswith("chrome-extension://") else f"chrome-extension://{extension_id}"
+            )
+            if origin not in origins:
+                origins.append(origin)
+        return origins
+
     @property
     def allowed_origins_list(self) -> list[str]:
-        """Get ALLOWED_ORIGINS as a list."""
+        """Every origin CORS admits: ALLOWED_ORIGINS plus the extension origins.
+
+        The literal `"null"` origin is deliberately absent. It used to be appended
+        for "Chrome extension service workers", but an MV3 service worker sends
+        `Origin: chrome-extension://<id>`, not `null`, and the extension's own
+        fetches (`chrome-extension/src/background.ts`) authenticate with a bearer
+        token rather than cookies, so they never needed a credentialed origin
+        match at all. `"null"` is also what a sandboxed iframe, a `data:` document
+        and a file:// page send, so allowing it with `allow_credentials=True`
+        granted those the same access as the real frontend.
+        """
         origins = []
         if self.ALLOWED_ORIGINS:
             origins = [origin.strip() for origin in self.ALLOWED_ORIGINS.split(",") if origin.strip()]
 
-        # Allow null origin for Chrome extensions (service workers send null origin)
-        # Also allow chrome-extension:// origins for extension popups/content scripts
-        origins.append("null")
+        for origin in self.chrome_extension_origins_list:
+            if origin not in origins:
+                origins.append(origin)
 
         return origins
 
