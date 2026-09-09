@@ -1,32 +1,26 @@
 // Startup configuration, validated through @webbpulse/config.
 //
-// The shared `loadAppConfig` does the validating: it rejects a malformed or
-// non-http API base URL, strips a trailing slash, normalises the Vite mode to
-// an environment name, and reports every problem at once rather than failing
-// later at the first request against an `undefined` URL.
+// `loadAppConfig` does all of it now: it selects the backend for a dev run,
+// appends the `/api` prefix the backend mounts every router under, rejects a
+// malformed or non-http URL, normalises the Vite mode to an environment name,
+// and reports every problem at once rather than failing later at the first
+// request against an `undefined` URL.
 //
-// What stays local is the *selection* of which URL to validate. CarModPicker
-// has a dev-only backend switch (`VITE_BACKEND=local|staging|production`,
-// behind `npm run dev:staging` / `dev:prod`) and appends the `/api` prefix the
-// backend mounts every router under. Neither is modelled by the shared
-// package, and both are load bearing, so the resolution below picks the raw
-// URL and `loadAppConfig` validates the result.
+// The selection used to be local. `@webbpulse/config` 0.2.0 could not describe
+// this application's configuration, so a `resolveApiBaseUrl` here read
+// `VITE_BACKEND`, picked one of three URLs and glued `/api` on the end, which
+// put the one piece of URL selection outside the layer that exists to validate
+// it. 0.3.0 added `backendTargets` and `apiPathPrefix` for exactly this, so the
+// resolution is now two options rather than forty lines.
 import { loadAppConfig, type AppConfig } from '@webbpulse/config';
 
 /**
- * Ensures a protocol and appends the `/api` prefix.
+ * Reads a URL variable, treating blank as unset.
  *
- * The deploy writes `VITE_API_URL` from the Terraform `api_url` output, which
- * is a bare host in some environments, so the protocol is added when missing.
+ * `backendTargets` accepts `undefined` for a target and falls through to the
+ * normal resolution, so an unset `VITE_STAGING_API_URL` needs no guard at the
+ * call site. What it does not do is distinguish `''` from unset, hence this.
  */
-const normalizeApiUrl = (url: string): string => {
-  const urlWithProtocol =
-    url.startsWith('http://') || url.startsWith('https://')
-      ? url
-      : `https://${url}`;
-  return `${urlWithProtocol.replace(/\/+$/, '')}/api`;
-};
-
 const readEnvUrl = (env: ImportMetaEnv, key: string): string | undefined => {
   const value: unknown = env[key];
   return typeof value === 'string' && value.trim() !== ''
@@ -35,27 +29,18 @@ const readEnvUrl = (env: ImportMetaEnv, key: string): string | undefined => {
 };
 
 /**
- * Picks the API base URL for this bundle, before validation.
+ * Ensures a protocol on a URL from the environment.
  *
- * Returns `/api` for local development so requests go through the Vite dev
- * server proxy to localhost:8000, which is what keeps cookies same origin.
+ * The deploy writes `VITE_API_URL` and the two dev URLs from the Terraform
+ * `api_url` output, which is a bare host in some environments. The `/api`
+ * suffix is no longer added here: `apiPathPrefix` below appends it after
+ * resolution, and appending it twice would produce `/api/api`.
  */
-const resolveApiBaseUrl = (env: ImportMetaEnv): string => {
-  if (env.DEV) {
-    const backend = readEnvUrl(env, 'VITE_BACKEND')?.toLowerCase() ?? 'local';
-    if (backend === 'staging') {
-      const stagingUrl = readEnvUrl(env, 'VITE_STAGING_API_URL');
-      if (stagingUrl !== undefined) return normalizeApiUrl(stagingUrl);
-    }
-    if (backend === 'production') {
-      const prodUrl = readEnvUrl(env, 'VITE_PROD_API_URL');
-      if (prodUrl !== undefined) return normalizeApiUrl(prodUrl);
-    }
-    return '/api';
-  }
-
-  const apiUrl = readEnvUrl(env, 'VITE_API_URL');
-  return apiUrl === undefined ? '/api' : normalizeApiUrl(apiUrl);
+const withProtocol = (url: string | undefined): string | undefined => {
+  if (url === undefined) return undefined;
+  return url.startsWith('http://') || url.startsWith('https://')
+    ? url
+    : `https://${url}`;
 };
 
 /**
@@ -63,14 +48,30 @@ const resolveApiBaseUrl = (env: ImportMetaEnv): string => {
  *
  * Exported separately from the singleton below so tests can drive it with a
  * synthetic bag rather than the real `import.meta.env`.
+ *
+ * `backendTargets` is consulted by the package only when `DEV` is true, which
+ * is what keeps a stray `VITE_BACKEND` in a deploy environment from repointing
+ * a shipped production bundle at another backend. A dev run with no
+ * `VITE_BACKEND`, or one naming a target whose URL is unset, falls through to
+ * `defaultApiBaseUrl` and so to `/api`, which the Vite dev server proxies to
+ * localhost:8000 and which is what keeps the session cookie same origin.
  */
 export const loadCarModPickerConfig = (env: ImportMetaEnv): AppConfig =>
   loadAppConfig(
-    { ...env, VITE_API_BASE_URL: resolveApiBaseUrl(env) },
-    { defaultApiBaseUrl: '/api', defaultAppName: 'CarModPicker' }
+    {
+      ...env,
+      VITE_API_BASE_URL: withProtocol(readEnvUrl(env, 'VITE_API_URL')),
+    },
+    {
+      defaultApiBaseUrl: '/api',
+      defaultAppName: 'CarModPicker',
+      backendTargets: {
+        staging: withProtocol(readEnvUrl(env, 'VITE_STAGING_API_URL')),
+        production: withProtocol(readEnvUrl(env, 'VITE_PROD_API_URL')),
+      },
+      apiPathPrefix: '/api',
+    }
   );
 
 /** The resolved configuration this bundle holds for its lifetime. */
 export const appConfig: AppConfig = loadCarModPickerConfig(import.meta.env);
-
-export { normalizeApiUrl, resolveApiBaseUrl };

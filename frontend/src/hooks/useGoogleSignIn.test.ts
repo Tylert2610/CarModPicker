@@ -1,7 +1,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ApiClientResponse } from '../api/client';
-import { buildResponse } from '../test/apiResponse';
+import { buildApiError, buildResponse } from '../test/apiResponse';
 import { useGoogleSignIn } from './useGoogleSignIn';
 import { authApi } from '../api/auth';
 import type { UserRead } from '../types/Api';
@@ -127,9 +127,17 @@ describe('useGoogleSignIn', () => {
   });
 
   it('calls onError and returns to idle when authApi.googleSignIn rejects', async () => {
-    vi.mocked(authApi.googleSignIn).mockRejectedValueOnce({
-      response: { data: { message: 'Google sign-in failed.' } },
-    });
+    // The client rejects with an `ApiError` carrying the parsed envelope, which
+    // is the only failure shape this application can now see.
+    vi.mocked(authApi.googleSignIn).mockRejectedValueOnce(
+      buildApiError(401, {
+        success: false,
+        status: 401,
+        message: 'Google sign-in failed.',
+        request_id: 'req-1',
+        error_code: 'UNAUTHORIZED',
+      })
+    );
 
     const { result } = renderHook(() =>
       useGoogleSignIn({ onLoggedIn, onError })

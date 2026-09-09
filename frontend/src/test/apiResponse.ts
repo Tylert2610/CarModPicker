@@ -18,8 +18,8 @@ export function buildResponse<T>(data: T): ApiClientResponse<T> {
 /**
  * The error the client rejects with on a non 2xx.
  *
- * `body` is the backend's error envelope, which is what `utils/apiError.ts`
- * reads to produce a user facing message.
+ * `body` is the backend's error envelope, which `getWebbPulseError` in
+ * `@webbpulse/api-client` reads to produce a user facing message.
  */
 export function buildApiError(
   status: number,

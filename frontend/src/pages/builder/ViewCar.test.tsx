@@ -7,19 +7,12 @@
 // We route responses by URL prefix via a single vi.mocked(apiClient.get)
 // implementation so all effects settle with deterministic data.
 
-/* eslint-disable @typescript-eslint/prefer-promise-reject-errors --
- * vi.mocked(apiClient.get) is the canonical Vitest pattern for typed mock
- * introspection (same rationale as AuthContext.test.tsx). The AxiosError-shaped
- * rejection object is intentionally plain (not an Error instance) so it mimics
- * the exact shape Axios passes to useApiRequest's parseApiError — wrapping it
- * in an Error would defeat the point of exercising that branch.
- */
-
 import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { apiClient } from '../../api/client';
+import { buildApiError } from '../../test/apiResponse';
 import { mockBuildList, mockCar, mockUser } from '../../test/mocks/api';
 import { mockUseAuth } from '../../test/utils/test-mocks';
 import ViewCar from './ViewCar';
@@ -114,19 +107,15 @@ describe('ViewCar page', () => {
   it('renders an error alert when the car fetch rejects', async () => {
     vi.mocked(apiClient.get).mockImplementation((url: string) => {
       if (url === `/car-generations/${mockCar.id}`) {
-        return Promise.reject({
-          isAxiosError: true,
-          response: {
-            data: {
-              success: false,
-              status: 404,
-              message: 'Car not found',
-              request_id: 'req-1',
-              error_code: 'NOT_FOUND',
-            },
+        return Promise.reject(
+          buildApiError(404, {
+            success: false,
             status: 404,
-          },
-        });
+            message: 'Car not found',
+            request_id: 'req-1',
+            error_code: 'NOT_FOUND',
+          })
+        );
       }
       return Promise.resolve({ data: null });
     });

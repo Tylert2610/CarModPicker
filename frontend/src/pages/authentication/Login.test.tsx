@@ -26,6 +26,7 @@ import {
   testScenarios,
 } from '../../test/utils/test-utils';
 import { apiClient } from '../../api/client';
+import { buildApiError } from '../../test/apiResponse';
 import { mockUser } from '../../test/mocks/api';
 import Login from './Login';
 
@@ -126,21 +127,17 @@ describe('Login page', () => {
   });
 
   it('surfaces an error message when credentials are invalid (401)', async () => {
-    // parseApiError in useApiRequest reads `message` off the error envelope
-    // in response.data.
-    vi.mocked(apiClient.post).mockRejectedValueOnce({
-      isAxiosError: true,
-      response: {
+    // parseApiError in useApiRequest reads `message` off the error envelope,
+    // which the client hands over on `ApiError.body`.
+    vi.mocked(apiClient.post).mockRejectedValueOnce(
+      buildApiError(401, {
+        success: false,
         status: 401,
-        data: {
-          success: false,
-          status: 401,
-          message: 'Invalid credentials',
-          request_id: 'req-1',
-          error_code: 'UNAUTHORIZED',
-        },
-      },
-    });
+        message: 'Invalid credentials',
+        request_id: 'req-1',
+        error_code: 'UNAUTHORIZED',
+      })
+    );
 
     render(<Login />, testScenarios.unauthenticated);
     fillAndSubmit('baduser', 'badpass');
