@@ -1110,7 +1110,7 @@ infrastructure.
 | 18 | `build-logs`: function, routes, OTel. **Delivered** | medium | 11 add, 4 change | 16 |
 | 19 | `moderation`: function, routes, OTel. **Delivered** | medium | 15 add, 4 change | 18 |
 | 20 | `vehicles`: function, routes, OTel. **Delivered** | medium | 13 add, 4 change | 19 |
-| 21 | `admin`: function, routes, OTel | medium | est. 17 add, 4 change | 20 |
+| 21 | `admin`: function, routes, OTel. **Delivered** | medium | 17 add, 4 change | 20 |
 | 22 | Streams on `users`, `parts`, `votes`, `part_listings`, plus queues and DLQs | large | 16 add | 21 |
 | 23 | Tombstone attributes and tombstone-aware reads in four domains | large | 0 | 22 |
 | 24 | Seam 3: `net_votes` handler moves to `catalog`'s stream consumer | medium | 2 add | 22 |
@@ -1124,8 +1124,9 @@ infrastructure.
 | 32 | Retire `$default`, the monolith, the artifacts bucket, the zip chain | medium | 12 destroy | 31 |
 | 33 | Frontend: delete the `services/Api.ts` shim, rewriting 74 import sites | medium | 0 | none |
 
-**Rows 19 through 31 are estimates, and the arithmetic behind them is worth
-stating rather than hiding.** Row 18's delivery note found the per-cut shape by
+**Rows 26 through 31 are estimates, and the arithmetic behind them is worth
+stating rather than hiding. Rows 19, 20 and 21 landed on it exactly, so it is
+settled rather than provisional.** Row 18's delivery note found the per-cut shape by
 counting a real plan, and rows 13, 14 and 15 had each recorded only the part of
 it they were looking at. Written out, one domain cut is:
 
@@ -1150,9 +1151,10 @@ it they were looking at. Written out, one domain cut is:
 
 So a cut is `5 + 2 + 2*prefixes + 2` adds and 4 changes. `moderation` serves 3
 prefixes, `vehicles` 2, `admin` 4, `build-lists` 4, `identity` 1, `catalog` 4
-and `users` 2, which is where the numbers in the table come from. They are
-estimates rather than counted plans, and each row's delivery note should record
-what it actually saw. The seam and stream rows (22, 24, 25, 28, 30) are not
+and `users` 2, which is where the numbers in the table come from. Rows 19, 20 and
+21 have each now counted a real plan and found exactly 15, 13 and 17 adds with 4
+changes, so the remaining rows are arithmetic rather than guesswork. Each row's
+delivery note should still record what it actually saw. The seam and stream rows (22, 24, 25, 28, 30) are not
 cuts and their counts are unchanged.
 
 **PR 4 ships in two slices, and 4a is delivered.** The original row bundled two
@@ -2000,6 +2002,170 @@ which was present and empty, and the `verify-route-cuts` job in
 `terraform/README.md` is brought current in the same pass: its `lambda_domains.tf`
 row had still said two entries since row 18, and its `apigateway.tf` row had
 never mentioned the route cuts at all.
+
+**Row 21 is delivered, and it is the fifth cut and the mirror image of the
+fourth.** `admin` gets a function, four route pairs and its OTel wiring, and as
+with rows 18 through 20 every one of those arrives by adding a name to a list.
+`local.lambda_domains` in `terraform/lambda_domains.tf` gains the entry;
+`local.routed_lambda_domains` and `local.lambda_domain_path_prefixes` in
+`terraform/apigateway.tf` gain the name and its four prefixes; and the alarm
+lists in `terraform/monitoring.tf` pick the domain up for free. Nothing in
+`backend/` changed, for the reason the three rows before it record: rows 8 and 16
+had already built and instrumented all nine entrypoints, so
+`app/entrypoints/admin.py` is byte for byte what row 16 left.
+
+**The plan is 17 to add, 4 to change and 0 to destroy, and the estimate was right
+for the third row running.** Row 18's per-cut anatomy predicts
+`5 + 2 + 2*prefixes + 2` adds and 4 changes, which for a four-prefix domain is 17
+and 4. The arithmetic can now be treated as settled rather than as a working
+hypothesis, and rows 26 through 31 should be planned against it.
+
+The seventeen adds, in the anatomy's own groups: five for the function
+(`aws_lambda_function.this`, `aws_iam_role.this`, `aws_cloudwatch_log_group.this`
+and `aws_iam_role_policy.xray_write[0]` inside `module.lambda_domain["admin"]`,
+plus `aws_iam_role_policy.lambda_domain["admin"]`); two for the integration
+(`module.api.aws_apigatewayv2_integration.this["admin"]` and
+`module.api.aws_lambda_permission.this["admin"]`); eight routes, two per prefix
+(`ANY /api/crawled-pages`, `ANY /api/part-price-alerts`, `ANY /api/admin/db-ops`
+and `ANY /api/admin/stats`, each with its `{proxy+}`); and two metric filters,
+`errors["admin"]` and `rate_limit_failed_open["admin"]`. The four changes are the
+two description strings moving from "5 log groups" to "6 log groups" and the two
+aggregate alarms moving from "4 functions" to "5 functions". Zero destroys and
+zero replacements.
+
+The metric math is the fourth confirmation of row 15's ordering argument. `m0`
+stays `media`, `m1` stays `build-logs`, `m2` stays `moderation`, `m3` stays
+`vehicles`, `admin` arrives as `m4`, and the expression goes from
+`m0 + m1 + m2 + m3` to `m0 + m1 + m2 + m3 + m4` with no existing term relabelled.
+
+**`/api/admin/db-ops` and `/api/admin/stats` are section 1.4's one genuine
+cross-domain ordering hazard, and this row resolves it rather than documenting
+it.** There is no route at `/api/admin` itself, so the two children are named as
+two prefixes rather than collapsed into one. Collapsing them would be wrong
+twice: it would claim `/api/admin/{anything}` for this function forever, and
+section 1.4's warning that no other domain may take a child of `/api/admin`
+without accounting for it would become impossible to honour.
+`/api/users/admin/users` is a separate tree and is unaffected, because API
+Gateway matches a route key literally rather than by substring.
+
+The `/api/part-price-alerts` bare key is the one carrying real traffic rather
+than sitting there defensively. `part_price_alerts.py` declares subscribe as
+`POST "/"`, which mounts at `/api/part-price-alerts/`, and the gateway normalises
+the trailing slash onto the bare key; a route key may not itself end in a slash,
+so the bare key is the only spelling the gateway will accept for that route. The
+other three prefixes have every route below them, so their bare keys are the
+cheap insurance section 3.5 asks for.
+
+The module ordering inside `/api/part-price-alerts` is untouched and stays that
+way by not touching the module. `/unsubscribe` is registered before the two
+`/{alert_id}` routes and section 1.4 calls that the one hazard a route away from
+breaking silently; the `{proxy+}` key forwards the whole subtree to one function,
+exactly as it forwards to the monolith today, so nothing about the cut can
+reorder it. Splitting the subtree across route keys is what would break it, and
+nothing here does.
+
+**The table split is this row's real content, and it is the exact opposite of row
+20's.** Fourteen tables are written plus the limiter's counter, and six are read.
+That is the widest write list of the nine, where `vehicles` had the narrowest,
+and both are the same rule applied honestly: the grant follows the call. The two
+admin modules seed and purge six domains' tables by design, and section 1.5
+already argued that one broad admin function is better than pushing those writes
+behind the six functions that own the tables.
+
+Every written table has a named caller. `part_price_alerts` is the domain's own,
+per section 1.2, written by `part_price_alert_service` from subscribe, patch,
+delete and the token unsubscribe, and by `purge_related_rows_for_parts`. The
+other thirteen are `admin/db_ops`, which is four routes:
+`POST /admin/db-ops/init/car-generations` runs `init_car_generations`, which
+calls `.create_unique` and `.update_unique` on `car_makes`, `car_models` and
+`car_generations`; `POST /admin/db-ops/init/part-categories` runs
+`init_part_categories` on `categories`; `POST /admin/db-ops/cars/delete-all`
+calls `.update` on `build_lists` to null `car_id`, `.delete_for_entity_type` on
+`votes`, `.delete_for_car` on `part_cars` and `.delete_unique` on the three car
+tables; and the two delete-all routes run the part purge, which reaches
+`part_listings`, `part_price_history`, `parts`, `part_cars`, `votes`, `reports`,
+`build_list_parts`, `part_price_alerts` and `part_manufacturers`.
+
+**The seed row 20 deliberately did not grant lands here, which is what that row
+said would happen.** `vehicles` is the descriptor that sets `seeds`,
+`run_startup_tasks` is gated on `RUN_STARTUP_TASKS`, which `backend/Dockerfile`
+bakes to `false`, and the entrypoint is Mangum with `lifespan="off"`, so the
+lifespan that would call `init_car_generations()` cannot run there. Here it is an
+explicit `POST` behind `get_current_admin_user`, which is exactly the owner
+section 7 said the seed needed. The write grant follows the route rather than the
+table's owner, and the three car tables are in this entry's `tables` list for
+that reason.
+
+**The bundle-to-grant gap is one table, the narrowest of the five cuts so far.**
+`_ADMIN_REPOSITORIES` is twenty-one, the second widest bundle after the
+monolith's twenty-five, and twenty are granted. The one left out is `retailers`,
+and neither of its two reaches is an admin route:
+`part_price_alert_service.evaluate_alerts_for_listing` calls `repos.retailers.get`
+for the email body and is invoked only from
+`part_listing_service.create_or_update_listing_and_price`, which is `catalog`'s
+price capture; and `PartService`'s create and update paths call it, while the
+only `PartService` method any admin route calls is `purge`. Rows 19 and 20
+refused to grant on the strength of an import and this row refuses the same way,
+which is the only thing that keeps a write list this wide honest.
+
+The six read-only tables are `users`, read before eleven of the twelve handlers
+run because `get_current_user` and `get_current_admin_user` both call
+`repos.users.get_by_username` to resolve the token subject, and the five that
+`admin/stats` counts and nothing writes: `oauth_accounts`,
+`webauthn_credentials`, `build_list_phases`, `build_logs` and
+`image_source_mappings`. `part_listings`, `part_price_history`, `part_cars`,
+`votes` and `reports` are counted by that route as well and are in `tables`
+rather than in `read_tables`, because a table appears in exactly one of the two
+lists and the twelve write actions include the five read ones.
+
+**`secrets` is back to true, and `admin` gets no SES.** Eleven of twelve routes
+verify a token and the twelfth, the price-alert unsubscribe, decodes one of its
+own, so the descriptor sets `requires_secrets` and the runtime policy carries
+`secretsmanager:GetSecretValue`. Section 3.4 also gives `admin` `ses:SendEmail`,
+and this row does not, because `admin`'s half of that grant is the price-drop
+alert email and no route this function serves sends it: the send is in
+`evaluate_alerts_for_listing`, called from `catalog`'s price capture, which runs
+on the monolith today. A send grant and an `EMAIL_FROM` here would be
+configuration for a code path that cannot execute, which is the same argument
+`lambda_domains.tf`'s header already makes about the monolith's environment map.
+Row 25 is seam 4, and the grant and the environment key arrive there with the
+handler that uses them. `s3` is false for the same kind of reason: `crawled_pages`
+parses HTML from the request body and touches no bucket, and the `crawl-data`
+bucket is read by nothing in this domain.
+
+Memory is 256 MB, the same as the three cuts before it. Twelve JSON routes over
+DynamoDB with no Pillow and no native work. The delete-all routes are the ones
+worth a second thought, because `repos.parts.list_all()` and
+`repos.build_lists.scan_all()` hold whole tables in memory, but the binding
+constraint there is the 29 second timeout rather than the memory: open question 6
+already says a full-table admin operation behind an HTTP route will time out as
+the tables grow, and a job rather than a larger function is the answer to that.
+
+`scripts/verify_route_cut.sh` gains the four prefixes in its `admin` case, which
+was present and empty, and the `verify-route-cuts` job in
+`.github/workflows/deploy-backend.yml` gains the name in its `DOMAINS` list. The
+script's direct-invoke fallback gains a comment recording a false negative it has
+had since row 18: it probes the bare prefix with a `GET` and treats a 404 as a
+failure, and `/api/build-logs`, `/api/reports`, `/api/votes`,
+`/api/admin/db-ops` and `/api/admin/stats` all have every route below the prefix,
+so a working function genuinely answers 404 there. CI never takes that path,
+because `verify-route-cuts` supplies `CARMODPICKER_ORIGIN_VERIFY` on staging and
+needs no gate credential on production, and the gateway path accepts any answer
+that is not a 5xx and reads the route key out of the access log.
+
+**Set `bootstrap_image_tag` before confirming a row-cut apply, and confirm the
+image exists.** Row 20's apply failed on `CreateFunction` because the workspace
+variable still pointed at row 14's commit and `ecr.tf`'s keep-last-10 rule had
+expired that image out of the `vehicles` repository; refreshing the variable to
+the staging head and re-applying fixed it. A speculative plan cannot catch this,
+because the plan renders the image URI as a string and only `CreateFunction`
+resolves it, so the run is green and the apply fails partway through. Every row
+cut is exposed to it, because a cut creates a function from that tag in a
+repository no function has ever been created from. The routine, added to
+`terraform/README.md`'s `bootstrap_image_tag` entry in the same pass: set the
+variable to `sha-<current staging head>`, confirm the tag is present with
+`aws ecr describe-images --repository-name carmodpicker-<env>/<domain> --image-ids imageTag=sha-<sha>`,
+then confirm the apply.
 
 **Ingestion is now admin.** Open question 4 asked whether the domain should be
 renamed and the answer is yes, taken on 2026-09-07. Section 1.5 had already
