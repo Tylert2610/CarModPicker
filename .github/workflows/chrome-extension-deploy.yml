@@ -284,6 +284,12 @@ jobs:
           set -euo pipefail
 
           BRANCH="chore/chrome-extension-v$NEW_VERSION"
+
+          # The build step patched manifest.json in the working tree. Drop that
+          # local edit first: otherwise the checkout below either refuses (the
+          # file differs between main and staging) or carries the patched file
+          # over, which would make the "already at version" check pass wrongly.
+          git checkout -- chrome-extension/manifest.json
           git fetch origin staging --quiet
           git checkout -B "$BRANCH" origin/staging
 
