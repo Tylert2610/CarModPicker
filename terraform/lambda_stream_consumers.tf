@@ -21,13 +21,19 @@
 # consumer exists leaves the aggregate with nothing writing it and a consumer
 # added before the grant is removed leaves two writers racing.
 #
-# **Why this is a function and not a second handler on `catalog`.** A Lambda
-# function has one handler. `catalog` runs uvicorn under the Web Adapter, and an
-# event source mapping has no way to reach a second entry point inside that
-# process. Two functions off one image is both the shape AWS supports and the
-# better one: the consumer gets its own concurrency, timeout, IAM policy and
-# error rate, so a vote storm cannot take request capacity from the catalog
-# routes and a consumer bug does not page as a catalog API error.
+# **Why this is a function and not a route on `catalog`.** The consumer is a web
+# application, same as every other function here: the base image ships the
+# Lambda Web Adapter and no runtime interface client, so the adapter is the
+# runtime. For a trigger that is not HTTP the adapter POSTs the raw event JSON
+# to AWS_LWA_PASS_THROUGH_PATH and returns the app's response body as the
+# function result, which is the documented shape for DynamoDB streams. So a
+# route on the existing `catalog` function would in fact work. It is still the
+# wrong answer: an event source mapping's concurrency, timeout and error rate
+# would then be shared with the catalog API, a vote storm would take request
+# capacity from the routes users are waiting on, and a consumer bug would page
+# as a catalog API error. A separate function off the same image keeps one
+# build, one digest and one deploy while giving the consumer its own
+# concurrency, its own timeout, its own IAM policy and its own error metric.
 # ---------------------------------------------------------------------------
 
 locals {
@@ -38,11 +44,12 @@ locals {
   #
   # `image_repository` is the domain whose image this function runs, and
   # `command` is what makes one image serve two functions. The image is built
-  # once with DOMAIN=catalog and declares a CMD that starts the HTTP entrypoint;
-  # Lambda's image_config.command overrides that CMD, so the same digest runs
-  # the consumer module instead. That is what keeps the two functions from
-  # skewing: one build, one push, one digest, and the deploy that updates
-  # `catalog` updates this function with the same bytes.
+  # once with DOMAIN=catalog and its CMD starts the module named in
+  # /etc/carmodpicker-entrypoint; Lambda's image_config.command overrides that
+  # CMD to start this module instead. Both are `python -m <module>` starting a
+  # uvicorn server, because both run under the Web Adapter. That is what keeps
+  # the two functions from skewing: one build, one push, one digest, and the
+  # deploy that updates `catalog` updates this function with the same bytes.
   #
   # `stream_table` is both the table whose stream is read and the key into
   # `aws_sqs_queue.stream_dlq`, so a mapping cannot be pointed at one table's
@@ -51,7 +58,7 @@ locals {
     catalog-votes-consumer = {
       image_repository = "catalog"
       stream_table     = "votes"
-      command          = ["app.entrypoints.catalog_votes_consumer.handler"]
+      command          = ["python", "-m", "app.entrypoints.catalog_votes_consumer"]
 
       # 256 MB, matching `catalog` itself. The work per invoke is a Query for
       # the vote counts and an UpdateItem per distinct part in the batch, with
@@ -129,6 +136,28 @@ locals {
 
       WEBBPULSE_OTEL_SAMPLE_RATIO        = var.environment == "production" ? "0.1" : "1.0"
       OTEL_EXPORTER_OTLP_TRACES_ENDPOINT = "https://xray.${var.aws_region}.amazonaws.com/v1/traces"
+
+      # The adapter's pass-through contract, both halves of it, set explicitly
+      # so the whole thing is readable in a plan rather than half implied by a
+      # default and half missing.
+      #
+      # The path is where the adapter POSTs a non-HTTP event payload. "/events"
+      # is already the default, but it is also the route the entrypoint declares
+      # and the string its tests pin, and a silent disagreement between the two
+      # is the worst failure available here: the adapter would POST to a path
+      # FastAPI answers 404 on, the adapter would hand that 404 back as a
+      # successful invoke, and the mapping would ack every record it just failed
+      # to process. Written down, the plan shows the contract.
+      AWS_LWA_PASS_THROUGH_PATH = "/events"
+
+      # The status codes the adapter reports to Lambda as a function error.
+      # This one is not a default: without it the adapter returns a 500 response
+      # body as a *successful* invoke, which would ack the batch and lose it.
+      # With it, an unhandled exception in the consumer surfaces as a real
+      # function error, so the mapping bisects, retries, and eventually routes
+      # the batch to the stream dead letter queue, which is exactly the row 22
+      # failure path this function is meant to inherit.
+      AWS_LWA_ERROR_STATUS_CODES = "500-599"
     }
   }
 }
@@ -148,10 +177,13 @@ module "lambda_stream_consumer" {
 
   package_type = "Image"
 
-  # The one thing that differs from a domain function. The image's own CMD
-  # starts the HTTP entrypoint out of /etc/carmodpicker-entrypoint; this
-  # replaces it with the Lambda handler string, which the runtime interface
-  # client in the base image resolves to the module attribute of the same name.
+  # The one thing that differs from a domain function. The image's own CMD reads
+  # /etc/carmodpicker-entrypoint and starts that module; this replaces it with a
+  # direct `python -m` of the consumer module. Not a Lambda handler string:
+  # there is no runtime interface client in this image, so a handler string
+  # would be exec'd as a file of that literal name and the container would not
+  # start. What starts is uvicorn, and the Web Adapter extension in
+  # /opt/extensions polls the Runtime API and forwards each invoke to it.
   image_config = {
     command = each.value.command
   }

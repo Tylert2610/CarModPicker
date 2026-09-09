@@ -45,8 +45,8 @@
 # the votes stream consumer, built from the `catalog` image with its container
 # command overridden in Terraform. `image-map` emits it alongside `catalog` from
 # the same manifest, `deploy-images` updates it with the same digest, and
-# `smoke-domains` skips it, because a stream consumer serves no HTTP and has no
-# `/health` to probe.
+# `smoke-domains` skips it, because it has no API Gateway route for the probe to
+# call, not because it serves no HTTP.
 name: Deploy Backend
 
 on:
@@ -638,14 +638,15 @@ jobs:
           # exist was never created, so probing either would report a second
           # failure for a cause already reported.
           #
-          # The stream consumers are dropped here, and they are the one kind of
-          # function in the map this probe cannot be run against. Split plan row 24
-          # added the first: `catalog-votes-consumer` runs `catalog`'s image with
-          # the container command overridden to a plain Lambda handler, so there is
-          # no uvicorn process, no Web Adapter and no `/health` to answer. Invoking
-          # it with the HTTP payload below would hand a DynamoDB stream handler an
-          # API Gateway event and fail on a shape mismatch, which would report a
-          # broken deploy on a function that is fine.
+          # The stream consumers are dropped here, and the reason is narrower than
+          # it looks. Split plan row 24 added the first, `catalog-votes-consumer`.
+          # It does run uvicorn under the Web Adapter and it does answer
+          # `GET /health`, exactly like a domain function, because the adapter is
+          # the runtime in this image for stream triggers too. What it does not
+          # have is an API Gateway route, and this probe reaches a function by
+          # invoking it with a synthesised API Gateway v2 payload. Handing that
+          # payload to the consumer would route it to a path the consumer does not
+          # serve and report a broken deploy on a function that is fine.
           #
           # They are matched by the `-consumer` suffix rather than listed, which is
           # the same rule terraform/lambda_stream_consumers.tf names them by, so a
@@ -653,11 +654,18 @@ jobs:
           # that this means the consumers are deployed without a smoke probe of
           # their own: `deploy-images` still points them at the new image and still
           # waits for the update to settle, so a failed deploy is caught, but a
-          # consumer whose handler is broken is caught by the aggregate Lambda
-          # error alarm and its stream DLQ rather than by this workflow. A real
-          # probe would mean synthesising a stream record and asserting on the
-          # `batchItemFailures` response, which is worth doing when there is more
-          # than one consumer to justify it.
+          # consumer that is broken past that is caught by the aggregate Lambda
+          # error alarm and its stream DLQ rather than by this workflow.
+          #
+          # To smoke one by hand, invoke it with a stream shaped payload rather
+          # than an HTTP one. An empty batch is enough to prove the container
+          # starts, the adapter forwards, and the app answers:
+          #
+          #   aws lambda invoke --function-name carmodpicker-staging-catalog-votes-consumer \
+          #     --payload '{"Records":[]}' --cli-binary-format raw-in-base64-out /dev/stdout
+          #
+          # which returns {"batchItemFailures":[]}. Wiring that into this job is
+          # worth doing when there is more than one consumer to justify it.
           FUNCTIONS=$(printf '%s' "$FUNCTION_IMAGE_MAP" \
             | python3 -c '
           import json, sys
@@ -710,7 +718,7 @@ jobs:
             exit 1
           fi
           echo "Every deployed domain function answered GET /health with 200."
-          echo "Stream consumers are excluded: they serve no HTTP and have no /health."
+          echo "Stream consumers are excluded: no API Gateway route to probe."
 
   # Row 14 onward: prove each cut domain is reached through its own API Gateway
   # route rather than still falling through to the monolith on $default.

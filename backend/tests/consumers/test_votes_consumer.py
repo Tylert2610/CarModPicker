@@ -332,31 +332,165 @@ class TestAgainstRealRepositories:
 class TestEntrypoint:
     """`app.entrypoints.catalog_votes_consumer`, the tenth deployed function.
 
-    The module is not an application, so there is no `TestClient` to point at
-    it. What is worth asserting is the contract Terraform and the deploy rely
-    on: the attribute the `image_config.command` names exists, it delegates to
-    the handler under test, and the service name it logs under is distinct from
-    the HTTP catalog function's so that "which one erred" stays answerable.
+    The consumer is a web application like every other entrypoint, because the
+    base image ships the Lambda Web Adapter and no runtime interface client. The
+    adapter is the runtime: for a non-HTTP trigger it POSTs the raw event JSON to
+    `AWS_LWA_PASS_THROUGH_PATH` and returns the response body as the function
+    result. So the contract under test is an HTTP one, and `TestClient` is
+    exactly the right instrument: the same batches the handler tests use, driven
+    through `POST /events`, must come back as the same `batchItemFailures` the
+    event source mapping expects.
+
+    `GET /health` matters just as much. The Dockerfile sets
+    `AWS_LWA_READINESS_CHECK_PATH=/health`, so if that route ever went missing
+    the adapter would never mark the app ready and every invoke would time out.
     """
 
-    def test_handler_delegates_to_the_consumer(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    @staticmethod
+    def client(
+        monkeypatch: pytest.MonkeyPatch,
+        parts: "FakeParts",
+        votes: "FakeVotes",
+    ) -> Any:
+        from fastapi.testclient import TestClient
+
         from app.entrypoints import catalog_votes_consumer as entrypoint
 
+        monkeypatch.setattr(entrypoint, "repositories", lambda: FakeRepos(parts, votes))
+        return TestClient(entrypoint.app, raise_server_exceptions=False)
+
+    def test_health_answers_the_readiness_check(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The path the Dockerfile polls before the adapter forwards anything."""
+        client = self.client(monkeypatch, FakeParts({}), FakeVotes({}))
+
+        response = client.get("/health")
+
+        assert response.status_code == 200
+
+    def test_events_recomputes_and_reports_no_failures(self, monkeypatch: pytest.MonkeyPatch) -> None:
         part_id = str(uuid4())
         parts = FakeParts({part_id: FakePart()})
         votes = FakeVotes({part_id: (2, 0)})
-        monkeypatch.setattr(entrypoint, "repositories", lambda: FakeRepos(parts, votes))
+        client = self.client(monkeypatch, parts, votes)
 
-        result = entrypoint.handler({"Records": [stream_record(entity_id=part_id)]})
+        response = client.post("/events", json={"Records": [stream_record(entity_id=part_id)]})
 
-        assert result == {"batchItemFailures": []}
+        assert response.status_code == 200
+        assert response.json() == {"batchItemFailures": []}
         assert parts.updates == [(part_id, 2)]
+
+    def test_events_collapses_a_mixed_batch_into_one_recompute_per_part(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Fifty records over two parts is two queries, not fifty."""
+        first, second = str(uuid4()), str(uuid4())
+        parts = FakeParts({first: FakePart(), second: FakePart()})
+        votes = FakeVotes({first: (5, 2), second: (1, 4)})
+        client = self.client(monkeypatch, parts, votes)
+
+        records = [
+            stream_record(entity_id=first if index % 2 == 0 else second, sequence_number=str(index))
+            for index in range(50)
+        ]
+
+        response = client.post("/events", json={"Records": records})
+
+        assert response.status_code == 200
+        assert response.json() == {"batchItemFailures": []}
+        assert sorted(parts.updates) == sorted([(first, 3), (second, -3)])
+        assert sorted(parts.gets) == sorted([first, second])
+
+    def test_events_skips_tombstoned_parts(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        part_id = str(uuid4())
+        parts = FakeParts({part_id: FakePart(deleted=True)})
+        votes = FakeVotes({part_id: (7, 0)})
+        client = self.client(monkeypatch, parts, votes)
+
+        response = client.post("/events", json={"Records": [stream_record(entity_id=part_id)]})
+
+        assert response.status_code == 200
+        assert response.json() == {"batchItemFailures": []}
+        assert parts.updates == []
+
+    def test_events_returns_batch_item_failures_for_the_failed_part_only(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A partial failure must not re-drive the records that succeeded.
+
+        This is a 200 carrying failures, not a 5xx. The distinction is the whole
+        point of `ReportBatchItemFailures`: the invoke worked, some records did
+        not, and only those sequence numbers come back.
+        """
+        good, bad = str(uuid4()), str(uuid4())
+
+        class ExplodingVotes(FakeVotes):
+            def counts(self, entity_type: str, entity_id: UUID) -> Tuple[int, int]:
+                if str(entity_id) == bad:
+                    raise RuntimeError("ProvisionedThroughputExceededException")
+                return super().counts(entity_type, entity_id)
+
+        parts = FakeParts({good: FakePart(), bad: FakePart()})
+        client = self.client(monkeypatch, parts, ExplodingVotes({good: (1, 0)}))
+
+        records = [
+            stream_record(entity_id=good, sequence_number="10"),
+            stream_record(entity_id=bad, sequence_number="20"),
+            stream_record(entity_id=bad, sequence_number="21"),
+        ]
+
+        response = client.post("/events", json={"Records": records})
+
+        assert response.status_code == 200
+        assert response.json() == {"batchItemFailures": [{"itemIdentifier": "20"}, {"itemIdentifier": "21"}]}
+        assert parts.updates == [(good, 1)]
+
+    def test_an_unexpected_exception_becomes_a_5xx(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The whole point of not catching: the adapter must see a failure.
+
+        Swallowing this into an empty `batchItemFailures` would tell the event
+        source mapping every record succeeded, and the batch would be dropped.
+        A non-2xx is what makes the mapping bisect and retry, and what eventually
+        routes the batch to the stream DLQ.
+        """
+        from app.entrypoints import catalog_votes_consumer as entrypoint
+
+        client = self.client(monkeypatch, FakeParts({}), FakeVotes({}))
+        monkeypatch.setattr(
+            entrypoint,
+            "repositories",
+            lambda: (_ for _ in ()).throw(RuntimeError("bundle is unreachable")),
+        )
+
+        response = client.post("/events", json={"Records": [stream_record()]})
+
+        assert response.status_code >= 500
+
+    def test_a_malformed_body_becomes_a_5xx(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Not JSON means the adapter contract broke; fail loudly, do not ack."""
+        client = self.client(monkeypatch, FakeParts({}), FakeVotes({}))
+
+        response = client.post(
+            "/events",
+            content=b"not json at all",
+            headers={"content-type": "application/json"},
+        )
+
+        assert response.status_code >= 500
 
     def test_service_name_is_distinct_from_the_http_catalog_function(self) -> None:
         from app.entrypoints import catalog_votes_consumer as entrypoint
 
         assert entrypoint.SERVICE_NAME == f"{entrypoint.DOMAIN.service_name}-votes-consumer"
         assert entrypoint.SERVICE_NAME != entrypoint.DOMAIN.service_name
+
+    def test_the_events_path_matches_the_adapter_default(self) -> None:
+        """Terraform sets `AWS_LWA_PASS_THROUGH_PATH` to this same string.
+
+        If the two ever drift the adapter POSTs to a path FastAPI answers 404
+        on, which the adapter reports as a successful invoke with a 404 body.
+        Every record would be silently acked. Pinning the constant here is the
+        cheap half of keeping that from happening.
+        """
+        from app.entrypoints import catalog_votes_consumer as entrypoint
+
+        assert entrypoint.EVENTS_PATH == "/events"
+        assert entrypoint.EVENTS_PATH in {route.path for route in entrypoint.app.routes}
 
     def test_the_bundle_is_memoised_across_invokes(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """One bundle per execution environment, not one per invoke."""
@@ -377,9 +511,18 @@ class TestEntrypoint:
         assert first is second
         assert len(built) == 1
 
-    def test_the_module_builds_no_fastapi_application(self) -> None:
-        """A stream consumer with a router would mean the split leaked."""
+    def test_neither_cors_nor_the_rate_limiter_is_mounted(self) -> None:
+        """The consumer has no `rate-limits` grant, so the limiter must be absent.
+
+        Mounting `add_shared_middleware` here would make the limiter fail open on
+        every single invoke, log a warning each time, and trip the shared
+        `rate-limit-failed-open` alarm on ordinary traffic. CORS is equally
+        pointless: the only caller is the adapter over loopback and it sends no
+        `Origin` header.
+        """
         from app.entrypoints import catalog_votes_consumer as entrypoint
 
-        assert not hasattr(entrypoint, "app")
-        assert not hasattr(entrypoint, "build_app")
+        mounted = {middleware.cls.__name__ for middleware in entrypoint.app.user_middleware}
+
+        assert "CORSMiddleware" not in mounted
+        assert not any("RateLimit" in name for name in mounted)

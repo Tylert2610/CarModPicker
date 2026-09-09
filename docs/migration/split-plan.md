@@ -2397,20 +2397,72 @@ replaying a batch, or the whole day, produces the same number. The handler also
 skips the write when the recomputed value equals the stored one, which keeps a
 replay from writing at all.
 
-**It is a second function on `catalog`'s image, not a second handler in
-`catalog`.** A Lambda function has one handler, and `catalog` is a uvicorn
-process behind the Web Adapter, so an event source mapping has no way to reach a
-second entry point inside it. The consumer is its own function running the same
-image with `image_config.command` overriding the container CMD to
-`app.entrypoints.catalog_votes_consumer.handler`. That was the smallest correct
-option, and it is better than a tenth ECR repository would have been: one build,
-one push and one digest means the deploy that updates `catalog` updates the
-consumer with the identical bytes and the two cannot skew. The platform module
-has supported `image_config` since v2.0.1, so the existing `~> 2.1` pin already
-covers it. `deploy-backend.yml` gained an `EXTRA_FUNCTIONS` map that emits the
-consumer alongside `catalog` from the same manifest, and `smoke-domains` skips
-anything whose name ends in `-consumer`, because a stream consumer serves no HTTP
-and has no `/health` to probe.
+**A stream consumer is still a web application here, and that is the adapter's
+documented shape.** This is the part worth reading carefully, because the obvious
+guess is wrong. The base image is `python:3.13-slim` with the Lambda Web Adapter
+copied into `/opt/extensions/lambda-adapter`. There is no `awslambdaric` in it
+and no ENTRYPOINT, so there is no runtime interface client to resolve a handler
+string like `module.handler`: pointing `image_config.command` at one would make
+Lambda exec a file of that literal name and the container would not start. The
+adapter *is* the runtime. It polls the Runtime API itself and forwards each
+invoke to a local web server, and for a trigger that is not HTTP it POSTs the raw
+event JSON to `AWS_LWA_PASS_THROUGH_PATH`, default `/events`, and returns the
+app's response body as the function result. The adapter documents DynamoDB
+streams among the non-HTTP triggers this covers.
+
+So `app/entrypoints/catalog_votes_consumer.py` is a FastAPI app like its nine
+neighbours. It serves `GET /health`, the readiness path the Dockerfile already
+sets, and `POST /events`, which reads the stream event off the request body,
+calls `app.consumers.votes.handle`, and answers `{"batchItemFailures": [...]}`.
+Terraform starts it with `image_config.command = ["python", "-m",
+"app.entrypoints.catalog_votes_consumer"]`, the same `python -m` form the image's
+own CMD uses, and sets `AWS_LWA_PASS_THROUGH_PATH = "/events"` explicitly so the
+contract is visible in a plan rather than resting on a default.
+
+**It also sets `AWS_LWA_ERROR_STATUS_CODES = "500-599"`, and without that the
+error path silently does not work.** That variable is opt-in: by default the
+adapter hands a 500 response back to Lambda as a *successful* invoke. An
+unhandled exception in the consumer would then look like a clean run, the mapping
+would ack the batch, and the records would be gone. With it set, the 500 that
+FastAPI's error handling produces surfaces as a real function error, which is
+what makes the mapping bisect, retry, and eventually route the batch to the
+stream dead letter queue. The entrypoint deliberately does not catch and convert
+unexpected exceptions into an empty failure list for the same reason.
+
+**It is a separate function rather than a route on `catalog`.** Since the
+consumer is a web app, a `/events` route on the existing `catalog` function would
+technically work. It is still the wrong answer: the mapping's concurrency,
+timeout and error rate would be shared with the API, a vote storm would take
+request capacity from routes users are waiting on, and a consumer bug would page
+as a catalog API error. A second function off the same image keeps what matters
+about sharing anyway. It is better than a tenth ECR repository would have been:
+one build, one push and one digest means the deploy that updates `catalog`
+updates the consumer with identical bytes and the two cannot skew. The platform
+module has supported `image_config` since v2.0.1, so the existing `~> 2.1` pin
+already covers it. `deploy-backend.yml` gained an `EXTRA_FUNCTIONS` map that
+emits the consumer alongside `catalog` from the same manifest.
+
+The consumer does not mount `add_shared_middleware`. CORS is meaningless when the
+only caller is the adapter over loopback with no `Origin`, and the shared rate
+limiter is worse than meaningless: it writes to `rate-limits`, which this function
+has no grant for, so it would fail open on every invoke, log a warning each time,
+and trip the `rate-limit-failed-open` alarm on ordinary traffic. It mounts
+`request_context_middleware` and the error handlers only.
+
+**Smoking it by hand.** `smoke-domains` skips anything ending in `-consumer`,
+which stays correct, though for a narrower reason than the name suggests: the
+consumer does answer `GET /health`, it just has no API Gateway route, and that
+job reaches a function by invoking it with a synthesised API Gateway v2 payload.
+The equivalent probe is a direct invoke with a stream shaped payload, and an
+empty batch is enough to prove the container starts, the adapter forwards, and
+the app answers:
+
+```
+aws lambda invoke --function-name carmodpicker-staging-catalog-votes-consumer \
+  --payload '{"Records":[]}' --cli-binary-format raw-in-base64-out /dev/stdout
+```
+
+which returns `{"batchItemFailures":[]}`.
 
 **The mapping's settings are all failure handling, because the defaults stall a
 shard.** A DynamoDB stream shard is ordered and a failing batch blocks it, and
