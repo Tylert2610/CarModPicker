@@ -43,7 +43,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Callable, Optional
 
 from app.composition.domains import DOMAINS
-from app.composition.wiring import check_signing_key, configure_logging
+from app.composition.wiring import configure_logging
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from fastapi import FastAPI
@@ -91,8 +91,11 @@ from app.core.sentry import init_sentry  # noqa: E402  — ordering is the point
 
 init_sentry(server_name="apprunner-backend")
 
-# This root serves the auth routes, so it needs a signing key and says so once,
-# at startup, instead of failing per request inside jwt.encode.
-check_signing_key(DOMAINS.values())
+# `check_signing_key` is deliberately NOT called here, and is no longer imported.
+# It reads `settings.SECRET_KEY`, which resolves through Secrets Manager on first
+# read, so calling it at module scope made importing this module fetch the
+# secret, which is the one thing every composition root must not do. It moved
+# into `build_domain_app`'s lifespan, where it runs once per startup for both
+# roots, before any request and ahead of the first `jwt.encode`.
 
 app = build_app()

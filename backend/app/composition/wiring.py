@@ -434,6 +434,20 @@ def build_domain_app(
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+        # The signing key check runs on every startup, ungated, and before the
+        # seed. It cannot live at module scope in a composition root, because
+        # `settings.SECRET_KEY` resolves through Secrets Manager on first read
+        # and a module-scope read would put that fetch on the import path of
+        # every process importing the root, the test suite included. It also
+        # cannot ride along inside the `seeds and RUN_STARTUP_TASKS` branch
+        # below: Lambda sets `RUN_STARTUP_TASKS` false and a domain that seeds
+        # nothing skips that branch entirely, so the check would be silently
+        # skipped exactly where a missing key matters most.
+        #
+        # `resolved` is this application's own domains, so a root serving no
+        # domain that names SECRET_KEY still asks for nothing and still needs no
+        # Secrets Manager grant.
+        check_signing_key(resolved)
         if seeds and settings.RUN_STARTUP_TASKS:
             # Resolved on each startup rather than bound when the application is
             # built, so `tests/test_lambda_handler.py` can patch
