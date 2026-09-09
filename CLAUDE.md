@@ -145,9 +145,12 @@ Endpoints read and write through repositories from `app/db/dynamo/`, injected vi
 - **`api/`** — API client modules (one per backend domain). All of them go
   through `api/client.ts`, which adapts `@webbpulse/api-client` to the
   `{ data }` response shape the call sites read and rejects with `ApiError` on a
-  non-2xx. `utils/apiError.ts` reads the backend's error envelope off that.
+  non-2xx. The error envelope is read by `getWebbPulseError` in that package;
+  `utils/apiError.ts` is only the `unknown`-to-`ApiError` narrowing around it.
 - **`config/app.ts`** — startup configuration, validated by `@webbpulse/config`.
-  The `VITE_BACKEND` dev switch and the `/api` suffix are resolved here.
+  The `VITE_BACKEND` dev switch and the `/api` suffix are the package's
+  `backendTargets` and `apiPathPrefix` options; the switch is consulted only
+  when `DEV` is true, so it cannot repoint a production bundle.
 - **`contexts/`** — React contexts (auth, user state).
 - **`hooks/`** — Custom React hooks.
 - React Router 7 for routing; Tailwind CSS 4 for styling.

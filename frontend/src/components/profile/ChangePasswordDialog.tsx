@@ -105,13 +105,10 @@ const ChangePasswordDialog: React.FC<ChangePasswordDialogProps> = ({
         onPasswordChanged();
       }
     } catch (err: unknown) {
-      let errorMessage = 'Failed to change password';
-      if (err instanceof Error) {
-        errorMessage = err.message;
-      } else if (typeof err === 'object' && err !== null && 'response' in err) {
-        errorMessage = getApiErrorMessage(err, errorMessage);
-      }
-      setError(errorMessage);
+      // `getApiErrorMessage` already prefers the envelope's message for an
+      // ApiError and a plain Error's own message otherwise, so the branching
+      // this used to do by hand is the helper's job now.
+      setError(getApiErrorMessage(err, 'Failed to change password'));
     } finally {
       setIsSubmitting(false);
     }
