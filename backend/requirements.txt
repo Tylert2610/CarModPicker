@@ -20,7 +20,7 @@
 # itself rather than launching under `opentelemetry-instrument`, so the
 # distribution is a library here and not a wrapper. It is additive to `otel`
 # rather than a replacement for it, and both must be present.
-webbpulse[fastapi,otel,dynamodb,aws-otel]==0.3.0
+webbpulse[fastapi,otel,dynamodb,aws-otel]==0.4.0
 
 # Core FastAPI and web framework dependencies
 annotated-types==0.8.0
