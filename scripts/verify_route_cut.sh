@@ -123,16 +123,16 @@ esac
 # prefix listed here must appear there for that domain, or this script will
 # correctly report it as still on the monolith.
 #
-# Only `media` is cut today. The other eight are filled in by rows 18 through 31
-# and are listed empty so the script fails loudly with "no prefixes" rather than
-# passing silently on an empty loop.
+# `media` from row 14 and `build-logs` from row 18 are cut today. The other seven
+# are filled in by rows 19 through 31 and are listed empty so the script fails
+# loudly with "no prefixes" rather than passing silently on an empty loop.
 case "$DOMAIN" in
 media)
   PREFIXES=(/api/images)
   ;;
 build-logs)
   # Row 18.
-  PREFIXES=()
+  PREFIXES=(/api/build-logs)
   ;;
 moderation)
   # Row 19.
@@ -215,7 +215,7 @@ invoke_fallback() {
     # The bare prefix. The Web Adapter turns rawPath and the method into an
     # ordinary request against the application, so a 200, a 401 or a 422 all
     # prove the route is served; only a 404 says this application does not have
-    # it. Most of `media`'s routes require a token, so 401 is the expected
+    # it. Most routes in a cut domain require a token, so 401 is the expected
     # healthy answer and is treated as such.
     cat >"$event" <<JSON
 {
@@ -360,8 +360,8 @@ for path in "${PROBE_PATHS[@]}"; do
   for attempt in $(seq 1 "$RETRIES"); do
     code=$(curl -sS --max-time "$TIMEOUT" -o /dev/null -w '%{http_code}' \
       -A "$MARKER" "${GATE_ARGS[@]}" "$url" 2>/dev/null || echo 000)
-    # 401 and 403 from the application are ordinary: most of `media`'s routes
-    # require a token, and this probe carries none. What matters is that the
+    # 401 and 403 from the application are ordinary: most routes in a cut
+    # domain require a token, and this probe carries none. What matters is that the
     # request reached the API at all, which any answer other than a gateway
     # level failure demonstrates. A 5xx can be a cold start, so it is retried.
     case "$code" in
