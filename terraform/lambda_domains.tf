@@ -3,8 +3,9 @@
 # the AWS Lambda Web Adapter. Section 3.3 and section 3.4 of
 # docs/migration/split-plan.md, row 13 of section 8.
 #
-# `media` from row 13 and `build-logs` from row 18 are the entries today. Rows
-# 19 through 31 add the other seven, one per row, and the shape here is built
+# `media` from row 13, `build-logs` from row 18, `moderation` from row 19,
+# `vehicles` from row 20 and `admin` from row 21 are the entries today. Rows 26
+# through 31 add the other four, one per row, and the shape here is built
 # for that: everything a domain needs is one entry in `local.lambda_domains`,
 # and the module call, the IAM policy and the outputs all key off it, so adding
 # a domain is adding a map entry.
@@ -259,6 +260,137 @@ locals {
   # is bounded by `DYNAMODB_SEARCH_SCAN_PAGE_LIMIT` and holds parsed models
   # rather than images. Memory is the cheapest knob to raise if the duration says
   # otherwise. Only `media` needs 512.
+  #
+  # How `admin`'s two table lists were derived, by row 21 and by the same method
+  # as the four above. This is the mirror image of `vehicles`: that entry writes
+  # nothing but the limiter's table, and this one writes fourteen tables across
+  # six domains. Both are the same rule applied honestly, which is that the
+  # grant follows the call:
+  #
+  #   - `app/composition/domains.py` declares `_ADMIN_REPOSITORIES` as
+  #     twenty-one repositories, the second widest bundle after the monolith's
+  #     twenty-five. `app/db/dynamo/registry.py`'s `tables_for` maps each of the
+  #     twenty-one to a table suffix of the same name, so twenty-one
+  #     repositories are twenty-one tables, and
+  #     `backend/tests/entrypoints/test_repository_bundles.py` recomputes that
+  #     tuple from the real import graph, so the bundle is a checked statement
+  #     of what this function can reach.
+  #   - Twenty-one in the bundle, twenty granted. The one ungranted repository
+  #     is `retailers`, and it is the whole of the bundle-to-grant gap on this
+  #     cut, which makes this the narrowest gap of the five. `retailers` is
+  #     reached twice and neither reach is an admin route:
+  #     `part_price_alert_service.evaluate_alerts_for_listing` calls
+  #     `repos.retailers.get` for the email body, and that function is invoked
+  #     only from `part_listing_service.create_or_update_listing_and_price`,
+  #     which is `catalog`'s price capture and not served here; and
+  #     `PartService`'s create and update paths call `repos.retailers.get`, and
+  #     the only `PartService` method any admin route calls is `purge`.
+  #     Granting a table on the strength of an import rather than a call is what
+  #     the four entries above refused, and refusing it here as well is the only
+  #     thing that keeps the wide write list below honest.
+  #   - Fourteen tables are written, and every one has a named caller.
+  #     `part_price_alerts` is the domain's own, per section 1.2:
+  #     `part_price_alert_service` calls `.create` and `.update` from subscribe,
+  #     patch, delete and the token unsubscribe, and
+  #     `part_service.purge_related_rows_for_parts` calls `.delete_for_parts`.
+  #     The other thirteen are `admin/db_ops`, which is four routes that seed
+  #     and purge:
+  #       * `POST /admin/db-ops/init/car-generations` calls
+  #         `app/core/init_cars.py`'s `init_car_generations`, which calls
+  #         `.create_unique` and `.update_unique` on `car_makes`, `car_models`
+  #         and `car_generations`. This is the seed row 20 could not run and
+  #         deliberately did not grant: `vehicles` is the descriptor that sets
+  #         `seeds`, `run_startup_tasks` is gated on `RUN_STARTUP_TASKS`, which
+  #         `backend/Dockerfile` bakes to `false`, and the entrypoint is Mangum
+  #         with `lifespan="off"`, so the lifespan that would call it never
+  #         runs there. Here it is an explicit `POST` behind
+  #         `get_current_admin_user`, which is exactly the owner section 7 said
+  #         the seed needed, so the write grant lands with the route rather
+  #         than with the table's owner.
+  #       * `POST /admin/db-ops/init/part-categories` calls
+  #         `app/core/init_categories.py`, which calls `.create_unique` and
+  #         `.update_unique` on `categories`.
+  #       * `POST /admin/db-ops/cars/delete-all` calls `.update` on
+  #         `build_lists` to null out `car_id`, `.delete_for_entity_type` on
+  #         `votes`, `.delete_for_car` on `part_cars` and `.delete_unique` on
+  #         all three car tables.
+  #       * `POST /admin/db-ops/parts/delete-all` and
+  #         `POST /admin/db-ops/part-manufacturers/delete-all` run the part
+  #         purge, which is the widest single path in the application:
+  #         `PartService.purge` calls `delete_part_listings`, which calls
+  #         `.delete_for_part` on `part_listings` and `.delete_for_listing` on
+  #         `part_price_history`, then `.save_unique` or `.put` on `parts` to
+  #         unlink duplicates, `.unlink_action` on `part_cars` and
+  #         `.delete_unique` on `parts`; and `purge_related_rows_for_parts`
+  #         calls `.delete_for_entities` on `votes` and `reports`,
+  #         `.batch_delete` on `build_list_parts` and `.delete_for_parts` on
+  #         `part_price_alerts`. The manufacturer route additionally calls
+  #         `.update_unique` on `parts` and `.delete_unique` on
+  #         `part_manufacturers`.
+  #     Section 1.2's "also written today by" column names `admin` against
+  #     `parts`, `part_cars`, `part_manufacturers`, `categories`, the three car
+  #     tables, `build_lists` and `votes`, and every one of those is here.
+  #     `part_listings`, `part_price_history`, `build_list_parts` and `reports`
+  #     are here too and the column credits them to `catalog` and `users`
+  #     instead, which is the column being about the domain that owns the seam
+  #     rather than about every caller: the purge is one code path and it is
+  #     reached from `catalog` and from here.
+  #
+  #     None of these is a seam this row unwinds. Section 1.3's seams 1, 2 and 4
+  #     are what eventually narrow this list, and rows 25, 28 and 30 are where
+  #     they land. Until then the grant follows the writer, and the writer is
+  #     this function.
+  #   - Six tables are read only. `users` is read on eleven of the twelve routes
+  #     before the handler runs: `get_current_user` and `get_current_admin_user`
+  #     both call `repos.users.get_by_username` to resolve the token subject.
+  #     `oauth_accounts`, `webauthn_credentials`, `build_list_phases`,
+  #     `build_logs` and `image_source_mappings` are `admin/stats`, whose one
+  #     route calls `.count()` on each and `scan_all()` on `build_list_phases`.
+  #     Nothing writes any of the six. `part_listings`, `part_price_history`,
+  #     `part_cars`, `votes` and `reports` are also counted by that route and
+  #     are in `tables` rather than here, because a table appears in exactly one
+  #     of the two lists and the write set is the wider grant; the twelve write
+  #     actions include the five read ones.
+  #   - `rate-limits` is in `tables` for the reason all four entries above
+  #     record: it is the shared limiter's counter table, reached from the
+  #     middleware stack rather than from a repository, so the bundle cannot
+  #     name it, and the limiter fails open, so withholding it would silently
+  #     turn layer 2 off for this domain rather than failing.
+  #   - `secrets` is true, and back to true after `vehicles`. Eleven of the
+  #     twelve routes verify a token and the twelfth, the price-alert
+  #     unsubscribe, decodes one of its own, so `SECRET_KEY` is read on every
+  #     request; the descriptor sets `requires_secrets=("SECRET_KEY",)` to say
+  #     so. The runtime policy therefore carries `secretsmanager:GetSecretValue`
+  #     and `local.lambda_domain_environment` sets `APP_SECRETS_ARN`.
+  #   - `s3` is false. `crawled_pages` is the one route that might have wanted a
+  #     bucket and it does not: it parses HTML the Chrome extension posts in the
+  #     request body and returns the result, touching no repository and no
+  #     object store. The `crawl-data` bucket in s3.tf is not read by any route
+  #     in this domain.
+  #   - SES is not granted here and no `EMAIL_FROM` is set, which the file
+  #     header's list of omitted environment keys anticipates but gets slightly
+  #     wrong for today. Section 3.4 gives `ses:SendEmail` to `identity` and
+  #     `admin`, and `admin`'s half of that is the price-drop alert email. That
+  #     email is sent from `evaluate_alerts_for_listing`, which is called only
+  #     from `part_listing_service.create_or_update_listing_and_price`, which is
+  #     `catalog`'s price capture and runs on the monolith today. No route this
+  #     function serves sends mail, so a sender address and a send grant here
+  #     would both be configuration for a code path that cannot execute. Row 25
+  #     is seam 4, which moves the email onto an `admin` stream handler, and
+  #     that is the row where the grant and the environment key arrive together
+  #     with the code that uses them.
+  #
+  # 256 MB, the same as `build-logs`, `moderation` and `vehicles`. Twelve JSON
+  # routes over DynamoDB with no Pillow and no native work anywhere in the four
+  # modules. The delete-all routes are the ones worth a second thought, because
+  # `repos.parts.list_all()` and `repos.build_lists.scan_all()` hold whole tables
+  # in memory and the purge then walks them one at a time, but the binding
+  # constraint there is the 29 second timeout rather than the memory: section 7's
+  # open question 6 already says a full-table admin operation behind an HTTP
+  # route will time out as the tables grow, and the fix for that is a job rather
+  # than a larger function. Raising memory would buy CPU and so a little wall
+  # clock, and it is the cheapest knob if the duration says so, but it is not the
+  # answer to that question and this row does not pretend it is.
   lambda_domains_declared = {
     media = {
       secrets     = true
@@ -296,6 +428,41 @@ locals {
         "users",
         "parts",
         "part_manufacturers",
+      ]
+    }
+    admin = {
+      secrets = true
+      s3      = false
+      memory  = 256
+      # Fifteen written tables, fourteen of them real and the fifteenth the
+      # limiter's counter. This is the widest write list of the nine by a wide
+      # margin, and it is the domain's whole purpose rather than a failure to
+      # narrow it: the two admin modules seed and purge six domains' tables by
+      # design. The derivation above names the call behind every one.
+      tables = [
+        "part_price_alerts",
+        "car_makes",
+        "car_models",
+        "car_generations",
+        "categories",
+        "part_manufacturers",
+        "parts",
+        "part_cars",
+        "part_listings",
+        "part_price_history",
+        "build_lists",
+        "build_list_parts",
+        "votes",
+        "reports",
+        "rate-limits",
+      ]
+      read_tables = [
+        "users",
+        "oauth_accounts",
+        "webauthn_credentials",
+        "build_list_phases",
+        "build_logs",
+        "image_source_mappings",
       ]
     }
   }
@@ -389,9 +556,13 @@ locals {
   # the four keys a domain function must not or need not carry:
   #
   #   - PORT and RUN_STARTUP_TASKS are baked into the image; see the file header.
-  #   - EMAIL_FROM and EMAIL_ENABLED are `identity`'s and `admin`'s, per
-  #     section 3.4's SES split. `media` sends no mail, and a configured sender
-  #     on a function with no ses:SendEmail grant is a misleading configuration.
+  #   - EMAIL_FROM and EMAIL_ENABLED are `identity`'s and, from row 25,
+  #     `admin`'s, per section 3.4's SES split. No domain function cut so far
+  #     sends mail, `admin` included: its one mail path is the price-drop alert,
+  #     which is called from `catalog`'s price capture rather than from any
+  #     route this domain serves, and seam 4 is what moves it. A configured
+  #     sender on a function with no ses:SendEmail grant is a misleading
+  #     configuration, so the key waits for the code.
   #   - SENTRY_SERVICE_NAME is gone. Row 16 removed `init_sentry` from every
   #     entrypoint, so nothing in a domain function reads it, and a Sentry
   #     variable on a function with no Sentry in it is a misleading

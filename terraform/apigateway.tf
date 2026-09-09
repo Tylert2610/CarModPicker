@@ -12,9 +12,9 @@ locals {
   # once local.lambda_domain_route_keys names its route keys: the module's every_integration_is_routed
   # check fails the plan on an integration no route can reach, so the two move together.
   #
-  # Row 14 is `media`, row 18 is `build-logs`, row 19 is `moderation` and row 20 is `vehicles`.
-  # Rows 21 through 31 append admin, build-lists, identity, catalog and users.
-  routed_lambda_domains_declared = ["media", "build-logs", "moderation", "vehicles"]
+  # Row 14 is `media`, row 18 is `build-logs`, row 19 is `moderation`, row 20 is `vehicles` and
+  # row 21 is `admin`. Rows 26 through 31 append build-lists, identity, catalog and users.
+  routed_lambda_domains_declared = ["media", "build-logs", "moderation", "vehicles", "admin"]
 
   # Gated on the same condition as the functions themselves, and it has to be. A route names an
   # integration and an integration names module.lambda_domain[name], so a routed domain whose
@@ -99,6 +99,47 @@ locals {
     # independent and no ordering between them is implied. Nothing else in
     # section 1.1 sits under either prefix.
     vehicles = ["/api/car-generations", "/api/search"]
+    # Row 21. Four prefixes, the most of any cut so far, and two of them are the
+    # only place in the whole map where one domain claims two children of a
+    # parent it does not itself serve.
+    #
+    # `/api/crawled-pages` and `/api/part-price-alerts` are ordinary prefixes:
+    # one endpoint module each, a bare key for the collection and a `{proxy+}`
+    # for everything below.
+    #
+    # `/api/admin/db-ops` and `/api/admin/stats` are section 1.4's one genuine
+    # cross-domain ordering hazard, and this is where it is resolved. There is
+    # no route at `/api/admin` itself, so the two children are named explicitly
+    # rather than collapsed into a single `/api/admin` prefix. Collapsing them
+    # would be wrong twice over: it would claim `/api/admin/{anything}` for this
+    # function forever, and section 1.4 warns that no other domain may take a
+    # child of `/api/admin` without accounting for it, which a broad key would
+    # make impossible to do safely. `/api/users/admin/users` is a separate tree
+    # entirely and is unaffected, because a route key matches literally rather
+    # than by substring.
+    #
+    # The `/api/part-price-alerts` bare key matters more than it looks.
+    # `part_price_alerts.py` registers `/unsubscribe` before its two
+    # `/{alert_id}` routes and section 1.4 calls that the one ordering hazard a
+    # route away from breaking silently. That ordering is decided inside the
+    # module and is preserved by the `{proxy+}` key forwarding the whole subtree
+    # to one function, exactly as it forwards to the monolith today. Splitting
+    # the subtree across route keys is what would break it, and nothing here
+    # does.
+    #
+    # Eight route keys, a bare and a `{proxy+}` for each of the four.
+    # `/api/part-price-alerts` is the one whose bare key carries real traffic:
+    # `part_price_alerts.py` declares the subscribe endpoint as `POST "/"`,
+    # which mounts at `/api/part-price-alerts/`, and API Gateway normalises a
+    # trailing slash onto the bare key, so `ANY /api/part-price-alerts` is what
+    # matches it. A route key may not itself end in a slash, so the bare key is
+    # not merely the better spelling here, it is the only one the gateway will
+    # accept. The other three prefixes have every route below them
+    # (`/scrape`, the four `db-ops` operations and `/table-counts`), so their
+    # bare keys are the defensive half section 3.5 asks for: cheap, and the
+    # difference between a clean cut and one that half works if a collection
+    # route is ever added.
+    admin = ["/api/crawled-pages", "/api/part-price-alerts", "/api/admin/db-ops", "/api/admin/stats"]
   }
 
   # Two route keys per prefix, generated rather than written out, so a domain added above cannot be
@@ -159,7 +200,8 @@ module "api" {
   default_integration = "legacy"
 
   # Two keys per cut prefix: `media`'s pair from row 14, `build-logs`' pair from row 18,
-  # `moderation`'s three pairs from row 19 and `vehicles`' two pairs from row 20. No
+  # `moderation`'s three pairs from row 19, `vehicles`' two pairs from row 20 and `admin`'s four
+  # pairs from row 21. No
   # authorization_type is set on any of them, which means the module's own choice, CUSTOM whenever
   # authorizer_id is set, so each one sits behind the staging access gate exactly as $default does.
   # Setting NONE here would punch a hole straight past the gate, which is the failure the module's

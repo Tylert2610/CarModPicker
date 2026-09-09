@@ -123,10 +123,10 @@ esac
 # prefix listed here must appear there for that domain, or this script will
 # correctly report it as still on the monolith.
 #
-# `media` from row 14, `build-logs` from row 18, `moderation` from row 19 and
-# `vehicles` from row 20 are cut today. The other five are filled in by rows 21
-# through 31 and are listed empty so the script fails loudly with "no prefixes"
-# rather than passing silently on an empty loop.
+# `media` from row 14, `build-logs` from row 18, `moderation` from row 19,
+# `vehicles` from row 20 and `admin` from row 21 are cut today. The other four
+# are filled in by rows 26 through 31 and are listed empty so the script fails
+# loudly with "no prefixes" rather than passing silently on an empty loop.
 case "$DOMAIN" in
 media)
   PREFIXES=(/api/images)
@@ -146,8 +146,12 @@ vehicles)
   PREFIXES=(/api/car-generations /api/search)
   ;;
 admin)
-  # Row 21.
-  PREFIXES=()
+  # Row 21. Four prefixes, the most of any cut. Two are ordinary route trees and
+  # two are the explicit children of /api/admin: there is no route at /api/admin
+  # itself, and section 1.4 says no other domain may claim a child of it without
+  # accounting for this, so the two are named rather than collapsed into one
+  # broad prefix.
+  PREFIXES=(/api/crawled-pages /api/part-price-alerts /api/admin/db-ops /api/admin/stats)
   ;;
 build-lists)
   # Row 26.
@@ -220,6 +224,18 @@ invoke_fallback() {
     # prove the route is served; only a 404 says this application does not have
     # it. Most routes in a cut domain require a token, so 401 is the expected
     # healthy answer and is treated as such.
+    #
+    # A prefix with no route at the bare path answers 404 here and is reported
+    # as a failure, which is a false negative rather than a real one. It applies
+    # to /api/build-logs, /api/reports, /api/votes, /api/admin/db-ops and
+    # /api/admin/stats among others: every route of those trees is below the
+    # prefix, so a GET on the prefix itself is genuinely a 404 from a working
+    # function. The gateway path above has no such problem, because it accepts
+    # any answer that is not a 5xx and reads the route key out of the access
+    # log, and CI always takes it: verify-route-cuts supplies
+    # CARMODPICKER_ORIGIN_VERIFY on staging and needs no gate credential on
+    # production. This fallback is the no-credential manual path, so read a 404
+    # on a bare prefix here against the module's own routes before believing it.
     cat >"$event" <<JSON
 {
   "version": "2.0",
