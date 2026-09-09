@@ -15,6 +15,11 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],
+      // Vitest 4 removed `coverage.all`; the report now covers only files a
+      // test imported unless `include` names them. The thresholds below were
+      // calibrated against the whole app source tree, so name it explicitly to
+      // keep untested files counted rather than silently dropped.
+      include: ['src/**/*.{ts,tsx}'],
       exclude: [
         'node_modules/',
         'src/test/',
