@@ -21,12 +21,11 @@ segment above it too.
 import logging
 from uuid import UUID
 
-import jwt
 from fastapi import APIRouter, Depends, Query, status
 from fastapi.responses import RedirectResponse
-from jwt import InvalidTokenError
+from webbpulse.security import TokenError
 
-from app.api.dependencies.auth import ALGORITHM, get_current_user
+from app.api.dependencies.auth import decode_access_token, get_current_user
 from app.api.dependencies.repositories import get_repositories
 from app.api.schemas.part_price_alert import (
     PartPriceAlertCreate,
@@ -127,7 +126,7 @@ async def unsubscribe_via_token(token: str = Query(...)) -> RedirectResponse:
     case (we never reveal why decode failed).
     """
     try:
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[ALGORITHM])
+        payload = decode_access_token(token)
         purpose = payload.get("purpose")
         sub = payload.get("sub")
 
@@ -167,7 +166,7 @@ async def unsubscribe_via_token(token: str = Query(...)) -> RedirectResponse:
             status_code=302,
         )
 
-    except InvalidTokenError as e:
+    except TokenError as e:
         logger.warning("price_alert_unsubscribe_jwt_error: %s", e)
         return RedirectResponse(
             url=_unsubscribe_redirect_url(False, "Invalid+or+expired+link"),

@@ -12,7 +12,13 @@
 # rather than a failure. `dynamodb` carries the botocore error handlers the
 # composition root installs; the package imports botocore lazily inside them, so
 # it costs nothing at import time.
-webbpulse[fastapi,otel,dynamodb,aws-otel]==0.4.0
+#
+# `security` is what row 19 added: `webbpulse.security` now provides this app's
+# password hashing and JWT signing, replacing the local bcrypt and PyJWT calls.
+# It pulls PyJWT and bcrypt, both of which were already pinned below and stay
+# pinned here, because this file is the resolved set and the package's own
+# ranges must not be allowed to float a different major into the image.
+webbpulse[fastapi,otel,dynamodb,aws-otel,security]==0.5.0
 
 annotated-types==0.8.0
 anyio==4.15.0

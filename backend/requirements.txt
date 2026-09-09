@@ -20,7 +20,13 @@
 # itself rather than launching under `opentelemetry-instrument`, so the
 # distribution is a library here and not a wrapper. It is additive to `otel`
 # rather than a replacement for it, and both must be present.
-webbpulse[fastapi,otel,dynamodb,aws-otel]==0.4.0
+#
+# `security` is what row 19 added: `webbpulse.security` now provides this app's
+# password hashing and JWT signing, replacing the local bcrypt and PyJWT calls.
+# It pulls PyJWT and bcrypt, both of which were already pinned below and stay
+# pinned here, because this file is the resolved set and the package's own
+# ranges must not be allowed to float a different major into the image.
+webbpulse[fastapi,otel,dynamodb,aws-otel,security]==0.5.0
 
 # Core FastAPI and web framework dependencies
 annotated-types==0.8.0

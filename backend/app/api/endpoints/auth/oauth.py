@@ -8,14 +8,13 @@ import uuid
 from datetime import timedelta
 from typing import Any
 
-import jwt
 import pyotp
 from fastapi import APIRouter, Depends, HTTPException, status
-from jwt import InvalidTokenError
+from webbpulse.security import TokenError
 
 from app.api.dependencies.auth import (
-    ALGORITHM,
     create_access_token,
+    decode_access_token,
     get_current_user,
     verify_password,
 )
@@ -99,8 +98,8 @@ def _suggest_username(email: str, repos: Repositories) -> str:
 
 def _decode_purpose_token(token: str, expected_purpose: str) -> dict[str, Any]:
     try:
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[ALGORITHM])
-    except InvalidTokenError as e:
+        payload = decode_access_token(token)
+    except TokenError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired token") from e
     if payload.get("purpose") != expected_purpose:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid token")
