@@ -604,8 +604,6 @@ locals {
         FRONTEND_URL    = local.frontend_url
         ALLOWED_ORIGINS = local.allowed_origins
 
-        AWS_EMF_ENVIRONMENT = "Local"
-
         WEBBPULSE_OTEL_SAMPLE_RATIO = var.environment == "production" ? "0.1" : "1.0"
         # Set explicitly rather than left to the package's own default, which
         # derives the same URL from AWS_REGION. Naming it here is what makes the

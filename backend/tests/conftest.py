@@ -352,7 +352,7 @@ def create_car_orm_in_db(
 
 @pytest.fixture
 def caplog_with_context(caplog: pytest.LogCaptureFixture) -> pytest.LogCaptureFixture:
-    """caplog fixture augmented with RequestContextFilter on the handler so
+    """caplog fixture augmented with `LogContextFilter` on the handler so
     LogRecords carry request_id + user_id attrs.
 
     Landmine (02-RESEARCH.md §3 + §Landmine 15): pytest's caplog attaches its
@@ -360,9 +360,9 @@ def caplog_with_context(caplog: pytest.LogCaptureFixture) -> pytest.LogCaptureFi
     installed in app/main.py — without this augmentation, record.request_id
     raises AttributeError despite the filter working fine in production.
     """
-    from app.core.log_context import RequestContextFilter
+    from webbpulse.log_context import LogContextFilter
 
-    caplog.handler.addFilter(RequestContextFilter())
+    caplog.handler.addFilter(LogContextFilter())
     return caplog
 
 

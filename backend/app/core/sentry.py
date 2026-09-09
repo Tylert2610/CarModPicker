@@ -45,10 +45,10 @@ runs. Keep the three canonical values: `apprunner-backend`, `ecs-crawler`,
 # Scope processor
 
 `_before_send` reads `request_id_var.get()` and `user_id_var.get()` from
-`log_context.py` ContextVars (populated by plan 02-01's
-`bg_log_context` / `request_context_middleware` / CLI bootstrap) and
+`webbpulse.log_context` ContextVars (populated by the package's
+`task_context` / `request_context_middleware` / CLI bootstrap) and
 attaches them as `tags.request_id` + `user.id`. Only ever attaches tags
-when the values are not the sentinel "-" default (D-09).
+when the values are not the sentinel `UNSET` ("-") default (D-09).
 
 # See also
 
@@ -67,9 +67,9 @@ from sentry_sdk.integrations.logging import LoggingIntegration
 # Starlette integration REQUIRED even with FastApi — NOT auto-enabled (Landmine 2)
 from sentry_sdk.integrations.starlette import StarletteIntegration
 from sentry_sdk.types import Event, Hint
+from webbpulse.log_context import request_id_var, user_id_var
 
 from app.core.config import settings
-from app.core.log_context import request_id_var, user_id_var
 
 _HEALTH_SUBSTRINGS = ("health", "ready", "openapi")
 
@@ -90,10 +90,11 @@ def _traces_sampler(sampling_context: dict) -> float:
 def _before_send(event: Event, hint: Hint) -> Event | None:
     """Attach request_id + user_id from ContextVars to every Sentry event.
 
-    Reads from plan 02-01's `request_id_var` + `user_id_var` (populated by
-    `request_context_middleware` for HTTP requests, `bg_log_context` for
-    background tasks, and the CLI bootstrap in `crawlers/__main__.py`). The
-    sentinel "-" default is not attached (D-09).
+    Reads `webbpulse.log_context`'s `request_id_var` + `user_id_var`
+    (populated by `request_context_middleware` for HTTP requests,
+    `task_context` for background tasks, and the CLI bootstrap in
+    `crawlers/__main__.py`). The sentinel `UNSET` ("-") default is not
+    attached (D-09).
     """
     rid = request_id_var.get()
     uid = user_id_var.get()
