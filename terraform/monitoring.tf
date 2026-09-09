@@ -17,9 +17,11 @@ locals {
   # The filter is what keeps the list to functions that exist. `local.lambda_domain_names` is all
   # nine from row 9 onward because nine ECR repositories exist, while `local.lambda_domains` in
   # lambda_domains.tf holds only the domains whose function has actually been created, which today
-  # is `media` alone. A name in the metric math for a function that does not exist would resolve to
-  # a metric that never reports, which is not an error but is an alarm claiming coverage it does
-  # not have.
+  # is `media` and `build-logs`. A name in the metric math for a function that does not exist would
+  # resolve to a metric that never reports, which is not an error but is an alarm claiming coverage
+  # it does not have. It is also empty in a fresh account bootstrapping with an empty
+  # `bootstrap_image_tag`, which is why `lambda_aggregate_alarm` below is conditional rather than
+  # true.
   #
   # Nine is under the module's chunk size of 10, so this is one errors alarm and one throttles
   # alarm for the whole estate for the life of the migration, with no chunking and no second alarm
@@ -75,8 +77,17 @@ module "alarms" {
   # "<prefix>-rate-limit-failed-open". What it loses is the AWS/Lambda Errors and Throttles signal
   # specifically, which is the narrower of the two: an error that never reaches the gateway as a
   # 5xx is an init failure or a timeout, and the API 5xx alarm sees both of those as well.
+  #
+  # `lambda_aggregate_alarm` is the list being non-empty rather than a bare true, because the
+  # module validates the pair: "lambda_aggregate_alarm = true needs at least one name in
+  # lambda_function_names". In every environment that has cut a domain this is true and nothing
+  # about the alarms changes. In a fresh account applying with `bootstrap_image_tag = ""` there is
+  # no domain function yet, so the aggregate pair is simply not created, and it arrives with the
+  # second apply alongside the functions it sums. The alternative, passing `true` unconditionally,
+  # is a variable validation error on the first apply of every new account, which is exactly the
+  # class of knowingly failing apply this gate exists to remove.
   lambda_function_names      = local.alarm_lambda_function_names
-  lambda_aggregate_alarm     = true
+  lambda_aggregate_alarm     = length(local.alarm_lambda_function_names) > 0
   lambda_aggregate_threshold = 0
 
   # One "<prefix>-dynamodb-throttles" alarm covering read and write throttling across every table

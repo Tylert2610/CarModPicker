@@ -14,7 +14,25 @@ locals {
   #
   # Row 14 is `media` and row 18 is `build-logs`. Rows 19 through 31 append moderation,
   # vehicles, admin, build-lists, identity, catalog and users.
-  routed_lambda_domains = ["media", "build-logs"]
+  routed_lambda_domains_declared = ["media", "build-logs"]
+
+  # Gated on the same condition as the functions themselves, and it has to be. A route names an
+  # integration and an integration names module.lambda_domain[name], so a routed domain whose
+  # function was not created is an error at plan time rather than a route that quietly points
+  # nowhere. Gating both on local.domain_functions_enabled in lambda_domains.tf is what lets a
+  # fresh account apply this root before any image exists, and it is also what keeps the two in
+  # step in the other direction: the deploy workflow's verify-route-cuts job hardcodes the domain
+  # list and fails on a function that exists without its routes, so the pair must be created in
+  # one apply rather than in two.
+  #
+  # The filter rather than a bare conditional so that a name can only be routed if the domain is
+  # also in local.lambda_domains. Today the two lists hold the same names and the filter is a
+  # no-op; it is what makes a future row that adds a route entry before the function entry a plan
+  # that drops the route rather than one that fails on a missing module key.
+  routed_lambda_domains = [
+    for name in local.routed_lambda_domains_declared : name
+    if contains(keys(local.lambda_domains), name)
+  ]
 
   # The path prefixes each domain serves, from section 1.1's "Path prefixes served" column. Only a
   # routed domain needs an entry; the rest arrive with their own row.
