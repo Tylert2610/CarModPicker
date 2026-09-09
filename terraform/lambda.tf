@@ -178,7 +178,7 @@ module "lambda_api" {
 
   environment_variables = local.lambda_environment
 
-  log_retention_days    = 14
+  log_retention_days    = 7
   log_format            = "JSON"
   application_log_level = "INFO"
   system_log_level      = "INFO"

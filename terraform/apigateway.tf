@@ -96,7 +96,7 @@ module "api" {
 
   throttling_burst_limit    = var.api_throttle_burst_limit
   throttling_rate_limit     = var.api_throttle_rate_limit
-  access_log_retention_days = 14
+  access_log_retention_days = 7
   # access_log_format and lambda_permission_statement_id: the module defaults are our values.
 
   # Behind the staging access gate the API is reachable only through its custom domain; the
