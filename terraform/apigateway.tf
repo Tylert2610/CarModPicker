@@ -12,9 +12,9 @@ locals {
   # once local.lambda_domain_route_keys names its route keys: the module's every_integration_is_routed
   # check fails the plan on an integration no route can reach, so the two move together.
   #
-  # Row 14 is `media` and row 18 is `build-logs`. Rows 19 through 31 append moderation,
-  # vehicles, admin, build-lists, identity, catalog and users.
-  routed_lambda_domains_declared = ["media", "build-logs"]
+  # Row 14 is `media`, row 18 is `build-logs` and row 19 is `moderation`. Rows 20 through 31
+  # append vehicles, admin, build-lists, identity, catalog and users.
+  routed_lambda_domains_declared = ["media", "build-logs", "moderation"]
 
   # Gated on the same condition as the functions themselves, and it has to be. A route names an
   # integration and an integration names module.lambda_domain[name], so a routed domain whose
@@ -59,6 +59,25 @@ locals {
     # Gateway matches a route key literally, so this cut cannot pull any of
     # build-lists' 34 routes with it. Those stay on $default until row 26.
     build-logs = ["/api/build-logs"]
+    # Row 19. Three prefixes, the most of any cut so far, because this domain is
+    # polymorphic rather than wide: votes and reports are keyed by an
+    # `entity_type` and an `entity_id`, so one domain moderates parts, build
+    # lists and car generations through three separate route trees. Bug reports
+    # are unrelated to the other two and share the domain because they share the
+    # shape.
+    #
+    # Six route keys, a bare and a `{proxy+}` for each. The bare keys are not
+    # optional here and matter more than they did for `build-logs`, because all
+    # three collection paths are real routes this domain serves: `GET`, `POST`
+    # and the admin listings sit directly on `/api/votes`, `/api/reports` and
+    # `/api/bug-reports`, so omitting a bare key would leave the collection on
+    # the monolith while every path below it moved.
+    #
+    # `/api/reports` and `/api/bug-reports` are separate route keys and API
+    # Gateway matches a key literally rather than by string prefix, so neither
+    # shadows the other and no ordering between them is implied. Nothing else
+    # in section 1.1 sits under any of the three.
+    moderation = ["/api/votes", "/api/reports", "/api/bug-reports"]
   }
 
   # Two route keys per prefix, generated rather than written out, so a domain added above cannot be
@@ -118,7 +137,8 @@ module "api" {
   # falling through to the monolith and a rollback is deleting the routes entry again. Section 6.4.
   default_integration = "legacy"
 
-  # Two keys per cut prefix: `media`'s pair from row 14 and `build-logs`' pair from row 18. No
+  # Two keys per cut prefix: `media`'s pair from row 14, `build-logs`' pair from row 18 and
+  # `moderation`'s three pairs from row 19. No
   # authorization_type is set on any of them, which means the module's own choice, CUSTOM whenever
   # authorizer_id is set, so each one sits behind the staging access gate exactly as $default does.
   # Setting NONE here would punch a hole straight past the gate, which is the failure the module's

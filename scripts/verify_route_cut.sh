@@ -123,9 +123,10 @@ esac
 # prefix listed here must appear there for that domain, or this script will
 # correctly report it as still on the monolith.
 #
-# `media` from row 14 and `build-logs` from row 18 are cut today. The other seven
-# are filled in by rows 19 through 31 and are listed empty so the script fails
-# loudly with "no prefixes" rather than passing silently on an empty loop.
+# `media` from row 14, `build-logs` from row 18 and `moderation` from row 19 are
+# cut today. The other six are filled in by rows 20 through 31 and are listed
+# empty so the script fails loudly with "no prefixes" rather than passing
+# silently on an empty loop.
 case "$DOMAIN" in
 media)
   PREFIXES=(/api/images)
@@ -135,8 +136,9 @@ build-logs)
   PREFIXES=(/api/build-logs)
   ;;
 moderation)
-  # Row 19.
-  PREFIXES=()
+  # Row 19. Three prefixes: votes and reports are polymorphic over an entity
+  # type and bug reports share the domain, so this cut moves three route trees.
+  PREFIXES=(/api/votes /api/reports /api/bug-reports)
   ;;
 vehicles)
   # Row 20.
