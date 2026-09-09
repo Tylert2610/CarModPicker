@@ -1109,7 +1109,7 @@ infrastructure.
 | 17 | Terraform: log retention 14 to 7 days. **Delivered** | small | 2 change | 15 |
 | 18 | `build-logs`: function, routes, OTel. **Delivered** | medium | 11 add, 4 change | 16 |
 | 19 | `moderation`: function, routes, OTel. **Delivered** | medium | 15 add, 4 change | 18 |
-| 20 | `vehicles`: function, routes, OTel | medium | est. 13 add, 4 change | 19 |
+| 20 | `vehicles`: function, routes, OTel. **Delivered** | medium | 13 add, 4 change | 19 |
 | 21 | `admin`: function, routes, OTel | medium | est. 17 add, 4 change | 20 |
 | 22 | Streams on `users`, `parts`, `votes`, `part_listings`, plus queues and DLQs | large | 16 add | 21 |
 | 23 | Tombstone attributes and tombstone-aware reads in four domains | large | 0 | 22 |
@@ -1880,6 +1880,126 @@ this row, which is the property it was built for: both new list entries are
 filtered through `local.lambda_domains`, so an account with no images resolves
 the function and the routes to empty together and neither the entry nor the
 prefixes have to know the gate exists.
+
+
+**Row 20 is delivered, and it is the fourth cut and the one the least-privilege
+claim rests on.** `vehicles` gets a function, two route pairs and its OTel
+wiring, and as with rows 18 and 19 every one of those arrives by adding a name to
+a list. `local.lambda_domains` in `terraform/lambda_domains.tf` gains the entry;
+`local.routed_lambda_domains` and `local.lambda_domain_path_prefixes` in
+`terraform/apigateway.tf` gain the name and its two prefixes; and the alarm lists
+in `terraform/monitoring.tf` pick the domain up for free. Nothing in `backend/`
+changed, for the reason rows 18 and 19 record: rows 8 and 16 had already built
+and instrumented all nine entrypoints, so `app/entrypoints/vehicles.py` is byte
+for byte what row 16 left.
+
+**The plan is 13 to add, 4 to change and 0 to destroy, and the estimate was right
+for the second row running.** Row 18's per-cut anatomy predicts
+`5 + 2 + 2*prefixes + 2` adds and 4 changes, which for a two-prefix domain is 13
+and 4. Two rows have now landed on that arithmetic rather than discovering it, so
+it can be treated as settled.
+
+The thirteen adds, in the anatomy's own groups: five for the function
+(`aws_lambda_function.this`, `aws_iam_role.this`, `aws_cloudwatch_log_group.this`
+and `aws_iam_role_policy.xray_write[0]` inside
+`module.lambda_domain["vehicles"]`, plus `aws_iam_role_policy.lambda_domain["vehicles"]`);
+two for the integration (`module.api.aws_apigatewayv2_integration.this["vehicles"]`
+and `module.api.aws_lambda_permission.this["vehicles"]`); four routes, two per
+prefix (`ANY /api/car-generations`, `ANY /api/car-generations/{proxy+}`,
+`ANY /api/search` and `ANY /api/search/{proxy+}`); and two metric filters,
+`errors["vehicles"]` and `rate_limit_failed_open["vehicles"]`. The four changes
+are the two description strings moving from "4 log groups" to "5 log groups" and
+the two aggregate alarms moving from "3 functions" to "4 functions".
+
+The metric math is the third confirmation of row 15's ordering argument. `m0`
+stays `media`, `m1` stays `build-logs`, `m2` stays `moderation`, `vehicles`
+arrives as `m3`, and the expression goes from `m0 + m1 + m2` to
+`m0 + m1 + m2 + m3` with no existing term relabelled. That is what filtering the
+ordered `local.lambda_domain_names` buys; reading `keys()` off the map would have
+sorted `build-logs`, `media`, `moderation`, `vehicles` and moved `media` to `m1`.
+
+**`/api/search` is the reason this domain has two prefixes rather than one, and
+the bare key matters more here than anywhere so far.** `/api/search` has no path
+below it at all: the domain is a single `GET` on the collection itself. Omitting
+its bare route key would have left the only route of the prefix on the monolith
+while its `{proxy+}` key matched nothing, which is section 3.5's half-working
+split in its purest form. `/api/car-generations/search` is a separate matter and
+needs no key of its own; it is matched by `ANY /api/car-generations/{proxy+}`, and
+because API Gateway matches a route key literally rather than by substring the
+two search paths do not collide and no ordering between them is implied.
+
+**The table split is this row's real content, and it is the first entry whose
+write list holds no table the domain owns.** Seven tables are read and one is
+written, and the one written is `rate-limits`, the shared limiter's counter,
+which every domain carries because the middleware writes it on every non-exempt
+request and fails open when it cannot. Nothing else is written at all.
+
+Both routers are read only by construction. `car_generations.py` builds its
+`BaseDynamoEndpointRouter` with `disable_endpoints = ["create", "update",
+"delete"]`, so the generated writing routes are never registered and the seven
+hand-written routes above it are all `GET`; `search.py` is one `GET`. Neither
+`car_generation_service.py` nor the `search_parts` path calls `.create`,
+`.update` or `.delete` on any repository.
+
+The seed is the one write this domain owns, and it does not run in this function.
+`vehicles` is the only descriptor setting `seeds`, and `run_startup_tasks` is
+gated on `settings.RUN_STARTUP_TASKS`, which `backend/Dockerfile` bakes to
+`false` and which `local.lambda_domain_environment` deliberately does not set.
+The entrypoint is Mangum with `lifespan="off"` besides, so the lifespan that
+would call `init_car_generations()` never runs under Lambda. Section 7 already
+says the seed needs an owner and belongs behind an explicit admin route or a
+one-off job, and `admin/db_ops` has the equivalent endpoint, so the write grant
+that covers it lands with row 21 rather than here. Granting the three car tables
+write to cover a seed that cannot fire would have given away the least-privilege
+claim for nothing.
+
+**The gap between the bundle and the grants is wider here than on any cut so
+far, and for a new reason.** `_VEHICLES_REPOSITORIES` is
+`_CATALOG_REPOSITORIES + ("build_lists",)`, sixteen repositories, and seven are
+granted. Rows 18 and 19 saw a gap of one or two tables arriving through schema
+imports; this one is nine, and the cause is a single line. `search.py`
+constructs a `PartService`, so the whole of that module's import graph is
+reachable, while the only method any route calls on it is `search_parts`. The
+nine ungranted repositories, `categories`, `retailers`, `part_cars`,
+`part_listings`, `part_price_history`, `part_price_alerts`, `build_list_parts`,
+`votes` and `reports`, are reached only from `PartService` methods no vehicles
+route calls, chiefly the part purge and the price capture, several of which are
+writes. Granting on the strength of an import would have handed a read-only
+function nine tables no request can touch, four of them with write paths.
+
+The seven granted reads are the three car tables and seam 5's four. The car
+tables are called rather than merely imported: `car_generations.py` calls
+`repos.car_makes.count()` and `repos.car_models.count()` directly, and
+`car_generation_service._models_and_makes` calls `get_many` on both on every
+hydrate. The other four are the search fan-out section 1.3 leaves synchronous:
+`build_lists` and `users` scanned from `search.py`, and `parts` and
+`part_manufacturers` from `search_parts`. Cross-domain reads are allowed with
+read-only IAM, and reads are the whole of what this domain does.
+
+**`secrets` is false, and this is the only one of the nine entries where it
+is.** Section 3.4 calls `vehicles` the cheapest proof that the IAM split is real,
+and this row is where that is paid out: every route under both prefixes is a
+public read, `allow_public_read = true` keeps `get_current_user` off the
+generated routes, and the descriptor sets no `requires_secrets`, so nothing in
+the function reads `SECRET_KEY`. The runtime policy carries no
+`secretsmanager:GetSecretValue` statement and the environment carries no
+`APP_SECRETS_ARN`. This is only possible because section 2.3's lazy secret
+resolution landed first: while importing `app.core.config` still called Secrets
+Manager, every function needed the grant whether it used a secret or not.
+
+Memory is 256 MB, the same as `build-logs` and `moderation`. Eleven read-only
+JSON routes with no Pillow and no native work. Search is the one route worth a
+second thought, since `scan_matching` pages full table scans of `build_lists`,
+`users` and `parts` and holds the matches in memory, but it is bounded by
+`DYNAMODB_SEARCH_SCAN_PAGE_LIMIT` and holds parsed models rather than decoded
+images. Memory is the cheapest knob to raise if the duration says otherwise.
+
+`scripts/verify_route_cut.sh` gains the two prefixes in its `vehicles` case,
+which was present and empty, and the `verify-route-cuts` job in
+`.github/workflows/deploy-backend.yml` gains the name in its `DOMAINS` list.
+`terraform/README.md` is brought current in the same pass: its `lambda_domains.tf`
+row had still said two entries since row 18, and its `apigateway.tf` row had
+never mentioned the route cuts at all.
 
 **Ingestion is now admin.** Open question 4 asked whether the domain should be
 renamed and the answer is yes, taken on 2026-09-07. Section 1.5 had already

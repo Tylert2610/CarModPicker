@@ -173,6 +173,92 @@ locals {
   # native work anywhere in `votes.py`, `reports.py`, `bug_reports.py` or their
   # three services, which import nothing beyond FastAPI, the schemas and the
   # repositories. Only `media` needs 512.
+  #
+  # How `vehicles`' two table lists were derived, by row 20 and by the same
+  # method as the three above. This is the entry the whole least-privilege claim
+  # rests on, because it is the only one of the nine whose write list holds
+  # nothing but the limiter's own table and whose `secrets` is false:
+  #
+  #   - `app/composition/domains.py` declares `_VEHICLES_REPOSITORIES` as
+  #     `_CATALOG_REPOSITORIES + ("build_lists",)`, which is sixteen
+  #     repositories: `users`, the three car tables, `categories`,
+  #     `part_manufacturers`, `retailers`, `parts`, `part_cars`,
+  #     `part_listings`, `part_price_history`, `part_price_alerts`,
+  #     `build_list_parts`, `votes`, `reports` and `build_lists`.
+  #     `backend/tests/entrypoints/test_repository_bundles.py` recomputes that
+  #     tuple from the real import graph, so the bundle is a checked statement
+  #     of what this function can reach.
+  #   - Sixteen repositories, seven tables granted, and every one of the seven is
+  #     a read. The gap is the same one row 19 recorded and it is wider here than
+  #     it has been on any cut so far, for one reason: `search.py` constructs a
+  #     `PartService`, so the whole of that module's import graph is reachable,
+  #     while the only method this domain calls on it is `search_parts`. The nine
+  #     ungranted repositories are `categories`, `retailers`, `part_cars`,
+  #     `part_listings`, `part_price_history`, `part_price_alerts`,
+  #     `build_list_parts`, `votes` and `reports`. They are reached only from
+  #     `PartService` methods no vehicles route calls, chiefly the part purge and
+  #     the price capture, and from the catalogue schemas. Granting a table on
+  #     the strength of an import rather than a call would hand this function
+  #     nine tables no request can touch.
+  #   - No table is written, which is what makes this entry different in kind
+  #     from the three above rather than merely smaller. Both routers are read
+  #     only by construction: `car_generations.py` builds its
+  #     `BaseDynamoEndpointRouter` with `disable_endpoints = ["create",
+  #     "update", "delete"]`, so the generated writing routes are never
+  #     registered, and the seven hand-written routes above it are all `GET`.
+  #     `search.py` is one `GET`. `car_generation_service.py` calls no `.create`,
+  #     `.update` or `.delete` on any repository, and neither does the
+  #     `search_parts` path.
+  #   - The seed is the one write this domain owns and it does not run here.
+  #     `vehicles` is the only descriptor setting `seeds`, and
+  #     `app/composition/wiring.py` gates `init_car_generations()` on
+  #     `settings.RUN_STARTUP_TASKS`, which `backend/Dockerfile` bakes to
+  #     `false` and which `local.lambda_domain_environment` deliberately does not
+  #     set. The entrypoint is Mangum with `lifespan="off"` besides, so the
+  #     lifespan that would call it never runs. Section 7 already says the seed
+  #     needs an owner and belongs behind an explicit admin route or a one-off
+  #     job; `admin/db_ops` has the equivalent endpoint and row 21 is where that
+  #     grant lands. Granting the three car tables write here to cover a seed
+  #     that cannot fire would give away the least-privilege claim for nothing.
+  #   - Seven tables are read. `car_generations`, `car_models` and `car_makes`
+  #     are the domain's own three, per section 1.2: `car_generations.py` calls
+  #     `repos.car_makes.count()` and `repos.car_models.count()` directly, and
+  #     `car_generation_service._models_and_makes` calls
+  #     `repos.car_models.get_many` and `repos.car_makes.get_many` on every
+  #     hydrate, so all three are called rather than merely imported.
+  #   - The other four are seam 5, the search fan-out section 1.3 leaves
+  #     synchronous. `search.py` reads `build_lists` through
+  #     `search.scan_matching(repos.build_lists, ...)`, `users` through
+  #     `repos.users.search`, and `parts` and `part_manufacturers` through
+  #     `PartService.search_parts`, which scans `repos.parts` and lists
+  #     `repos.part_manufacturers`. Cross-domain reads are allowed with
+  #     read-only IAM and that is the whole of what this domain does with them.
+  #   - `rate-limits` is in `tables` for the reason all three entries above
+  #     record: it is the shared limiter's counter table, reached from the
+  #     middleware stack rather than from a repository, so the bundle cannot name
+  #     it. It is a genuine write, `update_item` and `put_item` in
+  #     `shared_rate_limiter.py`, which is why this domain has a `tables` list at
+  #     all rather than an empty one. The limiter fails open, so withholding it
+  #     would silently turn layer 2 off for this domain rather than failing.
+  #   - `secrets` is false, and this is the only entry where it is. Section 3.4
+  #     calls `vehicles` the cheapest proof that the IAM split is real: every
+  #     route under both prefixes is a public read, `allow_public_read = true`
+  #     keeps `get_current_user` off the generated routes, and the descriptor
+  #     sets no `requires_secrets`, so nothing in this function reads
+  #     `SECRET_KEY`. The runtime policy therefore carries no
+  #     `secretsmanager:GetSecretValue` statement and
+  #     `local.lambda_domain_environment` sets no `APP_SECRETS_ARN`. This is only
+  #     possible because section 2.3's lazy secret resolution landed; before it,
+  #     importing `app.core.config` called Secrets Manager and every function
+  #     needed the grant whether it used a secret or not.
+  #
+  # 256 MB, the same as `build-logs` and `moderation`. Eleven read-only JSON
+  # routes over DynamoDB with no Pillow and no native work. Search is the one
+  # route worth a second thought, because `scan_matching` pages full table scans
+  # of `build_lists`, `users` and `parts` and holds the matches in memory, but it
+  # is bounded by `DYNAMODB_SEARCH_SCAN_PAGE_LIMIT` and holds parsed models
+  # rather than images. Memory is the cheapest knob to raise if the duration says
+  # otherwise. Only `media` needs 512.
   lambda_domains_declared = {
     media = {
       secrets     = true
@@ -194,6 +280,23 @@ locals {
       memory      = 256
       tables      = ["votes", "reports", "bug_reports", "parts", "rate-limits"]
       read_tables = ["users", "build_lists", "car_generations"]
+    }
+    vehicles = {
+      secrets = false
+      s3      = false
+      memory  = 256
+      # The limiter's counter table and nothing else. Every route this domain
+      # serves is a public read; see the derivation above.
+      tables = ["rate-limits"]
+      read_tables = [
+        "car_generations",
+        "car_models",
+        "car_makes",
+        "build_lists",
+        "users",
+        "parts",
+        "part_manufacturers",
+      ]
     }
   }
 

@@ -725,7 +725,7 @@ jobs:
           # Edit this line, and only this line, when a cut lands. The names are
           # the ones `scripts/verify_route_cut.sh` knows, which are the keys of
           # `local.lambda_domains` in terraform/lambda_domains.tf.
-          DOMAINS: "media build-logs moderation"
+          DOMAINS: "media build-logs moderation vehicles"
         run: |
           set -uo pipefail
 

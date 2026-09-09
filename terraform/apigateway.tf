@@ -12,9 +12,9 @@ locals {
   # once local.lambda_domain_route_keys names its route keys: the module's every_integration_is_routed
   # check fails the plan on an integration no route can reach, so the two move together.
   #
-  # Row 14 is `media`, row 18 is `build-logs` and row 19 is `moderation`. Rows 20 through 31
-  # append vehicles, admin, build-lists, identity, catalog and users.
-  routed_lambda_domains_declared = ["media", "build-logs", "moderation"]
+  # Row 14 is `media`, row 18 is `build-logs`, row 19 is `moderation` and row 20 is `vehicles`.
+  # Rows 21 through 31 append admin, build-lists, identity, catalog and users.
+  routed_lambda_domains_declared = ["media", "build-logs", "moderation", "vehicles"]
 
   # Gated on the same condition as the functions themselves, and it has to be. A route names an
   # integration and an integration names module.lambda_domain[name], so a routed domain whose
@@ -78,6 +78,27 @@ locals {
     # shadows the other and no ordering between them is implied. Nothing else
     # in section 1.1 sits under any of the three.
     moderation = ["/api/votes", "/api/reports", "/api/bug-reports"]
+    # Row 20. Two prefixes, and they are two rather than one because this domain
+    # merges an entity tree with a fan-out: `/api/car-generations` is the three
+    # car tables' read surface and `/api/search` is seam 5's unified search,
+    # which reads four domains' tables and belongs here only because section 1.5
+    # would otherwise leave `vehicles` the smallest domain.
+    #
+    # Four route keys, a bare and a `{proxy+}` for each. Both bare keys are real
+    # routes rather than defensive: `GET /api/car-generations` is the generated
+    # list endpoint and `GET /api/search` is the entire search domain, which has
+    # no path below it at all. Omitting the `/api/search` bare key would leave
+    # the only route of that prefix on the monolith while its `{proxy+}` matched
+    # nothing, which is the half-working split section 3.5 names, in its purest
+    # form.
+    #
+    # `/api/car-generations/search` is a real route of this domain and needs no
+    # key of its own. It is matched by `ANY /api/car-generations/{proxy+}`, and
+    # it does not collide with the `/api/search` prefix: API Gateway matches a
+    # route key literally rather than by substring, so the two trees are
+    # independent and no ordering between them is implied. Nothing else in
+    # section 1.1 sits under either prefix.
+    vehicles = ["/api/car-generations", "/api/search"]
   }
 
   # Two route keys per prefix, generated rather than written out, so a domain added above cannot be
@@ -137,8 +158,8 @@ module "api" {
   # falling through to the monolith and a rollback is deleting the routes entry again. Section 6.4.
   default_integration = "legacy"
 
-  # Two keys per cut prefix: `media`'s pair from row 14, `build-logs`' pair from row 18 and
-  # `moderation`'s three pairs from row 19. No
+  # Two keys per cut prefix: `media`'s pair from row 14, `build-logs`' pair from row 18,
+  # `moderation`'s three pairs from row 19 and `vehicles`' two pairs from row 20. No
   # authorization_type is set on any of them, which means the module's own choice, CUSTOM whenever
   # authorizer_id is set, so each one sits behind the staging access gate exactly as $default does.
   # Setting NONE here would punch a hole straight past the gate, which is the failure the module's
