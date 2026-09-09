@@ -41,6 +41,7 @@ from app.api.utils.endpoint_decorators import standard_responses
 from app.api.utils.response_patterns import ResponsePatterns
 from app.db.dynamo.build_lists import BuildList, BuildListPart
 from app.db.dynamo.catalog import Part
+from app.db.dynamo.tombstones import drop_tombstoned_values, is_tombstoned
 from app.db.dynamo.users import User as DBUser
 
 # Create router
@@ -49,8 +50,11 @@ part_service = PartService()
 
 
 def _require_part(repos: Repositories, part_id: UUID) -> Part:
+    # A tombstoned part is absent as far as every caller is concerned, so it
+    # takes the same 404 as a part that was never there. This is the "404 on
+    # direct fetch" half of row 23.
     part = repos.parts.get(str(part_id))
-    if part is None:
+    if part is None or is_tombstoned(part):
         ResponsePatterns.raise_not_found("part", part_id)
     assert part is not None
     return part
@@ -436,13 +440,25 @@ async def get_parts_in_build_list(
     # Resolve each BuildListPart.part to its canonical for display. BuildListPart.part_id
     # stays as stored (no repoint) so we preserve the exact part the user added, but
     # the rendered Part data is always the canonical so users see the surface record.
-    stored_parts = repos.parts.get_many({p.part_id for p in build_list_parts_raw})
+    # Seam 2's read consequence, per section 1.3 of the split plan: "A build list
+    # that contains a purged part must not render a hole; it must drop the row."
+    # A hard-deleted part is already dropped by the `part.part_id in stored_parts`
+    # filter below, because `get_many` simply does not return it. A *tombstoned*
+    # part is returned, so it has to be dropped here instead. `get_many` is a
+    # `batch_get`, which takes no filter expression, so the predicate is applied
+    # in Python; see `app/db/dynamo/tombstones.py` for why that is the shape.
+    stored_parts = drop_tombstoned_values(repos.parts.get_many({p.part_id for p in build_list_parts_raw}))
     canonical_ids_to_load = {
         part.canonical_part_id for part in stored_parts.values() if part.canonical_part_id is not None
     }
-    canonicals: Dict[UUID, Part] = repos.parts.get_many(canonical_ids_to_load) if canonical_ids_to_load else {}
+    canonicals: Dict[UUID, Part] = (
+        drop_tombstoned_values(repos.parts.get_many(canonical_ids_to_load)) if canonical_ids_to_load else {}
+    )
 
     def effective_part(stored: Part) -> Part:
+        # A tombstoned canonical is filtered out of `canonicals` above, so this
+        # falls through to the stored part rather than rendering the deleted
+        # canonical. The stored part is itself live, having survived the filter.
         if stored.canonical_part_id and stored.canonical_part_id in canonicals:
             return canonicals[stored.canonical_part_id]
         return stored

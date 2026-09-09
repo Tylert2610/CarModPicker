@@ -17,6 +17,7 @@ from app.api.schemas.bug_report import (
 )
 from app.db.dynamo.bug_reports import BugReport
 from app.db.dynamo.models import utc_now
+from app.db.dynamo.tombstones import live_or_none
 
 
 class BugReportService:
@@ -74,7 +75,9 @@ class BugReportService:
         users_by_id = self.users.get_many(user_ids)
 
         def username(user_id: UUID | None) -> str | None:
-            user = users_by_id.get(user_id) if user_id else None
+            # A tombstoned reporter or assignee reads as absent, which this
+            # closure already renders as None.
+            user = live_or_none(users_by_id.get(user_id)) if user_id else None
             return user.username if user else None
 
         return [
@@ -133,8 +136,8 @@ class BugReportService:
         if bug_report is None:
             return None
 
-        reporter = self.users.get(bug_report.user_id) if bug_report.user_id else None
-        assignee = self.users.get(bug_report.assigned_to) if bug_report.assigned_to else None
+        reporter = live_or_none(self.users.get(bug_report.user_id)) if bug_report.user_id else None
+        assignee = live_or_none(self.users.get(bug_report.assigned_to)) if bug_report.assigned_to else None
         return self._with_details(
             bug_report,
             reporter_username=reporter.username if reporter else None,

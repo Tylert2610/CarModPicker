@@ -53,6 +53,7 @@ from app.api.utils.cursor_pagination import CursorParams, get_cursor_params
 from app.api.utils.endpoint_decorators import pagination_responses, standard_responses
 from app.api.utils.response_patterns import ResponsePatterns
 from app.db.dynamo.catalog import Part
+from app.db.dynamo.tombstones import is_tombstoned
 from app.db.dynamo.users import User as DBUser
 
 router = APIRouter()
@@ -60,8 +61,11 @@ part_service = PartService()
 
 
 def _get_part_or_404(repos: Repositories, part_id: UUID) -> Part:
+    # A tombstoned part is absent: same 404 as an id that never existed. Every
+    # listing, image and price-history route under /api/parts funnels through
+    # here, so they all inherit it.
     part = repos.parts.get(str(part_id))
-    if part is None:
+    if part is None or is_tombstoned(part):
         ResponsePatterns.raise_not_found("Part")
     assert part is not None
     return part

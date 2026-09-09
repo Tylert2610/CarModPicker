@@ -20,6 +20,7 @@ from app.db.dynamo.build_lists import BuildList as DBBuildList
 from app.db.dynamo.catalog import CarGeneration, Part
 from app.db.dynamo.moderation import DOWNVOTE, Vote
 from app.db.dynamo.repository import ItemNotFound
+from app.db.dynamo.tombstones import drop_tombstoned_values
 
 VotableEntity = Union[CarGeneration, DBBuildList, Part]
 
@@ -200,7 +201,12 @@ class VoteService:
         if entity_type == EntityType.CAR_GENERATION:
             return dict(self.repos.car_generations.get_many(ids))
         if entity_type == EntityType.PART:
-            return dict(self.repos.parts.get_many(ids))
+            # Both vote paths funnel through here: `_get_entity_or_404` (which
+            # turns a dropped part into its existing 404) and the flagged-entity
+            # listing (which already skips ids that resolve to nothing). Filtering
+            # once covers both. `get_many` is a `batch_get`, so this is a Python
+            # filter rather than a filter expression.
+            return dict(drop_tombstoned_values(self.repos.parts.get_many(ids)))
         raise ValueError(f"Unknown entity type: {entity_type}")
 
     def _get_entity_or_404(self, entity_type: EntityType, entity_id: UUID) -> VotableEntity:

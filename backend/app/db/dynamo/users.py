@@ -11,12 +11,22 @@ from app.db.dynamo.models import DynamoModel, TimestampedDynamoModel, utc_now
 from app.db.dynamo.repository import DynamoRepository, RangeCondition, transact_write
 from app.db.dynamo.serialization import composite_key, encode_bytes
 from app.db.dynamo.tables import OAUTH_ACCOUNTS, USERS, WEBAUTHN_CREDENTIALS
+from app.db.dynamo.tombstones import DELETED_ATTRIBUTE
 
 USERNAME = "username"
 EMAIL = "email"
 PROVIDER_ACCOUNT = "provider_account"
 USER_PROVIDER = "user_provider"
 CREDENTIAL_ID = "credential_id"
+
+
+def _not_tombstoned() -> Any:
+    """Condition matching rows that carry no tombstone.
+
+    `attribute_not_exists` is the half that matters: every row written before
+    row 23 lacks `deleted` entirely, and must still read as live.
+    """
+    return Attr(DELETED_ATTRIBUTE).not_exists() | Attr(DELETED_ATTRIBUTE).eq(False)
 
 
 class UniqueAttributeTaken(DynamoError):
@@ -47,6 +57,12 @@ class User(TimestampedDynamoModel):
     reddit_url: str | None = None
     youtube_url: str | None = None
     tiktok_url: str | None = None
+    #: Seam 1's tombstone pair. Row 23 adds the attributes and the reads that
+    #: honour them; row 30 is what starts writing them, when the `user-delete`
+    #: stream consumer exists to drain the cascade. Rows written before row 23
+    #: lack both and read as not deleted.
+    deleted: bool = False
+    deleted_at: datetime | None = None
 
 
 class OAuthAccount(DynamoModel):
@@ -103,10 +119,18 @@ class UserRepository(DynamoRepository[User]):
         return self.scan_all()
 
     def search(self, term: str) -> list[User]:
+        """Users matching `term`, excluding tombstoned rows.
+
+        This is the one user read that surfaces profiles as search *results*
+        rather than attaching an author to something else, so a tombstoned user
+        has to be excluded here or a deleted account keeps appearing in search.
+        The filter is server-side because this path already carries a filter
+        expression; `attribute_not_exists` is what makes rows written before the
+        attribute existed match, so no backfill is needed.
+        """
         needle = term.lower()
-        return self.scan_all(
-            filter_expression=Attr("username_lower").contains(needle) | Attr("email_lower").contains(needle)
-        )
+        matches = Attr("username_lower").contains(needle) | Attr("email_lower").contains(needle)
+        return self.scan_all(filter_expression=matches & _not_tombstoned())
 
     def count(self) -> int:
         return len(self.scan_all())
