@@ -25,7 +25,10 @@
 # ---------------------------------------------------------------------------
 
 locals {
-  # One entry per domain whose function exists. The keys are names from
+  # One entry per domain whose function this environment declares. The gate
+  # below turns this into local.lambda_domains, which is what everything else
+  # reads: in a fresh account with no images yet the gate resolves it to empty.
+  # The keys are names from
   # `local.lambda_domain_names` in ecr.tf, which is what ties a function to its
   # ECR repository and to the deploy role's grant.
   #
@@ -107,7 +110,7 @@ locals {
   # size. It is also the cheapest thing to raise if the cold start or the
   # duration says otherwise, since memory is the only tuning knob on a function
   # this simple.
-  lambda_domains = {
+  lambda_domains_declared = {
     media = {
       secrets     = true
       s3          = true
@@ -123,6 +126,37 @@ locals {
       read_tables = ["users", "build_lists", "build_logs"]
     }
   }
+
+  # The bootstrap gate, and the whole of what makes this root promotable to a
+  # fresh account without a knowingly failing apply.
+  #
+  # A domain function is created from an image, and Lambda pulls and optimises
+  # that image at CreateFunction, so the tag has to already exist in the
+  # repository. In a fresh account the repositories themselves do not exist
+  # until this root's first apply, so there is no tag anything could have
+  # pushed and no value of var.bootstrap_image_tag that would resolve. That is
+  # a chicken and egg, not a misconfiguration: the repositories have to exist
+  # before the images, and the images before the functions.
+  #
+  # Setting bootstrap_image_tag to "" is how an operator says "this account has
+  # no images yet". The declared map above then resolves to empty, so the apply
+  # creates the ECR repositories, the IAM roles including the CodeArtifact
+  # grants, Transaction Search, the buckets, the tables and the API, and
+  # creates no domain function and cuts no route. Deploy Backend can then push
+  # the nine images, the operator sets the real tag, and the second apply
+  # creates the functions and their routes together.
+  #
+  # Function creation and route cut stay in the same apply on purpose.
+  # verify-route-cuts in .github/workflows/deploy-backend.yml hardcodes the
+  # domain list, so a function that exists without its routes makes that job
+  # probe the prefix, find routeKey "$default", and exit 1. Gating both sets on
+  # the same condition is what keeps that middle state from existing.
+  #
+  # Once the tag is set this local is the declared map, byte for byte, so an
+  # environment that already has its functions sees no change from this gate.
+  domain_functions_enabled = var.bootstrap_image_tag != ""
+
+  lambda_domains = local.domain_functions_enabled ? local.lambda_domains_declared : {}
 
   # DynamoDB actions a domain gets on a table it writes. The same twelve the
   # monolith's runtime policy carries, so a domain moving off the monolith
@@ -247,12 +281,13 @@ locals {
 }
 
 variable "bootstrap_image_tag" {
-  description = "Image tag used as the seed for every per-domain function, as pushed to ECR by the container image build in deploy-backend.yml. Lambda pulls and optimises the image when it creates the function, so a tag that does not resolve fails the create: the tag named here must already exist in the repository of every domain in local.lambda_domains before the apply. It is only ever a seed, because image_uri is on the lambda-function module's ignore_changes list, so the deploy step's UpdateFunctionCode is not undone by the next plan and this value never needs changing again."
+  description = "Image tag used as the seed for every per-domain function, as pushed to ECR by the container image build in deploy-backend.yml. Lambda pulls and optimises the image when it creates the function, so a tag that does not resolve fails the create: the tag named here must already exist in the repository of every domain in local.lambda_domains_declared before the apply. It is only ever a seed, because image_uri is on the lambda-function module's ignore_changes list, so the deploy step's UpdateFunctionCode is not undone by the next plan and this value never needs changing again. The empty string is the bootstrap value for a fresh account that has no images yet: it resolves local.lambda_domains and local.routed_lambda_domains to empty, so the apply builds the repositories and everything else and creates no domain function and cuts no route. See the Promoting to a fresh account section of docs/migration/split-plan.md."
   type        = string
+  default     = ""
 
   validation {
-    condition     = can(regex("^sha-[0-9a-f]{40}$", var.bootstrap_image_tag))
-    error_message = "bootstrap_image_tag must be sha- followed by a full 40 character commit sha, which is the tag the container image build pushes."
+    condition     = var.bootstrap_image_tag == "" || can(regex("^sha-[0-9a-f]{40}$", var.bootstrap_image_tag))
+    error_message = "bootstrap_image_tag must be sha- followed by a full 40 character commit sha, which is the tag the container image build pushes, or the empty string to bootstrap an account whose ECR repositories hold no images yet."
   }
 }
 

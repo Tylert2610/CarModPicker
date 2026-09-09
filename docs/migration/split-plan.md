@@ -548,6 +548,13 @@ thereafter CI's `UpdateFunctionCode` owns the image. `image_uri` is on the
 module's `ignore_changes` list, which is what stops the next plan from reverting
 CI's deploy back to the bootstrap tag.
 
+The variable also takes the empty string, and that is what makes this root
+promotable to an account where no image has ever been pushed. Empty resolves
+`local.lambda_domains` to empty, and `local.routed_lambda_domains` in
+`apigateway.tf` is filtered on the same set, so the apply builds the
+repositories and everything else and creates no function and cuts no route.
+Section 6.6 has the full sequence.
+
 Memory sizes start at the monolith's 1024 MB for `catalog` and `build-lists` and
 512 MB for the rest, and are tuned after the first week of production data rather
 than guessed now. Timeout stays 29 seconds to match the API Gateway integration
@@ -832,6 +839,18 @@ on 2026-09-08 once the group existed, is the `import` block and
 `aws_cloudwatch_log_group.spans` resource that adopt the group and put the
 platform's standard 7 day retention on it.
 
+Step two is gated on `var.adopt_spans_log_group`, which defaults to `true`. An
+import block whose target does not exist is a plan time error, not a skipped
+no-op, so leaving it unconditional would make the very first apply in a fresh
+account fail at plan: the destination flip and the import would be in the same
+run, and no span has been written yet. Both the import and the resource carry a
+`for_each` over a set of at most one name, so the flag adds and removes them
+together, and a `moved` block carries the previously unkeyed
+`aws_cloudwatch_log_group.spans` to `["aws/spans"]` so the refactor is a state
+move rather than a destroy and a create. A fresh account applies with the flag
+`false`, generates a span, and then sets it `true`; section 6.6 has the
+sequence.
+
 Two things worth knowing. It is account-wide for the region rather than per
 environment, so it changes trace storage for everything in the account that
 writes segments, not only the CarModPicker functions. And spans are stored as
@@ -927,6 +946,95 @@ directory, delete the zip build from the workflow, delete
 
 Retiring the monolith frees the tenth slot in `lambda_function_names`.
 
+### 6.6 Promoting to a fresh account
+
+Everything above assumes an account that already has ECR repositories with
+images in them and an `aws/spans` log group that X-Ray has created. A brand new
+production account has neither, and both are ordering problems that no single
+apply can solve: a function cannot be created before its image exists, the image
+cannot be pushed before its repository exists, and `aws/spans` cannot be created
+by Terraform at all because `CreateLogGroup` rejects names beginning with
+`aws/`.
+
+Two variables carry the bootstrap, and both default to the settled state so an
+environment already past this sees nothing:
+
+- **`bootstrap_image_tag`**, in `terraform/lambda_domains.tf`. The empty string,
+  which is the default, means "this account has no images yet": it resolves
+  `local.lambda_domains` and `local.routed_lambda_domains` to empty, so the
+  apply creates no domain function and cuts no route. A `sha-<40 hex>` value
+  means the images are there and the functions should be built from that tag.
+- **`adopt_spans_log_group`**, in `terraform/transaction_search.tf`. `true`, the
+  default, imports the reserved `aws/spans` group and holds it at 7 days.
+  `false` skips both the import and the resource, which is what a fresh account
+  needs on its first apply, because an import block whose target does not exist
+  is a plan time error rather than a skipped no-op.
+
+The sequence, in order. Nothing here needs a throwaway PR and no step is a
+knowingly failing apply.
+
+**1. Set the two bootstrap variables on the new workspace.** Both as Terraform
+variables, neither sensitive:
+
+```
+bootstrap_image_tag  = ""
+adopt_spans_log_group = false
+```
+
+Set every other workspace variable the environment needs at the same time:
+`environment`, `aws_region`, and the sensitive `secret_key` and `sentry_dsn`.
+
+**2. Apply.** This creates the nine ECR repositories, every IAM role including
+the CodeArtifact statements the deploy and CI roles need, the DynamoDB tables,
+the buckets, the secret, the HTTP API with the monolith on `$default`, the
+Transaction Search resource policy and destination and indexing rule, and the
+alarms. It creates no domain function, cuts no route, and creates no aggregate
+Lambda alarm, because there is nothing yet for that alarm to sum. Verify: the
+nine repositories exist and are empty, and the deploy role carries the
+CodeArtifact grants.
+
+**3. Dispatch `Deploy Backend`** (`.github/workflows/deploy-backend.yml`) on the
+target branch, with `BACKEND_IMAGE_BUILD_ENABLED` set. The nine repositories now
+exist, so the build pushes nine images tagged `sha-<commit sha>`. The
+`existing-functions` job finds no functions and drops all nine from the image
+map, `deploy-images` skips on the empty map, and `smoke-domains` and
+`verify-route-cuts` skip with it, so the run is green. Verify: nine
+`sha-<commit sha>` tags across the nine repositories. Use the commit sha the
+build actually ran on, not whatever the branch points at afterwards.
+
+**4. Set `bootstrap_image_tag` to that exact `sha-<commit sha>`** on the
+workspace.
+
+**5. Apply again.** This creates every domain function in
+`local.lambda_domains_declared`, its role, its log group, its two policies and
+its runtime policy, the API Gateway integration and permission and the two route
+keys per prefix for every domain in `local.routed_lambda_domains_declared`, the
+two metric filters per function, and the aggregate Lambda alarm pair. Functions
+and routes land in the same apply on purpose: `verify-route-cuts` hardcodes its
+domain list, so a function that exists without its routes makes that job probe
+the prefix, read `routeKey: $default`, and exit 1.
+
+**6. Dispatch `Deploy Backend` again**, with `BACKEND_IMAGE_DEPLOY_ENABLED` set.
+`existing-functions` now finds the functions, `deploy-images` points each at its
+digest, `smoke-domains` probes them and `verify-route-cuts` checks the cuts.
+Verify: `verify-route-cuts` passes.
+
+**7. Generate one span, then adopt `aws/spans`.** Any request that reaches a
+domain function will do; the first export creates the group with X-Ray's own 30
+day default. Confirm the group exists, then set `adopt_spans_log_group = true`
+and apply a third time. That apply is one import and one retention change from
+30 days to 7. Verify: `aws_cloudwatch_log_group.spans["aws/spans"]` is in state
+at 7 days.
+
+Steps 1 through 6 are two applies and two workflow dispatches, and step 7 is a
+third apply that can happen whenever traffic has produced a span. None of them
+is expected to fail.
+
+Reverting is the same two variables. Clearing `bootstrap_image_tag` back to `""`
+would destroy every domain function and route, which is a real rollback rather
+than a bootstrap step, and `adopt_spans_log_group = false` would drop the group
+from state without deleting it in AWS.
+
 ---
 
 ## 7. Data
@@ -994,27 +1102,58 @@ infrastructure.
 | 10 | Terraform: deploy role gains ECR push, widened Lambda, `InvokeFunction` | small | 1 change | 9 |
 | 11 | Dockerfile, parameterised by `DOMAIN` | medium | 0 | 4a, 6 |
 | 12 | `deploy-backend.yml`: `resolve-env`, `build-images`, `image-map`, `deploy-images`, `smoke-domains` | medium | 0 | 10, 11 |
-| 13 | Terraform: `media` function from the bootstrap tag, unrouted | medium | 3 add | 12 |
+| 13 | Terraform: `media` function from the bootstrap tag, unrouted. **Delivered** | medium | 5 add (recorded 3 at the time; see the per-cut anatomy below) | 12 |
 | 14 | Terraform: `media` API Gateway routes. **First cut** | small | 4 add | 13 |
 | 15 | Terraform: alarms to `lambda_function_names`, aggregated. **Delivered** | small | 3 add, 1 change, 2 destroy | 14 |
 | 16 | Observability: OpenTelemetry in the domain functions, Sentry removed from them. **Delivered** | medium | 1 change | 14 |
 | 17 | Terraform: log retention 14 to 7 days. **Delivered** | small | 2 change | 15 |
 | 18 | `build-logs`: function, routes, OTel. **Delivered** | medium | 11 add, 4 change | 16 |
-| 19 | `moderation`: function, routes, OTel | medium | 8 add | 18 |
-| 20 | `vehicles`: function, routes, OTel | medium | 7 add | 19 |
-| 21 | `admin`: function, routes, OTel | medium | 11 add | 20 |
+| 19 | `moderation`: function, routes, OTel | medium | est. 15 add, 4 change | 18 |
+| 20 | `vehicles`: function, routes, OTel | medium | est. 13 add, 4 change | 19 |
+| 21 | `admin`: function, routes, OTel | medium | est. 17 add, 4 change | 20 |
 | 22 | Streams on `users`, `parts`, `votes`, `part_listings`, plus queues and DLQs | large | 16 add | 21 |
 | 23 | Tombstone attributes and tombstone-aware reads in four domains | large | 0 | 22 |
 | 24 | Seam 3: `net_votes` handler moves to `catalog`'s stream consumer | medium | 2 add | 22 |
 | 25 | Seam 4: price alert email moves to an `admin` stream handler | medium | 2 add | 22 |
-| 26 | `build-lists`: function, routes, OTel | large | 10 add | 23 |
-| 27 | `identity`: function, routes, OTel | medium | 4 add | 23 |
+| 26 | `build-lists`: function, routes, OTel | large | est. 17 add, 4 change | 23 |
+| 27 | `identity`: function, routes, OTel | medium | est. 11 add, 4 change | 23 |
 | 28 | Seam 2: part purge goes async | large | 2 add | 23 |
-| 29 | `catalog`: function, routes, OTel | large | 10 add | 28 |
+| 29 | `catalog`: function, routes, OTel | large | est. 17 add, 4 change | 28 |
 | 30 | Seam 1: user delete cascade goes async | large | 5 add | 23, 29 |
-| 31 | `users`: function, routes, OTel. **Ninth cut, alarm list full** | large | 5 add | 30 |
+| 31 | `users`: function, routes, OTel. **Ninth cut, alarm list full** | large | est. 13 add, 4 change | 30 |
 | 32 | Retire `$default`, the monolith, the artifacts bucket, the zip chain | medium | 12 destroy | 31 |
 | 33 | Frontend: delete the `services/Api.ts` shim, rewriting 74 import sites | medium | 0 | none |
+
+**Rows 19 through 31 are estimates, and the arithmetic behind them is worth
+stating rather than hiding.** Row 18's delivery note found the per-cut shape by
+counting a real plan, and rows 13, 14 and 15 had each recorded only the part of
+it they were looking at. Written out, one domain cut is:
+
+- **Five resources for the function.** The module's `aws_lambda_function.this`,
+  `aws_iam_role.this`, `aws_cloudwatch_log_group.this` and
+  `aws_iam_role_policy.xray_write[0]`, plus this repository's own
+  `aws_iam_role_policy.lambda_domain[<domain>]`. Row 13 wrote 3 for this shape
+  because it counted the function, the role and the runtime policy and missed
+  the module's log group and X-Ray policy. Five is the number.
+- **Two resources for the integration.** One
+  `aws_apigatewayv2_integration.this[<domain>]` and one
+  `aws_lambda_permission.this[<domain>]`, once per domain regardless of how many
+  prefixes it serves.
+- **Two routes per path prefix**, the bare key and the `{proxy+}` key, from the
+  "Path prefixes served" column of section 1.1.
+- **Two metric filter adds**, `errors[<domain>]` and
+  `rate_limit_failed_open[<domain>]`, the new log group joining the two
+  log-based alarms.
+- **Four alarm changes.** The two description strings that count log groups on
+  `errors[0]` and `rate_limit_failed_open[0]`, and the two aggregate alarms
+  whose description counts functions and whose metric math appends one term.
+
+So a cut is `5 + 2 + 2*prefixes + 2` adds and 4 changes. `moderation` serves 3
+prefixes, `vehicles` 2, `admin` 4, `build-lists` 4, `identity` 1, `catalog` 4
+and `users` 2, which is where the numbers in the table come from. They are
+estimates rather than counted plans, and each row's delivery note should record
+what it actually saw. The seam and stream rows (22, 24, 25, 28, 30) are not
+cuts and their counts are unchanged.
 
 **PR 4 ships in two slices, and 4a is delivered.** The original row bundled two
 unrelated changes: introducing the composition roots, and moving every endpoint

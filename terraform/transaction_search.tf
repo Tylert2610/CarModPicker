@@ -82,16 +82,66 @@ resource "aws_xray_trace_segment_destination" "main" {
 # rejects the name with "Log groups starting with AWS/ are reserved for AWS".
 # Step one (the destination above) applied on staging on 2026-09-08 and X-Ray
 # created the group with its own 30 day default, so step two adopts it into
-# state and puts the platform's 7 day retention on it. The import block is a
-# no-op once the group is in state and stays here so a fresh environment
-# converges in one apply after X-Ray has created the group.
+# state and puts the platform's 7 day retention on it.
+#
+# Why this is gated rather than unconditional. An import block whose target does
+# not exist is a plan time error, not a skipped no-op, so an unconditional import
+# means the very first apply in a fresh account fails at plan: the destination
+# flip and the import would be in the same run, and X-Ray has not written a span
+# yet, so there is nothing to adopt. That ordering is not something the
+# configuration can fix, because the group's existence depends on traffic rather
+# than on Terraform.
+#
+# So `adopt_spans_log_group` is the operator saying "the group exists in this
+# account now". It defaults to true, which is the state of every environment that
+# has already been through this, so nothing changes for staging or for production
+# once they are past it. A fresh account applies once with it false, generates a
+# span, then sets it true and applies again. See the Promoting to a fresh account
+# section of docs/migration/split-plan.md.
+#
+# for_each on an import block, matched by for_each on the resource, rather than
+# `count`: an import block's `to` must address the same instance key the resource
+# uses, and a `for_each` over a set of at most one string gives both a stable
+# instance address of ["aws/spans"] that does not renumber. It is available from
+# Terraform 1.7, and both workspaces are well past that (staging resolves
+# `~> 1.10` to 1.16.1, production is pinned at 1.14.8), so required_version
+# does not move.
+locals {
+  spans_log_groups = var.adopt_spans_log_group ? toset(["aws/spans"]) : toset([])
+}
+
+variable "adopt_spans_log_group" {
+  description = "Adopt the reserved aws/spans log group into state and hold it at the platform's 7 day retention. X-Ray creates that group itself the first time it writes a span to the CloudWatchLogs destination, and it cannot be created ahead of time because CreateLogGroup rejects names beginning with aws/. An import block whose target does not exist is a plan time error, so a brand new account has to apply once with this false, generate one span, and then set it true. true is correct for every environment where a span has already been written, which is both of ours."
+  type        = bool
+  default     = true
+}
+
+# Adding for_each renames the state address from aws_cloudwatch_log_group.spans
+# to aws_cloudwatch_log_group.spans["aws/spans"], and without this block that
+# rename reads as a destroy and a create. Deleting the group would throw away
+# every span already written and the create would then fail on the reserved
+# name, so the refactor has to be a move rather than a replace. This is what
+# makes the change a no-op in staging, where the group is already in state.
+#
+# The block stays after the group is adopted everywhere. A moved block whose
+# source is not in state is a no-op, and removing it later would break any
+# environment that had not yet planned under this version.
+moved {
+  from = aws_cloudwatch_log_group.spans
+  to   = aws_cloudwatch_log_group.spans["aws/spans"]
+}
+
 import {
-  to = aws_cloudwatch_log_group.spans
-  id = "aws/spans"
+  for_each = local.spans_log_groups
+
+  to = aws_cloudwatch_log_group.spans[each.key]
+  id = each.value
 }
 
 resource "aws_cloudwatch_log_group" "spans" {
-  name              = "aws/spans"
+  for_each = local.spans_log_groups
+
+  name              = each.value
   retention_in_days = 7
 
   depends_on = [aws_xray_trace_segment_destination.main]
