@@ -99,10 +99,11 @@ async def list_my_active_alerts(current_user: DBUser = Depends(get_current_user)
 def _unsubscribe_redirect_url(success: bool, message: str) -> str:
     """Build the redirect target for the unsubscribe-via-token flow.
 
-    Mirrors the DEBUG/prod branch in verify_email_confirm: localhost frontend
-    in dev, www.carmodpicker.com in prod. ``status`` is `success` or `error`.
+    Uses ``settings.frontend_base_url``, the same per-environment SPA origin
+    verify_email_confirm redirects to, so each environment sends users back to
+    its own frontend. ``status`` is `success` or `error`.
     """
-    base = "http://localhost:4000/account/alerts" if settings.DEBUG else "https://www.carmodpicker.com/account/alerts"
+    base = f"{settings.frontend_base_url}/account/alerts"
     status_word = "success" if success else "error"
     # Treat the message as already-form-friendly (caller passes a `+`-joined
     # string) — we never put user-controlled text here, only fixed phrases.

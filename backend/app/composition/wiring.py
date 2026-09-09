@@ -291,14 +291,15 @@ def add_shared_middleware(app: FastAPI) -> None:
     from app.api.middleware import rate_limit_middleware, request_context_middleware
     from app.api.middleware.error_handler import register_error_handlers
 
-    # Chrome extensions send requests with a null origin (service workers) or a
-    # chrome-extension:// origin (popup and content scripts). Both are allowed:
-    # `allow_origins` carries "null" and `allow_origin_regex` carries the scheme.
-    # With `allow_credentials=True` the regex is used alongside `allow_origins`,
-    # not instead of it.
+    # The Chrome extension's popup, content scripts and MV3 service worker all
+    # send `Origin: chrome-extension://<id>` for its own fixed store id, so the
+    # id is listed explicitly in `settings.allowed_origins_list` rather than
+    # matched by a `chrome-extension://.*` regex. The regex plus
+    # `allow_credentials=True` admitted every extension the user had installed,
+    # which is a credentialed read of this API's authenticated responses by any
+    # third-party extension.
     app.add_middleware(
         CORSMiddleware,
-        allow_origin_regex=r"chrome-extension://.*",
         allow_origins=settings.allowed_origins_list,
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],

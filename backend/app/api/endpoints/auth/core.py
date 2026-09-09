@@ -149,10 +149,7 @@ async def verify_email(
         expires_delta=timedelta(hours=1),
     )
 
-    if settings.DEBUG:
-        verify_url = f"http://localhost:8000/api/auth/verify-email/confirm?token={token}"
-    else:
-        verify_url = f"https://api.carmodpicker.com/api/auth/verify-email/confirm?token={token}"
+    verify_url = f"{settings.api_base_url}/api/auth/verify-email/confirm?token={token}"
 
     if not send_verify_email(user.email, verify_url):
         ResponsePatterns.raise_internal_server_error("Failed to send verification email")

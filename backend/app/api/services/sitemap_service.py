@@ -64,11 +64,7 @@ def _api_base_url() -> str:
 
     The index must reference child sitemaps by absolute URL, and they live on
     the API host, not the SPA host."""
-    if not settings.is_production:
-        return "http://localhost:8000"
-    if settings.APP_ENVIRONMENT.lower() == "staging":
-        return "https://api.staging.carmodpicker.com"
-    return "https://api.carmodpicker.com"
+    return settings.api_base_url.rstrip("/")
 
 
 def escape(text: str) -> str:
