@@ -1761,6 +1761,126 @@ since a second domain runs through the same probe and the statement is true of
 both.
 
 
+**Row 19 is delivered, and it is the third cut.** `moderation` gets a function,
+three route pairs and its OTel wiring, and like row 18 every one of those arrives
+by adding a name to a list. `local.lambda_domains` in
+`terraform/lambda_domains.tf` gains the entry;
+`local.routed_lambda_domains` and `local.lambda_domain_path_prefixes` in
+`terraform/apigateway.tf` gain the name and its three prefixes; and the alarm
+lists in `terraform/monitoring.tf` pick the domain up for free. Nothing in
+`backend/` changed, for the reason row 18 records: rows 8 and 16 had already
+built and instrumented all nine entrypoints, so `app/entrypoints/moderation.py`
+is byte for byte what row 16 left, `app/composition/domains.py` already declares
+the descriptor and its three routers, and `test_otel_wiring.py` parametrises over
+`DOMAIN_NAMES`. The routes the composition serves are exactly the three prefixes
+this row cuts.
+
+**The plan is 15 to add, 4 to change and 0 to destroy, and the estimate was
+right.** Row 18's per-cut anatomy predicted `5 + 2 + 2*prefixes + 2` adds and 4
+changes, which for a three-prefix domain is 15 and 4. This is the first row to
+land on the corrected arithmetic rather than to discover it, so the anatomy holds
+and rows 20 through 31 can be estimated on it with some confidence.
+
+The fifteen adds, in the anatomy's own groups:
+
+*The function, five resources.*
+`module.lambda_domain["moderation"].aws_lambda_function.this`,
+`module.lambda_domain["moderation"].aws_iam_role.this`,
+`module.lambda_domain["moderation"].aws_cloudwatch_log_group.this`,
+`module.lambda_domain["moderation"].aws_iam_role_policy.xray_write[0]` and
+`aws_iam_role_policy.lambda_domain["moderation"]`, the runtime policy this
+repository writes rather than the module.
+
+*The integration, two resources.*
+`module.api.aws_apigatewayv2_integration.this["moderation"]` and
+`module.api.aws_lambda_permission.this["moderation"]`, one of each regardless of
+how many prefixes the domain serves, which is what this row confirms: three
+prefixes still buy exactly one integration and one permission.
+
+*The routes, six resources, two per prefix.*
+`ANY /api/votes`, `ANY /api/votes/{proxy+}`, `ANY /api/reports`,
+`ANY /api/reports/{proxy+}`, `ANY /api/bug-reports` and
+`ANY /api/bug-reports/{proxy+}`, all as
+`module.api.aws_apigatewayv2_route.this[...]`. The bare keys carry more weight
+here than they did for `build-logs`, where none of the five routes was the
+collection path. All three of these collection paths are real routes the domain
+serves, so omitting a bare key would have left the collection on the monolith
+while everything below it moved, which is the half-working failure section 3.5
+names.
+
+*The alarms, two adds and four changes, exactly as row 18 saw.*
+`module.alarms.aws_cloudwatch_log_metric_filter.errors["moderation"]` and
+`module.alarms.aws_cloudwatch_log_metric_filter.rate_limit_failed_open["moderation"]`
+are the new log group joining the two log-based alarms. The four changes are the
+two description strings, "3 log groups" to "4 log groups" on
+`module.alarms.aws_cloudwatch_metric_alarm.errors[0]` and on
+`module.alarms.aws_cloudwatch_metric_alarm.rate_limit_failed_open[0]`, and the
+two aggregate alarms
+`module.alarms.aws_cloudwatch_metric_alarm.lambda_aggregate_errors[0]` and
+`module.alarms.aws_cloudwatch_metric_alarm.lambda_aggregate_throttles[0]`, whose
+descriptions move from "2 functions" to "3 functions".
+
+The metric math is the second confirmation of row 15's ordering argument and the
+first with three terms. `m0` stays `carmodpicker-staging-media`, `m1` stays
+`carmodpicker-staging-build-logs`, `moderation` arrives as `m2`, and the
+expression goes from `m0 + m1` to `m0 + m1 + m2`. An append again, with no
+existing term relabelled, which is what filtering the ordered
+`local.lambda_domain_names` buys. Reading `keys()` off the map would have sorted
+`build-logs`, `media`, `moderation` and left `media` at `m1`.
+
+**The table split is this row's judgement call, and unlike row 18's it is wider
+than the ownership column rather than narrower.** Four tables are written:
+`votes`, `reports` and `bug_reports`, which are the domain's own and which
+`vote_service`, `report_service` and `bug_report_service` each write through
+`.create`, `.update` and `.delete`; and `parts`, which is not.
+
+`parts` is seam 3. `vote_service._sync_part_net_votes` calls
+`self.repos.parts.update(str(entity_id), net_votes=upvotes - downvotes)` after
+every vote create, update and remove whose entity type is a part, and section 1.3
+already names it as the one cross-domain write in the application that is not a
+delete. Row 24 inverts it into a stream handler `catalog` owns, and the grant
+narrows to a read then. Until then it is a real write on a live path, and
+withholding the grant would break voting on a part rather than tightening
+anything. The failure would also be an unpleasant one to debug: the sync runs
+after the vote row is committed, so an AccessDenied would leave the vote written
+and `net_votes` stale behind a 500 on a request that half succeeded. The grant
+follows the writer, which is the same rule row 18 applied to reach the opposite
+answer on `build_logs`.
+
+Three tables are read only. `users` for the reporter and the author, through
+`repos.users.get` and `.get_many` in `report_service`, and `build_lists` and
+`car_generations` for the vote and report targets. Those targets are the reason
+this domain has three prefixes and only nine repositories: votes and reports are
+polymorphic over an `entity_type`, and `_get_entities` dispatches to
+`repos.build_lists.get_many`, `repos.car_generations.get_many` or
+`repos.parts.get_many` accordingly. `parts` is in `tables` rather than
+`read_tables` because a table belongs to exactly one of the two lists and the
+twelve write actions are a superset of the five read ones.
+
+`car_makes` and `car_models` are in `_MODERATION_REPOSITORIES` and get no grant
+at all, which is the first time a bundle and a grant list have differed for a
+reason other than read against write. The bundle test computes reachability
+through the import graph, and those two arrive with the catalogue types the vote
+and report schemas name; no route, service or utility in the domain calls
+`repos.car_makes` or `repos.car_models`. Granting a table on the strength of an
+import rather than a call would hand the function two tables no request can
+reach. Later rows should expect the same gap wherever a schema pulls in a type
+from a domain the code does not otherwise touch.
+
+Memory is 256 MB, the same as `build-logs`. Twenty JSON routes over DynamoDB,
+with no Pillow, no image decoding and no native work in any of the three endpoint
+modules or their three services.
+
+`scripts/verify_route_cut.sh` gains the three prefixes in its `moderation` case,
+which was present and empty so the script failed loudly rather than passing on an
+empty loop, and the `verify-route-cuts` job in
+`.github/workflows/deploy-backend.yml` gains the name in its one-line `DOMAINS`
+list. The `bootstrap_image_tag` gate from row 13's follow-up needed nothing from
+this row, which is the property it was built for: both new list entries are
+filtered through `local.lambda_domains`, so an account with no images resolves
+the function and the routes to empty together and neither the entry nor the
+prefixes have to know the gate exists.
+
 **Ingestion is now admin.** Open question 4 asked whether the domain should be
 renamed and the answer is yes, taken on 2026-09-07. Section 1.5 had already
 argued the case: `crawled_pages` writes nothing, the listing writes the old name
