@@ -1,21 +1,29 @@
 # Auto-release the Chrome extension whenever chrome-extension/** lands on main.
 #
-# On each run the workflow:
-#   1. Bumps the patch version in chrome-extension/manifest.json
-#   2. Builds the extension
-#   3. Commits the version bump back to main and pushes a `chrome-extension-vX.Y.Z` tag
-#   4. Creates a GitHub Release with the built zip attached
-#   5. (Optional) Publishes the zip to the Chrome Web Store
+# This workflow never pushes a commit to `main`. The `main-protection` ruleset on
+# refs/heads/main requires every change to arrive through a pull request, and
+# GITHUB_TOKEN is not a bypass actor, so a direct push is rejected with GH013.
 #
-# Auto-publish to the Chrome Web Store requires all four of these on the `production` environment:
+# On each run the workflow:
+#   1. Derives the next version from the newest `chrome-extension-v*` tag,
+#      falling back to the manifest version in the tree when no tag exists
+#   2. Patches manifest.json in the build output only, never in a commit to main
+#   3. Builds and packages the extension
+#   4. Publishes the zip to the Chrome Web Store
+#   5. Pushes the annotated tag `chrome-extension-v<version>` (the ruleset targets
+#      refs/heads/main only, so refs/tags/* is not covered) and cuts a GitHub Release
+#   6. Opens a bookkeeping PR against `staging` that bumps the committed manifest
+#
+# The tag is the source of truth for the released version. The manifest committed
+# in the tree is bookkeeping that trails the tag by design, so a missed or closed
+# bookkeeping PR never blocks or corrupts the next release.
+#
+# Auto-publish to the Chrome Web Store requires all four of these on the `production`
+# environment:
 #   - vars: CWS_CLIENT_ID, CWS_EXTENSION_ID (not secret; public identifiers)
 #   - secrets: CWS_CLIENT_SECRET, CWS_REFRESH_TOKEN
-# If any are missing, the publish step is skipped and the GitHub Release still succeeds.
+# If any are missing, the publish step is skipped and the tag and Release still succeed.
 # See https://developer.chrome.com/docs/webstore/using-api for setting up the OAuth client.
-#
-# Note: this workflow pushes directly to main. If branch protection on main requires PRs,
-# you must allow `github-actions[bot]` to bypass it (Settings → Branches → Rule → Bypass list),
-# otherwise the push step will fail.
 name: Chrome Extension Deploy
 
 on:
@@ -28,8 +36,9 @@ on:
 
 permissions:
   contents: write
+  pull-requests: write
 
-# Serialize runs so back-to-back merges don't race on the version bump.
+# Serialize runs so back-to-back merges don't race on the version derivation.
 concurrency:
   group: chrome-extension-release
   cancel-in-progress: false
@@ -49,25 +58,74 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-      - name: Bump patch version in manifest.json
+      - name: Derive next version from the newest release tag
         id: version
-        working-directory: chrome-extension
         run: |
-          NEW=$(node -e "
-            const fs = require('fs');
-            const m = JSON.parse(fs.readFileSync('manifest.json', 'utf8'));
-            const parts = m.version.split('.').map(Number);
-            if (parts.length !== 3 || parts.some(Number.isNaN)) {
-              console.error('manifest.json version is not a valid semver: ' + m.version);
-              process.exit(1);
-            }
-            parts[2]++;
-            m.version = parts.join('.');
-            fs.writeFileSync('manifest.json', JSON.stringify(m, null, 2) + '\n');
-            console.log(m.version);
-          ")
-          echo "new=$NEW" >> $GITHUB_OUTPUT
-          echo "Bumped manifest.json to $NEW"
+          set -euo pipefail
+
+          git fetch --tags --force --quiet
+
+          # Newest tag by semver, not by commit date: a release cut from an older
+          # commit must never hand back a version that is already published.
+          LAST_TAG=$(git tag -l 'chrome-extension-v*' \
+            | sed 's/^chrome-extension-v//' \
+            | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' \
+            | sort -V \
+            | tail -n 1 || true)
+
+          if [[ -n "$LAST_TAG" ]]; then
+            BASE="$LAST_TAG"
+            echo "Newest release tag: chrome-extension-v$LAST_TAG"
+          else
+            BASE=$(node -p "require('./chrome-extension/manifest.json').version")
+            if [[ ! "$BASE" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "::error::manifest.json version is not a valid semver: $BASE"
+              exit 1
+            fi
+            # No tag has ever been pushed, so the manifest version is the last
+            # released version and the next release is the patch above it.
+            echo "No chrome-extension-v* tag found; falling back to manifest version $BASE"
+          fi
+
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$BASE"
+          NEW="$MAJOR.$MINOR.$((PATCH + 1))"
+
+          {
+            echo "last=$LAST_TAG"
+            echo "base=$BASE"
+            echo "new=$NEW"
+            echo "tag=chrome-extension-v$NEW"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Next version: $NEW"
+
+      - name: Verify the new version is strictly greater than the last tag
+        env:
+          LAST_TAG: ${{ steps.version.outputs.last }}
+          NEW_VERSION: ${{ steps.version.outputs.new }}
+          NEW_TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          if git rev-parse -q --verify "refs/tags/$NEW_TAG" >/dev/null; then
+            echo "::error::Tag $NEW_TAG already exists. Refusing to republish an existing version."
+            exit 1
+          fi
+
+          if [[ -z "$LAST_TAG" ]]; then
+            echo "No previous tag to compare against; $NEW_VERSION is the first tagged release."
+            exit 0
+          fi
+
+          # sort -V puts the greater version last. Equal versions are caught by the
+          # string compare, so this fails on both "older" and "same".
+          if [[ "$NEW_VERSION" == "$LAST_TAG" ]] \
+            || [[ "$(printf '%s\n%s\n' "$LAST_TAG" "$NEW_VERSION" | sort -V | tail -n 1)" != "$NEW_VERSION" ]]; then
+            echo "::error::Computed version $NEW_VERSION is not strictly greater than the last released version $LAST_TAG."
+            exit 1
+          fi
+
+          echo "$NEW_VERSION is strictly greater than $LAST_TAG."
 
       - name: Set up Node.js
         uses: actions/setup-node@v7
@@ -80,20 +138,36 @@ jobs:
         working-directory: chrome-extension
         run: npm ci
 
+      - name: Patch manifest.json for the build
+        working-directory: chrome-extension
+        env:
+          NEW_VERSION: ${{ steps.version.outputs.new }}
+        run: |
+          set -euo pipefail
+          node -e "
+            const fs = require('fs');
+            const m = JSON.parse(fs.readFileSync('manifest.json', 'utf8'));
+            m.version = process.env.NEW_VERSION;
+            fs.writeFileSync('manifest.json', JSON.stringify(m, null, 2) + '\n');
+          "
+          echo "Build tree manifest.json set to $NEW_VERSION (not committed to main)."
+
       - name: Build extension
         working-directory: chrome-extension
         run: npm run build
 
-      - name: Commit version bump and push tag
+      - name: Verify the built manifest carries the new version
+        working-directory: chrome-extension
         env:
           NEW_VERSION: ${{ steps.version.outputs.new }}
         run: |
-          TAG="chrome-extension-v$NEW_VERSION"
-          git add chrome-extension/manifest.json
-          git commit -m "chore(chrome-extension): bump to v$NEW_VERSION [skip ci]"
-          git tag "$TAG"
-          git push origin HEAD:main
-          git push origin "$TAG"
+          set -euo pipefail
+          BUILT=$(node -p "require('./dist/manifest.json').version")
+          if [[ "$BUILT" != "$NEW_VERSION" ]]; then
+            echo "::error::Built manifest version is $BUILT but expected $NEW_VERSION."
+            exit 1
+          fi
+          echo "Built manifest version is $BUILT."
 
       - name: Zip extension
         id: zip
@@ -101,20 +175,13 @@ jobs:
         env:
           NEW_VERSION: ${{ steps.version.outputs.new }}
         run: |
+          set -euo pipefail
           ZIP_NAME="carmodpicker-extension-$NEW_VERSION.zip"
           (cd dist && zip -r "../$ZIP_NAME" .)
-          echo "zip_path=chrome-extension/$ZIP_NAME" >> $GITHUB_OUTPUT
-          echo "zip_name=$ZIP_NAME" >> $GITHUB_OUTPUT
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v3
-        with:
-          files: ${{ steps.zip.outputs.zip_path }}
-          name: Chrome Extension v${{ steps.version.outputs.new }}
-          tag_name: chrome-extension-v${{ steps.version.outputs.new }}
-          draft: false
-          prerelease: false
-          generate_release_notes: true
+          {
+            echo "zip_path=chrome-extension/$ZIP_NAME"
+            echo "zip_name=$ZIP_NAME"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Check Chrome Web Store credentials
         id: cws_check
@@ -125,10 +192,10 @@ jobs:
           CWS_EXTENSION_ID: ${{ vars.CWS_EXTENSION_ID }}
         run: |
           if [[ -n "$CWS_CLIENT_ID" && -n "$CWS_CLIENT_SECRET" && -n "$CWS_REFRESH_TOKEN" && -n "$CWS_EXTENSION_ID" ]]; then
-            echo "configured=true" >> $GITHUB_OUTPUT
+            echo "configured=true" >> "$GITHUB_OUTPUT"
           else
-            echo "configured=false" >> $GITHUB_OUTPUT
-            echo "Chrome Web Store credentials not set — skipping auto-publish."
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "Chrome Web Store credentials not set. Skipping auto-publish."
           fi
 
       - name: Publish to Chrome Web Store
@@ -175,3 +242,146 @@ jobs:
             "https://www.googleapis.com/chromewebstore/v1.1/items/$CWS_EXTENSION_ID/publish"
 
           echo "Published v$NEW_VERSION to Chrome Web Store."
+
+      # The tag is pushed only after the Web Store publish succeeds, so a failed
+      # publish leaves the version number free for the next attempt.
+      - name: Push release tag
+        id: tag
+        env:
+          NEW_VERSION: ${{ steps.version.outputs.new }}
+          NEW_TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          if git ls-remote --exit-code --tags origin "refs/tags/$NEW_TAG" >/dev/null 2>&1; then
+            echo "Tag $NEW_TAG already exists on origin. Nothing to push."
+            echo "pushed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          git tag -a "$NEW_TAG" -m "Chrome extension v$NEW_VERSION"
+          git push origin "refs/tags/$NEW_TAG"
+          echo "pushed=true" >> "$GITHUB_OUTPUT"
+          echo "Pushed $NEW_TAG."
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          files: ${{ steps.zip.outputs.zip_path }}
+          name: Chrome Extension v${{ steps.version.outputs.new }}
+          tag_name: ${{ steps.version.outputs.tag }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+
+      # Bookkeeping only. The published version is already live and tagged by this
+      # point, so nothing below is allowed to fail the release.
+      - name: Prepare manifest bump branch for staging
+        id: bookkeeping
+        env:
+          NEW_VERSION: ${{ steps.version.outputs.new }}
+        run: |
+          set -euo pipefail
+
+          BRANCH="chore/chrome-extension-v$NEW_VERSION"
+
+          # The build step patched manifest.json in the working tree. Drop that
+          # local edit first: otherwise the checkout below either refuses (the
+          # file differs between main and staging) or carries the patched file
+          # over, which would make the "already at version" check pass wrongly.
+          git checkout -- chrome-extension/manifest.json
+          git fetch origin staging --quiet
+          git checkout -B "$BRANCH" origin/staging
+
+          CURRENT=$(node -p "require('./chrome-extension/manifest.json').version")
+          if [[ "$CURRENT" == "$NEW_VERSION" ]]; then
+            echo "staging manifest.json is already at $NEW_VERSION. No bookkeeping PR needed."
+            echo "needed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          node -e "
+            const fs = require('fs');
+            const p = 'chrome-extension/manifest.json';
+            const m = JSON.parse(fs.readFileSync(p, 'utf8'));
+            m.version = process.env.NEW_VERSION;
+            fs.writeFileSync(p, JSON.stringify(m, null, 2) + '\n');
+          "
+
+          git add chrome-extension/manifest.json
+          git commit -m "chore(chrome-extension): record published v$NEW_VERSION"
+          git push --force origin "$BRANCH"
+
+          {
+            echo "needed=true"
+            echo "branch=$BRANCH"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Open bookkeeping PR against staging
+        if: steps.bookkeeping.outputs.needed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH: ${{ steps.bookkeeping.outputs.branch }}
+          NEW_VERSION: ${{ steps.version.outputs.new }}
+          REPO: ${{ github.repository }}
+          SERVER_URL: ${{ github.server_url }}
+        run: |
+          set -uo pipefail
+
+          COMPARE_URL="$SERVER_URL/$REPO/compare/staging...$BRANCH?expand=1"
+
+          EXISTING=$(gh pr list --head "$BRANCH" --base staging --state open \
+            --json url --jq '.[0].url // empty' 2>/dev/null || true)
+          if [[ -n "$EXISTING" ]]; then
+            echo "Bookkeeping PR already open: $EXISTING"
+            {
+              echo "### Chrome extension v$NEW_VERSION"
+              echo
+              echo "Published to the Chrome Web Store and tagged."
+              echo
+              echo "Bookkeeping PR already open: $EXISTING"
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          # "Allow GitHub Actions to create and approve pull requests" may be off at
+          # the repo or org level, in which case this call is refused. The branch is
+          # already pushed, so fall back to printing the compare URL rather than
+          # failing a release that is already live.
+          # stdout carries the PR URL, stderr carries any diagnostics. Keep them
+          # apart so a warning on stderr is never mistaken for the URL.
+          if PR_URL=$(gh pr create \
+            --base staging \
+            --head "$BRANCH" \
+            --title "chore(chrome-extension): record published v$NEW_VERSION" \
+            --body "Records the version published to the Chrome Web Store by the \
+          Chrome Extension Deploy run for v$NEW_VERSION.
+
+          The release itself is already live and tagged \`chrome-extension-v$NEW_VERSION\`. \
+          This PR only realigns the committed \`chrome-extension/manifest.json\` with the \
+          published version, so it is safe to merge at any time and safe to close if a \
+          later release supersedes it." 2>/tmp/gh-pr-create.err); then
+            PR_URL=$(printf '%s' "$PR_URL" | tail -n 1)
+            echo "Opened bookkeeping PR: $PR_URL"
+            {
+              echo "### Chrome extension v$NEW_VERSION"
+              echo
+              echo "Published to the Chrome Web Store and tagged."
+              echo
+              echo "Bookkeeping PR: $PR_URL"
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::warning::Could not open the bookkeeping PR automatically. Branch $BRANCH is pushed; open the PR by hand."
+            cat /tmp/gh-pr-create.err || true
+            {
+              echo "### Chrome extension v$NEW_VERSION"
+              echo
+              echo "Published to the Chrome Web Store and tagged."
+              echo
+              echo "The bookkeeping PR could not be opened automatically, most likely"
+              echo "because Actions is not allowed to create pull requests in this org."
+              echo "The branch \`$BRANCH\` is pushed. Open the PR here:"
+              echo
+              echo "$COMPARE_URL"
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi

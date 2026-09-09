@@ -110,6 +110,43 @@ See [DEVELOPMENT.md](./DEVELOPMENT.md) for detailed development workflow.
 - `popup.html/css`: Main UI for authentication and part creation
 - `options.html`: Settings page
 
+## Releasing
+
+Releases are automated by `.github/workflows/chrome-extension-deploy.yml`. It runs
+when a change under `chrome-extension/**` lands on `main`, and can also be started
+by hand with `workflow_dispatch`.
+
+You do not bump `manifest.json` by hand as part of a release. The workflow derives
+the next version itself:
+
+1. It reads the newest `chrome-extension-v*` tag and increments the patch number.
+   If no such tag exists, it falls back to the version committed in
+   `manifest.json` and increments that.
+2. It refuses to continue if the computed version is not strictly greater than the
+   last released version, or if the target tag already exists.
+3. It patches `manifest.json` in the build output only, builds, and packages.
+4. It publishes to the Chrome Web Store.
+5. It pushes the annotated tag `chrome-extension-v<version>` and cuts a GitHub
+   Release with the zip attached.
+6. It opens a bookkeeping PR against `staging` that records the published version
+   in the committed `manifest.json`.
+
+The tag is the version of record, not the committed manifest. The tag is pushed
+only after the Web Store publish succeeds, so a failed publish leaves the version
+number free for the next attempt. The committed manifest trails the newest tag
+until the bookkeeping PR merges, which is expected and harmless.
+
+The workflow never pushes a commit to `main`. The `main-protection` ruleset
+requires every change to `main` to arrive through a pull request, and the Actions
+token is not a bypass actor, so a direct push is rejected. The ruleset covers
+`refs/heads/main` only, which is why pushing `refs/tags/*` is allowed.
+
+To republish or to release without a code change:
+
+```bash
+gh workflow run chrome-extension-deploy.yml --repo WebbPulse/CarModPicker --ref main
+```
+
 ## Notes
 
 - The extension requires authentication via your CarModPicker account

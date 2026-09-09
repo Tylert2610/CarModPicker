@@ -44,7 +44,20 @@ gh pr merge <release-pr> --repo WebbPulse/CarModPicker --merge
 
 The merge to `main` starts a VCS-driven run on `ws-oh1VvpTBPxmcrSYD`. It does not
 auto-apply. It also starts `Frontend Deploy` and `Backend Deploy` on `main`, and
-the Chrome extension's live Web Store publish.
+the Chrome extension's live Web Store publish, which runs only when the merge
+carries a `chrome-extension/**` change.
+
+The extension publish derives its version from the newest `chrome-extension-v*`
+tag rather than from a commit on `main`. It patches `manifest.json` in the build
+output only, publishes to the Web Store, then pushes the annotated tag
+`chrome-extension-v<version>`. It never pushes a commit to `main`, so the
+`main-protection` ruleset does not block it. Afterwards it opens a bookkeeping PR
+against `staging` that realigns the committed manifest with the published
+version. That PR is bookkeeping only: the release is already live and tagged by
+the time it is opened, so it can be merged whenever convenient, and closing it
+does not affect the next release. If the org does not allow Actions to open pull
+requests, the job pushes the branch anyway and prints a compare URL in the job
+summary.
 
 **Expected:** a run appears on the prod workspace and reaches `planned`, waiting
 for confirmation. `Frontend Deploy` and `Backend Deploy` **fail** at the
@@ -239,7 +252,26 @@ Run this list once step 6 is green.
 - **Chrome Web Store publish.** `gh run list --workflow chrome-extension-deploy.yml
   --repo WebbPulse/CarModPicker --branch main --limit 1`. This job publishes live.
   If it failed, the extension in the store is the previous version and the site is
-  unaffected; if it succeeded, the new version is rolling out to users.
+  unaffected; if it succeeded, the new version is rolling out to users. Confirm the
+  published version by checking that the tag `chrome-extension-v<version>` exists,
+  because the tag is pushed only after the Web Store publish succeeds. The
+  committed `chrome-extension/manifest.json` trails the tag until the bookkeeping
+  PR against `staging` merges, so it is not the version of record.
+
+  **This release:** the publish for v1.1.18 did not happen. The run for merge
+  `46a28433` failed at the old "Commit version bump and push tag" step, because
+  that step pushed a commit straight to `main` and the `main-protection` ruleset
+  rejected it with `GH013`. No tag was pushed and nothing reached the Web Store,
+  so `main` is still at manifest 1.1.17. Once the workflow fix has merged to
+  `staging` and been promoted to `main`, re-run the publish by hand:
+
+  ```
+  gh workflow run chrome-extension-deploy.yml --repo WebbPulse/CarModPicker --ref main
+  ```
+
+  `workflow_dispatch` needs no `chrome-extension/**` diff, so this republishes the
+  release without another merge. The run derives v1.1.18 from the newest tag
+  `chrome-extension-v1.1.17` on its own.
 - **Alarms.** `aws cloudwatch describe-alarms --query 'MetricAlarms[].[AlarmName,StateValue]'
   --output text`. Expected: `carmodpicker-production-lambda-errors` and
   `carmodpicker-production-lambda-throttles` are gone, replaced by the aggregate
