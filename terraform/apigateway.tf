@@ -13,9 +13,9 @@ locals {
   # check fails the plan on an integration no route can reach, so the two move together.
   #
   # Row 14 is `media`, row 18 is `build-logs`, row 19 is `moderation`, row 20 is `vehicles`,
-  # row 21 is `admin` and row 26 is `build-lists`. Rows 27 through 31 append identity, catalog
-  # and users.
-  routed_lambda_domains_declared = ["media", "build-logs", "moderation", "vehicles", "admin", "build-lists"]
+  # row 21 is `admin`, row 26 is `build-lists` and row 27 is `identity`. Rows 29 and 31 append
+  # catalog and users.
+  routed_lambda_domains_declared = ["media", "build-logs", "moderation", "vehicles", "admin", "build-lists", "identity"]
 
   # Gated on the same condition as the functions themselves, and it has to be. A route names an
   # integration and an integration names module.lambda_domain[name], so a routed domain whose
@@ -180,6 +180,34 @@ locals {
     # Splitting either subtree across route keys is what would break them, and
     # nothing here does.
     build-lists = ["/api/build-lists", "/api/build-list-parts", "/api/build-list-phases", "/api/build-list-labor-estimates"]
+    # Row 27. One prefix, the fewest of any cut, and 24 routes under it: the
+    # login and token routes, email verification, password reset, TOTP 2FA,
+    # WebAuthn passkeys and Google OAuth. The four endpoint modules mount at
+    # `/auth`, `/auth/2fa`, `/auth/webauthn` and `/auth/oauth`, so the three
+    # sub-prefixes are paths below this one rather than siblings of it, which is
+    # the opposite of row 26's shape and is why one prefix covers the domain.
+    #
+    # Two route keys, and this is the first cut whose bare key is purely
+    # defensive. Walking `app.routes` on the built application puts all 24
+    # routes under `ANY /api/auth/{proxy+}` and none on the bare key: there is
+    # no route at `/api/auth` and none declared as `"/"`, unlike
+    # `/api/build-lists` in row 26 or `/api/part-price-alerts` in row 21, whose
+    # bare keys carry real traffic. The key is still required rather than
+    # optional, for the reason section 3.5 gives: without it a collection route
+    # added at `/api/auth` later would fall to `$default` while everything below
+    # it stayed here, which is the half-working split that is worse than either
+    # whole. It also costs nothing to carry.
+    #
+    # The trailing-slash trap does not bite here and is worth saying so
+    # explicitly rather than leaving to inference. A route key may not end in a
+    # slash, and no route in this domain mounts at `/api/auth/`, so the bare key
+    # is written bare because that is the only legal spelling and not because a
+    # slash was trimmed off a real path.
+    #
+    # Nothing else in section 1.1 sits under `/api/auth`. The `/api/users` tree
+    # is a separate prefix that row 31 moves, and a route key matches literally
+    # rather than by substring, so this cut cannot pull any of it along.
+    identity = ["/api/auth"]
   }
 
   # Two route keys per prefix, generated rather than written out, so a domain added above cannot be

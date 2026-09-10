@@ -124,10 +124,10 @@ esac
 # correctly report it as still on the monolith.
 #
 # `media` from row 14, `build-logs` from row 18, `moderation` from row 19,
-# `vehicles` from row 20, `admin` from row 21 and `build-lists` from row 26 are
-# cut today. The other three are filled in by rows 27 through 31 and are listed
-# empty so the script fails loudly with "no prefixes" rather than passing
-# silently on an empty loop.
+# `vehicles` from row 20, `admin` from row 21, `build-lists` from row 26 and
+# `identity` from row 27 are cut today. The other two are filled in by rows 29
+# and 31 and are listed empty so the script fails loudly with "no prefixes"
+# rather than passing silently on an empty loop.
 case "$DOMAIN" in
 media)
   PREFIXES=(/api/images)
@@ -163,8 +163,18 @@ build-lists)
   PREFIXES=(/api/build-lists /api/build-list-parts /api/build-list-phases /api/build-list-labor-estimates)
   ;;
 identity)
-  # Row 28.
-  PREFIXES=()
+  # Row 27. One prefix and the fewest of any cut, with 24 routes under it: the
+  # login and token routes, email verification, password reset, TOTP 2FA,
+  # WebAuthn passkeys and Google OAuth. The three sub-prefixes /auth/2fa,
+  # /auth/webauthn and /auth/oauth are paths below this one rather than siblings
+  # of it, so one prefix covers the whole domain.
+  #
+  # Note for the no-credential fallback path below: there is no route at the
+  # bare /api/auth, so a GET there answers 404 from a perfectly healthy
+  # function, the same caveat row 26 recorded for three of its four prefixes.
+  # The gateway path, which CI always takes, reads routeKey out of the access
+  # log and has no such problem.
+  PREFIXES=(/api/auth)
   ;;
 catalog)
   # Row 29.

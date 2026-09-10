@@ -1201,7 +1201,7 @@ infrastructure.
 | 24 | Seam 3: `net_votes` handler moves to `catalog`'s stream consumer, on an event source mapping. **Delivered** | medium | 6 add, 3 change (est. 3 add) | 22 |
 | 25 | Seam 4: price alert email moves to an `admin` stream handler, on an event source mapping. **Delivered** | medium | 6 add, 3 change (est. 3 add) | 22 |
 | 26 | `build-lists`: function, routes, OTel. **Delivered** | large | est. 17 add, 4 change | 23 |
-| 27 | `identity`: function, routes, OTel | medium | est. 11 add, 4 change | 23 |
+| 27 | `identity`: function, routes, OTel. **Delivered** | medium | est. 11 add, 4 change | 23 |
 | 28 | Seam 2: part purge goes async | large | 2 add | 23 |
 | 29 | `catalog`: function, routes, OTel | large | est. 17 add, 4 change | 28 |
 | 30 | Seam 1: user delete cascade goes async | large | 5 add | 23, 29 |
@@ -1209,9 +1209,9 @@ infrastructure.
 | 32 | Retire `$default`, the monolith, the artifacts bucket, the zip chain | medium | 12 destroy | 31 |
 | 33 | Frontend: delete the `services/Api.ts` shim, rewriting 74 import sites | medium | 0 | none |
 
-**Rows 27 through 31 are estimates, and the arithmetic behind them is worth
-stating rather than hiding. Rows 19, 20, 21 and 26 landed on it exactly, so it
-is settled rather than provisional.** Row 18's delivery note found the per-cut shape by
+**Rows 29 and 31 are estimates, and the arithmetic behind them is worth
+stating rather than hiding. Rows 19, 20, 21, 26 and 27 landed on it exactly, so
+it is settled rather than provisional.** Row 18's delivery note found the per-cut shape by
 counting a real plan, and rows 13, 14 and 15 had each recorded only the part of
 it they were looking at. Written out, one domain cut is:
 
@@ -2849,6 +2849,167 @@ and the adapter forwards.
 The estimate in the table said 3 add, and undercounted for the same reason rows
 22 and 24 did: it counted the mapping, the function and its policy, not the three
 resources the module creates alongside a function.
+
+**Row 27 is delivered, and it is the seventh cut and the narrowest by prefix
+count.** `identity` gets a function, one route pair and its OTel wiring, and as
+with rows 18 through 21 and 26 every one of those arrives by adding a name to a
+list rather than by writing a resource. `local.lambda_domains` in
+`terraform/lambda_domains.tf` gains the entry, `local.routed_lambda_domains` and
+`local.lambda_domain_path_prefixes` in `terraform/apigateway.tf` gain the name
+and its single prefix, and the alarm lists in `terraform/monitoring.tf` pick the
+domain up for free. Nothing in `backend/` changed: rows 8 and 16 had already
+built and instrumented all nine entrypoints, so `app/entrypoints/identity.py` is
+byte for byte what row 16 left. This row moves existing routes onto their own
+function and adopts nothing new. In particular it does not adopt the
+`webbpulse.identity` package and changes no auth behaviour.
+
+**The plan is expected to be 11 to add, 4 to change and 0 to destroy**, which is
+what `5 + 2 + 2*prefixes + 2` gives for a one-prefix domain. The eleven adds:
+five for the function (`aws_lambda_function.this`, `aws_iam_role.this`,
+`aws_cloudwatch_log_group.this` and `aws_iam_role_policy.xray_write[0]` inside
+`module.lambda_domain["identity"]`, plus
+`aws_iam_role_policy.lambda_domain["identity"]`); two for the integration
+(`module.api.aws_apigatewayv2_integration.this["identity"]` and
+`module.api.aws_lambda_permission.this["identity"]`); two routes,
+`ANY /api/auth` and `ANY /api/auth/{proxy+}`; and two metric filters,
+`errors["identity"]` and `rate_limit_failed_open["identity"]`. The four changes
+are the two description strings counting log groups on `errors[0]` and
+`rate_limit_failed_open[0]`, and the two aggregate alarms whose description
+counts functions and whose metric math appends one term.
+
+**24 routes under one prefix, which matches section 1.1 exactly.** They sit on
+23 distinct paths, one of which carries two methods, and the count was taken by
+walking `app.routes` on the built `identity` application rather than by grepping
+decorators. The shape is the opposite of row 26's. The three sub-prefixes `/auth/2fa`,
+`/auth/webauthn` and `/auth/oauth` are paths below `/api/auth` rather than
+siblings of it, so where `build-lists` needed four sibling trees this domain
+needs one tree.
+
+**This is the first cut whose bare key is purely defensive.** All 24 match
+`ANY /api/auth/{proxy+}` and none matches `ANY /api/auth`: no route mounts at the
+bare `/api/auth` and none mounts with a trailing slash, so the normalisation trap
+that `/api/build-lists` and `/api/part-price-alerts` sprang does not arise here.
+The bare key is still written, because section 3.5 asks for both halves and
+omitting one is the "half works" failure mode. A candidate for the load-bearing
+reading is `GET ""` on the OAuth router, but that router mounts at `/auth/oauth`,
+so the route is `/api/auth/oauth`, one segment below the prefix and matched by
+the `{proxy+}` key like the other 23.
+
+`/api/users` is a separate tree and stays on the monolith. Row 31 moves it.
+
+**Three tables written, none read only, and that is a first.** The grant is
+`users`, `oauth_accounts`, `webauthn_credentials` and `rate-limits`. The first
+three are exactly the domain's repository bundle in
+`app/db/dynamo/registry.py`, and every one of them is mutated: email
+verification, password reset and the 2FA secret and flag all call
+`repos.users.update`, the Google sign-in link and unlink call
+`create_link`, `delete_link` and `create_actions` on `oauth_accounts`, and
+passkey registration and the signature counter write `webauthn_credentials`.
+The Google signup path is the one place `users` is created here, through
+`repos.users.create_actions` in the same transaction as the link. No table on
+this domain is read without also being written, so unlike every earlier cut
+there is no read-only list to narrow. `rate-limits` is the shared limiter's
+counter, reached from global middleware rather than from a repository and
+granted on every domain function.
+
+`users` is written cross domain rather than only here, and section 1.2's "also
+written today by" column already names `identity` for exactly these writes. It
+is not one of the five seams section 1.3 unwinds, because it is a field update
+on a row the caller already owns rather than a cascade, so it stays synchronous
+until row 31 moves `users` and the two functions write disjoint attributes of
+the same row until then. The uniqueness reservations need no table of their own:
+`ensure_unique_action` builds a `Put` against the same table, so an email,
+username or provider-account reservation is covered by that table's grant, and
+`TransactWriteItems` is in the twelve write actions, which is what makes the
+two-table Google signup transaction work across `users` and `oauth_accounts` in
+one call.
+
+**No bundle-to-grant gap, and it was checked rather than assumed.** Row 26 found
+one by way of a directly constructed repository bypassing `get_repositories()`,
+which the bundle guard cannot see. `grep -rn "Repository()" app/` returns exactly
+one such construction, `subscription_utils.py`, and its only callers are inside
+`build_list_service`, which is unreachable from any of the four auth modules.
+
+**SES is granted, and this is the first HTTP function to hold it.** Two routes
+send mail and raise on a failed send rather than logging it:
+`POST /api/auth/verify-email` calls `send_verify_email` and
+`POST /api/auth/reset-password` calls `send_reset_password_email`, and both
+answer 500 when the send returns False. That makes this the first cut where
+withholding a grant would change behaviour rather than preserve it, so the grant,
+`EMAIL_FROM` and `EMAIL_ENABLED` all land together in this row. `app/core/email.py`
+calls `sesv2.send_email` with a `ConfigurationSetName`, so the policy names both
+the identity ARN and the `carmodpicker-transactional` configuration set ARN, which
+is the same pair the monolith and row 25's consumer already hold. A new `ses` flag
+carries it, declared on every entry in `local.lambda_domains_declared` for the same
+conditional-type reason row 26's `s3_delete_only` was.
+
+**`s3` is false, despite a reachable presigning path.** `PublicUserRead` runs
+through the same `image_urls` serializer `vehicles` serves, and the fallback is
+graceful: `StorageService` catches and returns the raw file key, so the response
+is a 200 with an unpresigned value rather than a 500. Row 20 cut `vehicles` with
+`s3 = false` through the same serializer, so this row changes nothing that row did
+not already settle. `sitemap_service` constructs a storage client directly and so
+is another bundle-guard bypass, but it serves no route key on this domain and is
+unreachable through the gateway. If a sitemap route key is ever created here, the
+grant has to come with it.
+
+**`secrets` is true**, and identity is the only domain that mints tokens rather
+than only verifying them, so `SECRET_KEY` out of `APP_SECRETS_ARN` is
+load bearing here in a way it is not elsewhere. No second secret is needed:
+`GOOGLE_CLIENT_ID` is a non-secret with a source default, and `oauth.py` verifies
+ID tokens rather than exchanging an authorization code, so no client secret exists
+anywhere in the tree.
+
+**512 MB.** Three CPU bound native paths run here, bcrypt on every login and
+every password reset, WebAuthn signature verification on every passkey assertion, and the
+qrcode and PIL `img.save(buffer, "PNG")` on `/2fa/setup`. 256 would probably
+serve, since none of the three is `media`'s image pipeline, but this is the login
+path for the whole application and latency here is felt on every session rather
+than on an occasional upload.
+
+**Every route stays behind the same gate it is behind today.** No
+`authorization_type` is set on either key. The API module chooses `CUSTOM`
+whenever `authorizer_id` is set, so both new keys carry the staging access gate
+authorizer exactly as `$default` does. Setting `NONE` to make the unauthenticated
+auth routes reachable would punch a hole past the gate: the routes that must stay
+unauthenticated, the token routes, refresh, logout, password reset and email
+verification, are unauthenticated with respect to the application's own JWT, which FastAPI
+handles inside the function, and not with respect to the staging gate, which sits
+in front of every route in the API.
+
+**The alarm list is now nine of ten, and the ceiling is one cut away.** Seven
+domains plus the two stream consumers. Row 29's `catalog` is the tenth and last
+name that fits in chunk zero, and row 31's `users` is the eleventh and creates
+the second alarm pair, so the decision section 3.6 describes has to be taken in
+row 29 or row 31 rather than deferred again. Moving the two consumers into an
+aggregate of their own is the cheaper option and keeps all nine domains in one
+expression.
+
+**One renumbering, expected rather than drift.** Domains sit ahead of consumers
+in `alarm_lambda_function_names`, so `identity` is the seventh domain and takes
+m6, which `admin-price-alerts-consumer` held after row 25, pushing both consumers
+back a place to m7 and m8. Both aggregate alarms have those terms rewritten. This
+is inside the four alarm changes a cut already expects and adds no plan count.
+
+**`bootstrap_image_tag` must be refreshed to a tag that currently resolves in the
+`identity` ECR repository before this is applied**, for the reason row 26
+recorded: `ecr.tf`'s keep-last-10 lifecycle expires old tags, the plan is green
+either way, and the apply is what fails.
+
+**Apply first, then dispatch Deploy Backend.** The auto deploy that fires on the
+merge fails before the apply, at `existing-functions` or `verify-route-cuts`,
+because the deploy role's grant on `carmodpicker-<env>-identity` ships in this
+apply rather than in the merge. The ordering is: merge, let the auto deploy build
+the images and fail, refresh `bootstrap_image_tag` to the merge sha, plan, apply,
+then dispatch Deploy Backend by hand. The failed automatic run is expected and is
+not a reason to roll anything back.
+
+**Verifying the flip** is section 6.3 plus
+`scripts/verify_route_cut.sh identity`, which now knows the one prefix. Its
+no-credential fallback caveat applies: there is no route at the bare `/api/auth`,
+so a `GET` there answers 404 from a perfectly healthy function, the same caveat
+row 26 recorded for three of its four prefixes. The gateway path, which CI always
+takes, reads `routeKey` out of the access log and has no such problem.
 
 PRs 1, 2, 3, 9, 10, and 33 are independent of everything else and can run in
 parallel. PR 22 is the hard gate: nothing from 23 onward can start without it,
