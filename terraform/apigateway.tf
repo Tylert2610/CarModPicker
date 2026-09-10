@@ -13,9 +13,10 @@ locals {
   # check fails the plan on an integration no route can reach, so the two move together.
   #
   # Row 14 is `media`, row 18 is `build-logs`, row 19 is `moderation`, row 20 is `vehicles`,
-  # row 21 is `admin`, row 26 is `build-lists`, row 27 is `identity` and row 29 is `catalog`.
-  # Row 31 appends the last one, `users`.
-  routed_lambda_domains_declared = ["media", "build-logs", "moderation", "vehicles", "admin", "build-lists", "identity", "catalog"]
+  # row 21 is `admin`, row 26 is `build-lists`, row 27 is `identity`, row 29 is `catalog` and
+  # row 31 is `users`. That is all nine: every domain in section 1.1 is now routed off `$default`,
+  # and what is left on the monolith is the five root routes and nothing else. Row 32 retires it.
+  routed_lambda_domains_declared = ["media", "build-logs", "moderation", "vehicles", "admin", "build-lists", "identity", "catalog", "users"]
 
   # Gated on the same condition as the functions themselves, and it has to be. A route names an
   # integration and an integration names module.lambda_domain[name], so a routed domain whose
@@ -205,8 +206,9 @@ locals {
     # slash was trimmed off a real path.
     #
     # Nothing else in section 1.1 sits under `/api/auth`. The `/api/users` tree
-    # is a separate prefix that row 31 moves, and a route key matches literally
-    # rather than by substring, so this cut cannot pull any of it along.
+    # is a separate prefix, which row 31 moved to its own entry below, and a
+    # route key matches literally rather than by substring, so neither cut pulls
+    # any of the other along.
     identity = ["/api/auth"]
     # Row 29. Four prefixes and the largest cut of the nine by route count: 43
     # routes, against row 26's 34 and `moderation`'s 20. Like row 26's four they
@@ -245,6 +247,42 @@ locals {
     # deciding exactly as it does on the monolith today. Splitting the subtree
     # across route keys is what would break it, and nothing here does.
     catalog = ["/api/parts", "/api/part-manufacturers", "/api/categories", "/api/retailers"]
+    # Row 31, the last cut. Two prefixes and 14 routes: 12 under `/api/users`
+    # and 2 under `/api/app-settings`. They are two sibling trees rather than
+    # one tree with children, so they are two prefixes and not one, and neither
+    # is under the other in the URL space.
+    #
+    # Four route keys, a bare and a `{proxy+}` for each. Both bare keys carry
+    # real traffic and neither is defensive. `users.py` declares a `GET "/"` and
+    # a `POST "/"` and `app_settings.py` declares a `GET "/"` and a `PUT "/"`,
+    # so those four mount at `/api/users/` and `/api/app-settings/`. API Gateway
+    # normalises the trailing slash onto the bare key and a route key may not
+    # itself end in a slash, so the bare key is the only spelling that matches
+    # them; writing the path with its slash is an apply-time BadRequestException
+    # on a plan that was green, which is the trap row 21 sprang on
+    # `/api/part-price-alerts` and row 26 on `/api/build-lists`. Ten of the 14
+    # ride the `{proxy+}` keys, all ten of them under `/api/users`, which leaves
+    # `/api/app-settings/{proxy+}` as the one key on this cut that matches
+    # nothing today. It is generated rather than chosen, because
+    # `local.lambda_domain_route_keys` makes a pair per prefix, and it is
+    # harmless: it points at the same integration as its bare key, so a request
+    # under it reaches a healthy function and gets that function's own 404.
+    #
+    # `/api/users/admin/users` is section 1.4's ordering hazard for this domain
+    # and it survives untouched, for the reason every cut with an ordering
+    # concern has recorded: the `{proxy+}` key hands the whole subtree to one
+    # function, so FastAPI keeps deciding exactly as it does on the monolith
+    # today. It is worth naming because this one resolves on shape rather than
+    # on registration order, which is more fragile than the `catalog` case:
+    # `GET /{user_id}` is registered *before* `GET /admin/users`, and the only
+    # reason the literal wins is that `/admin/users` is two segments and
+    # `/{user_id}` is one. A bare `/api/users/admin` really does match
+    # `{user_id}`, as section 1.4 says. Nothing here changes that either way,
+    # and splitting the subtree across route keys is what would break it.
+    #
+    # `/api/auth` is row 27's and stays there, and the `/api/users` tree that
+    # row 27's comment said this row would move is exactly what moves here.
+    users = ["/api/users", "/api/app-settings"]
   }
 
   # Two route keys per prefix, generated rather than written out, so a domain added above cannot be
@@ -306,8 +344,9 @@ module "api" {
 
   # Two keys per cut prefix: `media`'s pair from row 14, `build-logs`' pair from row 18,
   # `moderation`'s three pairs from row 19, `vehicles`' two pairs from row 20, `admin`'s four
-  # pairs from row 21, `build-lists`' four pairs from row 26, `identity`'s one pair from row 27
-  # and `catalog`'s four pairs from row 29. No
+  # pairs from row 21, `build-lists`' four pairs from row 26, `identity`'s one pair from row 27,
+  # `catalog`'s four pairs from row 29 and `users`' two pairs from row 31, which completes the
+  # nine. No
   # authorization_type is set on any of them, which means the module's own choice, CUSTOM whenever
   # authorizer_id is set, so each one sits behind the staging access gate exactly as $default does.
   # Setting NONE here would punch a hole straight past the gate, which is the failure the module's

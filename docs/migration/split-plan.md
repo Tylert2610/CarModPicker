@@ -1204,8 +1204,8 @@ infrastructure.
 | 27 | `identity`: function, routes, OTel. **Delivered** | medium | est. 11 add, 4 change | 23 |
 | 28 | Seam 2: part purge goes async. **Delivered** | large | 9 add, 5 change (est. 2 add) | 23 |
 | 29 | `catalog`: function, routes, OTel. **Delivered, alarm chunk zero crossed** | large | 19 add, 4 change (est. 17 add) | 28 |
-| 30 | Seam 1: user delete cascade goes async | large | 5 add | 23, 29 |
-| 31 | `users`: function, routes, OTel. **Ninth cut, joins alarm chunk one** | large | est. 13 add, 4 change | 30 |
+| 30 | Seam 1: user delete cascade goes async. **Delivered** | large | 9 add, 5 change (est. 5 add) | 23, 29 |
+| 31 | `users`: function, routes, OTel. **Delivered, ninth and last cut, renumbers both alarm chunks** | large | 13 add, 6 change (est. 13 add, 4 change) | 30 |
 | 32 | Retire `$default`, the monolith, the artifacts bucket, the zip chain | medium | 12 destroy | 31 |
 | 33 | Frontend: delete the `services/Api.ts` shim, rewriting 74 import sites | medium | 0 | none |
 
@@ -3755,6 +3755,288 @@ after row 31 cuts that function.
 7. Verify by deleting a staging account and watching `user-delete` drain to
    zero, then confirming `user-delete-dlq` and `users-stream-dlq` are both
    empty.
+
+The expected-plan numbers are estimates for catching surprises, not commitments.
+
+---
+
+# Row 31 delivered: `users`, the ninth and last cut
+
+**Row 31 is delivered, and it is the ninth cut, the last one, and the row that
+renumbers both aggregate alarm chunks.** `users` gets a function, two route
+pairs and its OTel wiring, and as with every cut since row 18 all of it arrives
+by adding a name to a list. `local.lambda_domains` in
+`terraform/lambda_domains.tf` gains its ninth and final entry;
+`local.routed_lambda_domains_declared` and `local.lambda_domain_path_prefixes`
+in `terraform/apigateway.tf` gain the name and its two prefixes; and the alarm
+lists in `terraform/monitoring.tf` pick the domain up for free.
+
+With this row the domain function map is complete. `local.lambda_domains` and
+`local.routed_lambda_domains_declared` now hold the same nine names, so the
+filter that computed routed domains as a subset of declared ones becomes a
+permanent no-op rather than a live mechanism. It is kept because the bootstrap
+gate still needs both locals to resolve to empty on a fresh account, not because
+any domain is still waiting to be routed.
+
+Nothing in `backend/app/` changed, for the reason every cut since row 18
+records: rows 8 and 16 had already built and instrumented all nine entrypoints,
+so `app/entrypoints/users.py` is byte for byte what row 16 left. This row moves
+the existing user and app-settings routes onto their own function and changes no
+behaviour.
+
+## The plan
+
+**The plan is 13 to add, 6 to change and 0 to destroy,
+confirmed against the speculative plan on the pull request rather than
+predicted.** Row 18's per-cut anatomy predicts `5 + 2 + 2*prefixes + 2` adds and
+4 changes, which for a two-prefix domain is 13 and 4. The adds land on it
+exactly. The changes do not, and the extra two are the second alarm pair being
+rewritten rather than a miscount, which is named below.
+
+The thirteen adds:
+
+| Resource | Why |
+| --- | --- |
+| `module.lambda_domain["users"].aws_lambda_function.this` | The function |
+| `module.lambda_domain["users"].aws_iam_role.this` | Its execution role |
+| `module.lambda_domain["users"].aws_cloudwatch_log_group.this` | Its log group |
+| `module.lambda_domain["users"].aws_iam_role_policy.xray_write[0]` | The module's X-Ray policy |
+| `aws_iam_role_policy.lambda_domain["users"]` | This repository's runtime policy: logs, Dynamo, secrets, S3 put and delete and get, spans |
+| `module.api.aws_apigatewayv2_integration.this["users"]` | The integration |
+| `module.api.aws_lambda_permission.this["users"]` | The gateway's invoke permission |
+| `module.api.aws_apigatewayv2_route.this["ANY /api/users"]` | `ANY /api/users` |
+| `module.api.aws_apigatewayv2_route.this["ANY /api/users/{proxy+}"]` | `ANY /api/users/{proxy+}` |
+| `module.api.aws_apigatewayv2_route.this["ANY /api/app-settings"]` | `ANY /api/app-settings` |
+| `module.api.aws_apigatewayv2_route.this["ANY /api/app-settings/{proxy+}"]` | `ANY /api/app-settings/{proxy+}` |
+| `module.alarms.aws_cloudwatch_log_metric_filter.errors["users"]` | The new log group joins the application-errors alarm |
+| `module.alarms.aws_cloudwatch_log_metric_filter.rate_limit_failed_open["users"]` | And the fail-open alarm |
+
+The six changes:
+
+| Resource | Why |
+| --- | --- |
+| `module.alarms.aws_cloudwatch_metric_alarm.errors[0]` | Its description counts log groups, 13 to 14 |
+| `module.alarms.aws_cloudwatch_metric_alarm.rate_limit_failed_open[0]` | Same, 13 to 14 |
+| `module.alarms.aws_cloudwatch_metric_alarm.lambda_aggregate_errors[0]` | Chunk zero takes `users` at m8 and moves every consumer term right |
+| `module.alarms.aws_cloudwatch_metric_alarm.lambda_aggregate_throttles[0]` | Same |
+| `module.alarms.aws_cloudwatch_metric_alarm.lambda_aggregate_errors[1]` | Chunk one goes two names to three, gaining m2 |
+| `module.alarms.aws_cloudwatch_metric_alarm.lambda_aggregate_throttles[1]` | Same |
+
+Row 29's naming detail holds here too, and is worth repeating because it is the
+one every cut gets wrong on the first reading. The two changed descriptions are
+on `aws_cloudwatch_metric_alarm.errors[0]` and
+`aws_cloudwatch_metric_alarm.rate_limit_failed_open[0]`, the alarms, not on the
+log metric filters of the same names. The filters are `for_each` over the log
+groups, so a new domain adds a filter rather than changing one; it is the alarm
+description that carries the "in N log groups" count.
+
+`module.github_actions_role.aws_iam_role_policy.this[0]` is **not** a seventh
+change on this row. The deploy role's domain grants come from
+`local.lambda_domain_names` in `ecr.tf`, which has held all nine names since row
+9, so cutting a domain never widens it; row 30 changed it because it added a
+consumer, and this row adds none. Rows 24, 25, 28 and 30 are the four that
+widened it and this is not a fifth.
+
+No new ECR repository is in the plan either. The `users` repository has existed
+since row 9 and has been pushed to since row 12, and row 30's
+`users-delete-consumer` already deploys from it. This row adds the second
+function to pull the same image.
+
+## Both alarm chunks change, and the asymmetry between them is the point
+
+**`users` is the thirteenth function name, the ninth domain, and the first
+addition since row 29 that lands inside chunk zero rather than at the end of the
+list.** `alarm_lambda_function_names` is
+`concat(domains-in-declared-order, sort(consumer-keys))`, so all nine domains
+come first and the four consumers follow in sorted order. Before this row the
+thirteen entries were: chunk zero m0 `media`, m1 `build-logs`, m2 `moderation`,
+m3 `vehicles`, m4 `admin`, m5 `build-lists`, m6 `identity`, m7 `catalog`, m8
+`admin-price-alerts-consumer`, m9 `catalog-part-purge-consumer`; chunk one m0
+`catalog-votes-consumer`, m1 `users-delete-consumer`. After it: chunk zero ends
+m8 `users`, m9 `admin-price-alerts-consumer`, and chunk one becomes m0
+`catalog-part-purge-consumer`, m1 `catalog-votes-consumer`, m2
+`users-delete-consumer`.
+
+`chunklist` fills each group before starting the next and the module restarts
+metric ids at m0 in every chunk, so inserting a name at position nine of
+thirteen pushes all four consumers one place right and spills
+`catalog-part-purge-consumer` out of chunk zero into chunk one.
+
+The two chunks change differently, and the asymmetry is a property of the module
+rather than an inconsistency. The alarm's `alarm_description` counts the chunk's
+own length, not the length of the whole list. Chunk zero holds ten names before
+and ten after, so its expression is rewritten while its description is
+unchanged. Chunk one goes from two names to three, so its expression gains an m2
+term **and** its description changes. Both pairs are in-place updates; nothing is
+created and nothing is destroyed, so no alarm an operator has already wired up
+moves or loses its history.
+
+**Row 29's forecast of this row was wrong twice over, and the correction is
+recorded in `terraform/monitoring.tf` rather than quietly overwritten.** Row 29
+wrote that `users` would be the twelfth name and would join chunk one without
+creating anything. Row 30 then added `users-delete-consumer` as the twelfth, so
+`users` is the thirteenth; and because domains sort ahead of consumers, `users`
+does not join chunk one at all. It lands at m8 inside chunk zero and pushes the
+consumer half right. The prediction that nothing new is created survived; the
+reasoning behind it did not.
+
+## Routes cut: 14, across two prefixes
+
+Counted by walking `app.routes` on the built `users` application rather than by
+grepping decorators, because some are generated at runtime by
+`BaseDynamoEndpointRouter` and a grep cannot see them.
+
+| Prefix | Routes | On the bare key | On `{proxy+}` |
+|---|---|---|---|
+| `/api/users` | 12 | 2 | 10 |
+| `/api/app-settings` | 2 | 2 | 0 |
+
+Four route keys, a bare and a `{proxy+}` per prefix. All 14 routes are covered
+by exactly one key, 10 through a `{proxy+}` and 4 through a bare key, with 0
+uncovered and no key ending in a slash. The five root routes (`/`, `/health`,
+`/ready`, `/sitemap.xml`, `/sitemap-{name}.xml`) are outside both prefixes and
+are not covered by any key here, so they keep resolving through `$default` to
+the monolith exactly as every cut since row 14 has left them. With this row they
+are the only paths still falling through.
+
+**All four bare keys carry real traffic.** `users.py` declares a `GET "/"` and a
+`POST "/"`, and `app_settings.py` a `GET "/"` and a `PUT "/"`, so those four
+mount at `/api/users/` and `/api/app-settings/`. API Gateway normalises the
+trailing slash onto the bare key and a route key may not itself end in a slash,
+so the bare key is the only spelling that matches them. Writing the path with
+its slash is an apply-time `BadRequestException` on a plan that was green, which
+is the trap `/api/part-price-alerts` sprang in row 21 and `/api/build-lists` in
+row 26.
+
+`/api/app-settings/{proxy+}` matches nothing today, because both of that
+prefix's routes are at the root. It is created anyway rather than special-cased:
+it costs one route resource, it removes the need for anyone adding a nested
+app-settings route later to notice that the gateway would send it to `$default`,
+and every other prefix in the estate is spelled as a pair. A prefix pair is the
+unit this migration has used nine times and the ninth is not the place to
+invent an exception.
+
+The two prefixes are sibling trees rather than one tree with children. Route
+keys match literally rather than by string prefix, so nothing from another
+domain is swept along by either.
+
+**Section 1.4's other fragile pair is inside `/api/users` and it resolves on
+segment count rather than on registration order.** `users.py` carries both
+`/{user_id}` and the three `admin/users` routes. A request for
+`/api/users/admin/users` has two segments after the prefix and matches only the
+literal, so it resolves correctly whichever order the routes register in. A
+request for `/api/users/admin` has one segment and matches `/{user_id}` with
+`user_id="admin"`, which answers 404 from the user lookup. That is the behaviour
+on the monolith today and the `{proxy+}` key hands the whole subtree to one
+function, so nothing about this cut changes it.
+`test_the_admin_users_routes_resolve_ahead_of_the_user_id_route` in
+`backend/tests/entrypoints/test_route_split.py` now asserts both halves against
+the built application, so the second one is a decision to change rather than a
+regression to discover.
+
+## Table grants
+
+`tables = ["users", "app_settings", "rate-limits"]`,
+`read_tables = ["oauth_accounts"]`.
+
+**This is the second cut with no bundle-to-grant gap, after row 29, and row 30
+is what bought it.** `_USERS_REPOSITORIES` in `app/composition/domains.py` is
+three repositories and all three are granted, in one list or the other. The
+tuple was twenty-three before row 30, because `_delete_user_everywhere` deleted
+across eighteen tables belonging to six other domains on the request thread.
+Row 30 moved that cascade onto `carmodpicker-<env>-users-delete-consumer`, which
+names those repositories itself and carries its own IAM. Cutting this domain a
+row earlier would have meant granting twenty tables here for work that no longer
+runs on the request thread, and the resulting function would have been the
+broadest-privileged in the estate. Two seams in a row landing immediately before
+the cuts that needed them is what rows 28 and 30 were for.
+
+Two written tables, each with named callers. `users.py` calls `repos.users`
+`.update`, `.create_user`, `.update_user` and `.delete_user` from the profile,
+registration, admin and delete routes; `app_settings.py` calls
+`repos.app_settings.update_settings` from the admin `PUT`, and
+`.get_or_create` from the public `GET`. **`get_or_create` is why `app_settings`
+is in `tables` rather than `read_tables`**: its miss path is `self.put(...)`, so
+the anonymous read route writes on the first request after the item is absent.
+A read-only grant would leave that route working in every environment where the
+singleton already exists and failing on a fresh account, which is the worst
+shape a permissions bug can take.
+
+One read-only table, and it is the row that pays for row 30's receiver rename.
+`oauth_accounts` is read by `_attach_oauth_providers` and
+`_attach_oauth_providers_bulk` in `user_service.py`, which call
+`repos.oauth_accounts.list_by_user` and `.list_by_users` to decorate the user
+responses. Until row 30 the local in those functions was named `repositories`
+rather than `repos`, and the bundle analyzer in
+`tests/entrypoints/test_repository_bundles.py` matches attribute accesses whose
+receiver is named `repos`, so it could not see either call. The bundle therefore
+did not declare `oauth_accounts`, and a cut of this domain would have shipped a
+function that raised `RepositoryNotInBundle` on `GET /api/users/me` in
+production. Row 30 renamed the receiver, the analyzer saw the calls, and the
+declaration followed. The name is load bearing and the comment on `user_read`
+says so; this is the row that would have paid for it.
+
+`rate-limits` is the shared limiter's counter, reached from global middleware
+rather than from a repository, granted on every domain function, and fail-open,
+so withholding it would silently disable layer 2 rather than fail.
+
+## S3 and SES
+
+**`s3 = true` with `s3_delete_only = false`, and this is the second and last
+domain to take the broad flag.** Section 3.4 named `media` and `users` as the
+two, and with this row both are here. The narrow flag rows 26 and 29 took is
+ruled out by one route: `POST /api/users/me/profile-picture` calls
+`storage_service.upload_image` and then deletes the key it replaces, so
+`s3:PutObject` and `s3:DeleteObject` are both reached inside a single request.
+`DELETE /api/users/me/profile-picture` reaches the delete alone.
+
+`s3:GetObject` is genuinely reached rather than granted on principle:
+`apply_image_url_presigning` signs the stored key on the way out of every user
+response. Row 27 left `identity` without it and that was correct there, because
+no `identity` route returns a presigned user image. Here it is on the read path
+of the domain's most-called route.
+
+`ses = false`. No route in either endpoint module reaches a send. The
+verification and password-reset mail is `identity`'s, granted there in row 27,
+and account deletion sends nothing.
+
+No SQS grant. `POST` and `DELETE` on the user do not enqueue: row 30 put the
+cascade behind the `users` DynamoDB stream, so the request thread writes a
+tombstone and the stream consumer picks it up. The consumer holds the queue
+grants, on its own role, added by row 30.
+
+`memory = 512`, per section 3.3.
+
+## The staging access gate
+
+Unchanged and worth stating, because this is the last cut and the question stops
+being asked after it. The gate is an API Gateway authorizer on the API rather
+than a per-route or per-function control, so a domain moving off `$default`
+inherits it with no change to `staging_access_gate`. The nine functions are now
+all behind it in staging and none of them carries gate configuration of its own.
+
+## Landing order
+
+1. Merge.
+2. Let the auto deploy run. It builds and pushes the images; there is no new
+   image repository on this row, since `users` has had one since row 9.
+3. Refresh `bootstrap_image_tag` to the merge sha and confirm the tag resolves
+   in the `users` ECR repository, per the keep-last-10 trap.
+4. Plan, and confirm 13 add, 6 change, 0 destroy.
+5. Apply. Function creation and the route cut are the same apply by design: the
+   bootstrap gate resolves both locals together, so there is no window in which
+   a route points at a function that does not exist.
+6. Dispatch Deploy Backend on staging by hand. The apply has to precede the
+   dispatch: the deploy filters the image map down to the functions that exist,
+   so a dispatch first skips the new function silently.
+7. Run `scripts/verify_route_cut.sh users`, which probes `/api/users` and
+   `/api/app-settings`. This is the one cut where the no-credential fallback
+   path is sound on every prefix, because both bare `GET`s answer anonymously.
+8. Confirm the two aggregate alarm pairs are `OK` rather than `INSUFFICIENT_DATA`
+   after the next evaluation period, since all four expressions were rewritten.
+
+With this row every domain is off `$default` and only the five root routes fall
+through. Section 6.5 and row 32 are what retire the monolith.
 
 The expected-plan numbers are estimates for catching surprises, not commitments.
 

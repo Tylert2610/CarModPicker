@@ -64,7 +64,7 @@ from __future__ import annotations
 import importlib
 import json
 from pathlib import Path
-from typing import Any, Iterator, List, Set, Tuple
+from typing import Any, Iterator, List, Optional, Set, Tuple
 
 import pytest
 
@@ -295,3 +295,46 @@ def test_the_price_alert_unsubscribe_route_is_registered_first() -> None:
     unsubscribe = paths.index("/api/part-price-alerts/unsubscribe")
     parameterised = min(index for index, path in enumerate(paths) if "{alert_id}" in path)
     assert unsubscribe < parameterised
+
+
+def test_the_admin_users_routes_resolve_ahead_of_the_user_id_route() -> None:
+    """Section 1.4's other fragile pair, and the one row 31 inherits.
+
+    `/api/users/admin/users` and `/api/users/{user_id}` are the hazard section
+    1.4 lists for this domain, and unlike every other entry in that table it is
+    *not* saved by registration order. `GET /{user_id}` is declared before
+    `GET /admin/users` in `users.py`, so the literal wins purely because it is
+    two segments and `{user_id}` is one. Section 1.4 says as much: "a bare
+    `/api/users/admin` would match `{user_id}`".
+
+    That makes it worth matching rather than reading. A single-segment admin
+    route added under this prefix later, or `{user_id}` widened to a path
+    converter, would shadow the admin tree with no symptom but admin pages
+    quietly returning one user. Row 31 moves the whole subtree behind one
+    `{proxy+}` route key, so API Gateway hands resolution to FastAPI exactly as
+    the monolith does today and this assertion is what pins it.
+    """
+    from starlette.routing import Match
+
+    from app.entrypoints.users import build_app
+
+    app = build_app()
+
+    def resolved(path: str) -> Optional[str]:
+        scope = {
+            "type": "http",
+            "method": "GET",
+            "path": path,
+            "headers": [],
+            "query_string": b"",
+            "root_path": "",
+        }
+        for route in _effective_routes(app):
+            match, _ = route.matches(scope)
+            if match == Match.FULL:
+                return getattr(route, "path", None)
+        return None
+
+    assert resolved("/api/users/admin/users") == "/api/users/admin/users"
+    # The documented consequence, asserted so that it is a decision to change it.
+    assert resolved("/api/users/admin") == "/api/users/{user_id}"
