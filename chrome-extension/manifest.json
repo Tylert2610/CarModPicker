@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "CarModPicker Browser Companion",
-  "version": "1.1.17",
+  "version": "1.1.18",
   "description": "Pull in part information from any product page and add it to CarModPicker",
   "homepage_url": "https://carmodpicker.com",
   "permissions": [

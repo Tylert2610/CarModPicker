@@ -42,6 +42,21 @@ locals {
     "arn:aws:lambda:${var.aws_region}:${data.aws_caller_identity.current.account_id}:function:${local.prefix}-${domain}"
   ]
 
+  # The stream consumers from lambda_stream_consumers.tf, row 24 onward, written out by the same
+  # method and for the same reason as the nine above. A consumer is deployed by the same
+  # UpdateFunctionCode call a domain function is, because it runs a domain's image: row 24's runs
+  # `catalog`'s, so the image-map job in deploy-backend.yml names this function against the
+  # catalog image and the deploy would fail on AccessDenied without the grant here.
+  #
+  # This one reads the declared map rather than the gated one, which is the same "grant ahead of
+  # the resource" choice the comment above makes: the gated map is empty while
+  # `bootstrap_image_tag` is, and an IAM policy that empties itself during a bootstrap is how the
+  # first deploy after the bootstrap fails.
+  lambda_stream_consumer_function_arns = [
+    for name in sort(keys(local.lambda_stream_consumers_declared)) :
+    "arn:aws:lambda:${var.aws_region}:${data.aws_caller_identity.current.account_id}:function:${local.prefix}-${name}"
+  ]
+
   # Reading the shared "webbpulse" package out of CodeArtifact. Three statements because the three
   # actions take three different resources: GetAuthorizationToken is domain level, the read actions
   # are per repository, and sts:GetServiceBearerToken has no resource of its own at all.
@@ -161,10 +176,10 @@ module "github_actions_role" {
         actions   = ["s3:PutObject", "s3:GetObject"]
         resources = ["${module.lambda_artifacts.bucket_arn}/*"]
       },
-      # One statement over ten function ARNs rather than two, because the monolith and the nine
-      # domain functions take the same UpdateFunctionCode call. Only the payload differs: the
-      # monolith gets an S3 zip from the bucket above, a domain function gets an ECR image tag the
-      # build job has already pushed.
+      # One statement over eleven function ARNs rather than three, because the monolith, the nine
+      # domain functions and row 24's stream consumer all take the same UpdateFunctionCode call.
+      # Only the payload differs: the monolith gets an S3 zip from the bucket above, and a domain
+      # function or a consumer gets an ECR image tag the build job has already pushed.
       {
         actions = [
           "lambda:UpdateFunctionCode",
@@ -176,6 +191,7 @@ module "github_actions_role" {
         resources = concat(
           [module.lambda_api.function_arn],
           local.lambda_domain_function_arns,
+          local.lambda_stream_consumer_function_arns,
         )
       },
       # Invoke a domain function directly for the post deploy smoke probe. Between PR 13 and that

@@ -44,7 +44,59 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # A bookkeeping PR only bumps manifest.json, and the tag is the version of
+  # record, so a promotion whose only extension change is that bump must not
+  # publish a new store version. Compare the extension tree, minus the manifest,
+  # between the newest release tag and the commit being released. A manual
+  # dispatch always releases.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      release: ${{ steps.check.outputs.release }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Decide whether the extension source changed since the last release
+        id: check
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            echo "Manual dispatch, releasing regardless of source changes."
+            echo "release=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          git fetch --tags --force --quiet
+          LAST_TAG=$(git tag -l 'chrome-extension-v*' \
+            | sed 's/^chrome-extension-v//' \
+            | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' \
+            | sort -V \
+            | tail -n 1 || true)
+
+          if [[ -z "$LAST_TAG" ]]; then
+            echo "No release tag yet, releasing."
+            echo "release=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if git diff --quiet "chrome-extension-v$LAST_TAG" HEAD -- \
+               chrome-extension ':(exclude)chrome-extension/manifest.json'; then
+            echo "Only manifest.json (or nothing) changed under chrome-extension/ since chrome-extension-v$LAST_TAG. Skipping release."
+            echo "release=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Extension source changed since chrome-extension-v$LAST_TAG, releasing."
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          fi
+
   release:
+    needs: changes
+    if: needs.changes.outputs.release == 'true'
     runs-on: ubuntu-latest
     environment: production
     steps:

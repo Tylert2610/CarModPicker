@@ -26,7 +26,7 @@
 # It pulls PyJWT and bcrypt, both of which were already pinned below and stay
 # pinned here, because this file is the resolved set and the package's own
 # ranges must not be allowed to float a different major into the image.
-webbpulse[fastapi,otel,dynamodb,aws-otel,security]==0.5.0
+webbpulse[fastapi,otel,dynamodb,aws-otel,security]==0.7.0
 
 # Core FastAPI and web framework dependencies
 annotated-types==0.8.0
@@ -80,12 +80,6 @@ Pillow==12.3.0
 
 # Observability (Phase 2 / OBS-01 + OBS-02)
 sentry-sdk>=2.68.1,<3
-# aws-embedded-metrics: EMF emitter for CloudWatch custom metrics from the
-# crawler. Rides the existing awslogs CloudWatch Logs path so no extra IAM
-# or PutMetricData API calls are required. `AWS_EMF_ENVIRONMENT=Local` must
-# be set in the runtime (plan 02-02 terraform) to force the stdout sink on
-# ECS Fargate + App Runner (RESEARCH Landmine 4).
-aws-embedded-metrics>=3.5.0,<4
 
 # Testing: in-memory S3 and DynamoDB mocks (used with pytest fixtures; never runs in production)
 moto[s3,dynamodb]==5.2.3

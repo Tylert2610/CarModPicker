@@ -14,12 +14,14 @@ from app.api.schemas.vote import (
     EntityType,
     FlaggedEntitySummary,
     VoteCreate,
+    VoteMutationResult,
+    VoteRead,
     VoteSummary,
 )
 from app.db.dynamo.build_lists import BuildList as DBBuildList
 from app.db.dynamo.catalog import CarGeneration, Part
 from app.db.dynamo.moderation import DOWNVOTE, Vote
-from app.db.dynamo.repository import ItemNotFound
+from app.db.dynamo.tombstones import drop_tombstoned_values
 
 VotableEntity = Union[CarGeneration, DBBuildList, Part]
 
@@ -48,20 +50,27 @@ class VoteService:
         user_id: UUID,
         vote_data: VoteCreate,
         logger: logging.Logger,
-    ) -> Vote:
+    ) -> VoteMutationResult:
         """
         Vote on an entity (car, build list, or global part).
 
-        Returns the created or updated vote; raises 404 if the entity doesn't exist.
+        Returns the created or updated vote alongside the entity's tallies as of
+        this write; raises 404 if the entity doesn't exist.
+
+        Nothing here writes `parts.net_votes` any more. Split plan row 24
+        inverted that: the `catalog` stream consumer in `app/consumers/votes.py`
+        recomputes the aggregate off the `votes` stream, so this service writes
+        only the table `moderation` owns. The tallies returned below are read
+        back from `votes` in this same request, which is what lets a client show
+        the right number without waiting for the stream.
         """
         self._get_entity_or_404(entity_type, entity_id)
 
         existing_vote = self.repos.votes.get_user_vote(entity_type.value, entity_id, user_id)
         if existing_vote:
             vote = self.repos.votes.update(existing_vote.id, vote_type=vote_data.vote_type.value)
-            self._sync_part_net_votes(entity_type, entity_id)
             logger.info(f"Vote updated: {vote.id} by user {user_id} on {entity_type.value} {entity_id}")
-            return vote
+            return self._mutation_result(entity_type, entity_id, vote)
 
         vote = self.repos.votes.create(
             Vote(
@@ -71,9 +80,8 @@ class VoteService:
                 vote_type=vote_data.vote_type.value,
             )
         )
-        self._sync_part_net_votes(entity_type, entity_id)
         logger.info(f"Vote created: {vote.id} by user {user_id} on {entity_type.value} {entity_id}")
-        return vote
+        return self._mutation_result(entity_type, entity_id, vote)
 
     def remove_vote(
         self,
@@ -81,15 +89,19 @@ class VoteService:
         entity_id: UUID,
         user_id: UUID,
         logger: logging.Logger,
-    ) -> bool:
-        """Remove a vote from an entity. Returns True if a vote was removed."""
+    ) -> VoteMutationResult | None:
+        """Remove a vote from an entity.
+
+        Returns the entity's tallies after the removal, or `None` when the user
+        had no vote to remove, which is the case the route turns into a 404.
+        `VoteMutationResult.vote` is `None` here because the vote is gone.
+        """
         vote = self.repos.votes.get_user_vote(entity_type.value, entity_id, user_id)
         if vote is None:
-            return False
+            return None
         self.repos.votes.delete(vote.id)
-        self._sync_part_net_votes(entity_type, entity_id)
         logger.info(f"Vote removed: {vote.id} by user {user_id} on {entity_type.value} {entity_id}")
-        return True
+        return self._mutation_result(entity_type, entity_id, None)
 
     def get_user_vote(self, entity_type: EntityType, entity_id: UUID, user_id: UUID) -> Vote | None:
         return self.repos.votes.get_user_vote(entity_type.value, entity_id, user_id)
@@ -183,14 +195,36 @@ class VoteService:
             )
         return flagged
 
-    def _sync_part_net_votes(self, entity_type: EntityType, entity_id: UUID) -> None:
-        if entity_type != EntityType.PART:
-            return
+    def _mutation_result(
+        self,
+        entity_type: EntityType,
+        entity_id: UUID,
+        vote: Vote | None,
+    ) -> VoteMutationResult:
+        """The tallies for an entity as of right now, wrapped with the vote.
+
+        One extra query on the vote path, and it replaces two things rather than
+        adding one. It replaces the `parts.update` that `_sync_part_net_votes`
+        used to make, which was the cross-domain write row 24 removed, and it
+        replaces the client's follow-up `GET .../summary`, which was a second
+        round trip on every vote. The count itself was already being computed:
+        the old `_sync_part_net_votes` called `repos.votes.counts` for exactly
+        this number and then threw it away into another table.
+
+        It is computed for every entity type, not just parts. Car generations
+        and build lists have no denormalised aggregate to go stale, but their
+        clients still had to re-read to learn the new total, and one response
+        shape across the three is worth more than skipping a query on two of
+        them.
+        """
         upvotes, downvotes = self.repos.votes.counts(entity_type.value, entity_id)
-        try:
-            self.repos.parts.update(str(entity_id), net_votes=upvotes - downvotes)
-        except ItemNotFound:
-            return
+        return VoteMutationResult(
+            vote=VoteRead.model_validate(vote) if vote is not None else None,
+            upvotes=upvotes,
+            downvotes=downvotes,
+            total_votes=upvotes + downvotes,
+            vote_score=upvotes - downvotes,
+        )
 
     def _get_entities(self, entity_type: EntityType, ids: List[Any]) -> dict[UUID, VotableEntity]:
         if not ids:
@@ -200,7 +234,12 @@ class VoteService:
         if entity_type == EntityType.CAR_GENERATION:
             return dict(self.repos.car_generations.get_many(ids))
         if entity_type == EntityType.PART:
-            return dict(self.repos.parts.get_many(ids))
+            # Both vote paths funnel through here: `_get_entity_or_404` (which
+            # turns a dropped part into its existing 404) and the flagged-entity
+            # listing (which already skips ids that resolve to nothing). Filtering
+            # once covers both. `get_many` is a `batch_get`, so this is a Python
+            # filter rather than a filter expression.
+            return dict(drop_tombstoned_values(self.repos.parts.get_many(ids)))
         raise ValueError(f"Unknown entity type: {entity_type}")
 
     def _get_entity_or_404(self, entity_type: EntityType, entity_id: UUID) -> VotableEntity:

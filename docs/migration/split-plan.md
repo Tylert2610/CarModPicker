@@ -150,6 +150,25 @@ attach an author, and all four must filter tombstoned users out rather than
 rendering a blank author. That filtering has to land **before** `users` is cut,
 not with it.
 
+Row 23 delivered that filtering and found the four-domain list wrong; its
+delivery note in section 8 has the corrected surface, which is `build-logs` and
+`moderation` plus `search`, not `build-lists` and `vehicles`.
+
+**Open item for row 30: when are the uniqueness reservations released?** The
+hard delete does it in the same transaction as the row delete.
+`UserRepository.delete_user` is a `transact_write` of three actions, the item
+delete plus `release_unique_action` on `USERNAME` and on `EMAIL`, so the moment a
+user is gone the username and email are reusable. A tombstone has no such moment.
+Hold the reservations until the queue drains and a user who deletes their account
+cannot re-register with their own address for as long as the cleanup takes;
+release them with the tombstone write and there is a window in which a live
+reservation points at an id whose row still exists and still reads as a user to
+anything that has not been taught the predicate. The tombstone write and the
+release are also no longer one transaction, so a partial failure leaves the pair
+inconsistent in whichever direction is chosen. This has to be decided in row 30
+rather than discovered in it. The same question applies to `oauth_accounts`,
+whose `delete_link` releases `PROVIDER_ACCOUNT` and `USER_PROVIDER` the same way.
+
 **Seam 2: the part purge.** `part_service.purge_related_rows_for_parts` deletes a
 part and then writes into `build_list_parts`, `votes`, `reports`, and
 `part_price_alerts`, owned by `build-lists`, `moderation` twice, and `admin`.
@@ -160,7 +179,32 @@ mapping that fans the cleanup onto the `part-purge` work queue for `build-lists`
 The read-path consequence is real here too and is more visible to users than the
 user cascade. A build list that contains a purged part must not render a hole; it
 must drop the row. So `build-lists` gains a tombstone check on the part join
-before `catalog` is cut.
+before `catalog` is cut. Row 23 delivered that check, and found the join
+wider than this paragraph implies: the cost sum in `build_lists.py` prices parts
+too, and a purged part must not be priced into a total any more than it should be
+rendered as a row.
+
+**Open item for row 28: the part purge releases two things a tombstone does
+not.** Both are in the synchronous path today and neither has an owner once the
+delete becomes a tombstone write.
+
+- **The uniqueness reservations on `parts`.** `PartService.purge` ends in
+  `repos.parts.delete_unique`, which releases the `gtin` reservation and the
+  `manufacturer + part_number` reservation alongside the row. Tombstone the part
+  and those reservations outlive it, so a genuinely new part carrying the same
+  GTIN as a purged one is rejected as a duplicate of a row no user can see. It is
+  the same question as seam 1's username and email and should be answered the same
+  way, but the blast radius is different: a blocked GTIN is a catalog data problem
+  rather than an account problem, and it fails closed rather than open.
+- **The S3 objects behind `image_urls`.** A purged part's images are handled by
+  `bucket_orphan_utils.py` rather than by the purge itself, which sweeps for
+  objects no row references. A tombstoned part still has a row and still
+  references its objects, so the sweep will not collect them and the storage is
+  held for as long as the tombstone is. Whether the tombstone should clear
+  `image_urls` at write time, or the sweep should learn the predicate, is a
+  decision for row 28. Open question 6 already notes the sweep is a full-table
+  scan behind an HTTP route and will time out as the tables grow, so the two are
+  worth deciding together.
 
 **Seam 3: the vote denormalisation.** `vote_service._sync_part_net_votes` writes
 `parts.net_votes` after every vote create, update, and remove. `moderation` owns
@@ -1153,8 +1197,8 @@ infrastructure.
 | 20 | `vehicles`: function, routes, OTel. **Delivered** | medium | 13 add, 4 change | 19 |
 | 21 | `admin`: function, routes, OTel. **Delivered** | medium | 17 add, 4 change | 20 |
 | 22 | Streams on `users`, `parts`, `votes`, `part_listings`, plus the six queues and the DLQ alarm. **Delivered** | large | 4 change, 9 add (recorded 16 add at the time, before the queue count was settled) | 21 |
-| 23 | Tombstone attributes and tombstone-aware reads in four domains | large | 0 | 22 |
-| 24 | Seam 3: `net_votes` handler moves to `catalog`'s stream consumer, on an event source mapping | medium | est. 3 add | 22 |
+| 23 | Tombstone attributes and tombstone-aware reads. **Delivered** | large | 0 | 22 |
+| 24 | Seam 3: `net_votes` handler moves to `catalog`'s stream consumer, on an event source mapping. **Delivered** | medium | 6 add, 3 change (est. 3 add) | 22 |
 | 25 | Seam 4: price alert email moves to an `admin` stream handler, on an event source mapping | medium | est. 3 add | 22 |
 | 26 | `build-lists`: function, routes, OTel | large | est. 17 add, 4 change | 23 |
 | 27 | `identity`: function, routes, OTel | medium | est. 11 add, 4 change | 23 |
@@ -2248,6 +2292,235 @@ alarm dimensions, and the image tags of everything already deployed, and the
 rename would have meant recreating a function that was serving traffic. That is
 the difference the open question was pointing at.
 
+**Row 23 is delivered, and the row's own description of it was wrong.** The
+plan said "`build-lists`, `build-logs`, `moderation`, and `vehicles` all read
+`users` to attach an author, and all four must filter tombstoned users out". Two
+of those four read no users at all. `build-lists` joins to `parts`, not to
+`users`; `vehicles` has no user concept anywhere in `car_generations`. The
+four-domain framing was a guess at the shape of the join graph rather than a
+reading of it, and the real surface is both narrower on users and wider on parts
+than the row implied. Corrected, the read sites are:
+
+- **`build-lists` joins to `parts`, not to `users`.** Two `get_many` hops in
+  `get_parts_in_build_list` (`app/api/endpoints/build_list_parts.py`), the stored
+  parts and the canonical parts a duplicate resolves to, plus `_require_part` on
+  the add and update routes, plus the cost sum in `app/api/endpoints/build_lists.py`
+  that would otherwise price a purged part into a build list total.
+- **`build-logs` is the one domain that genuinely attaches an author.** Both its
+  sites, the batch join in `get_build_log_by_build_list` and the single get on
+  the create path, funnel through `_post_with_author`, so the filter is one line
+  there rather than two at the call sites.
+- **`moderation` reads both users and parts, at eight sites.**
+  `report_service.py` has four: the reporter and the reviewer in the batch list,
+  the same pair in `get_report_by_id`, and the part in `_get_entity_or_404` and
+  `_get_entity_details`. `bug_report_service.py` has three, the `username()`
+  closure and both single gets. `vote_service.py` has one, `_get_entities`, which
+  is the chokepoint both the vote route and the flagged-entity listing share.
+- **`catalog` filters its own reads,** which the row did not mention at all but
+  which is where a tombstoned part would otherwise be most visible: `_matches` in
+  `PartService` (every `candidates()` branch ends there), `page_by_category`,
+  `list_page_read`, `search_parts`, a `get_by_id` override because the route is
+  generated by `BaseDynamoEndpointRouter`, and `_get_part_or_404` in
+  `app/api/endpoints/parts.py` for the listing, image and price-history routes.
+- **`search.py` covers both users and parts** through
+  `UserRepository.search`, which is the one path that filters server-side.
+
+**The predicate is one function, not a repository concern.** It lives in
+`app/db/dynamo/tombstones.py` beside the models that carry the attributes. The
+obvious home, a filter inside `DynamoRepository` applied to every read, does not
+work: the widest join in the application goes through `CatalogRepository.get_many`,
+which is a `BatchGetItem`, and that API takes no filter expression. So the
+predicate is applied in Python after the batch get everywhere a batch get is
+involved, and as a `filter_expression` only on `UserRepository.search`, which is
+a scan and where it keeps behaviour identical. Hiding it in the repository layer
+would have silently missed the one path that matters most.
+
+**This row adds the attributes and the reads, and deliberately not the writes.**
+`deleted` and `deleted_at` are on the `User` and `Part` models and nothing sets
+them. Both deletes are still hard deletes that cascade synchronously inside the
+request: `_delete_user_everywhere` in `app/api/endpoints/users.py` and
+`PartService.purge` plus `purge_related_rows_for_parts`. Flipping either write
+here would strand rows across eleven tables, because the stream consumers that
+drain the cascade off a work queue do not exist until rows 28 and 30 and row 22
+created the queues without any event source mapping. The predicate is therefore
+live ahead of its producer on purpose: every row reads as not deleted today, and
+the read paths stay correct the moment a tombstone first appears.
+
+**Expected plan: 0, and it held.** No Terraform changed. `deleted` and
+`deleted_at` are non-key attributes, DynamoDB is schemaless for those, and
+`terraform/dynamodb_tables.json` carries only key attributes, secondary indexes
+and the TTL field. No GSI is needed either: nothing queries by tombstone, every
+read that filters had already reached its rows by another index. Existing rows
+lack both attributes and read as live, so there is no backfill.
+
+No response schema changed. `UserRead`, `PublicUserRead` and `PartRead` are
+explicit field allowlists rather than model dumps, so the two attributes cannot
+leak into a public response, and the OpenAPI snapshot and the extension contract
+tests both pass untouched. They are internal attributes and should stay that way.
+
+Twenty-five tests were added: eight on the predicate itself
+(`tests/db/test_dynamo_tombstones.py`), thirteen on the read paths
+(`tests/api/endpoints/test_tombstone_aware_reads.py`), and four pinning what the
+two synchronous cascades currently remove
+(`tests/api/endpoints/test_delete_cascades.py`). That last file exists because
+neither cascade had a test, which is a bad position from which to make one
+asynchronous: rows 28 and 30 are correct only if they end in the same state, and
+nothing recorded what that state was. The read tests include a regression test
+for the hard-delete drop in `get_parts_in_build_list`, which was the behaviour
+the tombstone filter had to preserve and which was untested.
+
+**Row 24 is delivered, and it is the first row that runs code off a stream.**
+Seam 3 is inverted. `vote_service._sync_part_net_votes` is gone, the vote path
+writes only `votes`, and `carmodpicker-<env>-catalog-votes-consumer` recomputes
+`parts.net_votes` from the `votes` stream that row 22 turned on. `moderation`'s
+`parts` grant moved from `tables` to `read_tables` in the same commit, which is
+the narrowing every row from 19 onward has been promising.
+
+**The two halves have to land in one apply, and they do.** Removing the grant
+before the consumer exists leaves the aggregate with nothing writing it; adding
+the consumer before removing the grant leaves two writers racing on the same
+attribute. Both are in `terraform/`, so the only way to separate them is to split
+the commit, which is why the commit is not split. There is no backfill and no
+cutover window either: the synchronous write and the consumer compute the
+identical number, `upvotes - downvotes`, so the column is correct on both sides
+of the apply and the mapping starts at `LATEST` rather than replaying a day of
+records to recompute values that are already right.
+
+**Recount, never increment.** The handler reads the vote count for a part and
+writes the difference; it does not adjust `net_votes` by the delta a record
+implies. This is the whole idempotency argument. A DynamoDB stream is
+at-least-once and is ordered only within a partition key, which here is the vote
+id, so records for one part arrive from many shards with no order between them
+and any record may be delivered twice. An increment would drift on every
+redelivery and could not be repaired without a full rebuild. A recount converges:
+replaying a batch, or the whole day, produces the same number. The handler also
+skips the write when the recomputed value equals the stored one, which keeps a
+replay from writing at all.
+
+**A stream consumer is still a web application here, and that is the adapter's
+documented shape.** This is the part worth reading carefully, because the obvious
+guess is wrong. The base image is `python:3.13-slim` with the Lambda Web Adapter
+copied into `/opt/extensions/lambda-adapter`. There is no `awslambdaric` in it
+and no ENTRYPOINT, so there is no runtime interface client to resolve a handler
+string like `module.handler`: pointing `image_config.command` at one would make
+Lambda exec a file of that literal name and the container would not start. The
+adapter *is* the runtime. It polls the Runtime API itself and forwards each
+invoke to a local web server, and for a trigger that is not HTTP it POSTs the raw
+event JSON to `AWS_LWA_PASS_THROUGH_PATH`, default `/events`, and returns the
+app's response body as the function result. The adapter documents DynamoDB
+streams among the non-HTTP triggers this covers.
+
+So `app/entrypoints/catalog_votes_consumer.py` is a FastAPI app like its nine
+neighbours. It serves `GET /health`, the readiness path the Dockerfile already
+sets, and `POST /events`, which reads the stream event off the request body,
+calls `app.consumers.votes.handle`, and answers `{"batchItemFailures": [...]}`.
+Terraform starts it with `image_config.command = ["python", "-m",
+"app.entrypoints.catalog_votes_consumer"]`, the same `python -m` form the image's
+own CMD uses, and sets `AWS_LWA_PASS_THROUGH_PATH = "/events"` explicitly so the
+contract is visible in a plan rather than resting on a default.
+
+**It also sets `AWS_LWA_ERROR_STATUS_CODES = "500-599"`, and without that the
+error path silently does not work.** That variable is opt-in: by default the
+adapter hands a 500 response back to Lambda as a *successful* invoke. An
+unhandled exception in the consumer would then look like a clean run, the mapping
+would ack the batch, and the records would be gone. With it set, the 500 that
+FastAPI's error handling produces surfaces as a real function error, which is
+what makes the mapping bisect, retry, and eventually route the batch to the
+stream dead letter queue. The entrypoint deliberately does not catch and convert
+unexpected exceptions into an empty failure list for the same reason.
+
+**It is a separate function rather than a route on `catalog`.** Since the
+consumer is a web app, a `/events` route on the existing `catalog` function would
+technically work. It is still the wrong answer: the mapping's concurrency,
+timeout and error rate would be shared with the API, a vote storm would take
+request capacity from routes users are waiting on, and a consumer bug would page
+as a catalog API error. A second function off the same image keeps what matters
+about sharing anyway. It is better than a tenth ECR repository would have been:
+one build, one push and one digest means the deploy that updates `catalog`
+updates the consumer with identical bytes and the two cannot skew. The platform
+module has supported `image_config` since v2.0.1, so the existing `~> 2.1` pin
+already covers it. `deploy-backend.yml` gained an `EXTRA_FUNCTIONS` map that
+emits the consumer alongside `catalog` from the same manifest.
+
+The consumer does not mount `add_shared_middleware`. CORS is meaningless when the
+only caller is the adapter over loopback with no `Origin`, and the shared rate
+limiter is worse than meaningless: it writes to `rate-limits`, which this function
+has no grant for, so it would fail open on every invoke, log a warning each time,
+and trip the `rate-limit-failed-open` alarm on ordinary traffic. It mounts
+`request_context_middleware` and the error handlers only.
+
+**Smoking it by hand.** `smoke-domains` skips anything ending in `-consumer`,
+which stays correct, though for a narrower reason than the name suggests: the
+consumer does answer `GET /health`, it just has no API Gateway route, and that
+job reaches a function by invoking it with a synthesised API Gateway v2 payload.
+The equivalent probe is a direct invoke with a stream shaped payload, and an
+empty batch is enough to prove the container starts, the adapter forwards, and
+the app answers:
+
+```
+aws lambda invoke --function-name carmodpicker-staging-catalog-votes-consumer \
+  --payload '{"Records":[]}' --cli-binary-format raw-in-base64-out /dev/stdout
+```
+
+which returns `{"batchItemFailures":[]}`.
+
+**The mapping's settings are all failure handling, because the defaults stall a
+shard.** A DynamoDB stream shard is ordered and a failing batch blocks it, and
+the default `maximum_retry_attempts` of -1 retries until the record expires, so
+one poison record with the defaults stops every later record on that shard for 24
+hours. The mapping therefore sets `bisect_batch_on_function_error`,
+`maximum_retry_attempts = 2`, `maximum_record_age_in_seconds = 3600`,
+`function_response_types = ["ReportBatchItemFailures"]` and an `on_failure`
+destination of `carmodpicker-<env>-votes-stream-dlq`, the queue row 22 created for
+exactly this. The handler returns `batchItemFailures` naming only the sequence
+numbers of the records for the part it could not write, so one unwritable part
+does not cause every other part in the batch to be recomputed again. Bisecting is
+the backstop for the case the response cannot cover: a timeout or an out-of-memory
+kill returns no response at all, so there is no failure list to read and the whole
+batch retries.
+
+**Alarms: folded in, no new alarm, and the ceiling is now reached.** Consumer
+errors join `lambda_function_names` and its log group joins `error_log_groups`,
+so the existing `<prefix>-lambda-errors`, `<prefix>-lambda-throttles` and
+`<prefix>-application-errors` alarms cover it with no per-resource alarm added.
+The DLQ is already covered: the single `<prefix>-dlq-depth` alarm row 22 created
+spans all six queues including this one. The consumer is appended after the nine
+domains rather than sorted among them, because the aggregate alarms are metric
+math over positional ids and `catalog-votes-consumer` sorts before `media`, so an
+alphabetical merge would rewrite every expression on both existing alarms.
+
+That makes ten functions, which is exactly the module's chunk size. **Row 25's
+consumer is the eleventh and will chunk into a second alarm pair.** That is worth
+deciding rather than discovering: it doubles the alarms to subscribe and splits
+"the backend is erroring" across two notifications, which is the outcome open
+question 1 was protecting against. Whoever cuts row 25 should choose deliberately
+between accepting the second pair and giving the consumers an aggregate of their
+own.
+
+**The frontend change is smaller than open question 2 assumed, and better.** See
+that question's answer: the frontend never read `net_votes`, so there was no
+stale aggregate on screen to fix. What changed instead is that the vote routes
+now return the authoritative counts and `VoteButtons.tsx` uses them, which
+removes a round trip rather than adding one.
+
+**Expected plan: 6 add, 3 change, 0 destroy.** The adds are the four resources
+the `lambda-function` module creates for
+`carmodpicker-<env>-catalog-votes-consumer` (`aws_lambda_function`,
+`aws_iam_role`, `aws_cloudwatch_log_group`, and the X-Ray write policy), plus its
+runtime `aws_iam_role_policy` and the `aws_lambda_event_source_mapping`. The
+changes are the two aggregate Lambda alarms gaining a tenth metric and the
+GitHub Actions deploy policy gaining the eleventh function ARN; a new metric
+filter for the consumer's log group and the `application-errors` alarm's
+description are folded into those. **`bootstrap_image_tag` must be refreshed to a
+tag that currently resolves in the catalog ECR repository before this is
+applied.** It seeds `image_uri` on function creation, Lambda pulls the image at
+`CreateFunction`, and the keep-last-10 lifecycle policy expires old tags: the
+plan is green either way and the apply is what fails.
+
+The estimate in the table said 3 add. It counted the mapping, the function and
+its policy and did not count the three resources the module creates alongside a
+function, which is the same undercount row 22's estimate made.
+
 PRs 1, 2, 3, 9, 10, and 33 are independent of everything else and can run in
 parallel. PR 22 is the hard gate: nothing from 23 onward can start without it,
 which is why the five uncoupled domains are cut first, buying time for the
@@ -2276,12 +2549,29 @@ exclusive; until row 31 retires it, its invocation failures surface through
 `<prefix>-api-5xx` and its logged errors through `<prefix>-application-errors`.
 Section 3.6's paragraph on row 15 has the full reasoning.
 
-**2. `net_votes` eventual consistency.** Seam 3 makes the denormalised vote count
-lag the vote by the stream latency, so a user who votes and immediately reloads
-may see the old number. Accept the lag, or change the vote route to return the
-computed count and have the frontend use the response rather than re-reading?
-The second is a small frontend change and removes the problem, but it is a
-frontend change in the middle of a backend migration.
+**2. `net_votes` eventual consistency. Answered: return the count, and done.**
+Taken by row 24, which took the second option. The vote and un-vote routes now
+answer with `VoteMutationResult`, the vote plus the entity's `upvotes`,
+`downvotes`, `total_votes` and `vote_score` read from the `votes` table in the
+same request, and `VoteButtons.tsx` overwrites its optimistic guess with those
+numbers. The lag is real but nothing displays it.
+
+The question's own reservation, that this is a frontend change in the middle of
+a backend migration, turned out to be smaller than it reads, for a reason the
+question could not have known: **the frontend never read `net_votes` at all.** It
+renders `upvotes - downvotes` from `VoteSummary`, and `net_votes` is used only
+server-side, as the `rating` sort key in `PartService`. So the stale-number
+problem the question describes was never going to appear in the UI, and the
+change that was worth making was a different one. The old client updated its
+counts optimistically and had no authoritative number until something else
+re-fetched; it now gets the true count on the write it already makes. That
+removes a round trip rather than adding one, and it is a strict improvement
+whether or not the aggregate lags.
+
+The response also carries the counts for car generations and build lists, which
+have no denormalised aggregate to go stale. One response shape across the three
+entity types is worth more than saving a query on two of them, and it keeps the
+frontend from branching on which entity it voted for.
 
 **3. The two unauthenticated write routes.** `POST /api/parts/{part_id}/listings`
 and `POST /api/parts/price-history` take no user dependency, unlike every other

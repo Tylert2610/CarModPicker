@@ -1,4 +1,8 @@
 // Votes domain API. Mirrors backend endpoints/votes.py (polymorphic).
+// Both mutating calls resolve to VoteMutationResult: the vote plus the entity's
+// tallies as of that write. Callers should render those counts rather than
+// re-reading the summary, which is what split plan row 24 made eventually
+// consistent for parts.
 // The polymorphic `votesApi` is the canonical surface; `partVotesApi` /
 // `buildListVotesApi` are thin entity-typed wrappers kept for existing
 // callers.
@@ -6,7 +10,7 @@ import { apiClient } from './client';
 import type {
   FlaggedEntitySummary,
   VoteCreate,
-  VoteRead,
+  VoteMutationResult,
   VoteSummary,
 } from '../types/Api';
 
@@ -15,14 +19,15 @@ export const votesApi = {
     entityType: 'car_generation' | 'build_list' | 'part',
     entityId: string,
     data: VoteCreate
-  ) => apiClient.post<VoteRead>(`/votes/${entityType}/${entityId}`, data),
+  ) =>
+    apiClient.post<VoteMutationResult>(
+      `/votes/${entityType}/${entityId}`,
+      data
+    ),
   removeVote: (
     entityType: 'car_generation' | 'build_list' | 'part',
     entityId: string
-  ) =>
-    apiClient.delete<Record<string, string>>(
-      `/votes/${entityType}/${entityId}`
-    ),
+  ) => apiClient.delete<VoteMutationResult>(`/votes/${entityType}/${entityId}`),
   getVoteSummary: (
     entityType: 'car_generation' | 'build_list' | 'part',
     entityId: string

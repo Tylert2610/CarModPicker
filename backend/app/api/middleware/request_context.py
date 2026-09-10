@@ -3,8 +3,7 @@ from typing import Awaitable, Callable
 from fastapi import Request
 from fastapi.responses import Response
 from uuid6 import uuid7
-
-from app.core.log_context import request_id_var
+from webbpulse.log_context import request_id_var
 
 #: The attribute `webbpulse.http.request_id` reads off `request.state`. The shared
 #: package's error envelope calls that function to fill `request_id`, so the id this

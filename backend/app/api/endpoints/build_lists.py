@@ -45,6 +45,7 @@ from app.api.utils.pagination_utils import create_paginated_response
 from app.api.utils.response_patterns import ResponsePatterns
 from app.db.dynamo import search
 from app.db.dynamo.build_lists import BuildList, BuildListLaborEstimate, BuildListPhase
+from app.db.dynamo.tombstones import drop_tombstoned_values
 from app.db.dynamo.users import User as DBUser
 
 # Create router
@@ -138,9 +139,15 @@ async def read_build_lists_with_votes(
     for part in repos.build_list_parts.scan_all():
         if part.build_list_id in candidate_ids:
             parts_by_list.setdefault(part.build_list_id, []).append(part)
+    # A tombstoned part contributes nothing to the total, the same as a part
+    # that was hard deleted: `prices.get(...) or 0` below already treats a
+    # missing id as zero, so dropping the tombstones here makes the two cases
+    # agree. `get_many` is a `batch_get` and cannot filter server-side.
     prices = {
         part_id: part.best_price_cents
-        for part_id, part in repos.parts.get_many({p.part_id for ps in parts_by_list.values() for p in ps}).items()
+        for part_id, part in drop_tombstoned_values(
+            repos.parts.get_many({p.part_id for ps in parts_by_list.values() for p in ps})
+        ).items()
     }
     parts_cost: Dict[UUID, Optional[int]] = {
         list_id: sum(part.quantity * (prices.get(part.part_id) or 0) for part in parts)

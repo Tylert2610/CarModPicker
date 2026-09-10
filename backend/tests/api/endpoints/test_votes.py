@@ -79,10 +79,15 @@ class TestUnifiedVotes:
         assert response.status_code == 200
 
         data = response.json()
-        assert data["entity_id"] == str(car["id"])
-        assert data["entity_type"] == "car_generation"
-        assert data["user_id"] == str(test_user.id)
-        assert data["vote_type"] == "upvote"
+        assert data["vote"]["entity_id"] == str(car["id"])
+        assert data["vote"]["entity_type"] == "car_generation"
+        assert data["vote"]["user_id"] == str(test_user.id)
+        assert data["vote"]["vote_type"] == "upvote"
+        # Row 24: the write carries the tallies, so the client never re-reads.
+        assert data["upvotes"] == 1
+        assert data["downvotes"] == 0
+        assert data["total_votes"] == 1
+        assert data["vote_score"] == 1
 
     def test_downvote_build_list_success(self, client: TestClient, test_user: User, db_session: Any) -> None:
         """Test successfully downvoting a build list."""
@@ -141,10 +146,13 @@ class TestUnifiedVotes:
         assert response.status_code == 200
 
         data = response.json()
-        assert data["entity_id"] == build_list["id"]
-        assert data["entity_type"] == "build_list"
-        assert data["user_id"] == str(test_user.id)
-        assert data["vote_type"] == "downvote"
+        assert data["vote"]["entity_id"] == build_list["id"]
+        assert data["vote"]["entity_type"] == "build_list"
+        assert data["vote"]["user_id"] == str(test_user.id)
+        assert data["vote"]["vote_type"] == "downvote"
+        assert data["upvotes"] == 0
+        assert data["downvotes"] == 1
+        assert data["vote_score"] == -1
 
     def test_vote_part_success(self, client: TestClient, test_user: User, db_session: Any) -> None:
         """Test successfully voting on a global part."""
@@ -213,10 +221,13 @@ class TestUnifiedVotes:
         assert response.status_code == 200
 
         data = response.json()
-        assert data["entity_id"] == part["id"]
-        assert data["entity_type"] == "part"
-        assert data["user_id"] == str(test_user.id)
-        assert data["vote_type"] == "upvote"
+        assert data["vote"]["entity_id"] == part["id"]
+        assert data["vote"]["entity_type"] == "part"
+        assert data["vote"]["user_id"] == str(test_user.id)
+        assert data["vote"]["vote_type"] == "upvote"
+        assert data["upvotes"] == 1
+        assert data["downvotes"] == 0
+        assert data["vote_score"] == 1
 
     def test_vote_unauthorized(self, client: TestClient, db_session: Any) -> None:
         """Test voting without authentication."""
@@ -262,7 +273,7 @@ class TestUnifiedVotes:
             headers=test_user_headers,
         )
         assert response.status_code == 200
-        first_vote = response.json()
+        first_vote = response.json()["vote"]
         assert first_vote["vote_type"] == "upvote"
 
         # Change to downvote
@@ -273,9 +284,14 @@ class TestUnifiedVotes:
             headers=test_user_headers,
         )
         assert response.status_code == 200
-        updated_vote = response.json()
-        assert updated_vote["id"] == first_vote["id"]
-        assert updated_vote["vote_type"] == "downvote"
+        updated = response.json()
+        assert updated["vote"]["id"] == first_vote["id"]
+        assert updated["vote"]["vote_type"] == "downvote"
+        # Changing a vote moves the score rather than adding to it.
+        assert updated["upvotes"] == 0
+        assert updated["downvotes"] == 1
+        assert updated["total_votes"] == 1
+        assert updated["vote_score"] == -1
 
     def test_remove_vote_success(self, client: TestClient, test_user: User, db_session: Any) -> None:
         """Test successfully removing a vote."""
@@ -301,7 +317,13 @@ class TestUnifiedVotes:
         # Remove the vote
         response = client.delete(f"{settings.API_STR}/votes/car_generation/{car['id']}", headers=test_user_headers)
         assert response.status_code == 200
-        assert response.json()["message"] == "Vote removed successfully"
+        removed = response.json()
+        # No vote left to return, and the tallies are back to zero.
+        assert removed["vote"] is None
+        assert removed["upvotes"] == 0
+        assert removed["downvotes"] == 0
+        assert removed["total_votes"] == 0
+        assert removed["vote_score"] == 0
 
     def test_remove_vote_not_found(self, client: TestClient, test_user: User, db_session: Any) -> None:
         """Test removing a vote that doesn't exist."""

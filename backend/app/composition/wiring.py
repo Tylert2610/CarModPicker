@@ -134,7 +134,7 @@ def configure_logging(service: "str | None" = None) -> None:
     Now a thin call into `app.core.logging.configure_app_logging`, which puts
     the shared package's JSON formatter on the root handler when stdout is not a
     TTY and CarModPicker's colorized one when it is, and attaches
-    `RequestContextFilter` either way. The uvicorn loggers are handled inside
+    `webbpulse.log_context`'s `LogContextFilter` either way. The uvicorn loggers are handled inside
     the package: it clears their handlers and sets `propagate = True` so their
     access lines go through the root formatter, which is what the loop this
     replaces was doing by hand.
