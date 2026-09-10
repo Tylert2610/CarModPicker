@@ -1316,6 +1316,84 @@ locals {
         # out of its map for this key; here it is simply not set, which is the
         # same thing to pydantic and one fewer moving part.
       } : {},
+
+      # The shared identity standard, on the `identity` function only and in
+      # every environment. Row 4 of the identity adoption plan; terraform/identity.tf
+      # has the rationale for the resources these names describe.
+      #
+      # NOTHING READS ANY OF THIS YET. The legacy HS256 flow in
+      # `backend/app/api/endpoints/auth/` is what serves `/api/auth` today and
+      # it reads `SECRET_KEY` out of the `carmodpicker-<env>/app` secret, not
+      # one variable below. Row 5 mounts `webbpulse.identity` and the settings
+      # object is built from these; setting them here first is what makes row 5
+      # a code change against infrastructure that already exists.
+      #
+      # Every name is a field of `webbpulse.identity.IdentitySettings`, whose
+      # `env_prefix` is `IDENTITY_`, so the composition root builds the settings
+      # object straight from the environment with no per-field plumbing. Adding
+      # a setting is one line here and none in Python, which is the point of
+      # the prefix.
+      #
+      # THE FIVE VARIABLES THE MODULE OWNS ARE NOT WRITTEN OUT HERE.
+      # IDENTITY_ISSUER, IDENTITY_AUDIENCE, IDENTITY_SIGNING_KEY_ARNS,
+      # IDENTITY_COOKIE_DOMAIN and IDENTITY_RP_ID, plus IDENTITY_DATA_KEY_ARN,
+      # come from `module.identity.identity_environment`, merged LAST at the
+      # bottom of this block so that a product override of one of them is
+      # impossible rather than merely unlikely. A product override of
+      # IDENTITY_ISSUER would be a mismatch between the gateway and the signer
+      # that denies every request while logging no reason, and the merge order
+      # is what rules it out by construction.
+      #
+      # IDENTITY_ENVIRONMENT is separate from APP_ENVIRONMENT above even though
+      # both carry the same value. IdentitySettings has its own `environment`
+      # field under the same prefix and it gates exactly two things: the refusal
+      # of a plaintext http issuer, and the local development fallbacks. Letting
+      # it default to `local` in a deployed function would silently switch both
+      # to their permissive setting, so it is set explicitly.
+      name == "identity" ? merge({
+        IDENTITY_ENVIRONMENT       = var.environment
+        IDENTITY_PRODUCT_NAME      = "CarModPicker"
+        IDENTITY_RP_NAME           = "CarModPicker"
+        IDENTITY_SUPPORT_EMAIL     = "support@${local.active_domain}"
+        IDENTITY_FRONTEND_BASE_URL = local.frontend_url
+
+        # The sender and the configuration set the package's own M3 mail goes
+        # out through. Both name what this repository already owns: `ses.tf`
+        # creates `aws_sesv2_configuration_set.transactional` and
+        # `local.email_from` is the same `no-reply@` address the legacy
+        # verification and reset mail already sends from, so identity mail and
+        # product mail land in the same configuration set and the same event
+        # destinations.
+        #
+        # An empty IDENTITY_EMAIL_FROM is the package's off switch for its four
+        # email routes, and it is deliberately not used here: `local.email_from`
+        # coalesces to `no-reply@${local.active_domain}`, which is non-empty in
+        # every profile, because this product has a verified SES identity in
+        # every environment it deploys to.
+        #
+        # The frontend link paths are NOT set, because IdentitySettings has no
+        # field for them: `/verify-email` and `/reset-password` are module
+        # constants in `webbpulse.identity.verification` and the link is built
+        # as IDENTITY_FRONTEND_BASE_URL plus the path plus `?token=`. Those two
+        # pages are row 6's work; today's reset page is at
+        # `/forgot-password/confirm` and needs a route or a redirect.
+        IDENTITY_EMAIL_FROM            = local.email_from
+        IDENTITY_SES_CONFIGURATION_SET = aws_sesv2_configuration_set.transactional.configuration_set_name
+
+        # ON, and explicitly rather than by omission. The package defaults
+        # registration to on and this is one of the two places CarModPicker
+        # diverges from Portfolio, which sets it false: Portfolio is a single
+        # administrator product whose one account is seeded, and CarModPicker
+        # allows public sign up through `POST /api/users/` today. Turning it off
+        # would remove a shipped feature at cutover, so it stays on and is
+        # written out so that a future reader sees a decision rather than a
+        # default.
+        IDENTITY_REGISTRATION_ENABLED = "true"
+        },
+
+        # The module's own map, merged last so it wins over anything above it.
+        # See the note above on why the ordering is load bearing.
+      module.identity.identity_environment) : {},
     )
   }
 }
