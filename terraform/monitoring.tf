@@ -17,10 +17,12 @@ locals {
   # The filter is what keeps the list to functions that exist. `local.lambda_domain_names` is all
   # nine from row 9 onward because nine ECR repositories exist, while `local.lambda_domains` in
   # lambda_domains.tf holds only the domains whose function has actually been created, which after
-  # row 29 is `media`, `build-logs`, `moderation`, `vehicles`, `admin`, `build-lists`, `identity`
-  # and `catalog`. With the three consumers from rows 24, 25 and 28 that is eleven names, one past
-  # the ten-name chunk size, so this list now builds two alarm pairs rather than one. The ceiling
-  # paragraph below records the decision. A name in the metric math for a function that does not exist would
+  # row 31 is all nine. With the four consumers from rows 24, 25, 28 and 30 that is thirteen
+  # names, three past the ten-name chunk size, so this list builds two alarm pairs: chunk zero of
+  # ten and chunk one of three. The ceiling paragraph below records the decision that produced
+  # them. From here the two lists are the same nine names and the filter is a permanent no-op, so
+  # this list only ever grows again by a consumer.
+  # A name in the metric math for a function that does not exist would
   # resolve to a metric that never reports, which is not an error but is an alarm claiming coverage
   # it does not have. It is also empty in a fresh account bootstrapping with an empty
   # `bootstrap_image_tag`, which is why `lambda_aggregate_alarm` below is conditional rather than
@@ -37,9 +39,10 @@ locals {
   # Count created functions, not declared ones. Row 24's note in the split plan predicted that row
   # 25 would be the eleventh and would cross this, by counting the nine names in
   # `local.lambda_domain_names`. The filter below is what makes that wrong: it admits only the
-  # domains whose function actually exists. With rows 18 through 21, 26 and 27 cut that is seven
-  # domains, so rows 24, 25 and 28's consumers bring this list to ten, and ten is exactly the chunk
-  # size.
+  # domains whose function actually exists. With rows 18 through 21, 26 and 27 cut that was seven
+  # domains, so rows 24, 25 and 28's consumers brought this list to ten, and ten is exactly the
+  # chunk size. Row 29's `catalog` made eleven, row 30's consumer twelve and row 31's `users`
+  # thirteen, which is where it stops for domains: the filter cannot admit a tenth.
   #
   # Row 28 filled the last slot of chunk zero and row 29 is the row that crosses it. THE DECISION
   # IS TAKEN, and it is to accept the module's chunking as designed rather than to restructure
@@ -48,8 +51,15 @@ locals {
   # existing unsuffixed pair. It is not `catalog` that opens chunk one, though. Domains come first
   # in the concat and `catalog` is the eighth domain, so it takes chunk zero's m7 and pushes the
   # three consumers one place right, which spills `catalog-votes-consumer` out as chunk one's sole
-  # member. Row 31's `users` becomes the twelfth, takes chunk zero's m8 in the same way, and pushes
-  # `catalog-part-purge-consumer` into chunk one beside it, creating no new alarm.
+  # member.
+  #
+  # That paragraph's forecast of what came next was wrong twice over and the correction is worth
+  # keeping rather than quietly overwriting, because the arithmetic it got wrong is the arithmetic
+  # anyone reading this will try to redo. It said "Row 31's `users` becomes the twelfth". Row 30's
+  # `users-delete-consumer` is the twelfth: a consumer counts against this list exactly as a domain
+  # does, and row 30 landed between 29 and 31. So `users` is the thirteenth, not the twelfth. And
+  # it does not take m8: `identity` and `catalog` already hold m6 and m7, so the ninth domain takes
+  # m8 and the consumers start at m9.
   #
   # The alternative row 28's note preferred, giving the three stream consumers an aggregate of
   # their own, is deliberately not taken. It reads better on paper, because it would keep all nine
@@ -104,6 +114,30 @@ locals {
   # changes a cut already expects, and the two new resources are counted in the row's plan
   # estimate rather than hidden in it.
   #
+  # Row 31 is the last cut and it renumbers both chunks while creating no alarm at all, which is a
+  # combination no earlier row produced and is worth writing out term by term for the same reason
+  # row 29's is. Before this row the thirteen-name list is chunk zero m0 media, m1 build-logs,
+  # m2 moderation, m3 vehicles, m4 admin, m5 build-lists, m6 identity, m7 catalog,
+  # m8 admin-price-alerts-consumer, m9 catalog-part-purge-consumer, and chunk one
+  # m0 catalog-votes-consumer, m1 users-delete-consumer. `users` is the ninth domain, so it takes
+  # chunk zero's m8 and pushes every consumer one place right. Chunk zero becomes
+  # ... m7 catalog, m8 users, m9 admin-price-alerts-consumer, and
+  # `catalog-part-purge-consumer` is the eleventh name and falls out of chunk zero into chunk one,
+  # which becomes m0 catalog-part-purge-consumer, m1 catalog-votes-consumer,
+  # m2 users-delete-consumer.
+  #
+  # So both pairs change and neither is created or destroyed. Chunk zero holds ten names before
+  # and after, so its expression is rewritten (m8 and m9 relabelled) while its description still
+  # reads ten functions and does not change. Chunk one goes from two names to three, so its
+  # expression gains an m2 term, both its labels are rewritten, and its description does change,
+  # from two functions to three. That asymmetry is the module's descriptions counting chunk size
+  # rather than list length, and it is why this row's plan shows the aggregate alarms as changed
+  # rather than as replaced.
+  #
+  # This is the last time this list changes for a domain. All nine are in it after this row, so
+  # the only thing that can renumber it again is a new stream consumer, which appends to the
+  # sorted consumer half and can only disturb the consumers that sort after it.
+  #
   # A new domain is the other case that renumbers, and row 26 was the first to hit it. Domains
   # come first in the concat, so `build-lists` took m5, which `catalog-votes-consumer` had held
   # since row 24, and pushed that consumer to m6. Both aggregate alarms have the consumer's term
@@ -111,8 +145,8 @@ locals {
   # extra plan noise, because both alarms change anyway for their descriptions and for the term the
   # new function appends. Row 27 does the same one slot further along: `identity` takes m6, which
   # `admin-price-alerts-consumer` held after row 25, and pushes both consumers back a place, to m7
-  # and m8. Rows 29 and 31 each repeat it, so a renumbered consumer term in one of those plans is
-  # expected and is not drift.
+  # and m8. Rows 29 and 31 each repeated it, the last of them across two chunks, so a renumbered
+  # consumer term in one of those plans is expected and is not drift.
   alarm_lambda_function_names = concat(
     [
       for name in local.lambda_domain_names : module.lambda_domain[name].function_name

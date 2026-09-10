@@ -193,8 +193,29 @@ catalog)
   PREFIXES=(/api/parts /api/part-manufacturers /api/categories /api/retailers)
   ;;
 users)
-  # Row 31.
-  PREFIXES=()
+  # Row 31, the last cut. Two prefixes and 14 routes: the user accounts tree and
+  # the global app-settings singleton. They are two sibling trees rather than one
+  # tree with children, and a route key matches literally rather than by string
+  # prefix, so /api/users claims neither row 27's /api/auth nor anything else.
+  #
+  # This is the one cut where the no-credential fallback path below is fully
+  # sound on every prefix, which is the caveat rows 26, 27 and 29 each had to
+  # qualify. Both bare keys carry real traffic (a GET "/" and a POST "/" in
+  # users.py, a GET "/" and a PUT "/" in app_settings.py, all four mounting with
+  # the trailing slash the gateway normalises onto the bare key), and both GETs
+  # answer without a token: GET /api/users/ takes get_optional_current_user and
+  # returns the public projection to an anonymous caller, and GET
+  # /api/app-settings/ is public by design so the frontend can honour the
+  # premium kill switch before anyone signs in. So a direct-invoke GET on either
+  # bare path is a 200 from a healthy function rather than a 401 or a 404.
+  #
+  # /api/users/admin/users is section 1.4's ordering hazard for this domain and
+  # nothing here touches it: the {proxy+} key hands the whole subtree to one
+  # function, so FastAPI resolves it exactly as it does on the monolith. Worth
+  # knowing while reading a failure here: GET /{user_id} is registered before
+  # GET /admin/users and the literal wins only on segment count, so a probe of
+  # the bare /api/users/admin legitimately matches {user_id} and 404s.
+  PREFIXES=(/api/users /api/app-settings)
   ;;
 *)
   echo "Unknown domain: $DOMAIN" >&2

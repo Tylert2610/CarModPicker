@@ -5,11 +5,11 @@
 #
 # `media` from row 13, `build-logs` from row 18, `moderation` from row 19,
 # `vehicles` from row 20, `admin` from row 21, `build-lists` from row 26,
-# `identity` from row 27 and `catalog` from row 29 are the entries today. Row 31
-# adds the last one, `users`, and the shape here is built
-# for that: everything a domain needs is one entry in `local.lambda_domains`,
-# and the module call, the IAM policy and the outputs all key off it, so adding
-# a domain is adding a map entry.
+# `identity` from row 27, `catalog` from row 29 and `users` from row 31 are the
+# entries, and with row 31 that is all nine. The map is complete: no later row
+# adds a domain, and the shape here is what made each of the nine one entry in
+# `local.lambda_domains`, with the module call, the IAM policy and the outputs
+# all keying off it, so adding a domain was adding a map entry.
 #
 # The monolith in lambda.tf is deliberately untouched. It still serves every
 # route this file has not cut away from it, because a function here is only
@@ -79,9 +79,10 @@ locals {
   # rather than to the `admin` function, for the reason recorded there.
   #
   # `s3` is whether the function gets the user images bucket at all, and
-  # `s3_delete_only` narrows what it gets when it does. Section 3.4 names
-  # `media` and, from row 31, `users`: the full set including ListBucket for
-  # `media` and the three object actions for avatars for `users`.
+  # `s3_delete_only` narrows what it gets when it does. Section 3.4 named
+  # `media` and `users`, and with row 31 both are here: the full set including
+  # ListBucket for `media` and the three object actions for avatars for
+  # `users`, whose upload route puts and deletes on the same request.
   #
   # Row 26 found a third. `build-lists` deletes gallery images, which section
   # 3.4 did not anticipate because it reasoned from the two domains whose names
@@ -823,6 +824,116 @@ locals {
   # domain in the application by route count, so it is the last one to tune down
   # on a guess. Memory is the cheapest knob to lower once a week of duration and
   # max-memory-used data says so.
+  #
+  # How `users`' two table lists were derived, by row 31 and by the same method
+  # as the eight above. This is the ninth and last cut, and it is the entry
+  # whose bundle was narrowed hardest by the row immediately before it:
+  #
+  #   - `app/composition/domains.py` declares `_USERS_REPOSITORIES` as three
+  #     repositories: `users`, `app_settings` and `oauth_accounts`.
+  #     `app/db/dynamo/registry.py`'s `tables_for` maps each of the three to a
+  #     table suffix of the same name, so three repositories are three tables,
+  #     and `backend/tests/entrypoints/test_repository_bundles.py` recomputes
+  #     that tuple from the real import graph, so the bundle is a checked
+  #     statement of what this function can reach.
+  #   - The tuple was twenty-three of the twenty-five until row 30, and that is
+  #     seam 1 landing rather than a narrowing this row performed.
+  #     `_delete_user_everywhere` deleted a user and then wrote into roughly
+  #     fifteen tables across `identity`, `catalog`, `build-lists`,
+  #     `build-logs`, `moderation` and `admin`, on the request thread inside a
+  #     29 second Lambda. Row 30 moved that cascade onto
+  #     `carmodpicker-<env>-users-delete-consumer`, which names those
+  #     repositories itself in `app/entrypoints/users_delete_consumer.py` and
+  #     carries its own IAM in lambda_stream_consumers.tf, and twenty entries
+  #     went with it. So those tables are still written by the `users` image,
+  #     and they are written by the consumer function rather than by this one,
+  #     which is the grant following the writer exactly as row 28 did it for
+  #     `catalog`. Cutting this domain a row earlier would have meant granting
+  #     roughly fifteen tables here for a cascade that no longer runs on the
+  #     request thread, and this entry would have been the widest of the nine
+  #     rather than the second narrowest.
+  #   - Three in the bundle and three granted, so there is no bundle-to-grant
+  #     gap. `catalog` was the first cut to manage that and this is the second,
+  #     and for the same reason: the seam landed in the row before.
+  #   - Two tables are written, plus the limiter's counter. `users` is this
+  #     domain's own and every mutating route reaches it:
+  #     `users.py` calls `repos.users.create_user` on the signup route,
+  #     `.update_user` on the self and admin update routes, `.update` on both
+  #     profile-picture routes and on the tombstone in `_delete_user`, and
+  #     `.delete_user` for the hard delete and its two unique reservations.
+  #     `app_settings` is written by `PUT /api/app-settings`, which calls
+  #     `repos.app_settings.update_settings`, and read by the public `GET` on
+  #     the same path through `.get_or_create`, which is itself a write on a
+  #     cold singleton, so the table is in `tables` rather than in
+  #     `read_tables` on the strength of the read path as well as the write.
+  #   - `oauth_accounts` is the one read-only table, and it is the one worth
+  #     stating because it was invisible until row 30. It is a genuine
+  #     cross-domain read rather than a leftover: `user_service.user_read` calls
+  #     `repos.oauth_accounts.list_by_user` and `user_reads` calls
+  #     `.list_by_users`, and every route in this domain that returns a user
+  #     goes through one of the two, so the read is on eleven of the fourteen
+  #     routes rather than on an edge case. `identity` writes the table and this
+  #     domain only reads it, which is why it is `read_tables` here and `tables`
+  #     there.
+  #
+  #     The reason it was invisible is worth keeping rather than leaving in the
+  #     row 30 pull request. The import-graph analyzer in
+  #     `test_repository_bundles.py` matches attribute accesses whose receiver
+  #     is named `repos`, and `user_service.py` had named its local
+  #     `repositories`, so this read did not appear in the graph at all. It was
+  #     masked for as long as the old twenty-three entry tuple happened to
+  #     declare `oauth_accounts` for cascade reasons. Row 30's trim computed
+  #     `users` as two entries, which would have been a `RepositoryNotInBundle`
+  #     on `GET /users/me` on every request the moment this row applied, and it
+  #     was fixed by renaming the local rather than by widening the matcher. The
+  #     name is load bearing, the comment on `user_read` says so, and this cut
+  #     is the row that would have paid for it.
+  #   - `rate-limits` is in `tables` for the reason every entry above records:
+  #     it is the shared limiter's counter table, reached from the middleware
+  #     stack rather than from a repository, so the bundle cannot name it, and
+  #     the limiter fails open, so withholding it would silently turn layer 2
+  #     off for this domain rather than failing.
+  #   - `secrets` is true. Every one of the fourteen routes but the public
+  #     `GET /api/app-settings/` is behind `get_current_user` or
+  #     `get_current_admin_user`, both of which decode a token, and the
+  #     descriptor sets `requires_secrets = ("SECRET_KEY",)`.
+  #   - `s3` is true and `s3_delete_only` is **false**, and this is the second
+  #     and last entry to take the broad flag after `media`. Section 3.4 named
+  #     `media` and `users` as the two, and unlike row 26's and row 29's
+  #     corrections this one lands exactly where 3.4 put it.
+  #     `POST /api/users/me/profile-picture` calls `storage_service.upload_image`,
+  #     a real `put_object`, and then `delete_image` on the key it replaces;
+  #     `DELETE /api/users/me/profile-picture` calls `delete_image` on its own.
+  #     So `s3:PutObject` and `s3:DeleteObject` are both reached from the same
+  #     route, which is what rules out row 26's narrow flag here.
+  #     `s3:GetObject` rides along with the broad flag and is also genuinely
+  #     reached, on the way out rather than on the way in: `user_read`'s
+  #     `image_urls` serializer calls `apply_image_url_presigning`, which is the
+  #     path row 27 left ungranted on `identity` because the fallback there is
+  #     graceful. Here the grant arrives anyway with the upload, so this is the
+  #     one domain where avatars presign rather than falling back to raw keys,
+  #     and row 27's note that a widening "would have to cover row 20's domain
+  #     too" is untouched: `vehicles` still serves `PublicUserRead` with
+  #     `s3 = false` and still falls back.
+  #   - `ses` is false. No route in either endpoint module imports
+  #     `app/core/email.py` or reaches a send. Account deletion sends nothing,
+  #     and the verification and reset mail is `identity`'s, granted there in
+  #     row 27.
+  #   - No SQS grant, and that is not an omission. Row 30's cascade is driven
+  #     off the `users` DynamoDB stream and the `user-delete` work queue, and
+  #     the enqueue is the consumer's own, not this function's: `_delete_user`
+  #     writes a tombstone and hard deletes, and nothing in `app/api/endpoints/`
+  #     constructs an SQS client or names a queue. The stream is read by the
+  #     event source mapping under the consumer's role.
+  #
+  # 512 MB, per section 3.3, which starts every domain but `catalog` and
+  # `build-lists` there. Right on this domain's own terms: the widest thing it
+  # does is `GET /api/users/` paginating in memory over a search or a full list
+  # and hydrating each row's linked accounts through `user_reads`' batched
+  # `list_by_users`, which is one Dynamo read per page rather than a join, and
+  # the profile-picture upload streams a single image through
+  # `storage_service`. Neither holds the kind of intermediate the two 1024 MB
+  # domains do.
   lambda_domains_declared = {
     media = {
       secrets        = true
@@ -1009,6 +1120,26 @@ locals {
         "car_models",
         "car_generations",
       ]
+    }
+    users = {
+      secrets = true
+      # The broad flag, and the second and last entry to take it after `media`.
+      # `POST /api/users/me/profile-picture` uploads and then deletes the key it
+      # replaces, so `s3:PutObject` and `s3:DeleteObject` are both reached from
+      # one route, which is what rules out row 26's narrowing here. Section 3.4
+      # named `media` and `users` as the two and this one lands where it said.
+      s3             = true
+      s3_delete_only = false
+      # No route in either endpoint module reaches a send. The verification and
+      # reset mail is `identity`'s, granted there in row 27, and account
+      # deletion sends nothing.
+      ses    = false
+      memory = 512
+      # Two written tables and the limiter's counter. `users` is this domain's
+      # own and `app_settings` is the global singleton, written by the admin PUT
+      # and created on first read by `get_or_create`.
+      tables      = ["users", "app_settings", "rate-limits"]
+      read_tables = ["oauth_accounts"]
     }
   }
 
