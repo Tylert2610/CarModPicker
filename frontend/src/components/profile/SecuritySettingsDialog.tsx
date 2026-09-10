@@ -3,6 +3,9 @@ import { FaClock, FaKey, FaLink, FaLock, FaShieldAlt } from 'react-icons/fa';
 import useApiRequest from '../../hooks/UseApiRequest';
 import { useAuth } from '../../hooks/useAuth';
 import { authApi } from '../../api/auth';
+import { identityAvailability } from '../../api/authMode';
+import { AUTH_MODE } from '../../api/authMode';
+import IdentityTotpSettings from './IdentityTotpSettings';
 import { usersApi } from '../../api/users';
 import type { TOTPSetupResponse } from '../../types/Api';
 import { ConfirmationAlert, ErrorAlert } from '../ui/alert';
@@ -78,6 +81,11 @@ function SecuritySettingsDialog({
 }: SecuritySettingsDialogProps) {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<TabType>('password');
+  // Passkeys and connected accounts are M5 and M6 in the identity service and
+  // are not shipped. In identity mode both tabs are hidden rather than shown
+  // empty or disabled, because neither is a temporary state a user can wait
+  // out in this deployment. Both are untouched in bearer mode.
+  const available = identityAvailability();
 
   // Password change state
   const [passwordData, setPasswordData] = useState({
@@ -373,34 +381,38 @@ function SecuritySettingsDialog({
                 <span>Two-Factor Authentication</span>
               </div>
             </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('passkeys')}
-              className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
-                activeTab === 'passkeys'
-                  ? 'text-primary border-b-2 border-primary'
-                  : 'text-gray-400 hover:text-gray-300'
-              }`}
-            >
-              <div className="flex items-center justify-center space-x-2">
-                <FaKey />
-                <span>Passkeys</span>
-              </div>
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('connected')}
-              className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
-                activeTab === 'connected'
-                  ? 'text-primary border-b-2 border-primary'
-                  : 'text-gray-400 hover:text-gray-300'
-              }`}
-            >
-              <div className="flex items-center justify-center space-x-2">
-                <FaLink />
-                <span>Connected</span>
-              </div>
-            </button>
+            {available.passkeys && (
+              <button
+                type="button"
+                onClick={() => setActiveTab('passkeys')}
+                className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
+                  activeTab === 'passkeys'
+                    ? 'text-primary border-b-2 border-primary'
+                    : 'text-gray-400 hover:text-gray-300'
+                }`}
+              >
+                <div className="flex items-center justify-center space-x-2">
+                  <FaKey />
+                  <span>Passkeys</span>
+                </div>
+              </button>
+            )}
+            {available.googleOauth && (
+              <button
+                type="button"
+                onClick={() => setActiveTab('connected')}
+                className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
+                  activeTab === 'connected'
+                    ? 'text-primary border-b-2 border-primary'
+                    : 'text-gray-400 hover:text-gray-300'
+                }`}
+              >
+                <div className="flex items-center justify-center space-x-2">
+                  <FaLink />
+                  <span>Connected</span>
+                </div>
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setActiveTab('session')}
@@ -553,8 +565,24 @@ function SecuritySettingsDialog({
             </form>
           )}
 
-          {/* 2FA Tab */}
-          {activeTab === '2fa' && (
+          {/* 2FA Tab. Two different flows rather than two renderings of one:
+              the identity service takes only a code to disable a factor, hands
+              back a provisioning URI for the client to draw, and issues
+              recovery codes that the legacy service has no concept of. See
+              IdentityTotpSettings. */}
+          {activeTab === '2fa' && AUTH_MODE === 'identity' && (
+            <IdentityTotpSettings
+              enabled={user?.totp_enabled === true}
+              onChanged={() => {
+                if (user?.totp_enabled === true) {
+                  on2FADisabled();
+                } else {
+                  on2FAEnabled();
+                }
+              }}
+            />
+          )}
+          {activeTab === '2fa' && AUTH_MODE !== 'identity' && (
             <div className="space-y-6">
               {twoFASuccess && <ConfirmationAlert message={twoFASuccess} />}
               {(twoFAError || setupError) && (
@@ -823,8 +851,12 @@ function SecuritySettingsDialog({
               </Button>
             </div>
           )}
-          {activeTab === 'passkeys' && <PasskeySettings />}
-          {activeTab === 'connected' && <ConnectedAccountsSettings />}
+          {available.passkeys && activeTab === 'passkeys' && (
+            <PasskeySettings />
+          )}
+          {available.googleOauth && activeTab === 'connected' && (
+            <ConnectedAccountsSettings />
+          )}
         </div>
       </DialogContent>
     </Dialog>
