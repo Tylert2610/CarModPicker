@@ -3509,6 +3509,257 @@ something else changed.
 
 ---
 
+# Row 30 delivered: seam 1, the user delete cascade goes async
+
+**Row 30 is delivered, and it is the last seam and the largest single narrowing
+in the plan.** `_delete_user_everywhere` in `app/api/endpoints/users.py` used to
+run the whole account deletion inline: deletes across eighteen tables belonging
+to `identity`, `catalog`, `build-lists`, `build-logs`, `moderation` and `admin`,
+all on the request thread, inside a 29 second Lambda. What is left of that
+function writes a tombstone, hard deletes the user row and its two unique
+reservations, and returns. Everything else is `app/consumers/user_delete.py`,
+driven off the `users` stream and through the `user-delete` work queue.
+
+The shape is row 28's exactly, and it is worth saying that the shape was not
+re-derived. One function with two event source mappings, discriminated by
+`eventSource` on the records rather than by two handlers; the stream half fans
+tombstones onto the queue and the queue half drains them; both mappings set
+`function_response_types = ["ReportBatchItemFailures"]`; the queue mapping is
+bounded by `maximum_concurrency`; and every cascade step is query-then-delete so
+a redelivery finds nothing and writes nothing. `carmodpicker-<env>-users-delete-consumer`
+is the fourth consumer and the twelfth name in the alarm list.
+
+## The reservation decision: `username` and `email` stay synchronous
+
+**Answered, and it is the one part of this cascade that does not move.** The
+user row and its `username` and `email` uniqueness reservations are removed
+together, in the same transaction, on the request thread, before the consumer
+ever sees the tombstone. `users` is deliberately absent from the consumer's
+bundle so that reaching for it is a `RepositoryNotInBundle` rather than a silent
+second writer, and `tests/consumers/test_user_delete_consumer.py::TestTheSynchronousHalfStayedBehind`
+asserts both halves of that.
+
+The reasoning is about what a held reservation blocks. A reservation still held
+after the tombstone means a person who has just deleted their account cannot
+re-register with the username or the email address they have just freed, for as
+long as the queue is deep. They do not get a queue-depth message; they get
+`EMAIL_EXISTS` against a row nobody can see, including support. It fails closed,
+the symptom is indistinguishable from somebody else having taken the address,
+and the remedy is a manual DynamoDB edit. Deleting and immediately re-creating
+an account is not an exotic path either; it is what a person does when they want
+a different username, and it is one of the few things anybody does in the
+seconds right after an account deletion.
+
+Row 28 kept the `gtin` and `manufacturer+part_number` reservations synchronous
+for the same class of reason and explicitly declined to set a precedent for seam
+1, on the grounds that the blast radius differs. It does differ, and it is
+worse: a part's GTIN blocks a catalogue re-entry that an administrator can
+resolve, and an account's email blocks the person themselves. So the answer is
+the same answer, reached independently.
+
+**Three of the seven reservations do move**, and the same test asserts the
+consumer is what releases them. `provider_account` and `user_provider` for an
+oauth link, and `credential_id` for a webauthn credential, are released in
+`purge_identity` on the consumer, through the repositories' own
+`delete_all_for_user`, which removes each row in a transaction that releases
+that row's labels. Every one of them has to be released or the same social
+account or authenticator can never be attached to any account again, so they are
+not optional; they are simply not urgent. What they block is re-linking the same
+Google account or the same YubiKey to a *new* account, which is not something
+anyone does in the seconds after deleting one, and which no longer fails closed
+in a way a person would read as "somebody took my address".
+
+So the rule the two seams now share, stated once: a reservation whose absence
+blocks the person who just performed the delete is released synchronously; a
+reservation whose absence blocks a later, deliberate re-linking moves to the
+consumer.
+
+## The narrowing: `users` goes from twenty-three repositories to three
+
+`_USERS_REPOSITORIES` in `app/composition/domains.py` was twenty-three of the
+twenty-five, and it declared almost none of them because a route of the domain's
+own reads or writes one. It declared them because `_delete_user_everywhere`
+reached them. It is now `("users", "app_settings", "oauth_accounts")`.
+
+Twenty entries went with the cascade, and the grants did not disappear so much
+as move: eighteen tables that were reachable from the domain's HTTP function are
+now reachable only from one function that does nothing but the cascade. That is
+the seam's whole return, and it is the largest single narrowing in the plan.
+
+`oauth_accounts` staying is the entry that looks wrong on a row that removes
+twenty, so it is written down. `user_read` reads it on every user response to
+report which social accounts are linked. That is a route of the domain's own and
+it has nothing to do with the cascade.
+
+**A latent bug came out of the trim, and it is the reason to record this rather
+than just note the number.** `tests/entrypoints/test_repository_bundles.py`
+recomputes each domain's declared tuple from the import graph, and
+`_bundle_accesses` matches only receivers named `repos` or ending `.repos`.
+`user_service.py` named its local `repositories`, so the `oauth_accounts` read in
+`user_read` and `user_reads` was invisible to the analyzer. The cascade had been
+declaring that repository for entirely unrelated reasons and masking it. Trimming
+the tuple computed `users` as `('app_settings', 'users')`, and shipping that
+would have been a `RepositoryNotInBundle` on `GET /users/me` in production, on
+every request, the moment this row applied. The fix is a two-line rename of the
+local to `repos` in both functions, carrying a comment that says why the name is
+load bearing rather than cosmetic. Nothing else in the graph shifted.
+
+The general lesson, since the analyzer will keep being trusted: a static
+receiver-name match is only as good as the naming convention it assumes, and a
+domain that over-declares hides every violation of that convention inside it.
+Rows that narrow a bundle are exactly the rows where such a thing surfaces.
+
+## The cascade chains into row 28
+
+`purge_owned_parts` runs each of the user's parts through `PartService.purge`,
+which is the same code path a part delete route takes: it writes the part's
+tombstone, deletes the catalogue rows `catalog` owns, and releases the part's own
+two reservations. Row 28's consumer then takes each of those tombstones off the
+`parts` stream and performs seam 2's cross-domain half. So this cascade never
+touches `build_list_parts`, `votes` or `reports` on a part's behalf; it touches
+them only on the *user's* behalf.
+
+Two queues means two drains, and an account with parts is genuinely a two-hop
+cascade. `part_price_alerts` is the exception that proves the split: those are
+alerts the user subscribed to, on parts that may belong to anybody, so no part
+tombstone will ever reach them and they are deleted here.
+
+The `purge_related_rows_for_parts` call the synchronous version made after its
+parts loop is **gone rather than moved**, because it has been a documented no-op
+since row 28: the tombstones the loop writes are what trigger that work now.
+
+A part that is already purged raises `ItemNotFound` from the tombstone write's
+`attribute_exists` condition, and that is caught per part and counted separately
+as `parts_already_purged`. It is the success case rather than an error, because
+a part that is already gone is exactly what a replay is supposed to find, and if
+it propagated then a retry after a failure later in the cascade could never get
+past the parts it had already done.
+
+## Alarm expectations: no new pair, and chunk zero does not move
+
+**This row is the first since the aggregate alarms existed where chunk zero is
+byte-identical, and it needs saying because every prior row renumbered it.**
+
+After row 29 the list holds eleven names. Domains come first in the concat and
+the consumer half is sorted, so chunk zero is m0 `media`, m1 `build-logs`, m2
+`moderation`, m3 `vehicles`, m4 `admin`, m5 `build-lists`, m6 `identity`, m7
+`catalog`, m8 `admin-price-alerts-consumer`, m9 `catalog-part-purge-consumer`,
+and chunk one is m0 `catalog-votes-consumer`.
+
+`users-delete-consumer` sorts **after** `catalog-votes-consumer` among the
+consumers, so it is the twelfth name and it lands at the end. Chunk zero is
+untouched. Chunk one becomes m0 `catalog-votes-consumer`, m1
+`users-delete-consumer`.
+
+So, stated exactly as the row asks:
+
+- **No new alarm pair appears.** Chunk one already exists, created by row 29.
+- **The names that move are `module.alarms.aws_cloudwatch_metric_alarm.lambda_aggregate_errors[1]`
+  and `module.alarms.aws_cloudwatch_metric_alarm.lambda_aggregate_throttles[1]`**,
+  in place, gaining one metric term each.
+- `lambda_aggregate_errors[0]` and `lambda_aggregate_throttles[0]` are **not**
+  in the plan at all, which is the part that is unlike every previous row.
+
+**This corrects row 29's forecast** that "Row 31's `users` becomes the twelfth
+and joins chunk one without creating anything further." The arithmetic was
+right and the name was wrong: row 30's consumer is the twelfth, and row 31's
+`users` domain will be the thirteenth. Because a domain sorts into the domain
+half rather than the consumer half, row 31 *will* renumber chunk zero, and both
+pairs will change on that row.
+
+`<prefix>-application-errors` and `<prefix>-rate-limit-failed-open` gain a log
+group each and their descriptions move from 12 to 13, and per row 29's
+correction those descriptions are on the **alarms**, not on the log metric
+filters of the same names. The filters are `for_each` over the log groups, so a
+new function adds a filter rather than changing one.
+
+## The plan: 9 to add, 5 to change, 0 to destroy, confirmed
+
+Confirmed against the speculative plan on the pull request rather than
+predicted, and it came in on the estimate exactly: every one of the fourteen
+addresses below is the address the plan produced, and there was nothing in the
+plan that is not below. The two alarm claims were checked in the plan JSON
+rather than inferred. Chunk one goes from `m0 catalog-votes-consumer` to
+`m0 catalog-votes-consumer, m1 users-delete-consumer`, and chunk zero does not
+appear in the plan at all.
+
+The nine adds:
+
+| Resource | Why |
+| --- | --- |
+| `module.lambda_stream_consumer["users-delete-consumer"].aws_lambda_function.this` | The function |
+| `module.lambda_stream_consumer["users-delete-consumer"].aws_iam_role.this` | Its execution role |
+| `module.lambda_stream_consumer["users-delete-consumer"].aws_cloudwatch_log_group.this` | Its log group |
+| `module.lambda_stream_consumer["users-delete-consumer"].aws_iam_role_policy.xray_write[0]` | The module's X-Ray policy |
+| `aws_iam_role_policy.lambda_stream_consumer["users-delete-consumer"]` | This repository's runtime policy: logs, the eighteen tables, the stream read, the queue receive and delete, spans |
+| `aws_lambda_event_source_mapping.stream_consumer["users-delete-consumer"]` | The `users` stream mapping |
+| `aws_lambda_event_source_mapping.work_queue_consumer["users-delete-consumer"]` | The `user-delete` queue mapping, with `maximum_concurrency` |
+| `module.alarms.aws_cloudwatch_log_metric_filter.errors["consumer-users-delete-consumer"]` | The new log group joins the application-errors alarm |
+| `module.alarms.aws_cloudwatch_log_metric_filter.rate_limit_failed_open["consumer-users-delete-consumer"]` | And the fail-open alarm |
+
+The five changes:
+
+| Resource | Why |
+| --- | --- |
+| `module.alarms.aws_cloudwatch_metric_alarm.errors[0]` | Its description counts log groups, 12 to 13 |
+| `module.alarms.aws_cloudwatch_metric_alarm.rate_limit_failed_open[0]` | Same, 12 to 13 |
+| `module.alarms.aws_cloudwatch_metric_alarm.lambda_aggregate_errors[1]` | Chunk one gains `users-delete-consumer` at m1 |
+| `module.alarms.aws_cloudwatch_metric_alarm.lambda_aggregate_throttles[1]` | Same |
+| `module.github_actions_role.aws_iam_role_policy.this[0]` | The deploy role gains a thirteenth function ARN |
+
+**`module.github_actions_role.aws_iam_role_policy.this[0]` *is* a change on this
+row, unlike on row 29, and the difference is worth recording because the two
+rows look alike.** The deploy role's domain grants come from
+`local.lambda_domain_names` in `ecr.tf`, which has held all nine names since row
+9, so cutting a domain never widens it. Consumer grants are built from the
+consumer map instead, which this row adds a key to, so a new consumer does widen
+it. Rows 24, 25 and 28 each changed it for the same reason.
+
+No SQS or DynamoDB resource is in the plan. `terraform/sqs.tf` already declares
+the `user-delete` queue and its dead letter queue, created by row 22 from
+section 7's list, and `terraform/dynamodb.tf` already sets
+`users = "NEW_AND_OLD_IMAGES"` alongside `parts`, `votes` and `part_listings`.
+Both were provisioned ahead of the seams that needed them, which is what those
+rows were for.
+
+One Terraform change is shared rather than new. The environment key the stream
+consumer module derives for a work queue was hardcoded to `PART_PURGE_QUEUE_URL`
+and is now `"${upper(replace(consumer.work_queue, "-", "_"))}_QUEUE_URL"`, so
+`part-purge` still yields `PART_PURGE_QUEUE_URL` and `user-delete` yields
+`USER_DELETE_QUEUE_URL`. The generalisation produces no diff on the existing
+consumer, which the plan confirms: no `part-purge` resource appears in it, and
+the new function's environment carries `USER_DELETE_QUEUE_URL` pointing at
+`carmodpicker-<env>-user-delete`.
+
+## `EXTRA_FUNCTIONS`
+
+`.github/workflows/deploy-backend.yml` gains `"users-delete-consumer": "users"`,
+its fourth entry, alongside row 24's `catalog-votes-consumer`, row 25's
+`admin-price-alerts-consumer` and row 28's `catalog-part-purge-consumer`. The map
+keys on the image repository name, so this consumer deploys from the `users`
+image, which it shares with the domain's HTTP function and will keep sharing
+after row 31 cuts that function.
+
+## Landing order
+
+1. Merge.
+2. Let the auto deploy run. It builds and pushes the images; there is no new
+   image repository on this row, since the consumer shares the `users` one.
+3. Refresh `bootstrap_image_tag` to the merge sha and confirm the tag resolves
+   in the `users` ECR repository, per the keep-last-10 trap.
+4. Plan, and confirm 9 add, 5 change, 0 destroy.
+5. Apply.
+6. Dispatch Deploy Backend on staging by hand. The apply has to precede the
+   dispatch: the deploy filters the image map down to the functions that exist,
+   so a dispatch first skips the new consumer silently.
+7. Verify by deleting a staging account and watching `user-delete` drain to
+   zero, then confirming `user-delete-dlq` and `users-stream-dlq` are both
+   empty.
+
+The expected-plan numbers are estimates for catching surprises, not commitments.
+
+---
+
 ## 9. Open questions
 
 Ranked. The first three block work; the rest can be answered as their PR comes
