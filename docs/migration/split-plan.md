@@ -1200,7 +1200,7 @@ infrastructure.
 | 23 | Tombstone attributes and tombstone-aware reads. **Delivered** | large | 0 | 22 |
 | 24 | Seam 3: `net_votes` handler moves to `catalog`'s stream consumer, on an event source mapping. **Delivered** | medium | 6 add, 3 change (est. 3 add) | 22 |
 | 25 | Seam 4: price alert email moves to an `admin` stream handler, on an event source mapping | medium | est. 3 add | 22 |
-| 26 | `build-lists`: function, routes, OTel | large | est. 17 add, 4 change | 23 |
+| 26 | `build-lists`: function, routes, OTel. **Delivered** | large | est. 17 add, 4 change | 23 |
 | 27 | `identity`: function, routes, OTel | medium | est. 11 add, 4 change | 23 |
 | 28 | Seam 2: part purge goes async | large | 2 add | 23 |
 | 29 | `catalog`: function, routes, OTel | large | est. 17 add, 4 change | 28 |
@@ -1209,9 +1209,9 @@ infrastructure.
 | 32 | Retire `$default`, the monolith, the artifacts bucket, the zip chain | medium | 12 destroy | 31 |
 | 33 | Frontend: delete the `services/Api.ts` shim, rewriting 74 import sites | medium | 0 | none |
 
-**Rows 26 through 31 are estimates, and the arithmetic behind them is worth
-stating rather than hiding. Rows 19, 20 and 21 landed on it exactly, so it is
-settled rather than provisional.** Row 18's delivery note found the per-cut shape by
+**Rows 27 through 31 are estimates, and the arithmetic behind them is worth
+stating rather than hiding. Rows 19, 20, 21 and 26 landed on it exactly, so it
+is settled rather than provisional.** Row 18's delivery note found the per-cut shape by
 counting a real plan, and rows 13, 14 and 15 had each recorded only the part of
 it they were looking at. Written out, one domain cut is:
 
@@ -1238,7 +1238,8 @@ So a cut is `5 + 2 + 2*prefixes + 2` adds and 4 changes. `moderation` serves 3
 prefixes, `vehicles` 2, `admin` 4, `build-lists` 4, `identity` 1, `catalog` 4
 and `users` 2, which is where the numbers in the table come from. Rows 19, 20 and
 21 have each now counted a real plan and found exactly 15, 13 and 17 adds with 4
-changes, so the remaining rows are arithmetic rather than guesswork. Each row's
+changes, and row 26 is the fourth to match, so the remaining rows are arithmetic
+rather than guesswork. Each row's
 delivery note should still record what it actually saw. The seam and stream rows (22, 24, 25, 28, 30) are not
 cuts and their counts are unchanged.
 
@@ -2520,6 +2521,178 @@ plan is green either way and the apply is what fails.
 The estimate in the table said 3 add. It counted the mapping, the function and
 its policy and did not count the three resources the module creates alongside a
 function, which is the same undercount row 22's estimate made.
+
+**Row 26 is delivered, and it is the sixth cut and the largest by route count.**
+`build-lists` gets a function, four route pairs and its OTel wiring, and as with
+rows 18 through 21 every one of those arrives by adding a name to a list rather
+than by writing a resource. `local.lambda_domains` in
+`terraform/lambda_domains.tf` gains the entry; `local.routed_lambda_domains` and
+`local.lambda_domain_path_prefixes` in `terraform/apigateway.tf` gain the name
+and its four prefixes; and the alarm lists in `terraform/monitoring.tf` pick the
+domain up for free, because both are derived from `local.lambda_domain_names`,
+whose order is untouched. Nothing in `backend/` changed: rows 8 and 16 had already built and
+instrumented all nine entrypoints, so `app/entrypoints/build_lists.py` is byte
+for byte what row 16 left, and row 23's tombstone-aware reads already filter
+tombstoned users and parts on this domain's joins.
+
+**The plan is expected to be 17 to add, 4 to change and 0 to destroy**, which is
+what `5 + 2 + 2*prefixes + 2` gives for a four-prefix domain and the same shape
+row 21 counted. The seventeen adds: five for the function
+(`aws_lambda_function.this`, `aws_iam_role.this`, `aws_cloudwatch_log_group.this`
+and `aws_iam_role_policy.xray_write[0]` inside
+`module.lambda_domain["build-lists"]`, plus
+`aws_iam_role_policy.lambda_domain["build-lists"]`); two for the integration
+(`module.api.aws_apigatewayv2_integration.this["build-lists"]` and
+`module.api.aws_lambda_permission.this["build-lists"]`); eight routes, two per
+prefix; and two metric filters, `errors["build-lists"]` and
+`rate_limit_failed_open["build-lists"]`. The four changes are the two description
+strings counting log groups and the two aggregate alarms whose description counts
+functions and whose metric math appends one term.
+
+**34 routes over four prefixes, which matches section 1.1 exactly.** The count
+was taken by walking `app.routes` on the built application rather than by
+grepping decorators, because three of the 34 are generated at runtime by
+`BaseDynamoEndpointRouter` and are invisible to a grep: `GET /api/build-lists/`
+and the `PUT` and `DELETE` on `/api/build-lists/{entity_id}`. Every one of the 34
+is covered by exactly one of the eight route keys, 32 through a `{proxy+}` and
+two through the bare `/api/build-lists` key.
+
+The four prefixes are four sibling trees rather than one tree with children.
+`/api/build-lists` is the parent in the domain model but not in the URL space,
+and the other three are siblings of it. A route key matches literally rather than
+by string prefix, so `/api/build-lists` does not claim `/api/build-list-parts`
+even though one is a character prefix of the other, and none of the four claims
+row 18's `/api/build-logs`, which that row's own comment anticipated.
+
+**The `/api/build-lists` bare key carries real traffic, and writing it with its
+slash would be an apply-time failure on a green plan.** `build_lists.py` declares
+create as `POST "/"` and the generated list endpoint is `GET "/"`, so both mount
+at `/api/build-lists/`. API Gateway normalises the trailing slash onto the bare
+key and a route key may not itself end in a slash, so `ANY /api/build-lists` is
+the only spelling that matches them. This is the same trap `/api/part-price-alerts`
+sprang in row 21. The other three bare keys are the defensive half section 3.5
+asks for, since those trees have every route below the prefix.
+
+Section 1.4's two `build-lists` ordering hazards are both inside a module and
+survive untouched. `/with-votes`, `/count`, `/car/{id}` and `/user/me` resolve
+before the generated `{entity_id}` because the module registers them first, and
+`/api/build-list-parts/parts/{part_id}/build-lists/count` resolves against
+`/{build_list_id}` on segment count. The `{proxy+}` key hands each whole subtree
+to one function, which leaves FastAPI's registration order deciding exactly as it
+does on the monolith today.
+
+**Twelve tables written and seven read, and the write list is wide because of a
+seam rather than because of a purge.** The four owned build-list tables are the
+obvious four. `build_logs` and `build_log_posts` are section 1.2's "created with
+the list", and the grant follows the writer exactly as row 18 predicted it would:
+`build_list_service._create_build_log` calls `repos.build_logs.create` from both
+create and copy, and delete passes `build_log_delete_actions`. The other five are
+one route, `POST /api/build-list-parts/{build_list_id}/create-and-add-part`, and
+they are section 1.2's price capture arriving here rather than only in `catalog`.
+Both of its branches reach
+`part_listing_service.create_or_update_listing_and_price`, which writes
+`part_listings` and `part_price_history` and updates `parts.best_price_cents` in
+one `transact_write`; the new-part branch additionally goes through
+`part_service.create_part`, which calls `repos.parts.create_unique` with
+`repos.part_cars.sync_actions`; and the evaluator it then calls writes
+`part_price_alerts.last_fired_at`. Seam 2 and row 28 are what narrow this.
+
+The bundle-to-grant gap is three tables. `car_makes` and `car_models` are reached
+only from `PartService._make_names`, which serves a `catalog` route;
+`_validate_car_ids`, the car read this domain does make, calls
+`repos.car_generations.get_many` and touches neither. `reports` is reached only
+from `purge_related_rows_for_parts`, which is the part purge.
+
+**One table is granted that the repository bundle does not name, and finding it
+is the substantive result of this row.** `app_settings` is read on
+`POST /api/build-lists` and `POST /api/build-lists/{id}/copy`:
+`build_list_service._enforce_free_tier_limit` calls `is_user_premium` with
+`check_kill_switch=True`, which reaches
+`AppSettingsRepository().premium_disabled()` and so a `GetItem`. It constructs
+the repository directly rather than going through `get_repositories()`, so the
+bundle guard never sees it and `test_repository_bundles.py` cannot catch it.
+Without the grant both create paths would fail with `AccessDeniedException` the
+moment the route moved, and the plan would have been green. It is a read: the
+kill switch is only ever read here and `admin` owns the write. Worth noting for
+rows 27 through 31, since the same shape of direct construction could hide the
+same gap elsewhere.
+
+**`s3` is true, which is a correction to section 3.4.** That section names only
+`media` and `users`, because it reasoned from the two domains whose names are
+about images rather than from the calls.
+`DELETE /api/build-lists/{build_list_id}/images/{image_index}` calls
+`storage_service.delete_image`, a real `delete_object` against the user images
+bucket, and it is the only S3 call in any of the four modules: `append-images`
+and `primary-image` reorder file keys in DynamoDB and upload nothing. The
+correction is narrowing rather than widening. A new `s3_delete_only` flag grants
+`s3:DeleteObject` and `s3:ListBucket` and withholds `s3:PutObject` and
+`s3:GetObject`. `ListBucket` is not optional despite nothing here listing: it is
+what authorizes the `head_bucket` in `StorageService._ensure_client`, and without
+it `delete_image` returns False and the object is orphaned in the bucket while
+the row loses its key. Every entry in `local.lambda_domains_declared` now
+declares the flag, because that local is a conditional whose other branch is the
+empty map and Terraform requires consistent types across both branches; an
+attribute present on one entry only fails `terraform validate`.
+
+**SES is still not granted, and unlike `admin` the reason is not that the path is
+unreachable.** The price alert email is genuinely reachable from this domain,
+because `evaluate_alerts_for_listing` runs at the end of the price capture the
+create-and-add-part route triggers. It sends nothing anyway: `_send` in
+`app/core/email.py` returns early unless `EMAIL_ENABLED`, that setting defaults
+to false, and `local.lambda_domain_environment` sets it on no domain function.
+The evaluator treats the False as a failed send, leaves `last_fired_at` alone and
+retries on the next observation, so the behaviour after this cut is the behaviour
+before it. Row 25 is where the grant and the environment key arrive with the code
+that uses them.
+
+**1024 MB, and the first entry above `media`'s 512.** Section 3.3 names `catalog`
+and `build-lists` as the two that start at the monolith's 1024. It is the right
+call on this domain's own terms: `GET /api/build-lists/with-votes` reads build
+lists, joins them to their parts, resolves those parts and tallies votes over the
+set, holding every intermediate in memory, and create-and-add-part runs a dedup
+across three lookup paths before a multi-table `transact_write`.
+
+**The alarm list is now seven of ten.** Six domains plus row 24's consumer, with
+three slots left for rows 27, 29 and 31 and none for row 25's consumer, which
+section 3.6's ceiling paragraph already flags as the decision that row has to
+make deliberately.
+
+**One renumbering, and it is expected rather than drift.**
+`alarm_lambda_function_names` is a concat of the created domains in
+`local.lambda_domain_names` order followed by the stream consumers, so domains
+sit ahead of consumers. `build-lists` is the sixth domain and took m5, which
+`catalog-votes-consumer` had held since row 24, pushing that consumer to m6.
+Both aggregate alarms therefore have the consumer's term rewritten in their
+metric math. This is inside the four alarm changes a cut already expects, since
+both alarms change anyway for their descriptions and for the term the new
+function appends, so it adds no plan count. It is called out because the five
+earlier cuts never hit it, there being no consumer before row 24, and because
+rows 27 through 31 will each do the same to whatever sits behind them.
+
+**`bootstrap_image_tag` must be refreshed to a tag that currently resolves in the
+`build-lists` ECR repository before this is applied.** It seeds `image_uri` on
+function creation, Lambda pulls the image at `CreateFunction`, and `ecr.tf`'s
+keep-last-10 lifecycle policy expires old tags, so a tag that was valid when the
+variable was last set may no longer exist. The plan is green either way and the
+apply is what fails. Set it to `sha-<current staging head>` and confirm the tag
+is present in that repository before confirming.
+
+**Apply first, then dispatch Deploy Backend.** The auto deploy that fires on the
+merge of a function-adding row fails at `existing-functions` with AccessDenied on
+the new ARN, because the deploy role's grant on
+`carmodpicker-<env>-build-lists` ships in this apply rather than in the merge.
+The ordering is: merge, run the apply, then dispatch Deploy Backend by hand. The
+failed automatic run is expected and is not a reason to roll anything back.
+
+**Verifying the flip** is section 6.3 plus
+`scripts/verify_route_cut.sh build-lists`, which now knows the four prefixes.
+Note the script's own caveat for the no-credential fallback path: three of the
+four prefixes have no route at the bare path, so a `GET` on
+`/api/build-list-parts`, `/api/build-list-phases` or
+`/api/build-list-labor-estimates` answers 404 from a perfectly healthy function.
+`/api/build-lists` is the exception and does serve its bare path. The gateway
+path, which CI always takes, has no such problem because it reads `routeKey` out
+of the access log.
 
 PRs 1, 2, 3, 9, 10, and 33 are independent of everything else and can run in
 parallel. PR 22 is the hard gate: nothing from 23 onward can start without it,

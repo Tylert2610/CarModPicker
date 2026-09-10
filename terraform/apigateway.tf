@@ -12,9 +12,10 @@ locals {
   # once local.lambda_domain_route_keys names its route keys: the module's every_integration_is_routed
   # check fails the plan on an integration no route can reach, so the two move together.
   #
-  # Row 14 is `media`, row 18 is `build-logs`, row 19 is `moderation`, row 20 is `vehicles` and
-  # row 21 is `admin`. Rows 26 through 31 append build-lists, identity, catalog and users.
-  routed_lambda_domains_declared = ["media", "build-logs", "moderation", "vehicles", "admin"]
+  # Row 14 is `media`, row 18 is `build-logs`, row 19 is `moderation`, row 20 is `vehicles`,
+  # row 21 is `admin` and row 26 is `build-lists`. Rows 27 through 31 append identity, catalog
+  # and users.
+  routed_lambda_domains_declared = ["media", "build-logs", "moderation", "vehicles", "admin", "build-lists"]
 
   # Gated on the same condition as the functions themselves, and it has to be. A route names an
   # integration and an integration names module.lambda_domain[name], so a routed domain whose
@@ -140,6 +141,45 @@ locals {
     # difference between a clean cut and one that half works if a collection
     # route is ever added.
     admin = ["/api/crawled-pages", "/api/part-price-alerts", "/api/admin/db-ops", "/api/admin/stats"]
+    # Row 26. Four prefixes and the largest cut so far by route count: 34 routes,
+    # against `admin`'s 12 and `moderation`'s 20. The four are four sibling
+    # trees rather than one tree with children, which is why they are four
+    # prefixes and not one: `/api/build-lists` is the parent in the domain model
+    # but not in the URL space, and `/api/build-list-parts`,
+    # `/api/build-list-phases` and `/api/build-list-labor-estimates` are
+    # siblings of it rather than paths below it.
+    #
+    # That sibling shape is also what makes the keys safe. API Gateway matches a
+    # route key literally rather than by string prefix, so `/api/build-lists`
+    # does not claim `/api/build-list-parts` even though one is a character
+    # prefix of the other, and neither claims `/api/build-logs`, which row 18
+    # already cut and whose own comment above anticipated this row. All five
+    # trees are independent keys and no ordering between them is implied.
+    #
+    # Eight route keys, a bare and a `{proxy+}` for each of the four. Three of
+    # the four bare keys are the defensive half section 3.5 asks for, because
+    # `build-list-parts`, `build-list-phases` and `build-list-labor-estimates`
+    # have every route below the prefix. The `/api/build-lists` bare key is not
+    # defensive and carries real traffic, in the same way `/api/part-price-alerts`
+    # does for `admin`: `build_lists.py` declares the create endpoint as
+    # `POST "/"` and `BaseDynamoEndpointRouter` generates the list endpoint as
+    # `GET "/"`, so both mount at `/api/build-lists/`. API Gateway normalises the
+    # trailing slash onto the bare key and a route key may not itself end in a
+    # slash, so `ANY /api/build-lists` is the only spelling that matches them and
+    # writing the literal path with its slash is an apply-time BadRequestException
+    # on a plan that was green.
+    #
+    # Section 1.4's two `build-lists` ordering hazards are both inside a module
+    # and are untouched by this map. `/api/build-lists/with-votes`, `/count`,
+    # `/car/{id}` and `/user/me` resolve before the generated `{entity_id}`
+    # because `build_lists.py` registers them first, and
+    # `/api/build-list-parts/parts/{part_id}/build-lists/count` resolves against
+    # `/{build_list_id}` on segment count. Both survive because the `{proxy+}`
+    # key hands the whole subtree to one function, which leaves FastAPI's
+    # registration order deciding exactly as it does on the monolith today.
+    # Splitting either subtree across route keys is what would break them, and
+    # nothing here does.
+    build-lists = ["/api/build-lists", "/api/build-list-parts", "/api/build-list-phases", "/api/build-list-labor-estimates"]
   }
 
   # Two route keys per prefix, generated rather than written out, so a domain added above cannot be
@@ -200,8 +240,8 @@ module "api" {
   default_integration = "legacy"
 
   # Two keys per cut prefix: `media`'s pair from row 14, `build-logs`' pair from row 18,
-  # `moderation`'s three pairs from row 19, `vehicles`' two pairs from row 20 and `admin`'s four
-  # pairs from row 21. No
+  # `moderation`'s three pairs from row 19, `vehicles`' two pairs from row 20, `admin`'s four
+  # pairs from row 21 and `build-lists`' four pairs from row 26. No
   # authorization_type is set on any of them, which means the module's own choice, CUSTOM whenever
   # authorizer_id is set, so each one sits behind the staging access gate exactly as $default does.
   # Setting NONE here would punch a hole straight past the gate, which is the failure the module's

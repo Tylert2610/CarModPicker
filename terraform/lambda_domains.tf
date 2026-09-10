@@ -4,8 +4,9 @@
 # docs/migration/split-plan.md, row 13 of section 8.
 #
 # `media` from row 13, `build-logs` from row 18, `moderation` from row 19,
-# `vehicles` from row 20 and `admin` from row 21 are the entries today. Rows 26
-# through 31 add the other four, one per row, and the shape here is built
+# `vehicles` from row 20, `admin` from row 21 and `build-lists` from row 26 are
+# the entries today. Rows 27 through 31 add the other three, one per row, and
+# the shape here is built
 # for that: everything a domain needs is one entry in `local.lambda_domains`,
 # and the module call, the IAM policy and the outputs all key off it, so adding
 # a domain is adding a map entry.
@@ -70,9 +71,19 @@ locals {
   #     would silently turn layer 2 off for this domain and log a warning on
   #     every request, which is worse than a denial because nothing fails.
   #
-  # `s3` is whether the function gets the user images bucket. Only `media` and,
-  # from row 31, `users` do; section 3.4 gives `users` the three object actions
-  # for avatars and `media` the full set including ListBucket.
+  # `s3` is whether the function gets the user images bucket at all, and
+  # `s3_delete_only` narrows what it gets when it does. Section 3.4 names
+  # `media` and, from row 31, `users`: the full set including ListBucket for
+  # `media` and the three object actions for avatars for `users`.
+  #
+  # Row 26 found a third. `build-lists` deletes gallery images, which section
+  # 3.4 did not anticipate because it reasoned from the two domains whose names
+  # are about images rather than from the calls. The correction is in the code's
+  # favour and is narrowing rather than widening: `s3_delete_only` grants
+  # `s3:DeleteObject` and `s3:ListBucket` and withholds `s3:PutObject` and
+  # `s3:GetObject`, which is the whole of what the one call needs. The
+  # derivation for `build-lists` below names that call.
+  #
   # How `build-logs`'s two table lists were derived, by row 18 and by the same
   # method as `media`'s above, from the code rather than from the ownership
   # column:
@@ -395,25 +406,161 @@ locals {
   # than a larger function. Raising memory would buy CPU and so a little wall
   # clock, and it is the cheapest knob if the duration says so, but it is not the
   # answer to that question and this row does not pretend it is.
+  #
+  # How `build-lists`' two table lists were derived, by row 26 and by the same
+  # method as the five above. This is the sixth cut and the first whose write
+  # list is wide because of a seam rather than because of a purge:
+  #
+  #   - `app/composition/domains.py` declares `_BUILD_LISTS_REPOSITORIES` as
+  #     twenty repositories, and `app/db/dynamo/registry.py`'s `tables_for`
+  #     maps each to a table suffix of the same name, so twenty repositories are
+  #     twenty tables. `backend/tests/entrypoints/test_repository_bundles.py`
+  #     recomputes that tuple from the real import graph, so the bundle is a
+  #     checked statement of what this function can reach.
+  #   - Twenty in the bundle, seventeen granted, and the three-table gap is
+  #     `car_makes`, `car_models` and `reports`. `car_makes` and `car_models`
+  #     are reached only from `PartService._make_names`, which serves the
+  #     filter-options route in `catalog` and nothing here; `_validate_car_ids`,
+  #     which is the car read this domain does make, calls
+  #     `repos.car_generations.get_many` and touches neither. `reports` is
+  #     reached only from `purge_related_rows_for_parts`, which is the part
+  #     purge and is a `catalog` and `admin` path. Granting a table on the
+  #     strength of an import rather than a call is what the five entries above
+  #     refused.
+  #   - One table is granted that the bundle does not name, and finding it is
+  #     the substantive result of this row's derivation. `app_settings` is read
+  #     on `POST /api/build-lists` and `POST /api/build-lists/{id}/copy`:
+  #     `build_list_service._enforce_free_tier_limit` calls `is_user_premium`
+  #     with `check_kill_switch=True`, which calls `is_premium_system_disabled`
+  #     in `app/api/utils/subscription_utils.py`, which does
+  #     `AppSettingsRepository().premium_disabled()` and so a `GetItem` on the
+  #     table. It constructs the repository directly rather than going through
+  #     `get_repositories()`, so the bundle guard never sees it and
+  #     `test_repository_bundles.py` cannot catch it. Without this grant both
+  #     create paths would fail with AccessDeniedException the moment the route
+  #     moved, and a speculative plan would be green. It is in `read_tables`:
+  #     the kill switch is only ever read here, and `admin` owns the write.
+  #   - Eleven tables are written, and every one has a named caller.
+  #     The four this domain owns per section 1.2 are the obvious four:
+  #     `build_lists` from create, the base router's PUT and DELETE, copy and
+  #     the three image routes; `build_list_parts`, `build_list_phases` and
+  #     `build_list_labor_estimates` from their own create, update and delete
+  #     routes and from the delete cascade.
+  #     `build_logs` and `build_log_posts` are section 1.2's "created with the
+  #     list": `build_list_service._create_build_log` calls
+  #     `repos.build_logs.create` from both `create` and `copy_build_list`, and
+  #     `delete` passes `build_log_delete_actions`, which deletes the log's
+  #     posts and then the log.
+  #     The remaining five are one route, `POST
+  #     /api/build-list-parts/{build_list_id}/create-and-add-part`, and they are
+  #     section 1.2's price capture arriving here rather than only in `catalog`.
+  #     Both of its branches reach
+  #     `part_listing_service.create_or_update_listing_and_price`, the existing
+  #     part branch directly and the new part branch through
+  #     `part_service.create_part`. That chokepoint writes `part_listings` and
+  #     `part_price_history` and updates `parts.best_price_cents` in one
+  #     `transact_write`, and `create_part` additionally calls
+  #     `repos.parts.create_unique` with `repos.part_cars.sync_actions`. It then
+  #     calls `evaluate_alerts_for_listing`, which writes
+  #     `part_price_alerts.last_fired_at` after a send. Section 1.2's "also
+  #     written today by" column names `build-lists` against `part_listings` and
+  #     `part_price_history` for exactly this reason, and the column is right.
+  #     Seam 2 and row 28 are what eventually narrow this. Until then the grant
+  #     follows the writer, and on this route the writer is this function.
+  #   - Six tables are read only. `users` is read on the twenty-eight routes
+  #     that touch an auth dependency, because `get_current_user` and
+  #     `get_optional_current_user` both resolve the token subject through
+  #     `repos.users.get_by_username`, and again in the alert evaluator, which
+  #     calls `repos.users.get(alert.user_id)` for the address. `car_generations`
+  #     is `_verify_car_exists` on create and update, `GET
+  #     /api/build-lists/car/{car_id}` and `PartService._validate_car_ids`.
+  #     `categories`, `part_manufacturers` and `retailers` are the three
+  #     existence checks `create_part` and the create-and-add-part route make
+  #     before writing, plus the retailer the alert evaluator resolves for the
+  #     email body; none of the three is created here, because
+  #     `get_or_create_retailer` and `get_or_create_part_manufacturer_by_name`
+  #     are called only from `catalog`'s own two modules. `votes` is
+  #     `repos.votes.tallies` and `user_votes` on `GET
+  #     /api/build-lists/with-votes` and is never written from this domain, which
+  #     row 24 is what made true. `app_settings` is the kill switch above.
+  #   - Row 23's tombstone reads need no grant of their own and are worth naming
+  #     anyway, because they are why two of the reads above are load bearing
+  #     rather than incidental: `drop_tombstoned_values` filters `parts` on the
+  #     build-list part listings and on `with-votes`, and `get_current_user`
+  #     checks the user's own flags. `parts` is in `tables` rather than
+  #     `read_tables` because a table appears in exactly one of the two lists
+  #     and the write set is the wider grant.
+  #   - `rate-limits` is in `tables` for the reason all five entries above
+  #     record: the shared limiter's counter table, reached from the middleware
+  #     rather than from a repository, and it fails open, so withholding it
+  #     turns layer 2 off silently rather than failing.
+  #   - `secrets` is true. Twenty of the thirty-four routes require a token and
+  #     eight more accept an optional one, so `SECRET_KEY` is read on most
+  #     requests; the descriptor sets `requires_secrets=("SECRET_KEY",)`.
+  #   - `s3` is true, and this is the correction to section 3.4 the schema
+  #     comment above records. `DELETE
+  #     /api/build-lists/{build_list_id}/images/{image_index}` calls
+  #     `storage_service.delete_image(removed_key)`, which is a real
+  #     `delete_object` against the user images bucket. It is the only S3 call
+  #     in any of the four modules: `append-images` and `primary-image` reorder
+  #     file keys in DynamoDB and upload nothing, and the keys themselves come
+  #     from the build list row rather than from a listing. So
+  #     `s3_delete_only` is set and the grant is `s3:DeleteObject` plus
+  #     `s3:ListBucket`, without `s3:PutObject` or `s3:GetObject`. `ListBucket`
+  #     is not optional despite nothing here listing: it is what authorizes the
+  #     `head_bucket` that `StorageService._ensure_client` makes once per cold
+  #     start, and without it the service disables itself and the delete becomes
+  #     a silent no-op that leaves the object orphaned in the bucket while the
+  #     row loses its key.
+  #   - SES is not granted and no `EMAIL_FROM` is set, for the same reason row
+  #     21 gave and with one more step to it. The price alert email is genuinely
+  #     reachable from this domain, unlike from `admin`, because
+  #     `evaluate_alerts_for_listing` runs at the end of the price capture the
+  #     create-and-add-part route triggers. It still sends nothing:
+  #     `app/core/email.py`'s `_send` returns early unless `EMAIL_ENABLED`, that
+  #     setting defaults to false, and `local.lambda_domain_environment` sets it
+  #     on no domain function. The evaluator treats the False as a failed send,
+  #     leaves `last_fired_at` alone and retries on the next observation, so the
+  #     behaviour after this cut is the behaviour before it. Row 25 is seam 4,
+  #     which moves the email onto a stream handler with the grant and the
+  #     environment key together, and that is where it should land rather than
+  #     here.
+  #
+  # 1024 MB, and the first entry above `media`'s 512. Section 3.3 sets the
+  # starting sizes and names `catalog` and `build-lists` as the two that start
+  # at the monolith's 1024; the four cuts before this one came in under 3.3's
+  # figure for the rest rather than over it, so this is the paragraph being
+  # followed and not stretched. It is the right call on this domain's own terms:
+  # `GET /api/build-lists/with-votes` reads build lists, joins them to their
+  # parts, resolves those parts and then tallies votes over the set, holding
+  # every intermediate in memory, and the create-and-add-part route runs a
+  # dedup across three lookup paths before a multi-table `transact_write`. Both
+  # are wider than anything the four 256 MB domains serve. Memory is also CPU on
+  # Lambda, so the number is as much about the latency of those joins as about
+  # the footprint, and it is the cheapest knob to lower if the duration and the
+  # max-memory-used say the joins are smaller than section 3.3 assumed.
   lambda_domains_declared = {
     media = {
-      secrets     = true
-      s3          = true
-      memory      = 512
-      tables      = ["image_source_mappings", "rate-limits"]
-      read_tables = ["users", "car_generations", "parts", "build_lists"]
+      secrets        = true
+      s3             = true
+      s3_delete_only = false
+      memory         = 512
+      tables         = ["image_source_mappings", "rate-limits"]
+      read_tables    = ["users", "car_generations", "parts", "build_lists"]
     }
     build-logs = {
-      secrets     = true
-      s3          = false
-      memory      = 256
-      tables      = ["build_log_posts", "rate-limits"]
-      read_tables = ["users", "build_lists", "build_logs"]
+      secrets        = true
+      s3             = false
+      s3_delete_only = false
+      memory         = 256
+      tables         = ["build_log_posts", "rate-limits"]
+      read_tables    = ["users", "build_lists", "build_logs"]
     }
     moderation = {
-      secrets = true
-      s3      = false
-      memory  = 256
+      secrets        = true
+      s3             = false
+      s3_delete_only = false
+      memory         = 256
       # Three written tables, down from four. Row 24 moved `parts` to
       # `read_tables`; see the derivation above for why it was ever written and
       # what replaced the write.
@@ -421,9 +568,10 @@ locals {
       read_tables = ["users", "build_lists", "car_generations", "parts"]
     }
     vehicles = {
-      secrets = false
-      s3      = false
-      memory  = 256
+      secrets        = false
+      s3             = false
+      s3_delete_only = false
+      memory         = 256
       # The limiter's counter table and nothing else. Every route this domain
       # serves is a public read; see the derivation above.
       tables = ["rate-limits"]
@@ -438,9 +586,10 @@ locals {
       ]
     }
     admin = {
-      secrets = true
-      s3      = false
-      memory  = 256
+      secrets        = true
+      s3             = false
+      s3_delete_only = false
+      memory         = 256
       # Fifteen written tables, fourteen of them real and the fifteenth the
       # limiter's counter. This is the widest write list of the nine by a wide
       # margin, and it is the domain's whole purpose rather than a failure to
@@ -470,6 +619,42 @@ locals {
         "build_list_phases",
         "build_logs",
         "image_source_mappings",
+      ]
+    }
+    build-lists = {
+      secrets = true
+      # The gallery delete and nothing else; see the derivation above. The
+      # narrow flag rather than the broad one, so this function can delete an
+      # image it owns and cannot upload or read one.
+      s3             = true
+      s3_delete_only = true
+      memory         = 1024
+      # Twelve written tables, eleven of them real and the twelfth the limiter's
+      # counter. The four owned build-list tables, the two build-log tables the
+      # create and delete paths touch, and the five the create-and-add-part
+      # route's price capture writes.
+      tables = [
+        "build_lists",
+        "build_list_parts",
+        "build_list_phases",
+        "build_list_labor_estimates",
+        "build_logs",
+        "build_log_posts",
+        "parts",
+        "part_cars",
+        "part_listings",
+        "part_price_history",
+        "part_price_alerts",
+        "rate-limits",
+      ]
+      read_tables = [
+        "users",
+        "app_settings",
+        "car_generations",
+        "categories",
+        "part_manufacturers",
+        "retailers",
+        "votes",
       ]
     }
   }
@@ -810,11 +995,26 @@ resource "aws_iam_role_policy" "lambda_domain" {
       # to decide whether uploads are enabled at all. Without it the service
       # disables itself silently and every upload route answers as if the bucket
       # were unconfigured, with a warning in the logs and no error to the caller.
+      #
+      # `s3_delete_only` is row 26's narrowing. Every entry declares it, because
+      # `local.lambda_domains` is a conditional whose other branch is the empty
+      # map: Terraform requires both branches of a conditional to have a
+      # consistent type, so an attribute present on one entry only fails the
+      # validate rather than defaulting. `build-lists`
+      # makes exactly one S3 call, `delete_image` from the gallery delete route,
+      # so it gets `s3:DeleteObject` and not the other two: it has no upload
+      # route, and it reads image keys out of its own DynamoDB row rather than
+      # out of the bucket. `s3:ListBucket` is granted either way, because it is
+      # what authorizes the `head_bucket` in `StorageService._ensure_client`
+      # and, without it, `delete_image` returns False and the object is orphaned
+      # while the row loses its key.
       each.value.s3 ? [
         {
-          Sid    = "ReadWriteUserImageObjects"
+          Sid    = each.value.s3_delete_only ? "DeleteUserImageObjects" : "ReadWriteUserImageObjects"
           Effect = "Allow"
-          Action = [
+          Action = each.value.s3_delete_only ? [
+            "s3:DeleteObject",
+            ] : [
             "s3:PutObject",
             "s3:GetObject",
             "s3:DeleteObject",

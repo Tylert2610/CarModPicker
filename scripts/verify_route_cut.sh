@@ -124,9 +124,10 @@ esac
 # correctly report it as still on the monolith.
 #
 # `media` from row 14, `build-logs` from row 18, `moderation` from row 19,
-# `vehicles` from row 20 and `admin` from row 21 are cut today. The other four
-# are filled in by rows 26 through 31 and are listed empty so the script fails
-# loudly with "no prefixes" rather than passing silently on an empty loop.
+# `vehicles` from row 20, `admin` from row 21 and `build-lists` from row 26 are
+# cut today. The other three are filled in by rows 27 through 31 and are listed
+# empty so the script fails loudly with "no prefixes" rather than passing
+# silently on an empty loop.
 case "$DOMAIN" in
 media)
   PREFIXES=(/api/images)
@@ -154,8 +155,12 @@ admin)
   PREFIXES=(/api/crawled-pages /api/part-price-alerts /api/admin/db-ops /api/admin/stats)
   ;;
 build-lists)
-  # Row 26.
-  PREFIXES=()
+  # Row 26. Four prefixes and the largest cut by route count, 34 of them. The
+  # four are sibling trees rather than one tree with children: /api/build-lists
+  # is the parent in the domain model but not in the URL space. A route key
+  # matches literally rather than by string prefix, so /api/build-lists does not
+  # claim /api/build-list-parts and neither claims row 18's /api/build-logs.
+  PREFIXES=(/api/build-lists /api/build-list-parts /api/build-list-phases /api/build-list-labor-estimates)
   ;;
 identity)
   # Row 28.
@@ -227,8 +232,10 @@ invoke_fallback() {
     #
     # A prefix with no route at the bare path answers 404 here and is reported
     # as a failure, which is a false negative rather than a real one. It applies
-    # to /api/build-logs, /api/reports, /api/votes, /api/admin/db-ops and
-    # /api/admin/stats among others: every route of those trees is below the
+    # to /api/build-logs, /api/reports, /api/votes, /api/admin/db-ops,
+    # /api/admin/stats and row 26's /api/build-list-parts,
+    # /api/build-list-phases and /api/build-list-labor-estimates among others:
+    # every route of those trees is below the
     # prefix, so a GET on the prefix itself is genuinely a 404 from a working
     # function. The gateway path above has no such problem, because it accepts
     # any answer that is not a 5xx and reads the route key out of the access
