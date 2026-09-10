@@ -26,7 +26,7 @@
 # It pulls PyJWT and bcrypt, both of which were already pinned below and stay
 # pinned here, because this file is the resolved set and the package's own
 # ranges must not be allowed to float a different major into the image.
-webbpulse[fastapi,otel,dynamodb,aws-otel,security]==0.10.0
+webbpulse[fastapi,otel,dynamodb,aws-otel,security]==0.11.0
 
 # Core FastAPI and web framework dependencies
 annotated-types==0.8.0
