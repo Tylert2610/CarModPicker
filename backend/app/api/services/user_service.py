@@ -12,17 +12,27 @@ logger = get_logger()
 
 
 def user_read(user: DBUser, repos: Optional[Repositories] = None) -> UserRead:
-    repositories = repos if repos is not None else get_repositories()
-    accounts = repositories.oauth_accounts.list_by_user(user.id)
+    # Rebound to `repos` rather than to a differently named local, and that is
+    # load bearing rather than cosmetic. `tests/entrypoints/test_repository_bundles.py`
+    # recomputes each domain's declared tuple from the import graph by finding
+    # attribute accesses whose receiver is named `repos`, so a bundle read
+    # through any other name is invisible to it. This function reads
+    # `oauth_accounts` on every single user response, and under the old name the
+    # test could not see it: `users` declared the repository anyway, because the
+    # delete cascade reached it, and row 30 moving that cascade out is what would
+    # have exposed the gap as a `RepositoryNotInBundle` on `GET /users/me`.
+    repos = repos if repos is not None else get_repositories()
+    accounts = repos.oauth_accounts.list_by_user(user.id)
     return UserRead.model_validate(user).model_copy(
         update={"oauth_accounts": [OAuthAccountRead.model_validate(account) for account in accounts]}
     )
 
 
 def user_reads(users: Iterable[DBUser], repos: Optional[Repositories] = None) -> List[UserRead]:
-    repositories = repos if repos is not None else get_repositories()
+    # `repos` for the reason spelled out on `user_read` above.
+    repos = repos if repos is not None else get_repositories()
     user_list = list(users)
-    accounts_by_user = repositories.oauth_accounts.list_by_users([user.id for user in user_list])
+    accounts_by_user = repos.oauth_accounts.list_by_users([user.id for user in user_list])
     return [
         UserRead.model_validate(user).model_copy(
             update={

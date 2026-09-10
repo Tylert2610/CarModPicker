@@ -119,31 +119,20 @@ EXPECTED_CROSS_DOMAIN_READS: Dict[str, Set[str]] = {
     # `identity` writes `users` on oauth link, webauthn registration, and
     # password and 2FA changes. Seam 1's neighbour; stays until the tombstone.
     "identity": {"users"},
-    # Seam 1 itself: the delete cascade writes roughly fifteen tables across
-    # five domains. Row 30 makes it asynchronous and this set collapses to none.
-    "users": {
-        "oauth_accounts",
-        "webauthn_credentials",
-        "car_makes",
-        "car_models",
-        "car_generations",
-        "categories",
-        "part_manufacturers",
-        "retailers",
-        "parts",
-        "part_cars",
-        "part_listings",
-        "part_price_history",
-        "part_price_alerts",
-        "build_lists",
-        "build_list_parts",
-        "build_list_phases",
-        "build_list_labor_estimates",
-        "build_logs",
-        "build_log_posts",
-        "votes",
-        "reports",
-    },
+    # Row 30 took seam 1 out of this set, which is the largest single narrowing
+    # in the plan: twenty tables across five domains, written by the delete
+    # cascade on the request thread, now written by
+    # `carmodpicker-<env>-users-delete-consumer` instead.
+    #
+    # `oauth_accounts` is what is left, and it is a real read rather than a
+    # remnant: `user_service.user_read` attaches a user's linked accounts to
+    # every user response. It was not in this set before row 30 and it should
+    # have been. `_bundle_accesses` matches a receiver named `repos`, and that
+    # module read the bundle through a local named `repositories`, so the graph
+    # never saw it; the cascade declared the repository for unrelated reasons
+    # and hid the gap. Row 30 renamed the local, which is why a table appears
+    # here on the row that removes twenty.
+    "users": {"oauth_accounts"},
     # Row 28 took seam 2 out of this set. `build_list_parts`, `reports` and
     # `part_price_alerts` were here because the synchronous part purge wrote
     # them; the purge consumer names them now. What is left is `votes`, read by

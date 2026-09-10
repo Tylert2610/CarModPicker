@@ -171,33 +171,28 @@ def _admin_routers() -> "Sequence[RouterSpec]":
 #: synchronous until the tombstone lands.
 _IDENTITY_REPOSITORIES = ("users", "oauth_accounts", "webauthn_credentials")
 
-#: `users` is the widest bundle and stays that way until row 30 makes the delete
-#: cascade asynchronous. Twenty-three of twenty-five, because `users.py` deletes
-#: a user and then writes into roughly fifteen tables across five other domains.
+#: `users` owns `users` and `app_settings`, and reads `oauth_accounts`.
+#:
+#: This tuple was twenty-three of twenty-five until row 30, and almost none of
+#: those entries were there because a `users` route reads or writes the table.
+#: They were there because `_delete_user_everywhere` deleted a user and then
+#: wrote into roughly fifteen tables across five other domains, on the request
+#: thread. Row 30 moved that cascade to `carmodpicker-<env>-users-delete-consumer`,
+#: which names the tables itself in `app/entrypoints/users_delete_consumer.py`,
+#: and twenty entries went with it. This is seam 1 closing, and it is the
+#: largest single narrowing in the plan.
+#:
+#: `oauth_accounts` is the one that stayed, and it is a genuine cross-domain
+#: read rather than a leftover: `user_service.user_read` attaches a user's
+#: linked accounts to every user response. It was invisible to
+#: `tests/entrypoints/test_repository_bundles.py` until this row, because that
+#: module read the bundle through a local named `repositories` rather than
+#: `repos`; row 30 renamed it, so the graph now sees the read that was always
+#: there.
 _USERS_REPOSITORIES = (
     "users",
-    "oauth_accounts",
-    "webauthn_credentials",
     "app_settings",
-    "car_makes",
-    "car_models",
-    "car_generations",
-    "categories",
-    "part_manufacturers",
-    "retailers",
-    "parts",
-    "part_cars",
-    "part_listings",
-    "part_price_history",
-    "part_price_alerts",
-    "build_lists",
-    "build_list_parts",
-    "build_list_phases",
-    "build_list_labor_estimates",
-    "build_logs",
-    "build_log_posts",
-    "votes",
-    "reports",
+    "oauth_accounts",
 )
 
 #: `catalog` owns the eleven catalogue tables. Two extras are left and both are

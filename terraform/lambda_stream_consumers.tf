@@ -260,6 +260,102 @@ locals {
       tables      = ["build_list_parts", "votes", "reports", "part_price_alerts"]
       read_tables = []
     }
+
+    # Split plan row 30, section 1.3's seam 1, and the largest of them.
+    # `_delete_user_everywhere` used to run inline at the end of every account
+    # deletion, deleting rows in roughly fifteen tables across five other
+    # domains: `oauth_accounts` and `webauthn_credentials` (`identity`), the
+    # catalogue tables a part purge reaches (`catalog`), `build_lists` and its
+    # three children (`build-lists`), `build_logs` and `build_log_posts`
+    # (`build-logs`), `votes` and `reports` (`moderation`), and
+    # `part_price_alerts` (`admin`). That one function call is why `users`
+    # declared twenty-three of twenty-five repositories and why section 1.1 cuts
+    # it last. This function is the inversion: the delete writes a tombstone,
+    # removes the user row and its two reservations, and returns; the `users`
+    # stream carries the tombstone here; this function performs the cascade.
+    #
+    # The second consumer with two event source mappings, and the reasoning is
+    # row 28's with more weight behind it, because this cascade is fifteen
+    # tables rather than four. The stream mapping turns a tombstone into a
+    # message on the `user-delete` work queue; the queue mapping drains it. Row
+    # 22 created that queue and section 7 names it for this seam.
+    users-delete-consumer = {
+      image_repository = "users"
+      stream_table     = "users"
+      work_queue       = "user-delete"
+      command          = ["python", "-m", "app.entrypoints.users_delete_consumer"]
+
+      # 256 MB, matching `users` itself and every other consumer here. The work
+      # per invoke is a fan out of Queries and BatchWriteItems with no image
+      # handling and nothing native in the path.
+      memory = 256
+
+      # 29 seconds, pinned to `local.work_queue_consumer_timeout` in sqs.tf for
+      # the reason row 28's entry spells out: the work queues' visibility
+      # timeout of 174 is derived as six times this number, Lambda refuses an
+      # SQS mapping whose function timeout exceeds the queue's visibility
+      # timeout, and raising this without raising the queue would fail the
+      # apply. No batch window is set on the queue mapping below, which is what
+      # keeps 174 exactly correct rather than approximately so.
+      #
+      # 29 seconds is a real ceiling here rather than the ample one it is on the
+      # part purge, because this cascade is larger: a user with many build lists
+      # costs a transaction per list. It is still the right number. The unit of
+      # work is one user and the queue is what absorbs a slow one: a cascade
+      # that runs out of time is retried as a whole message, up to five times,
+      # and every step is idempotent, so the retry resumes rather than
+      # duplicating. Widening the timeout would require moving the visibility
+      # timeout on both work queues to buy a longer single attempt in exchange
+      # for a slower failure detection.
+      timeout = 29
+
+      # No secrets and no mail. The cascade signs no token and sends nothing; it
+      # deletes rows. Note that `users` itself declares SECRET_KEY in
+      # `requires_secrets`, and this function shares that domain's image and not
+      # its needs, which is exactly the point of a separate function.
+      secrets = false
+      ses     = false
+
+      # The eighteen tables of the cascade, all written. This is the seam stated
+      # as a policy: these are the tables the `users` HTTP function was reaching
+      # into from the request path, and they are now reached only from here.
+      #
+      # `users` is deliberately absent from both lists, and it is the one
+      # absence that is load bearing. The tombstone write, the hard delete and
+      # the release of the `username` and `email` reservations all stay in
+      # `app/api/endpoints/users.py`, synchronously, because a user that reads
+      # as deleted while still holding an email reservation blocks a person from
+      # registering again with the address they just freed, against a row nobody
+      # can see. Row 28 settled the same question for `gtin` and left seam 1
+      # open on the grounds that the blast radius differs; it does, and it is
+      # worse, so the answer is the same. The stream is the trigger and the
+      # record carries the tombstoned image, so this function never reads the
+      # user back either.
+      #
+      # `app_settings` is absent for a plainer reason: the cascade does not
+      # touch it. It stays in `users`'s own tuple, where a route reads it.
+      tables = [
+        "oauth_accounts",
+        "webauthn_credentials",
+        "categories",
+        "part_manufacturers",
+        "retailers",
+        "parts",
+        "part_cars",
+        "part_listings",
+        "part_price_history",
+        "part_price_alerts",
+        "build_lists",
+        "build_list_parts",
+        "build_list_phases",
+        "build_list_labor_estimates",
+        "build_logs",
+        "build_log_posts",
+        "votes",
+        "reports",
+      ]
+      read_tables = []
+    }
   }
 
   # Gated on exactly the condition the domain functions are gated on, and for
@@ -332,13 +428,23 @@ locals {
       # failure path this function is meant to inherit.
       AWS_LWA_ERROR_STATUS_CODES = "500-599"
       },
-      # The work queue URL, and only on a consumer that drains one. The producer
-      # half of row 28's consumer sends with a URL rather than an ARN, which is
-      # why outputs.tf publishes both. `app/consumers/part_purge.py` raises when
-      # it is unset rather than defaulting, so a misconfiguration fails the
-      # invoke instead of acking a batch it never enqueued.
+      # The work queue URL, and only on a consumer that drains one. A producer
+      # sends with a URL rather than an ARN, which is why outputs.tf publishes
+      # both. Each consumer module raises when its variable is unset rather than
+      # defaulting, so a misconfiguration fails the invoke instead of acking a
+      # batch it never enqueued.
+      #
+      # The key is derived from the queue name rather than written out, which is
+      # what row 30 changed. Row 28 hardcoded `PART_PURGE_QUEUE_URL` because
+      # there was one consumer with one queue; a second one made that a bug
+      # waiting to happen, because `user-delete`'s consumer would have received
+      # its URL under the other consumer's variable name and
+      # `app/consumers/user_delete.py` would have raised on a queue that was
+      # correctly configured. `part-purge` becomes PART_PURGE_QUEUE_URL and
+      # `user-delete` becomes USER_DELETE_QUEUE_URL, so the two modules'
+      # `QUEUE_URL_VARIABLE` constants and this map cannot drift.
       consumer.work_queue != null ? {
-        PART_PURGE_QUEUE_URL = aws_sqs_queue.work[consumer.work_queue].id
+        "${upper(replace(consumer.work_queue, "-", "_"))}_QUEUE_URL" = aws_sqs_queue.work[consumer.work_queue].id
       } : {},
       # The sender, and only on a consumer that sends. `app/core/email.py` reads
       # EMAIL_FROM for the SES `FromEmailAddress` and EMAIL_ENABLED as the

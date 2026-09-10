@@ -23,15 +23,13 @@ from app.api.schemas.user import (
     UserRead,
     UserUpdate,
 )
-from app.api.services.part_service import PartService, purge_related_rows_for_parts
 from app.api.services.storage_service import storage_service
 from app.api.services.user_service import UserService, user_read, user_reads
 from app.api.utils.cursor_pagination import CursorParams, get_cursor_params, paginate_in_memory
 from app.api.utils.endpoint_decorators import crud_responses
 from app.api.utils.response_patterns import ResponsePatterns
 from app.core.config import settings
-from app.db.dynamo.build_lists import delete_build_list_cascade
-from app.db.dynamo.build_logs import build_log_delete_actions
+from app.db.dynamo.models import utc_now
 from app.db.dynamo.users import EMAIL, UniqueAttributeTaken
 from app.db.dynamo.users import User as DBUser
 
@@ -48,44 +46,68 @@ def _raise_duplicate(error: UniqueAttributeTaken) -> None:
     ResponsePatterns.raise_conflict("Username already registered", "USERNAME_EXISTS")
 
 
-def _purge_owned_moderation(repos: Repositories, user_id: UUID) -> None:
-    repos.votes.delete_for_user(user_id)
-    repos.reports.delete_for_user(user_id)
-
-
-def _purge_owned_build_lists(repos: Repositories, user_id: UUID) -> None:
-    owned = repos.build_lists.query_all("user_id-created_at-index", user_id)
-    for build_list in owned:
-        delete_build_list_cascade(
-            build_list.id,
-            build_lists=repos.build_lists,
-            parts=repos.build_list_parts,
-            phases=repos.build_list_phases,
-            labor_estimates=repos.build_list_labor_estimates,
-            extra_actions=build_log_delete_actions(
-                build_list.id, build_logs=repos.build_logs, posts=repos.build_log_posts
-            ),
-        )
-    added_elsewhere = [str(blp.id) for blp in repos.build_list_parts.scan_all() if blp.added_by == user_id]
-    if added_elsewhere:
-        repos.build_list_parts.batch_delete(added_elsewhere)
-
-
-def _purge_owned_parts(repos: Repositories, user: DBUser) -> None:
-    service = PartService(repos)
-    parts = repos.parts.list_by_user(user.id)
-    for part in parts:
-        service.purge(part)
-    purge_related_rows_for_parts([part.id for part in parts])
-    repos.part_price_alerts.delete_for_user(user.id)
-
-
 def _delete_user_everywhere(repos: Repositories, user: DBUser) -> None:
-    _purge_owned_parts(repos, user)
-    _purge_owned_build_lists(repos, user.id)
-    _purge_owned_moderation(repos, user.id)
-    repos.oauth_accounts.delete_all_for_user(user.id)
-    repos.webauthn_credentials.delete_all_for_user(user.id)
+    """Delete a user account, and get everything that references it deleted.
+
+    Seam 1, split plan row 30. This function is kept, with its name and its
+    signature, and it still means what it always meant: after it returns, the
+    caller has done everything required to remove the user and every row in the
+    roughly fifteen tables that reference it. What changed is that it no longer
+    performs that cascade itself.
+
+    The three helpers this file used to hold, `_purge_owned_parts`,
+    `_purge_owned_build_lists` and `_purge_owned_moderation`, plus the two
+    `delete_all_for_user` calls, moved verbatim to
+    `app/consumers/user_delete.py`. They now run on
+    `carmodpicker-<env>-users-delete-consumer`, off the `users` stream and
+    through the `user-delete` work queue, with their own IAM and their own
+    concurrency. That is what takes `users` from twenty-three declared
+    repositories down to three, and the narrowing of the grant is the other half
+    of this row.
+
+    Keeping this function rather than editing it out of both call sites is what
+    makes the seam reversible, the same argument
+    `purge_related_rows_for_parts` made for seam 2 in row 28. If the consumer
+    has to be turned off, restoring the five calls here restores the old
+    synchronous behaviour at two call sites that are still in the right places,
+    with no route changes. The function is the seam, and a seam you can close
+    again is worth more than the lines it saves.
+
+    **Two writes, in this order, and the order is the whole design.**
+
+    The tombstone goes first. Writing `deleted` and `deleted_at` before the hard
+    delete puts a record on the `users` stream carrying a NewImage with the flag
+    set, which is what the consumer keys on. Without it the stream would carry
+    only a REMOVE, whose OldImage is the live user and which the consumer
+    deliberately ignores, because a REMOVE is also what an already drained
+    cascade leaves behind. Doing it the other way round would let a successful
+    delete with a failed tombstone remove the row with no stream record any
+    consumer can act on, stranding the user's rows in fifteen tables with
+    nothing left pointing at them.
+
+    The hard delete stays synchronous, and row 30 is where that is decided for
+    seam 1 as row 28 decided it for seam 2. `repos.users.delete_user` removes
+    the row and releases the `username` and `email` reservations in one
+    transaction, and deferring that release is what would break. A reservation
+    held past the tombstone is a person who deleted their account and cannot
+    register again with the address they just freed, for as long as the
+    `user-delete` queue is deep, and who is told the email already exists
+    against a row nobody can see. It fails closed and the way out is a manual
+    edit, so the window has to be zero rather than however deep the queue is.
+
+    Between those two writes and the consumer draining, the account is in a
+    half-deleted state: the user row is gone and the rows referencing it are
+    not. Every read path that joins to a user tolerates that, because row 23
+    made `is_tombstoned` the predicate on every such join, and a missing user
+    already rendered as an absent author before row 23 existed.
+    """
+    # The tombstone the consumer keys on, written before the row is removed so
+    # the stream carries an image with the flag rather than only a REMOVE.
+    repos.users.update(str(user.id), deleted=True, deleted_at=utc_now())
+
+    # The row and its two unique reservations, together, on this thread. See the
+    # docstring: deferring the release is the one part of this cascade that
+    # cannot move.
     repos.users.delete_user(user)
 
 
