@@ -17,9 +17,9 @@ locals {
   # The filter is what keeps the list to functions that exist. `local.lambda_domain_names` is all
   # nine from row 9 onward because nine ECR repositories exist, while `local.lambda_domains` in
   # lambda_domains.tf holds only the domains whose function has actually been created, which after
-  # row 26 is `media`, `build-logs`, `moderation`, `vehicles`, `admin` and `build-lists`. With row
-  # 24's consumer that is seven of the ten slots used and three left, which the ceiling paragraph
-  # below spends. A name in the metric math for a function that does not exist would
+  # row 27 is `media`, `build-logs`, `moderation`, `vehicles`, `admin`, `build-lists` and
+  # `identity`. With rows 24 and 25's consumers that is nine of the ten slots used and one left,
+  # which the ceiling paragraph below spends. A name in the metric math for a function that does not exist would
   # resolve to a metric that never reports, which is not an error but is an alarm claiming coverage
   # it does not have. It is also empty in a fresh account bootstrapping with an empty
   # `bootstrap_image_tag`, which is why `lambda_aggregate_alarm` below is conditional rather than
@@ -34,14 +34,18 @@ locals {
   # Count created functions, not declared ones. Row 24's note in the split plan predicted that row
   # 25 would be the eleventh and would cross this, by counting the nine names in
   # `local.lambda_domain_names`. The filter below is what makes that wrong: it admits only the
-  # domains whose function actually exists. With rows 18 through 21 and 26 cut that is six domains,
-  # so rows 24 and 25's consumers bring this list to eight and there is still one alarm pair.
+  # domains whose function actually exists. With rows 18 through 21, 26 and 27 cut that is seven
+  # domains, so rows 24 and 25's consumers bring this list to nine and there is still one alarm
+  # pair.
   #
-  # The decision the ceiling forces is worth taking before a plan diff forces it: either accept a
-  # second pair, or give the stream consumers an aggregate of their own, which buys a tidier
-  # notification at the cost of a second module invocation, a second topic decision and a threshold
-  # to reason about twice. On the current cut order the eleventh function arrives around row 29 or
-  # 30.
+  # Row 27 is where the ceiling stops being a later problem. Nine of ten slots are filled, so the
+  # next domain cut, row 29's `parts`, is the tenth and last name that fits in chunk zero, and row
+  # 31's `users` is the eleventh and creates the second pair. The decision is worth taking before
+  # that plan diff forces it: either accept a second pair, or give the stream consumers an
+  # aggregate of their own, which buys a tidier notification at the cost of a second module
+  # invocation, a second topic decision and a threshold to reason about twice. Moving the two
+  # consumers out is the cheaper of the two, and it is the option that keeps all nine domains in
+  # one expression, which is the grouping an operator actually wants to read.
   #
   # The consumers are appended after the domains rather than sorted in among them, and that is the
   # order rule above rather than a preference. `catalog-votes-consumer` sorts before `media` and
@@ -49,13 +53,15 @@ locals {
   # on every apply that touched the consumer list. Appending pins the consumers behind the domains
   # instead, so a new consumer takes the next free id and disturbs nothing.
   #
-  # A new domain is the one case that does renumber, and row 26 is the first to hit it. Domains
+  # A new domain is the one case that does renumber, and row 26 was the first to hit it. Domains
   # come first in the concat, so `build-lists` took m5, which `catalog-votes-consumer` had held
   # since row 24, and pushed that consumer to m6. Both aggregate alarms have the consumer's term
   # rewritten as a result. That is inside the four alarm changes a cut already expects rather than
   # extra plan noise, because both alarms change anyway for their descriptions and for the term the
-  # new function appends. Rows 27 through 31 each do the same to whatever sits behind them, so a
-  # renumbered consumer term in one of those plans is expected and is not drift.
+  # new function appends. Row 27 does the same one slot further along: `identity` takes m6, which
+  # `admin-price-alerts-consumer` held after row 25, and pushes both consumers back a place, to m7
+  # and m8. Rows 29 and 31 each repeat it, so a renumbered consumer term in one of those plans is
+  # expected and is not drift.
   alarm_lambda_function_names = concat(
     [
       for name in local.lambda_domain_names : module.lambda_domain[name].function_name
@@ -161,8 +167,8 @@ module "alarms" {
   #
   # This now covers the domain functions as well as the monolith, which is what makes it the alarm
   # that scales: every filter writes the same dimensionless metric, so the alarm is a plain Sum
-  # across all of them and has no metric math ceiling to run into as rows 18 through 31 add the
-  # remaining eight log groups.
+  # across all of them and has no metric math ceiling to run into as rows 29 and 31 add the
+  # remaining two log groups.
   error_log_groups = local.alarm_error_log_groups
 
   # The shared DynamoDB backed limiter in app/api/middleware/shared_rate_limiter.py allows a

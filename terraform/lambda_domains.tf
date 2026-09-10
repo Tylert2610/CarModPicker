@@ -4,8 +4,9 @@
 # docs/migration/split-plan.md, row 13 of section 8.
 #
 # `media` from row 13, `build-logs` from row 18, `moderation` from row 19,
-# `vehicles` from row 20, `admin` from row 21 and `build-lists` from row 26 are
-# the entries today. Rows 27 through 31 add the other three, one per row, and
+# `vehicles` from row 20, `admin` from row 21, `build-lists` from row 26 and
+# `identity` from row 27 are the entries today. Rows 29 and 31 add the other
+# two, one per row, and
 # the shape here is built
 # for that: everything a domain needs is one entry in `local.lambda_domains`,
 # and the module call, the IAM policy and the outputs all key off it, so adding
@@ -70,6 +71,13 @@ locals {
   #     limiter fails open, so withholding it would not break the function; it
   #     would silently turn layer 2 off for this domain and log a warning on
   #     every request, which is worse than a denial because nothing fails.
+  #
+  # `ses` is whether the function may send transactional mail, and it carries
+  # both the `ses:SendEmail` grant and the EMAIL_FROM and EMAIL_ENABLED pair,
+  # because `app/core/email.py` needs all three before a send is anything but a
+  # debug log. Row 27 sets it on `identity` and it is false on every other
+  # entry; section 3.4's other half went to the price alert stream consumer
+  # rather than to the `admin` function, for the reason recorded there.
   #
   # `s3` is whether the function gets the user images bucket at all, and
   # `s3_delete_only` narrows what it gets when it does. Section 3.4 names
@@ -539,11 +547,163 @@ locals {
   # Lambda, so the number is as much about the latency of those joins as about
   # the footprint, and it is the cheapest knob to lower if the duration and the
   # max-memory-used say the joins are smaller than section 3.3 assumed.
+  # How `identity`'s table lists were derived, by row 27 and by the same method
+  # as the six above. This is the narrowest write list of any domain that writes
+  # anything, and the first entry whose grants are not a subset of DynamoDB:
+  #
+  #   - `app/composition/domains.py` declares `_IDENTITY_REPOSITORIES` as
+  #     `users`, `oauth_accounts` and `webauthn_credentials`, and
+  #     `app/db/dynamo/registry.py`'s `tables_for` maps each of those three to a
+  #     table suffix of the same name, so the three repositories are three
+  #     tables. `backend/tests/entrypoints/test_repository_bundles.py` recomputes
+  #     that tuple from the real import graph, so the bundle is a checked
+  #     statement of what this function can reach.
+  #   - All three are written, and `read_tables` is empty for the first time on
+  #     any cut. That is the shape of an authentication domain rather than an
+  #     oversight: every table it can reach, it mutates. `core.py` and
+  #     `two_factor.py` call `repos.users.update` for the password reset, the
+  #     email verification flag and the 2FA secret; `oauth.py` calls
+  #     `repos.oauth_accounts.create_link`, `.delete_link` and `.create_actions`
+  #     and, on the Google signup path, `repos.users.create_actions`; and
+  #     `webauthn.py` calls `.create_credential`, `.update` and
+  #     `.delete_credential` on `repos.webauthn_credentials`. The reads on those
+  #     same three tables (`get_by_email`, `get_by_username`, `get`,
+  #     `list_by_user`, `get_by_provider_account`) need no separate entry,
+  #     because a table appears in exactly one of the two lists and the write
+  #     set is the wider grant.
+  #   - `users` is written here and `users` is the domain that owns it, per
+  #     section 1.2's "also written today by" column, which names `identity` for
+  #     the oauth link, the webauthn registration and the password and 2FA
+  #     changes. That cross-domain write is seam 1's neighbour and it stays
+  #     synchronous: it is not one of the five seams section 1.3 unwinds, because
+  #     it is a field update on a row the caller already owns rather than a
+  #     cascade. Row 31 is where `users` moves, and the two functions write
+  #     disjoint attributes of the same row until then.
+  #   - The uniqueness reservations need no table of their own. Both
+  #     `create_actions` paths open with `ensure_unique_action`, which
+  #     `app/db/dynamo/repository.py` builds as a `Put` against `self.table_name`,
+  #     so a username, email, provider-account or user-provider reservation is a
+  #     row in the same table as the entity and is covered by that table's grant.
+  #     `TransactWriteItems` is in the twelve write actions, which is what makes
+  #     the two-table Google signup transaction work across `users` and
+  #     `oauth_accounts` in one call.
+  #   - No table is read that is not also written, and no table outside the
+  #     bundle is reached at all. Row 26 found `app_settings` read through a
+  #     directly constructed `AppSettingsRepository()` in
+  #     `app/api/utils/subscription_utils.py`, which the bundle guard cannot see,
+  #     and warned that the same shape could hide elsewhere. It does not hide
+  #     here: that file holds the only direct repository construction in `app/`,
+  #     and its two callers are both in `build_list_service`, which no identity
+  #     route reaches. The four auth modules import
+  #     `app.api.services.user_service` for `user_read` alone, and that helper
+  #     touches `oauth_accounts`, which is already granted.
+  #   - `rate-limits` is in `tables` for the reason every entry above records: it
+  #     is the shared limiter's counter table, reached from the middleware stack
+  #     that `app/composition/wiring.py` installs on every domain application
+  #     rather than from a repository, so the bundle cannot name it, and the
+  #     limiter fails open, so withholding it would turn layer 2 off silently
+  #     rather than failing.
+  #   - `secrets` is true, and this is the domain that makes the key matter. It
+  #     is the only one that mints a token rather than merely verifying one:
+  #     `create_access_token` signs the login token, the refresh token, the
+  #     one-hour email verification token and the one-hour password reset token,
+  #     and its descriptor sets `requires_secrets=("SECRET_KEY",)`.
+  #   - `s3` is false, and it takes a paragraph rather than a line because there
+  #     is a reachable S3 call and the decision is to leave it ungranted. No auth
+  #     module imports `storage_service`, constructs an S3 client or names the
+  #     bucket, and the avatar upload section 3.4 pairs with `users` is a `users`
+  #     route. What is reachable is avatar *presigning* on the way out: every
+  #     route returning a user goes through `user_service.user_read`, and
+  #     `UserRead`'s `image_urls` field serializer calls
+  #     `apply_image_url_presigning`, which reaches
+  #     `storage_service.get_presigned_url` and so the `head_bucket` in
+  #     `_ensure_client`.
+  #
+  #     It is left ungranted because the fallback is graceful and because the
+  #     precedent is already set. `get_presigned_url_from_file_key` wraps the
+  #     call in a `try` and returns the raw file key on any failure with a
+  #     warning, which the comment there records the frontend as handling, so the
+  #     response is a 200 either way and nothing 500s. And `vehicles`, cut in row
+  #     20 with `s3 = false`, already serves `PublicUserRead` through the same
+  #     serializer on its search route, so this cut changes nothing that row 20
+  #     did not already settle. Granting `s3:GetObject` and `s3:ListBucket` to
+  #     restore presigned avatars on the login response is a widening that should
+  #     be argued on its own if the raw keys turn out to matter, and it would
+  #     have to cover row 20's domain too rather than this one alone.
+  #   - One bundle-guard bypass is reachable in process and is deliberately not
+  #     granted, which is the row 26 shape appearing in a form that does not
+  #     need a grant. `app/api/services/sitemap_service.py` calls
+  #     `get_repositories()` directly rather than taking the injected bundle, so
+  #     it reaches `parts`, `build_lists` and `car_generations`, and
+  #     `add_root_routes` puts `/sitemap.xml` and `/sitemap-{name}.xml` on every
+  #     domain application including this one. No gateway request can reach it:
+  #     the only route keys pointing here are `/api/auth` and its `{proxy+}`, and
+  #     the sitemap paths have no key of their own, so they resolve through
+  #     `$default` to the monolith exactly as they do today. The three tables are
+  #     therefore left out rather than granted for a path that cannot be called.
+  #     It would become a real gap the moment a sitemap route key were added, and
+  #     it is recorded here so that change is made with the grant rather than
+  #     after an AccessDeniedException.
+  #   - No new environment key is needed for Google sign-in, which is worth
+  #     recording because the domain map suggests otherwise. `oauth.py` verifies
+  #     an ID token and never exchanges an authorization code, so it reads
+  #     `GOOGLE_CLIENT_ID` as the audience and no client secret exists anywhere
+  #     in the settings. That id carries a default in `app/core/config.py` and is
+  #     set by no Terraform on the monolith either, so the cut function verifies
+  #     Google tokens exactly as the monolith does today with nothing added here.
+  #
+  # SES is granted, and `identity` is the first HTTP function to carry it. Every
+  # cut before this one refused the grant because the reachable send could not
+  # fire or was not reachable at all, and row 25 put `admin`'s half on the stream
+  # consumer that actually sends. This row is section 3.4's other half and the
+  # argument runs the other way, because the failure mode is not silence:
+  #
+  #   - Two routes send. `POST /api/auth/verify-email` calls `send_verify_email`
+  #     and `POST /api/auth/reset-password` calls `send_reset_password_email`,
+  #     both from `app/api/endpoints/auth/core.py` and both synchronously on the
+  #     request thread.
+  #   - Both raise on a failed send. Each is written as
+  #     `if not send_...(...): ResponsePatterns.raise_internal_server_error(...)`,
+  #     so a send that returns False is a 500 to the caller rather than a warning
+  #     in a log. That is the difference from row 26, where the price alert
+  #     evaluator treated a False as a retryable non-event and the behaviour
+  #     after the cut equalled the behaviour before it.
+  #   - So the environment keys come with the grant. `app/core/email.py`'s
+  #     `_send` returns False immediately unless `EMAIL_ENABLED`, and the
+  #     monolith's `local.lambda_environment` in lambda.tf sets `EMAIL_ENABLED`
+  #     to "true" and `EMAIL_FROM` to `local.email_from` today, so these two
+  #     routes really do send in both environments. Cutting the prefix onto a
+  #     function without all three of the grant, the switch and the sender would
+  #     turn email verification and password reset into unconditional 500s, on a
+  #     plan that was green. This is the one place where withholding the grant
+  #     would change behaviour rather than preserve it.
+  #   - `API_URL` is still not set, matching the monolith and the other domain
+  #     functions. The verification link is built from `settings.api_base_url`,
+  #     which falls back to the API host derived from `APP_ENVIRONMENT` when the
+  #     variable is unset, and `APP_ENVIRONMENT` is set on every domain function,
+  #     so staging mails staging links.
+  #
+  # 512 MB rather than the 256 the four small domains take. Section 3.3 names
+  # only `catalog` and `build-lists` for 1024 and leaves the rest at its 512
+  # starting size, so this is the paragraph being followed rather than stretched;
+  # the four cuts that came in at 256 did so because their routes are JSON over
+  # DynamoDB with no native work anywhere in them, and that is not true here.
+  # Three of this domain's paths are CPU bound native work, and memory is CPU on
+  # Lambda: `bcrypt` hashing on the login and the password reset routes, the
+  # `webauthn` attestation and assertion verification on the four passkey
+  # routes, and `POST /api/auth/2fa/setup`, which builds a QR code with `qrcode`
+  # and encodes it through PIL's `img.save(buffer, "PNG")`. That last one is
+  # Pillow on the request thread, which is the same reason `media` takes 512.
+  # 256 would probably serve, since none of the three is `media`'s image
+  # pipeline, but this is the login path for the whole application and latency
+  # here is felt on every session rather than on an occasional upload. Memory is
+  # the cheapest knob to lower if the duration and the max-memory-used say so.
   lambda_domains_declared = {
     media = {
       secrets        = true
       s3             = true
       s3_delete_only = false
+      ses            = false
       memory         = 512
       tables         = ["image_source_mappings", "rate-limits"]
       read_tables    = ["users", "car_generations", "parts", "build_lists"]
@@ -552,6 +712,7 @@ locals {
       secrets        = true
       s3             = false
       s3_delete_only = false
+      ses            = false
       memory         = 256
       tables         = ["build_log_posts", "rate-limits"]
       read_tables    = ["users", "build_lists", "build_logs"]
@@ -560,6 +721,7 @@ locals {
       secrets        = true
       s3             = false
       s3_delete_only = false
+      ses            = false
       memory         = 256
       # Three written tables, down from four. Row 24 moved `parts` to
       # `read_tables`; see the derivation above for why it was ever written and
@@ -571,6 +733,7 @@ locals {
       secrets        = false
       s3             = false
       s3_delete_only = false
+      ses            = false
       memory         = 256
       # The limiter's counter table and nothing else. Every route this domain
       # serves is a public read; see the derivation above.
@@ -589,6 +752,7 @@ locals {
       secrets        = true
       s3             = false
       s3_delete_only = false
+      ses            = false
       memory         = 256
       # Fifteen written tables, fourteen of them real and the fifteenth the
       # limiter's counter. This is the widest write list of the nine by a wide
@@ -628,6 +792,7 @@ locals {
       # image it owns and cannot upload or read one.
       s3             = true
       s3_delete_only = true
+      ses            = false
       memory         = 1024
       # Twelve written tables, eleven of them real and the twelfth the limiter's
       # counter. The four owned build-list tables, the two build-log tables the
@@ -656,6 +821,21 @@ locals {
         "retailers",
         "votes",
       ]
+    }
+    identity = {
+      secrets        = true
+      s3             = false
+      s3_delete_only = false
+      # The first HTTP function to hold the grant, and the first cut where
+      # withholding it would change behaviour rather than preserve it. The
+      # verify-email and reset-password routes raise a 500 on a failed send; see
+      # the derivation above.
+      ses    = true
+      memory = 512
+      # Three written tables and the limiter's counter, and no read-only table at
+      # all: every table this domain can reach, it mutates.
+      tables      = ["users", "oauth_accounts", "webauthn_credentials", "rate-limits"]
+      read_tables = []
     }
   }
 
@@ -749,12 +929,17 @@ locals {
   #
   #   - PORT and RUN_STARTUP_TASKS are baked into the image; see the file header.
   #   - EMAIL_FROM and EMAIL_ENABLED are `identity`'s and, from row 25,
-  #     `admin`'s, per section 3.4's SES split. No domain function cut so far
-  #     sends mail, `admin` included: its one mail path is the price-drop alert,
-  #     which is called from `catalog`'s price capture rather than from any
-  #     route this domain serves, and seam 4 is what moves it. A configured
-  #     sender on a function with no ses:SendEmail grant is a misleading
-  #     configuration, so the key waits for the code.
+  #     `admin`'s, per section 3.4's SES split, and row 27 is where the first
+  #     half of that arrives. They are set on `identity` and on no other domain
+  #     function: it is the one domain with a route that sends, and its two
+  #     senders raise a 500 rather than logging when the send fails, so the pair
+  #     lands with the grant rather than after it. `admin`'s half went to the
+  #     stream consumer in lambda_stream_consumers.tf instead of to the HTTP
+  #     function, because its one mail path is the price-drop alert, which is
+  #     called from the price capture rather than from any route `admin` serves.
+  #     Everywhere else a configured sender on a function with no ses:SendEmail
+  #     grant would be a misleading configuration, so the key waits for the
+  #     code.
   #   - SENTRY_SERVICE_NAME is gone. Row 16 removed `init_sentry` from every
   #     entrypoint, so nothing in a domain function reads it, and a Sentry
   #     variable on a function with no Sentry in it is a misleading
@@ -804,6 +989,23 @@ locals {
         OTEL_EXPORTER_OTLP_TRACES_ENDPOINT = "https://xray.${var.aws_region}.amazonaws.com/v1/traces"
       },
       domain.secrets ? { APP_SECRETS_ARN = module.app_secrets.arns["app"] } : {},
+      # The sender and the switch, and only on a domain that sends.
+      # `app/core/email.py` reads EMAIL_FROM for the SESv2 `FromEmailAddress`
+      # and EMAIL_ENABLED as the switch that turns `_send` from a debug log into
+      # a call, so both are needed and neither belongs on a function without
+      # `ses:SendEmail`. Row 27 is what makes this branch non-empty for the
+      # first time: `identity` is the only domain function that sends, and its
+      # two senders raise a 500 rather than logging when `_send` returns False,
+      # so the switch is as load bearing as the grant.
+      #
+      # API_URL is deliberately not set, matching the monolith and every other
+      # function here. The verification link comes from `settings.api_base_url`,
+      # which falls back to the API host derived from APP_ENVIRONMENT, and that
+      # fallback is what keeps staging from mailing production links.
+      domain.ses ? {
+        EMAIL_FROM    = local.email_from
+        EMAIL_ENABLED = "true"
+      } : {},
       domain.s3 ? {
         USER_IMAGES_BUCKET = aws_s3_bucket.user_images.bucket
         # Empty means "the real S3 endpoint". The monolith filters empty values
@@ -1026,6 +1228,45 @@ resource "aws_iam_role_policy" "lambda_domain" {
           Effect   = "Allow"
           Action   = ["s3:ListBucket"]
           Resource = [aws_s3_bucket.user_images.arn]
+        },
+      ] : [],
+      # Section 3.4's SES split, `identity`'s half of it, arriving with the two
+      # routes that send. Row 27. The statement is character for character the
+      # one `lambda_stream_consumers.tf` gives the price alert consumer, and the
+      # reasoning behind each half of the resource list is recorded there in
+      # full rather than repeated here:
+      #
+      #   - Both resources are required rather than either. SESv2 `SendEmail`
+      #     authorizes against the sending identity and, because
+      #     `app/core/email.py` passes `ConfigurationSetName`, against the
+      #     configuration set as well, so naming one fails the send with an
+      #     AccessDenied that reads as if the other were missing.
+      #   - `identity/*` rather than a single identity ARN, because
+      #     `local.custom_domain` decides whether the verified identity is the
+      #     domain or the bare sender mailbox and those are two different
+      #     resources under mutually exclusive counts. The wildcard is scoped to
+      #     this account and this region by the ARN itself and the account holds
+      #     one SES identity, so what it widens to is nothing.
+      #   - `SendRawEmail` is not granted. `_send` calls `sesv2:SendEmail` and
+      #     nothing in this image composes a raw MIME message. The monolith
+      #     carries the action only because its policy predates the SESv2 client.
+      #
+      # The one thing that is genuinely this row's rather than row 25's is what
+      # happens without it. `admin`'s send was a fire and forget whose failure
+      # left `last_fired_at` alone for the next observation to retry, so the
+      # grant could wait for the code. Here both callers are written as
+      # `if not send_...(...): raise_internal_server_error(...)`, so a missing
+      # grant is a 500 on email verification and on password reset rather than a
+      # silent no-op, and the grant cannot wait.
+      each.value.ses ? [
+        {
+          Sid    = "SendTransactionalMail"
+          Effect = "Allow"
+          Action = ["ses:SendEmail"]
+          Resource = [
+            "arn:aws:ses:${var.aws_region}:${data.aws_caller_identity.current.account_id}:identity/*",
+            "arn:aws:ses:${var.aws_region}:${data.aws_caller_identity.current.account_id}:configuration-set/${aws_sesv2_configuration_set.transactional.configuration_set_name}",
+          ]
         },
       ] : [],
     )
