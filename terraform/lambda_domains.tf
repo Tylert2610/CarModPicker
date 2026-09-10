@@ -4,10 +4,9 @@
 # docs/migration/split-plan.md, row 13 of section 8.
 #
 # `media` from row 13, `build-logs` from row 18, `moderation` from row 19,
-# `vehicles` from row 20, `admin` from row 21, `build-lists` from row 26 and
-# `identity` from row 27 are the entries today. Rows 29 and 31 add the other
-# two, one per row, and
-# the shape here is built
+# `vehicles` from row 20, `admin` from row 21, `build-lists` from row 26,
+# `identity` from row 27 and `catalog` from row 29 are the entries today. Row 31
+# adds the last one, `users`, and the shape here is built
 # for that: everything a domain needs is one entry in `local.lambda_domains`,
 # and the module call, the IAM policy and the outputs all key off it, so adding
 # a domain is adding a map entry.
@@ -701,6 +700,129 @@ locals {
   # pipeline, but this is the login path for the whole application and latency
   # here is felt on every session rather than on an occasional upload. Memory is
   # the cheapest knob to lower if the duration and the max-memory-used say so.
+  #
+  # How `catalog`'s two table lists were derived, by row 29 and by the same
+  # method as the seven above. This is the largest domain by route count, 43
+  # across four prefixes, and it is the first entry whose bundle was narrowed by
+  # a seam landing in the row immediately before it:
+  #
+  #   - `app/composition/domains.py` declares `_CATALOG_REPOSITORIES` as twelve
+  #     repositories: `users`, `car_makes`, `car_models`, `car_generations`,
+  #     `categories`, `part_manufacturers`, `retailers`, `parts`, `part_cars`,
+  #     `part_listings`, `part_price_history` and `votes`.
+  #     `app/db/dynamo/registry.py`'s `tables_for` maps each of the twelve to a
+  #     table suffix of the same name, so twelve repositories are twelve tables,
+  #     and `backend/tests/entrypoints/test_repository_bundles.py` recomputes
+  #     that tuple from the real import graph, so the bundle is a checked
+  #     statement of what this function can reach.
+  #   - The tuple was fifteen until row 28 and is twelve now, and that is seam 2
+  #     landing rather than a narrowing this row performed. `build_list_parts`,
+  #     `part_price_alerts` and `reports` were declared because every delete
+  #     route called `purge_related_rows_for_parts`, which reached all four
+  #     tables synchronously. Row 28 moved that cascade onto
+  #     `carmodpicker-<env>-catalog-part-purge-consumer`, which names those
+  #     repositories itself in `app/entrypoints/catalog_part_purge_consumer.py`
+  #     and carries its own IAM in lambda_stream_consumers.tf. So the three
+  #     tables are still written by `catalog`'s image, and they are written by
+  #     the consumer function rather than by this one, which is exactly the
+  #     grant following the writer. Cutting this domain a row earlier would have
+  #     meant granting all three here for a cascade that no longer runs on the
+  #     request thread.
+  #   - Twelve in the bundle and eleven granted, so the bundle-to-grant gap is
+  #     one table and it is `car_generations`. It is not ungranted for row 19's
+  #     and row 20's reason, which is a repository reached only through an
+  #     import: `part_service._car_generations` really does call
+  #     `repos.car_generations.get_many` to hydrate fitment on a part read. It
+  #     is granted, in `read_tables`. The genuinely ungranted pair is
+  #     `car_makes` and `car_models`, which `part_service._make_names` reaches
+  #     from the same fitment path, and they are granted too for the same
+  #     reason. So this cut has no bundle-to-grant gap at all, the first of the
+  #     eight, and that is what row 28's narrowing bought: with the purge gone,
+  #     every repository the tuple names has a route that calls it.
+  #   - Seven tables are written, plus the limiter's counter. `parts`,
+  #     `part_manufacturers`, `retailers`, `part_cars`, `part_listings`,
+  #     `part_price_history` and `categories` are seven of the eleven this
+  #     domain owns per section 1.2, and each has a named caller.
+  #     `part_service` calls `.create_unique`, `.save_unique`, `.update`,
+  #     `.put` and `.delete_unique` on `repos.parts` and `.sync_actions` and
+  #     `.unlink_action` on `repos.part_cars` from the create, update and delete
+  #     routes; `part_manufacturers.py` calls `.update_unique` and
+  #     `.delete_unique`; `retailers.py` calls `.create_unique`,
+  #     `.update_unique` and `.delete_unique`, and `part_listing_service` calls
+  #     `.create_unique` and `.update_unique` on the same repository from the
+  #     get-or-create path; and `part_listing_service` writes `part_listings`
+  #     through `.create_action`, `.put_action`, `.delete` and
+  #     `.delete_for_part` and `part_price_history` through `.put_action` and
+  #     `.delete_for_listing`, both from the price capture that
+  #     `POST /api/parts/{part_id}/listings` and `POST /api/parts/price-history`
+  #     drive.
+  #   - `categories` is the seventh written table and it is the one worth
+  #     stating, because `categories.py` is five `GET` routes and writes
+  #     nothing. The write is not in the endpoint module: `part_service`'s
+  #     create and update paths call `repos.categories.get` and `.get_many` to
+  #     resolve the category on a part, which is a read, and the module's own
+  #     routes are reads. It is in `tables` rather than `read_tables` anyway
+  #     because `catalog` owns it per section 1.2 and
+  #     `POST /admin/db-ops/init/part-categories` seeds it from the `admin`
+  #     image, so a future catalog-side category write lands with the grant
+  #     rather than after an `AccessDeniedException`. That is the one place this
+  #     entry grants on ownership rather than on a call, and it is called out
+  #     here rather than left to be discovered.
+  #   - Four tables are read only. `users` is read before the seventeen routes
+  #     that verify a token run, because `get_current_user` and
+  #     `get_current_admin_user` both call `repos.users.get_by_username` to
+  #     resolve the token subject, and `part_service.list_with_votes` passes the
+  #     resolved user through. `votes` is read by `part_service.with_votes`,
+  #     which calls `repos.votes.tallies` and `repos.votes.user_votes` to
+  #     decorate `GET /api/parts/with-votes`; the write that used to sit
+  #     alongside it went to `catalog-votes-consumer` in row 24, which is why
+  #     `votes` is a read here and not a write. `car_makes`, `car_models` and
+  #     `car_generations` are `vehicles`' three, read by
+  #     `part_service._make_names` and `._car_generations` to render fitment on
+  #     a part, which is a cross-domain read and is allowed with read-only IAM.
+  #   - `rate-limits` is in `tables` for the reason every entry above records:
+  #     it is the shared limiter's counter table, reached from the middleware
+  #     stack rather than from a repository, so the bundle cannot name it, and
+  #     the limiter fails open, so withholding it would silently turn layer 2
+  #     off for this domain rather than failing.
+  #   - `secrets` is true. Seventeen of the 43 routes verify a token and the
+  #     descriptor sets `requires_secrets = ("SECRET_KEY",)`, so the runtime
+  #     policy carries `secretsmanager:GetSecretValue` and the environment
+  #     carries `APP_SECRETS_ARN`.
+  #   - `s3` is true and `s3_delete_only` is true, which is row 26's correction
+  #     applying to a second domain. Section 3.4 named only `media` and `users`,
+  #     reasoning from the domains whose names are about images;
+  #     `DELETE /api/parts/{part_id}/images/{image_index}` calls
+  #     `storage_service.delete_image`, a real `delete_object`, and it is the
+  #     only S3 call in any of the four endpoint modules. `append-images` and
+  #     `primary-image` only reorder file keys in DynamoDB. So the narrow flag
+  #     rather than the broad one: `s3:DeleteObject` and `s3:ListBucket`,
+  #     without `s3:PutObject` or `s3:GetObject`. `ListBucket` is not optional
+  #     despite nothing here listing, for the reason row 26 recorded: it
+  #     authorizes the `head_bucket` that `StorageService._ensure_client` makes
+  #     once per cold start, and without it the service disables itself and the
+  #     delete becomes a silent no-op that orphans the object while the row
+  #     loses its key.
+  #   - `ses` is false, and unlike `identity` the reason is that the send is not
+  #     reachable from this function at all any more. The price alert email is
+  #     `evaluate_alerts_for_listing`, which row 25 moved onto
+  #     `admin-price-alerts-consumer` along with its grant and its `EMAIL_FROM`.
+  #     `part_listing_service` no longer calls it inline, so a grant here would
+  #     be configuration for a code path that cannot execute, which is the
+  #     argument rows 21 and 26 both made. Section 3.4 said `catalog` loses SES
+  #     when seam 4 moves, and this is that.
+  #
+  # 1024 MB, per section 3.3, which names `catalog` and `build-lists` as the two
+  # that start at the monolith's size rather than at 512. Right on the domain's
+  # own terms too, and for a different reason than `build-lists`':
+  # `GET /api/parts/with-votes` pages parts, tallies votes over the whole page
+  # and hydrates fitment through `_make_names` and `_car_generations`, holding
+  # every intermediate in memory, and the price capture behind
+  # `POST /api/parts/{part_id}/listings` dedups a listing across three lookup
+  # paths before a multi-table `transact_write`. This is also the busiest
+  # domain in the application by route count, so it is the last one to tune down
+  # on a guess. Memory is the cheapest knob to lower once a week of duration and
+  # max-memory-used data says so.
   lambda_domains_declared = {
     media = {
       secrets        = true
@@ -852,6 +974,41 @@ locals {
       # all: every table this domain can reach, it mutates.
       tables      = ["users", "oauth_accounts", "webauthn_credentials", "rate-limits"]
       read_tables = []
+    }
+    catalog = {
+      secrets = true
+      # The gallery image delete and nothing else, the same shape row 26 found
+      # for `build-lists`. The narrow flag rather than the broad one, so this
+      # function can delete an image it owns and cannot upload or read one; see
+      # the derivation above.
+      s3             = true
+      s3_delete_only = true
+      # False, and unlike `identity` because the send is unreachable rather than
+      # merely inert: row 25 moved the price alert email onto
+      # `admin-price-alerts-consumer` with its grant, which is section 3.4's
+      # "catalog loses SES when seam 4 moves".
+      ses    = false
+      memory = 1024
+      # Eight written tables, seven of them real and the eighth the limiter's
+      # counter. Seven of the eleven tables this domain owns; the other four
+      # moved to `catalog-part-purge-consumer` with the cascade in row 28.
+      tables = [
+        "parts",
+        "part_manufacturers",
+        "retailers",
+        "categories",
+        "part_cars",
+        "part_listings",
+        "part_price_history",
+        "rate-limits",
+      ]
+      read_tables = [
+        "users",
+        "votes",
+        "car_makes",
+        "car_models",
+        "car_generations",
+      ]
     }
   }
 

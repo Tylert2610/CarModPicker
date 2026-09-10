@@ -177,11 +177,23 @@ identity)
   PREFIXES=(/api/auth)
   ;;
 catalog)
-  # Row 29.
-  PREFIXES=()
+  # Row 29. Four prefixes and the largest cut of the nine by route count, 43 of
+  # them: parts, part manufacturers, categories and retailers. The four are
+  # sibling trees rather than one tree with children, and API Gateway matches a
+  # route key literally, so /api/parts does not claim /api/part-manufacturers
+  # and neither claims row 21's /api/part-price-alerts, which stays on admin.
+  #
+  # Every one of the four bare keys carries real traffic rather than sitting
+  # there defensively, which is the first time that is true of a whole cut.
+  # Seven routes mount with a trailing slash (a POST "/" and a GET "/" on parts,
+  # part-manufacturers and retailers, and a GET "/" on categories) and the
+  # gateway normalises those onto the bare key. So the no-credential fallback
+  # caveat rows 26 and 27 recorded does not apply here: a GET on any of the four
+  # bare paths reaches a real route on a healthy function.
+  PREFIXES=(/api/parts /api/part-manufacturers /api/categories /api/retailers)
   ;;
 users)
-  # Row 30.
+  # Row 31.
   PREFIXES=()
   ;;
 *)

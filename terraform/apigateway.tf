@@ -13,9 +13,9 @@ locals {
   # check fails the plan on an integration no route can reach, so the two move together.
   #
   # Row 14 is `media`, row 18 is `build-logs`, row 19 is `moderation`, row 20 is `vehicles`,
-  # row 21 is `admin`, row 26 is `build-lists` and row 27 is `identity`. Rows 29 and 31 append
-  # catalog and users.
-  routed_lambda_domains_declared = ["media", "build-logs", "moderation", "vehicles", "admin", "build-lists", "identity"]
+  # row 21 is `admin`, row 26 is `build-lists`, row 27 is `identity` and row 29 is `catalog`.
+  # Row 31 appends the last one, `users`.
+  routed_lambda_domains_declared = ["media", "build-logs", "moderation", "vehicles", "admin", "build-lists", "identity", "catalog"]
 
   # Gated on the same condition as the functions themselves, and it has to be. A route names an
   # integration and an integration names module.lambda_domain[name], so a routed domain whose
@@ -208,6 +208,43 @@ locals {
     # is a separate prefix that row 31 moves, and a route key matches literally
     # rather than by substring, so this cut cannot pull any of it along.
     identity = ["/api/auth"]
+    # Row 29. Four prefixes and the largest cut of the nine by route count: 43
+    # routes, against row 26's 34 and `moderation`'s 20. Like row 26's four they
+    # are four sibling trees rather than one tree with children, so they are four
+    # prefixes and not one: `/api/parts` is the centre of the domain model but
+    # nothing else in the URL space sits below it.
+    #
+    # API Gateway matches a route key literally rather than by string prefix, so
+    # `/api/parts` does not claim `/api/part-manufacturers` even though one is a
+    # character prefix of the other, and neither claims row 21's
+    # `/api/part-price-alerts`, which is a fourth tree on the same stem and stays
+    # on `admin`. `/api/categories` and `/api/retailers` are independent of all
+    # three. No ordering between any of them is implied.
+    #
+    # Eight route keys, a bare and a `{proxy+}` for each of the four, and this is
+    # the cut where the most routes ride the bare keys: seven of the 43, against
+    # row 26's two and row 27's none. Every one of the seven is a trailing-slash
+    # route rather than a route at the bare path, which is the same trap row 21
+    # sprang on `/api/part-price-alerts` and row 26 on `/api/build-lists`.
+    # `parts.py`, `part_manufacturers.py` and `retailers.py` each declare a
+    # `POST "/"` and a generated or hand-written `GET "/"`, and `categories.py`
+    # declares a `GET "/"`, so those seven mount at `/api/parts/`,
+    # `/api/part-manufacturers/`, `/api/retailers/` and `/api/categories/`. API
+    # Gateway normalises the trailing slash onto the bare key and a route key may
+    # not itself end in a slash, so the bare key is the only spelling that
+    # matches them, and writing the path with its slash is an apply-time
+    # BadRequestException on a plan that was green. None of the four bare keys is
+    # defensive here.
+    #
+    # `/api/parts/{entity_id}` and the hand-written `/api/parts/with-votes`,
+    # `/count`, `/check-url`, `/filter-options` and
+    # `/find-by-part-manufacturer-and-part-number` are section 1.4's ordering
+    # concern for this domain, and they survive untouched because the `{proxy+}`
+    # key hands the whole subtree to one function: `parts.py` registers the
+    # literal paths before the generated `{entity_id}`, and FastAPI keeps
+    # deciding exactly as it does on the monolith today. Splitting the subtree
+    # across route keys is what would break it, and nothing here does.
+    catalog = ["/api/parts", "/api/part-manufacturers", "/api/categories", "/api/retailers"]
   }
 
   # Two route keys per prefix, generated rather than written out, so a domain added above cannot be
@@ -269,7 +306,8 @@ module "api" {
 
   # Two keys per cut prefix: `media`'s pair from row 14, `build-logs`' pair from row 18,
   # `moderation`'s three pairs from row 19, `vehicles`' two pairs from row 20, `admin`'s four
-  # pairs from row 21 and `build-lists`' four pairs from row 26. No
+  # pairs from row 21, `build-lists`' four pairs from row 26, `identity`'s one pair from row 27
+  # and `catalog`'s four pairs from row 29. No
   # authorization_type is set on any of them, which means the module's own choice, CUSTOM whenever
   # authorizer_id is set, so each one sits behind the staging access gate exactly as $default does.
   # Setting NONE here would punch a hole straight past the gate, which is the failure the module's

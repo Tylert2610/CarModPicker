@@ -17,9 +17,10 @@ locals {
   # The filter is what keeps the list to functions that exist. `local.lambda_domain_names` is all
   # nine from row 9 onward because nine ECR repositories exist, while `local.lambda_domains` in
   # lambda_domains.tf holds only the domains whose function has actually been created, which after
-  # row 28 is `media`, `build-logs`, `moderation`, `vehicles`, `admin`, `build-lists` and
-  # `identity`. With the three consumers from rows 24, 25 and 28 that is ten of the ten slots used
-  # and none left, which the ceiling paragraph below spends. A name in the metric math for a function that does not exist would
+  # row 29 is `media`, `build-logs`, `moderation`, `vehicles`, `admin`, `build-lists`, `identity`
+  # and `catalog`. With the three consumers from rows 24, 25 and 28 that is eleven names, one past
+  # the ten-name chunk size, so this list now builds two alarm pairs rather than one. The ceiling
+  # paragraph below records the decision. A name in the metric math for a function that does not exist would
   # resolve to a metric that never reports, which is not an error but is an alarm claiming coverage
   # it does not have. It is also empty in a fresh account bootstrapping with an empty
   # `bootstrap_image_tag`, which is why `lambda_aggregate_alarm` below is conditional rather than
@@ -28,8 +29,10 @@ locals {
   # The chunk ceiling, and how to count against it. The module chunks this list into groups of ten
   # and creates one alarm pair per group, so the eleventh name here creates a second pair,
   # `<prefix>-lambda-errors-aggregate-2` and `<prefix>-lambda-throttles-aggregate-2`. Chunk zero
-  # keeps its unsuffixed names and its m0 through m9 expression, so crossing the ceiling adds
-  # alarms rather than rewriting the ones already subscribed.
+  # keeps its unsuffixed names and its alarm identities, so nothing already subscribed is
+  # destroyed or recreated. Its metric math is rewritten in place, though, because the eleventh
+  # name is not necessarily the one that spills: `chunklist` fills each group before starting the
+  # next, so a name inserted anywhere but the very end pushes everything after it along.
   #
   # Count created functions, not declared ones. Row 24's note in the split plan predicted that row
   # 25 would be the eleventh and would cross this, by counting the nine names in
@@ -38,16 +41,38 @@ locals {
   # domains, so rows 24, 25 and 28's consumers bring this list to ten, and ten is exactly the chunk
   # size.
   #
-  # Row 28 fills the last slot, and it is the row where the ceiling stops being a later problem.
-  # Chunk zero is now full, so the next function created is the eleventh and produces
-  # `<prefix>-lambda-errors-aggregate-2` and `<prefix>-lambda-throttles-aggregate-2` while leaving
-  # chunk zero's m0 through m9 expression untouched. On the current cut order that is row 29's
-  # `catalog`, which is the next row. The decision is due now rather than soon: either accept a
-  # second pair, or give the stream consumers an aggregate of their own, which buys a tidier
-  # notification at the cost of a second module invocation, a second topic decision and a threshold
-  # to reason about twice. Moving the three consumers out is the cheaper of the two, and it is the
-  # option that keeps all nine domains in one expression, which is the grouping an operator
-  # actually wants to read.
+  # Row 28 filled the last slot of chunk zero and row 29 is the row that crosses it. THE DECISION
+  # IS TAKEN, and it is to accept the module's chunking as designed rather than to restructure
+  # anything: `catalog` is the eleventh name in the list and the apply creates
+  # `<prefix>-lambda-errors-aggregate-2` and `<prefix>-lambda-throttles-aggregate-2` alongside the
+  # existing unsuffixed pair. It is not `catalog` that opens chunk one, though. Domains come first
+  # in the concat and `catalog` is the eighth domain, so it takes chunk zero's m7 and pushes the
+  # three consumers one place right, which spills `catalog-votes-consumer` out as chunk one's sole
+  # member. Row 31's `users` becomes the twelfth, takes chunk zero's m8 in the same way, and pushes
+  # `catalog-part-purge-consumer` into chunk one beside it, creating no new alarm.
+  #
+  # The alternative row 28's note preferred, giving the three stream consumers an aggregate of
+  # their own, is deliberately not taken. It reads better on paper, because it would keep all nine
+  # domains in one expression, and it costs more than it looks: a second module invocation, a
+  # second notification topic decision, a threshold to reason about twice, and a migration of the
+  # three consumer terms out of an alarm that is already subscribed and already firing correctly.
+  # Accepting the chunking costs two new alarm resources and an in-place update to the two alarms
+  # that already exist. Chunk zero keeps its unsuffixed names, its alarm identities and its
+  # subscriptions, so nothing an operator has already wired up is destroyed or recreated; what
+  # changes on it is the metric math, because `catalog` lands at m7 and moves the three consumer
+  # terms along. The renumbering paragraph below writes that out term by term.
+  #
+  # What it costs, stated plainly rather than left implicit: an aggregate alarm no longer means
+  # "something in the backend is erroring", it means "something in this chunk is erroring", which
+  # is the worse signal section 3.6 named when it described the two-aggregate option. That is
+  # tolerable here for a reason section 3.6 also gives: the aggregates are the fast signal for
+  # Lambda-level failures such as throttles and init errors, and `<prefix>-application-errors` is
+  # the alarm that scales, being a dimensionless Sum over every log group with no ceiling at all.
+  # An operator who wants one number watches that one. Both chunks publish to the same topic, so
+  # the notification an operator receives is unchanged in kind and only the alarm name differs.
+  #
+  # Restructuring is a decision for row 32, which retires the monolith, not for a cut. If the
+  # split ever wants one expression per grouping again, that is the row with the room to do it.
   #
   # The consumers are appended after the domains rather than sorted in among them, and that is the
   # order rule above rather than a preference. `catalog-votes-consumer` sorts before `media` and
@@ -61,6 +86,23 @@ locals {
   # between `admin-price-alerts-consumer` and `catalog-votes-consumer`, so it takes m8 and pushes
   # `catalog-votes-consumer` from m8 to m9, and both aggregate alarms have that term rewritten.
   # Like the domain case below it is expected rather than drift.
+  #
+  # Row 29 renumbers all three consumers and spills one of them into the new chunk, which is the
+  # largest renumbering any cut has produced and is worth writing out rather than leaving to be
+  # read off a plan. Domains come first in the concat and the consumer half is sorted, so before
+  # this row chunk zero was m0 media, m1 build-logs, m2 moderation, m3 vehicles, m4 admin,
+  # m5 build-lists, m6 identity, m7 admin-price-alerts-consumer, m8 catalog-part-purge-consumer,
+  # m9 catalog-votes-consumer. `catalog` is the eighth domain, so it takes m7 and pushes each
+  # consumer one place right: chunk zero becomes ... m7 catalog, m8 admin-price-alerts-consumer,
+  # m9 catalog-part-purge-consumer, and `catalog-votes-consumer` is the eleventh name and opens
+  # chunk one as its m0.
+  #
+  # So chunk zero's expression is rewritten rather than left alone, and the new pair covers a
+  # single function. Both are expected and neither is drift: `chunklist` fills each group before
+  # starting the next and the module restarts metric ids at m0 in every chunk, so a name added
+  # anywhere but the very end moves everything after it. This is inside the two aggregate alarm
+  # changes a cut already expects, and the two new resources are counted in the row's plan
+  # estimate rather than hidden in it.
   #
   # A new domain is the other case that renumbers, and row 26 was the first to hit it. Domains
   # come first in the concat, so `build-lists` took m5, which `catalog-votes-consumer` had held
