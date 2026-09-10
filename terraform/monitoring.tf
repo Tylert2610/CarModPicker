@@ -25,14 +25,23 @@ locals {
   # `bootstrap_image_tag`, which is why `lambda_aggregate_alarm` below is conditional rather than
   # true.
   #
-  # Nine domains plus row 24's stream consumer is ten, which is exactly the module's chunk size,
-  # so this is still one errors alarm and one throttles alarm for the whole estate with no
-  # chunking and no second alarm pair to subscribe or document. It is also the ceiling. The next
-  # function this estate adds, which is row 25's consumer, is the eleventh and will chunk into a
-  # second alarm pair. That is a real change rather than a detail: it doubles the alarms to
-  # subscribe, and it splits "the backend is erroring" across two notifications. Whoever cuts row
-  # 25 should decide deliberately whether to accept the second pair or to fold the consumers into
-  # a separate aggregate of their own, and should not discover the ceiling from a plan diff.
+  # The chunk ceiling, and how to count against it. The module chunks this list into groups of ten
+  # and creates one alarm pair per group, so the eleventh name here creates a second pair,
+  # `<prefix>-lambda-errors-aggregate-2` and `<prefix>-lambda-throttles-aggregate-2`. Chunk zero
+  # keeps its unsuffixed names and its m0 through m9 expression, so crossing the ceiling adds
+  # alarms rather than rewriting the ones already subscribed.
+  #
+  # Count created functions, not declared ones. Row 24's note in the split plan predicted that row
+  # 25 would be the eleventh and would cross this, by counting the nine names in
+  # `local.lambda_domain_names`. The filter below is what makes that wrong: it admits only the
+  # domains whose function actually exists. With rows 18 through 21 and 26 cut that is six domains,
+  # so rows 24 and 25's consumers bring this list to eight and there is still one alarm pair.
+  #
+  # The decision the ceiling forces is worth taking before a plan diff forces it: either accept a
+  # second pair, or give the stream consumers an aggregate of their own, which buys a tidier
+  # notification at the cost of a second module invocation, a second topic decision and a threshold
+  # to reason about twice. On the current cut order the eleventh function arrives around row 29 or
+  # 30.
   #
   # The consumers are appended after the domains rather than sorted in among them, and that is the
   # order rule above rather than a preference. `catalog-votes-consumer` sorts before `media` and

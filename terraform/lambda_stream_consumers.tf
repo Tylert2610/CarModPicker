@@ -1,5 +1,5 @@
 # ---------------------------------------------------------------------------
-# Stream consumers. Split plan row 24, and the first of them.
+# Stream consumers. Split plan rows 24 and 25.
 #
 # Row 22 turned on four DynamoDB streams and created a dead letter queue for
 # each, and deliberately created no consumer: "the consumers are Lambda event
@@ -10,7 +10,9 @@
 # route cut in apigateway.tf, and none of that is true of anything declared
 # here.
 #
-# **The seam this closes.** Section 1.3's seam 3. `VoteService` used to write
+# **The seams these close.** Section 1.3's seam 3, and now seam 4 alongside it.
+#
+# Seam 3. `VoteService` used to write
 # `parts.net_votes` inline on every vote, which is the `moderation` domain
 # writing a table `catalog` owns, and it is why `moderation` carries `parts` in
 # its write list today. The consumer below inverts that: `moderation` writes
@@ -21,30 +23,46 @@
 # consumer exists leaves the aggregate with nothing writing it and a consumer
 # added before the grant is removed leaves two writers racing.
 #
-# **Why this is a function and not a route on `catalog`.** The consumer is a web
+# Seam 4. `part_listing_service` used to call `evaluate_alerts_for_listing`
+# inline at the end of every price capture, which is `catalog` reading `admin`'s
+# alert rows and calling SES on the request thread. The second consumer inverts
+# that: `catalog` writes only its own listing, the `part_listings` stream carries
+# the change to a function `admin` owns, and that function evaluates the alerts
+# and sends the mail. Its two halves land together for the same reason: the
+# consumer without the removal of the inline call sends every alert twice, and
+# the removal without the consumer sends none at all.
+#
+# **Why these are functions and not routes on `catalog` and `admin`.** The consumer is a web
 # application, same as every other function here: the base image ships the
 # Lambda Web Adapter and no runtime interface client, so the adapter is the
 # runtime. For a trigger that is not HTTP the adapter POSTs the raw event JSON
 # to AWS_LWA_PASS_THROUGH_PATH and returns the app's response body as the
 # function result, which is the documented shape for DynamoDB streams. So a
-# route on the existing `catalog` function would in fact work. It is still the
+# route on the existing domain function would in fact work. It is still the
 # wrong answer: an event source mapping's concurrency, timeout and error rate
-# would then be shared with the catalog API, a vote storm would take request
-# capacity from the routes users are waiting on, and a consumer bug would page
-# as a catalog API error. A separate function off the same image keeps one
-# build, one digest and one deploy while giving the consumer its own
-# concurrency, its own timeout, its own IAM policy and its own error metric.
+# would then be shared with that domain's API, a vote storm or a crawler run
+# would take request capacity from the routes users are waiting on, and a
+# consumer bug would page as an API error. A separate function off the same
+# image keeps one build, one digest and one deploy while giving the consumer its
+# own concurrency, its own timeout, its own IAM policy and its own error metric.
+#
+# The IAM half of that is not decorative on row 25. `admin`'s price alerts
+# consumer holds `ses:SendEmail`; the `admin` HTTP function does not, and must
+# not, because no route it serves sends mail. Folding the consumer into it would
+# put a send grant behind twelve authenticated routes to buy nothing.
 # ---------------------------------------------------------------------------
 
 locals {
-  # The one consumer this row cuts, held as a map so rows 25 and 28 through 30
-  # add a key rather than copy the four resources below. Keyed by the function
-  # name suffix, which is what makes `carmodpicker-<env>-catalog-votes-consumer`
-  # and keeps the ECR repository it borrows from explicit.
+  # The consumers, held as a map so rows 28 through 30 add a key rather than copy
+  # the four resources below, which is exactly what row 25 did. Keyed by the
+  # function name suffix, which is what makes
+  # `carmodpicker-<env>-catalog-votes-consumer` and
+  # `carmodpicker-<env>-admin-price-alerts-consumer` and keeps the ECR repository
+  # each borrows from explicit.
   #
   # `image_repository` is the domain whose image this function runs, and
   # `command` is what makes one image serve two functions. The image is built
-  # once with DOMAIN=catalog and its CMD starts the module named in
+  # once with DOMAIN=<that domain> and its CMD starts the module named in
   # /etc/carmodpicker-entrypoint; Lambda's image_config.command overrides that
   # CMD to start this module instead. Both are `python -m <module>` starting a
   # uvicorn server, because both run under the Web Adapter. That is what keeps
@@ -86,6 +104,76 @@ locals {
       # nothing of `parts` and writes `votes`, and this function is the mirror.
       tables      = ["parts"]
       read_tables = ["votes"]
+
+      # No mail. Row 25's consumer below is the one that sends, and this row's
+      # does not, which is why the flag exists rather than the grant being
+      # unconditional.
+      ses = false
+    }
+
+    # Split plan row 25, section 1.3's seam 4. `part_listing_service` used to
+    # call `evaluate_alerts_for_listing` inline, on the request thread, right
+    # after the price transaction committed: a fan-out read of
+    # `part_price_alerts`, `parts`, `retailers` and `users` plus an SES send,
+    # all inside a 29 second Lambda, on a write a user was waiting on. Three of
+    # those tables and the send belong to `admin`. This function is the
+    # inversion: `admin` reads the `part_listings` stream and owns the alert
+    # rows and the mail, and `catalog` loses the SES grant it should never have
+    # had. The other half of the row is the removal of the synchronous call in
+    # backend/app/api/services/part_listing_service.py, and the two land
+    # together for the reason row 24's two halves did: the consumer without the
+    # removal sends every alert twice, and the removal without the consumer
+    # sends none at all.
+    admin-price-alerts-consumer = {
+      image_repository = "admin"
+      stream_table     = "part_listings"
+      command          = ["python", "-m", "app.entrypoints.admin_price_alerts_consumer"]
+
+      # 256 MB, matching `admin` itself. The work per invoke is a Query on the
+      # alerts index, two GetItems, and one GetItem plus one UpdateItem per
+      # firing alert, with an HTTPS call to SES between them. Nothing native and
+      # no image handling anywhere in the path.
+      memory = 256
+
+      # 60 seconds, the same reasoning as the votes consumer with one addition:
+      # the work here includes a synchronous SES call per firing alert, and SES
+      # is the one dependency in this path that is not DynamoDB. A listing whose
+      # part has many subscribers is the long case, and the batching window plus
+      # the per-listing collapse below keep a batch to at most `batch_size`
+      # listings rather than that many observations.
+      timeout = 60
+
+      # Unlike the votes consumer, this one reads the app secret. The alert
+      # email carries a one-click unsubscribe link, which is a 30 day JWT signed
+      # with SECRET_KEY, so `send_price_drop_alert_email` reaches
+      # `create_access_token`. Without the grant the send would fail per alert
+      # inside the evaluation's own exception handling, where the only symptom
+      # is a warning and a user who never hears about a price drop.
+      secrets = true
+
+      # The grant lambda_domains.tf's `admin` entry deliberately does not carry,
+      # arriving here with the code that uses it. Section 3.4 always put
+      # `admin`'s half of the SES split on the price drop alert; row 21 refused
+      # to configure it on a function serving no route that sends, and this is
+      # that row. The `admin` HTTP function still gets neither the grant nor
+      # EMAIL_FROM, and its descriptor in app/composition/domains.py is
+      # unchanged.
+      ses = true
+
+      # `part_price_alerts` is written, because a send stamps `last_fired_at`,
+      # which is the marker that makes a redelivered record idempotent. The
+      # other three are read: `parts` and `retailers` for the email body, and
+      # `users` for the address to send it to. `retailers` is the one table
+      # row 21 left out of `admin`'s grant on the grounds that no admin route
+      # reached it, and the reach it named was exactly this evaluation, so the
+      # grant arrives with the handler as that row said it would.
+      #
+      # `part_listings` is not in either list. Its stream is the trigger and the
+      # record carries the whole item, so the consumer never reads the table
+      # back, and the stream grant below is on the stream ARN rather than the
+      # table's.
+      tables      = ["part_price_alerts"]
+      read_tables = ["parts", "retailers", "users"]
     }
   }
 
@@ -129,7 +217,7 @@ locals {
   # middleware on an application this function does not build, and a stream
   # consumer has no caller to rate limit.
   lambda_stream_consumer_environment = {
-    for name, consumer in local.lambda_stream_consumers : name => {
+    for name, consumer in local.lambda_stream_consumers : name => merge({
       DEBUG                 = "false"
       APP_ENVIRONMENT       = var.environment
       DYNAMODB_TABLE_PREFIX = local.prefix
@@ -158,7 +246,37 @@ locals {
       # the batch to the stream dead letter queue, which is exactly the row 22
       # failure path this function is meant to inherit.
       AWS_LWA_ERROR_STATUS_CODES = "500-599"
-    }
+      },
+      # The sender, and only on a consumer that sends. `app/core/email.py` reads
+      # EMAIL_FROM for the SES `FromEmailAddress` and EMAIL_ENABLED as the
+      # switch that turns `_send` from a debug log into a call, so both are
+      # needed and neither is on a function without ses:SendEmail. Setting them
+      # on the votes consumer would be configuration for a code path that cannot
+      # execute, which is the same argument lambda_domains.tf's header makes
+      # about the monolith's environment map.
+      consumer.ses ? {
+        EMAIL_FROM    = local.email_from
+        EMAIL_ENABLED = "true"
+
+        # The part link in the email body. `app/core/email.py` builds it from
+        # `settings.frontend_base_url`, which falls back to a hostname derived
+        # from APP_ENVIRONMENT when this is unset, and that fallback is how
+        # staging once mailed production links. Every domain function sets it
+        # for the same reason; a function that composes an email needs it more
+        # than most.
+        #
+        # API_URL is deliberately not set, matching the nine domain functions.
+        # `settings.api_base_url` derives the unsubscribe link's origin from
+        # APP_ENVIRONMENT, which is correct in both environments, and adding a
+        # key here that no domain function carries would be this file's first
+        # divergence from that map rather than a fix for anything.
+        FRONTEND_URL = local.frontend_url
+
+        # The app secret's ARN, which is what `secrets = true` above grants and
+        # what config.py's lazy resolution reads SECRET_KEY out of. The
+        # unsubscribe token is signed with it.
+        APP_SECRETS_ARN = module.app_secrets.arns["app"]
+    } : {})
   }
 }
 
@@ -302,6 +420,42 @@ resource "aws_iam_role_policy" "lambda_stream_consumer" {
           Resource = [module.app_secrets.arns["app"]]
         },
       ] : [],
+      # Section 3.4's SES split, `admin`'s half of it, arriving with the handler
+      # that sends. The two resources are the same pair the monolith's
+      # `data.aws_iam_policy_document.ses_send` names in lambda.tf, and they are
+      # both required rather than either: SESv2 `SendEmail` authorizes against
+      # the sending identity and, because `app/core/email.py` passes
+      # `ConfigurationSetName`, against the configuration set as well. Naming
+      # only one of them fails the send with an AccessDenied that reads as if
+      # the other were missing.
+      #
+      # `identity/*` rather than a single identity ARN, which is the one place
+      # this is wider than it looks and is deliberate. `local.custom_domain`
+      # decides whether the verified identity is the domain
+      # (`identity/staging.carmodpicker.com`) or the bare sender mailbox
+      # (`identity/no-reply@...`), the two are different resources created by
+      # different `aws_sesv2_email_identity` blocks under mutually exclusive
+      # counts, and a policy naming the one that does not exist in this
+      # environment breaks the send. The wildcard is scoped to this account and
+      # this region by the ARN itself, and the account holds one SES identity,
+      # so what it actually widens to is nothing. Narrowing it to the active
+      # identity is worth doing when the two identity resources are unified,
+      # and that is a change to ses.tf rather than to this file.
+      #
+      # SendRawEmail is not granted. The monolith carries it because its policy
+      # predates the SESv2 client; `_send` calls `sesv2:SendEmail` and nothing
+      # in this image composes a raw MIME message.
+      each.value.ses ? [
+        {
+          Sid    = "SendTransactionalMail"
+          Effect = "Allow"
+          Action = ["ses:SendEmail"]
+          Resource = [
+            "arn:aws:ses:${var.aws_region}:${data.aws_caller_identity.current.account_id}:identity/*",
+            "arn:aws:ses:${var.aws_region}:${data.aws_caller_identity.current.account_id}:configuration-set/${aws_sesv2_configuration_set.transactional.configuration_set_name}",
+          ]
+        },
+      ] : [],
     )
   })
 }
@@ -326,22 +480,25 @@ resource "aws_lambda_event_source_mapping" "stream_consumer" {
   function_name     = module.lambda_stream_consumer[each.key].function_arn
   starting_position = "LATEST"
 
-  # LATEST rather than TRIM_HORIZON, which is the decision that says this row
-  # needs no backfill. TRIM_HORIZON would replay up to 24 hours of vote records
-  # at the moment of the apply, and every one of them would recompute a part
-  # whose aggregate the old inline write had already set correctly. The recount
-  # is idempotent so that would be harmless, but it would be a burst of writes
-  # to buy nothing. The aggregate is correct at cutover because the synchronous
-  # write and this consumer compute the identical number, `upvotes - downvotes`,
-  # so there is no window where the column is wrong and nothing to catch up on.
+  # LATEST rather than TRIM_HORIZON, which is the decision that says neither row
+  # needs a backfill, and on row 25's mapping it is load bearing rather than
+  # merely tidy. TRIM_HORIZON on `part_listings` would replay up to 24 hours of
+  # listing writes at the moment of the apply, and every price drop among them
+  # would be evaluated as if it had just happened: a day of alert emails, all at
+  # once, for drops the synchronous evaluation had already mailed about before
+  # the apply. The 24 hour cooldown marker would suppress the ones that fired
+  # inside the window and nothing would suppress the rest. On row 24's mapping
+  # the same setting is a cost decision rather than a correctness one, because a
+  # replayed recount is idempotent.
 
   batch_size = 100
 
-  # Up to five seconds of buffering before a partial batch is delivered. The
-  # aggregate is eventually consistent by design now, and the vote routes carry
-  # the authoritative counts in their own response, so nothing a user sees is
-  # waiting on this. Five seconds buys real batching on a part that is being
-  # voted on quickly, where it collapses many records into one recount.
+  # Up to five seconds of buffering before a partial batch is delivered. Nothing
+  # a user is looking at waits on either consumer: the vote routes carry the
+  # authoritative counts in their own response, and a price alert is an email
+  # whose latency budget is minutes rather than seconds. Five seconds buys real
+  # batching on an entity being written to quickly, where it collapses many
+  # records into one recount or one evaluation.
   maximum_batching_window_in_seconds = 5
 
   # Halve the batch and retry each half when the function errors on a batch. It
@@ -357,17 +514,23 @@ resource "aws_lambda_event_source_mapping" "stream_consumer" {
   # then narrows it.
   bisect_batch_on_function_error = true
 
-  # Two retries, then the destination. The handler's own failures are DynamoDB
+  # Two retries, then the destination. A handler's own failures are DynamoDB
   # throttles and timeouts, which either clear in seconds or are not going to
   # clear at all, and the mapping's exponential backoff means two attempts
   # already spans that. A larger number trades a stalled shard for a slightly
   # better chance on a transient error, which is the wrong trade when the
-  # destination preserves the record for a human either way.
+  # destination preserves the record for a human either way. Two is also the
+  # right ceiling for a handler whose side effect is an email: a retry of a
+  # partially completed evaluation can duplicate a send that the cooldown marker
+  # had not yet been written for, so fewer retries is fewer chances at that.
   maximum_retry_attempts = 2
 
-  # A record older than an hour is not worth retrying. The aggregate is
-  # recomputed from current state, so a stale record's recount produces the same
-  # answer a newer record's would; holding the shard for it buys nothing.
+  # A record older than an hour is not worth retrying. For the vote aggregate,
+  # because it is recomputed from current state and a stale record's recount
+  # produces the same answer a newer one's would. For a price alert, because an
+  # email about a price that moved more than an hour ago is worth less than the
+  # shard it would hold, and a later observation on the same listing carries a
+  # current price to alert on instead.
   maximum_record_age_in_seconds = 3600
 
   # The contract the handler implements. Without it the mapping reads the
@@ -376,8 +539,9 @@ resource "aws_lambda_event_source_mapping" "stream_consumer" {
   # other part in the batch.
   function_response_types = ["ReportBatchItemFailures"]
 
-  # Where a batch goes when the retries are spent. Row 22 created exactly this
-  # queue per streamed table for exactly this purpose. What lands here is the
+  # Where a batch goes when the retries are spent, keyed by the streamed table
+  # so a mapping can only ever fail into its own table's queue. Row 22 created
+  # exactly this queue per streamed table for exactly this purpose. What lands here is the
   # failure metadata and the shard and sequence range, not the records
   # themselves, which is enough to find them on the stream while it retains
   # them and enough to alarm on.

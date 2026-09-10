@@ -445,17 +445,19 @@ def create_or_update_listing_and_price(
 
     transact_write(actions)
 
-    if ts is not None and price_cents is not None:
-        from app.api.services.part_price_alert_service import (
-            evaluate_alerts_for_listing,
-        )
-
-        evaluate_alerts_for_listing(
-            part_id=part_id,
-            retailer_id=retailer_id,
-            price_cents=price_cents,
-            observed_at=ts,
-        )
+    # Split plan row 25, seam 4. The price drop alert used to be evaluated here,
+    # synchronously, right after this transaction committed: a fan-out read of
+    # `part_price_alerts`, `parts`, `retailers` and `users` plus an SES call,
+    # all on the request thread and all inside a 29 second Lambda. Three of
+    # those tables and the SES grant belong to `admin` rather than to `catalog`,
+    # which made it the seam. It now runs off the `part_listings` stream in
+    # `app/consumers/price_alerts.py`, so this write returns as soon as the
+    # transaction commits and `catalog` holds no SES grant at all.
+    #
+    # The stream carries everything the evaluation needs, because the item this
+    # transaction just wrote is where the old call read its four arguments from:
+    # `part_id`, `retailer_id`, `last_known_price_cents` and
+    # `last_price_updated_at` are all attributes of the listing.
 
     return listing
 
