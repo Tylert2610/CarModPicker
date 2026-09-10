@@ -21,6 +21,7 @@ from app.api.utils.response_patterns import ResponsePatterns
 from app.db.dynamo import search
 from app.db.dynamo import search as search_module
 from app.db.dynamo.catalog import GTIN, MANUFACTURER_PART_NUMBER, Part
+from app.db.dynamo.models import utc_now
 from app.db.dynamo.tombstones import is_tombstoned
 from app.db.dynamo.users import UniqueAttributeTaken
 from app.db.dynamo.users import User as DBUser
@@ -263,6 +264,53 @@ class PartService(BaseDynamoCRUDService[Part, PartCreate, PartUpdate]):
         return entity
 
     def purge(self, entity: Part) -> None:
+        """Remove a part and everything `catalog` owns that references it.
+
+        Seam 2, split plan row 28. What this used to do inline and no longer
+        does is the cross domain half: the deletes in `build_list_parts`,
+        `votes`, `reports` and `part_price_alerts`, which belong to
+        `build-lists`, `moderation` twice and `admin`. Those now happen in
+        `app/consumers/part_purge.py`, off the `parts` stream and through the
+        `part-purge` work queue. The purge semantics are identical; only who
+        performs that half and when has changed.
+
+        Everything below stayed synchronous because every table it touches is
+        `catalog`'s own, so none of it crosses a seam and moving it would buy
+        nothing but latency between a delete and its own domain being
+        consistent.
+
+        The tombstone write is the new first step and it is what makes the
+        asynchronous half possible. Writing `deleted` and `deleted_at` before
+        the hard delete puts a record on the `parts` stream carrying a NewImage
+        with the flag set, which is what the consumer keys on. Without it the
+        stream would carry only a REMOVE, whose OldImage is the live part and
+        which the consumer deliberately ignores, because a REMOVE is also what
+        an already drained cascade leaves behind.
+
+        The order matters and it is the opposite of what it looks like. The
+        tombstone goes first so that the stream record exists even if the hard
+        delete below fails: a part that is tombstoned but not deleted still
+        reads as gone everywhere, and its cascade still runs. The reverse order
+        would let a successful delete with a failed tombstone remove the row
+        with no stream record a consumer can act on, stranding the related rows
+        with nothing left to point at them.
+
+        The hard delete stays rather than being deferred to the consumer, and
+        that is the one place this differs from seam 1. `delete_unique` is what
+        releases the part's GTIN and manufacturer part number reservations, and
+        those are unique labels rather than rows: a part that reads as deleted
+        while still holding its reservations means the next software engineer to
+        re create the same part gets `UniqueAttributeTaken` for a part nobody
+        can see. Holding a reservation for a row that is gone is a leak, and the
+        window has to be zero rather than however long the queue is deep.
+        """
+        # The tombstone the consumer keys on. `update` carries
+        # `attribute_exists`, so a part already hard deleted by a concurrent
+        # purge raises `ItemNotFound` here rather than resurrecting the row,
+        # which is the behaviour we want: the other caller's cascade is already
+        # under way.
+        self.repos.parts.update(str(entity.id), deleted=True, deleted_at=utc_now())
+
         delete_part_listings(entity.id)
         for duplicate in self.repos.parts.list_link_group(entity.id):
             self._unlink_duplicate(duplicate)
@@ -481,15 +529,29 @@ class PartService(BaseDynamoCRUDService[Part, PartCreate, PartUpdate]):
 
 
 def purge_related_rows_for_parts(part_ids: Iterable[UUID]) -> None:
-    """Remove votes, reports, build list usages and price alerts that reference the parts."""
-    ids = list(part_ids)
-    if not ids:
-        return
-    repos = get_repositories()
-    repos.votes.delete_for_entities("part", ids)
-    repos.reports.delete_for_entities("part", ids)
-    build_list_parts = repos.build_list_parts
-    usage_ids = [str(usage.id) for pid in ids for usage in build_list_parts.query_all("part_id-index", pid)]
-    if usage_ids:
-        build_list_parts.batch_delete(usage_ids)
-    repos.part_price_alerts.delete_for_parts(ids)
+    """Ensure the cross domain rows referencing these parts are removed.
+
+    Seam 2, split plan row 28. This function is kept, with its name and its
+    signature, and it still means what it always meant: after it returns, the
+    caller has done everything required to get the votes, reports, build list
+    usages and price alerts for these parts removed. What changed is that it no
+    longer performs those four deletes itself.
+
+    It is now a no op, and deliberately so rather than deleted outright. The
+    work it used to do is triggered by the tombstone `PartService.purge` writes,
+    carried by the `parts` stream, and performed by
+    `app/consumers/part_purge.py`. Every caller of this function calls
+    `PartService.purge` first, on every part, so by the time control reaches
+    here the cascade is already in flight for each of them and doing the deletes
+    a second time would be redundant work on the request thread, which is the
+    thing this row exists to remove.
+
+    Keeping the call sites rather than editing them out is what makes the seam
+    reversible. If the consumer has to be turned off, restoring the four deletes
+    here restores the old synchronous behaviour at three call sites that are
+    still in the right places, with no endpoint changes. The function is the
+    seam, and a seam you can close again is worth more than three deleted lines.
+    """
+    # Intentionally empty. See the docstring: the cascade is driven by the
+    # tombstone `PartService.purge` writes, not by this call.
+    return

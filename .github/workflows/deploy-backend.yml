@@ -293,12 +293,12 @@ jobs:
           import json, os, pathlib
 
           # Functions that are not a domain of their own but run a domain's image,
-          # mapped to the domain whose image they run. Split plan row 24 added the
-          # first and row 25 the second: `catalog-votes-consumer` is the votes
-          # stream consumer and `admin-price-alerts-consumer` is the price alert
-          # one. Each is the same image as its domain with the container command
-          # overridden by `image_config.command` in
-          # terraform/lambda_stream_consumers.tf.
+          # mapped to the domain whose image they run. Split plan rows 24, 25 and
+          # 28 added them: `catalog-votes-consumer` is the votes stream consumer,
+          # `admin-price-alerts-consumer` is the price alert one, and
+          # `catalog-part-purge-consumer` is seam 2's part purge cascade. Each is
+          # the same image as its domain with the container command overridden by
+          # `image_config.command` in terraform/lambda_stream_consumers.tf.
           #
           # Sharing an image is the point rather than a shortcut. One build, one
           # push and one digest means the deploy that updates a domain updates its
@@ -309,6 +309,7 @@ jobs:
           EXTRA_FUNCTIONS = {
               "catalog-votes-consumer": "catalog",
               "admin-price-alerts-consumer": "admin",
+              "catalog-part-purge-consumer": "catalog",
           }
 
           env = os.environ["ENVIRONMENT"]

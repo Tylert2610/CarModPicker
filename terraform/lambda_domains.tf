@@ -359,9 +359,12 @@ locals {
   #     rather than about every caller: the purge is one code path and it is
   #     reached from `catalog` and from here.
   #
-  #     None of these is a seam this row unwinds. Section 1.3's seams 1, 2 and 4
-  #     are what eventually narrow this list, and rows 25, 28 and 30 are where
-  #     they land. Until then the grant follows the writer, and the writer is
+  #     Section 1.3's seams 1, 2 and 4 are what narrow this list, and rows 25,
+  #     28 and 30 are where they land. Row 28 has landed and took
+  #     `build_list_parts` with it, per the note on the `tables` list below.
+  #     `part_listings`, `part_price_history` and `reports` stayed, because the
+  #     purge was not their only caller. Seams 1 and 4 are still outstanding,
+  #     and until they land the grant follows the writer, and the writer is
   #     this function.
   #   - Six tables are read only. `users` is read on eleven of the twelve routes
   #     before the handler runs: `get_current_user` and `get_current_admin_user`
@@ -754,11 +757,25 @@ locals {
       s3_delete_only = false
       ses            = false
       memory         = 256
-      # Fifteen written tables, fourteen of them real and the fifteenth the
+      # Fourteen written tables, thirteen of them real and the fourteenth the
       # limiter's counter. This is the widest write list of the nine by a wide
       # margin, and it is the domain's whole purpose rather than a failure to
       # narrow it: the two admin modules seed and purge six domains' tables by
       # design. The derivation above names the call behind every one.
+      #
+      # Row 28 removed `build_list_parts`, which is seam 2 landing exactly where
+      # the derivation above said it would. It was granted because
+      # `POST /admin/db-ops/parts/delete-all` ran the part purge, and the purge
+      # called `.batch_delete` on it. Nothing in `admin/stats` or
+      # `admin/db_ops` reaches that repository now, so the grant went with the
+      # cascade to `carmodpicker-<env>-catalog-part-purge-consumer`.
+      #
+      # `votes` stays: `POST /admin/db-ops/car-generations/delete-all` calls
+      # `.delete_for_entity_type("car_generation")` on it, so the purge was
+      # never its only writer. `reports` stays because `admin/stats` calls
+      # `.count_by_entity_type()` on it, and a table appears in exactly one of
+      # the two lists with the write set being the wider grant.
+      # `part_price_alerts` stays because `admin` owns it.
       tables = [
         "part_price_alerts",
         "car_makes",
@@ -771,7 +788,6 @@ locals {
         "part_listings",
         "part_price_history",
         "build_lists",
-        "build_list_parts",
         "votes",
         "reports",
         "rate-limits",

@@ -109,9 +109,12 @@ TABLE_OWNERS: Dict[str, str] = {
 # a domain carries that another domain owns. Listed by name so that a new one is
 # a deliberate edit here with a reason, rather than a tuple quietly widening.
 #
-# Rows 22 onward of section 8 are what remove these. Nothing in this PR does, and
-# `test_no_cross_domain_read_is_undeclared` is what makes the list honest in the
-# meantime.
+# Rows 22 onward of section 8 are what remove these, and row 28 is the first row
+# that actually did. Seam 2 came out of four domains at once: `catalog`,
+# `vehicles`, `build-lists` and `admin` all carried some of `build_list_parts`,
+# `reports` and `part_price_alerts` only because their delete routes called
+# `purge_related_rows_for_parts`. The rest of the list is still outstanding, and
+# `test_no_cross_domain_read_is_undeclared` is what keeps it honest meanwhile.
 EXPECTED_CROSS_DOMAIN_READS: Dict[str, Set[str]] = {
     # `identity` writes `users` on oauth link, webauthn registration, and
     # password and 2FA changes. Seam 1's neighbour; stays until the tombstone.
@@ -141,19 +144,17 @@ EXPECTED_CROSS_DOMAIN_READS: Dict[str, Set[str]] = {
         "votes",
         "reports",
     },
-    # Seam 2, the part purge, writes `build_list_parts`, `votes`, `reports` and
-    # `part_price_alerts`; seam 4, the price alert email, reads
-    # `part_price_alerts` and `users`; `part_service` reads the car tables to
-    # infer fitment.
+    # Row 28 took seam 2 out of this set. `build_list_parts`, `reports` and
+    # `part_price_alerts` were here because the synchronous part purge wrote
+    # them; the purge consumer names them now. What is left is `votes`, read by
+    # row 24's `net_votes` consumer, `users`, read by seam 4's price alert
+    # email, and the car tables `part_service` reads to infer fitment.
     "catalog": {
         "users",
         "car_makes",
         "car_models",
         "car_generations",
-        "part_price_alerts",
-        "build_list_parts",
         "votes",
-        "reports",
     },
     # Seam 5's search fan-out: one route reading four domains' tables. Stays
     # synchronous because turning it into service calls makes one Dynamo round
@@ -167,11 +168,8 @@ EXPECTED_CROSS_DOMAIN_READS: Dict[str, Set[str]] = {
         "part_cars",
         "part_listings",
         "part_price_history",
-        "part_price_alerts",
         "build_lists",
-        "build_list_parts",
         "votes",
-        "reports",
     },
     # Price capture writes `part_listings` and `part_price_history`; a build log
     # is created with the list; the rest are joins for the rendered list.
@@ -187,11 +185,9 @@ EXPECTED_CROSS_DOMAIN_READS: Dict[str, Set[str]] = {
         "part_cars",
         "part_listings",
         "part_price_history",
-        "part_price_alerts",
         "build_logs",
         "build_log_posts",
         "votes",
-        "reports",
     },
     # The parent list and the author.
     "build-logs": {"users", "build_lists"},
@@ -220,7 +216,6 @@ EXPECTED_CROSS_DOMAIN_READS: Dict[str, Set[str]] = {
         "part_listings",
         "part_price_history",
         "build_lists",
-        "build_list_parts",
         "build_list_phases",
         "build_logs",
         "votes",
