@@ -3207,8 +3207,9 @@ rows 8 and 16 had already built and instrumented all nine entrypoints, so
 `app/entrypoints/catalog.py` is byte for byte what row 16 left. This row moves
 the existing catalogue routes onto their own function and changes no behaviour.
 
-**The plan is 19 to add, 4 to change and 0 to destroy, and it is the first cut
-to come in above the settled arithmetic.** Row 18's per-cut anatomy predicts
+**The plan is 19 to add, 4 to change and 0 to destroy, confirmed against the
+speculative plan on the pull request rather than predicted, and it is the first
+cut to come in above the settled arithmetic.** Row 18's per-cut anatomy predicts
 `5 + 2 + 2*prefixes + 2` adds and 4 changes, which for a four-prefix domain is
 17 and 4, and rows 19, 20, 21 and 26 each landed on it exactly. The extra two
 are the second aggregate alarm pair, which is the ceiling being crossed rather
@@ -3225,27 +3226,35 @@ The nineteen adds:
 | `aws_iam_role_policy.lambda_domain["catalog"]` | This repository's runtime policy: logs, Dynamo, secrets, S3 delete, spans |
 | `module.api.aws_apigatewayv2_integration.this["catalog"]` | The integration |
 | `module.api.aws_lambda_permission.this["catalog"]` | The gateway's invoke permission |
-| `module.api.aws_apigatewayv2_route.this["catalog-0"]` | `ANY /api/parts` |
-| `module.api.aws_apigatewayv2_route.this["catalog-1"]` | `ANY /api/parts/{proxy+}` |
-| `module.api.aws_apigatewayv2_route.this["catalog-2"]` | `ANY /api/part-manufacturers` |
-| `module.api.aws_apigatewayv2_route.this["catalog-3"]` | `ANY /api/part-manufacturers/{proxy+}` |
-| `module.api.aws_apigatewayv2_route.this["catalog-4"]` | `ANY /api/categories` |
-| `module.api.aws_apigatewayv2_route.this["catalog-5"]` | `ANY /api/categories/{proxy+}` |
-| `module.api.aws_apigatewayv2_route.this["catalog-6"]` | `ANY /api/retailers` |
-| `module.api.aws_apigatewayv2_route.this["catalog-7"]` | `ANY /api/retailers/{proxy+}` |
+| `module.api.aws_apigatewayv2_route.this["ANY /api/parts"]` | `ANY /api/parts` |
+| `module.api.aws_apigatewayv2_route.this["ANY /api/parts/{proxy+}"]` | `ANY /api/parts/{proxy+}` |
+| `module.api.aws_apigatewayv2_route.this["ANY /api/part-manufacturers"]` | `ANY /api/part-manufacturers` |
+| `module.api.aws_apigatewayv2_route.this["ANY /api/part-manufacturers/{proxy+}"]` | `ANY /api/part-manufacturers/{proxy+}` |
+| `module.api.aws_apigatewayv2_route.this["ANY /api/categories"]` | `ANY /api/categories` |
+| `module.api.aws_apigatewayv2_route.this["ANY /api/categories/{proxy+}"]` | `ANY /api/categories/{proxy+}` |
+| `module.api.aws_apigatewayv2_route.this["ANY /api/retailers"]` | `ANY /api/retailers` |
+| `module.api.aws_apigatewayv2_route.this["ANY /api/retailers/{proxy+}"]` | `ANY /api/retailers/{proxy+}` |
 | `module.alarms.aws_cloudwatch_log_metric_filter.errors["catalog"]` | The new log group joins the application-errors alarm |
 | `module.alarms.aws_cloudwatch_log_metric_filter.rate_limit_failed_open["catalog"]` | And the fail-open alarm |
-| `module.alarms.aws_cloudwatch_metric_alarm.lambda_errors_aggregate[1]` | Chunk one's errors alarm, `<prefix>-lambda-errors-aggregate-2` |
-| `module.alarms.aws_cloudwatch_metric_alarm.lambda_throttles_aggregate[1]` | Chunk one's throttles alarm, `<prefix>-lambda-throttles-aggregate-2` |
+| `module.alarms.aws_cloudwatch_metric_alarm.lambda_aggregate_errors[1]` | Chunk one's errors alarm, `<prefix>-lambda-errors-aggregate-2` |
+| `module.alarms.aws_cloudwatch_metric_alarm.lambda_aggregate_throttles[1]` | Chunk one's throttles alarm, `<prefix>-lambda-throttles-aggregate-2` |
 
 The four changes:
 
 | Resource | Why |
 | --- | --- |
-| `module.alarms.aws_cloudwatch_log_metric_filter.errors[0]` description | Counts log groups, now one higher |
-| `module.alarms.aws_cloudwatch_log_metric_filter.rate_limit_failed_open[0]` description | Same |
-| `module.alarms.aws_cloudwatch_metric_alarm.lambda_errors_aggregate[0]` | Metric math takes `catalog` at m7 and moves the three consumer terms |
-| `module.alarms.aws_cloudwatch_metric_alarm.lambda_throttles_aggregate[0]` | Same |
+| `module.alarms.aws_cloudwatch_metric_alarm.errors[0]` | Its description counts log groups, 11 to 12 |
+| `module.alarms.aws_cloudwatch_metric_alarm.rate_limit_failed_open[0]` | Same, 11 to 12 |
+| `module.alarms.aws_cloudwatch_metric_alarm.lambda_aggregate_errors[0]` | Metric math takes `catalog` at m7 and moves the three consumer terms |
+| `module.alarms.aws_cloudwatch_metric_alarm.lambda_aggregate_throttles[0]` | Same |
+
+One naming detail worth recording, because rows 24 through 28 wrote it the
+other way round. The two changed descriptions are on
+`aws_cloudwatch_metric_alarm.errors[0]` and
+`aws_cloudwatch_metric_alarm.rate_limit_failed_open[0]`, the alarms, not on the
+log metric filters of the same names. The filters are `for_each` over the log
+groups, so a new domain adds a filter rather than changing one; it is the alarm
+description that carries the "in N log groups" count, 11 to 12 here.
 
 `module.github_actions_role.aws_iam_role_policy.this[0]` is **not** a fifth
 change on this row. The deploy role's grants are built from

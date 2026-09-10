@@ -29,8 +29,10 @@ locals {
   # The chunk ceiling, and how to count against it. The module chunks this list into groups of ten
   # and creates one alarm pair per group, so the eleventh name here creates a second pair,
   # `<prefix>-lambda-errors-aggregate-2` and `<prefix>-lambda-throttles-aggregate-2`. Chunk zero
-  # keeps its unsuffixed names and its m0 through m9 expression, so crossing the ceiling adds
-  # alarms rather than rewriting the ones already subscribed.
+  # keeps its unsuffixed names and its alarm identities, so nothing already subscribed is
+  # destroyed or recreated. Its metric math is rewritten in place, though, because the eleventh
+  # name is not necessarily the one that spills: `chunklist` fills each group before starting the
+  # next, so a name inserted anywhere but the very end pushes everything after it along.
   #
   # Count created functions, not declared ones. Row 24's note in the split plan predicted that row
   # 25 would be the eleventh and would cross this, by counting the nine names in
@@ -41,10 +43,13 @@ locals {
   #
   # Row 28 filled the last slot of chunk zero and row 29 is the row that crosses it. THE DECISION
   # IS TAKEN, and it is to accept the module's chunking as designed rather than to restructure
-  # anything: `catalog` is the eleventh name, chunk one opens with it, and the apply creates
+  # anything: `catalog` is the eleventh name in the list and the apply creates
   # `<prefix>-lambda-errors-aggregate-2` and `<prefix>-lambda-throttles-aggregate-2` alongside the
-  # existing unsuffixed pair. Row 31's `users` becomes the twelfth and joins chunk one without
-  # creating anything further.
+  # existing unsuffixed pair. It is not `catalog` that opens chunk one, though. Domains come first
+  # in the concat and `catalog` is the eighth domain, so it takes chunk zero's m7 and pushes the
+  # three consumers one place right, which spills `catalog-votes-consumer` out as chunk one's sole
+  # member. Row 31's `users` becomes the twelfth, takes chunk zero's m8 in the same way, and pushes
+  # `catalog-part-purge-consumer` into chunk one beside it, creating no new alarm.
   #
   # The alternative row 28's note preferred, giving the three stream consumers an aggregate of
   # their own, is deliberately not taken. It reads better on paper, because it would keep all nine
