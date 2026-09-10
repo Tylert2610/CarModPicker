@@ -1207,7 +1207,7 @@ infrastructure.
 | 30 | Seam 1: user delete cascade goes async. **Delivered** | large | 9 add, 5 change (est. 5 add) | 23, 29 |
 | 31 | `users`: function, routes, OTel. **Delivered, ninth and last cut, renumbers both alarm chunks** | large | 13 add, 6 change (est. 13 add, 4 change) | 30 |
 | 32 | Retire `$default`, the monolith, the artifacts bucket, the zip chain. **Delivered, `default_integration` is now null, no alarm chunk renumbers** | medium | 0 add, 3 change, 17 destroy (est. 12 destroy) | 31 |
-| 33 | Frontend: delete the `services/Api.ts` shim, rewriting 74 import sites | medium | 0 | none |
+| 33 | Frontend: delete the `services/Api.ts` shim, rewriting its import sites. **Delivered** | medium | 0 | none |
 
 **Rows 29 and 31 are estimates, and the arithmetic behind them is worth
 stating rather than hiding. Rows 19, 20, 21, 26 and 27 landed on it exactly, so
@@ -4129,6 +4129,50 @@ No deploy dispatch is needed. This row creates no function and changes no image,
 so the deploy workflow has nothing to do.
 
 The expected-plan numbers are estimates for catching surprises, not commitments.
+---
+
+# Row 33 delivered: the `services/Api.ts` shim is gone
+
+**Landed ahead of its row, in PR 325, commit `69b38b64`.** The row was written
+as the last item in the table and carries no infrastructure change, so it was
+free to land the moment the frontend was ready rather than waiting for the
+domain cuts in front of it. It is recorded here because the table said `74
+import sites` and the real number was different, and because a later reader
+finding the row unmarked would go looking for a file that no longer exists.
+
+**What the shim was.** `frontend/src/services/Api.ts` was a re-export barrel
+over the per-domain modules under `frontend/src/api/`, added when Phase 6 split
+the original monolithic service file and marked temporary in its own header. It
+declared nothing of its own. Every symbol it exported was declared in a module
+next to it.
+
+**The count.** The table's 74 was an estimate made by counting references rather
+than import statements. The delivered change rewrote **63 import statements
+across 56 source files**, plus one dynamic `import()` in `ChangePasswordDialog`.
+A default import of the shim became a named import of `apiClient` from
+`api/client`; each named import moved to the module that actually declares the
+symbol. The gap between 74 and 63 is comment lines and `vi.mock` calls that also
+named the shim, which the reference count swept in.
+
+**The test-side change was the larger half, and was not on the row.** Deleting
+the barrel removed **21 `vi.mock` blocks that existed only to work around it**.
+Because the barrel used `export *`, a global mock of it stripped the named
+re-exports, so tests had to restore them with `importActual` or with
+hand-written forwarders over the mocked client. With direct imports the domain
+modules are reached as themselves, and `setup.ts`'s mock of `api/client`
+already puts every call on the mocked instance, so those blocks were dead. The
+three that carried real behaviour were retargeted at the module they stood in
+for: `authApi` in `AuthContext` and `useGoogleSignIn` onto `api/auth`,
+`appSettingsApi` in `AppSettingsContext` onto `api/app_settings`.
+
+**One latent bug fell out of it.** The `usePartsFilters` test stub had been
+matching the deleted forwarder's URL, `/car-generations/stats/makes`. The real
+module calls `/car-generations/stats/car-makes`, so the stub had been asserting
+against a request the hook never made. The rewrite made the two agree.
+
+**Behaviour is unchanged.** The shim held no logic to preserve: same paths, same
+auth header injection through `api/client`'s `getAuthToken`, same error
+handling. 108 files changed, 303 insertions, 740 deletions.
 
 ---
 

@@ -93,6 +93,14 @@ function ExtensionAuth() {
       });
       return;
     }
+    // In bearer mode this is the `localStorage` token, which lives until it
+    // expires. In identity mode `getStoredToken` reads the in-memory access
+    // token instead, so the handoff still works, but what the extension
+    // receives is short lived and it holds no refresh cookie of its own to
+    // renew it. The extension will need its own grant before identity mode is
+    // switched on for an environment whose users rely on it; that is tracked
+    // with the cutover rather than solved here, because the fix is a backend
+    // route and an extension release rather than a change to this page.
     const token = getStoredToken();
     if (!token) {
       setHandoff({

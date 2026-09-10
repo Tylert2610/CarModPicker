@@ -81,6 +81,17 @@ jobs:
           # Allowlist for the /extension-auth token hand-off. Without this, the
           # page refuses to send the JWT to any extension in production builds.
           VITE_ALLOWED_EXTENSION_IDS: ${{ vars.CWS_EXTENSION_ID }}
+          # Selects the auth mechanism this bundle is built with: unset or
+          # `bearer` keeps the token-in-localStorage flow every environment runs
+          # today, `identity` builds against the shared identity service.
+          #
+          # The variable is deliberately NOT set on either Environment, so this
+          # expands to an empty string and `src/api/authMode.ts` falls through
+          # to `bearer`. It is forwarded now so that turning identity on later
+          # is setting one Environment variable and redeploying, rather than
+          # editing this workflow under time pressure. Rolling back is clearing
+          # it again.
+          VITE_AUTH_MODE: ${{ vars.AUTH_MODE }}
         run: npm run build
 
       # Wait for HCP Terraform to finish before touching S3/CloudFront.

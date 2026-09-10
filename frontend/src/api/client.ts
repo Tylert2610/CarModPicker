@@ -8,12 +8,22 @@
 // `paramsSerializer` that repeated array keys, and three `localStorage`
 // helpers.
 //
-// The token store next to it is local again. `@webbpulse/auth` 0.4.0 removed
-// `TokenStore` outright, because the identity standard it now implements keeps
-// the access token in memory and refreshes it from an httpOnly cookie. This
-// application still holds a bearer token in `localStorage` and has not adopted
-// that service, so the store moved back to `./tokenStore` unchanged rather than
-// being rewritten against a mechanism the backend does not yet speak.
+// This file now builds one of two clients, selected by `./authMode`.
+//
+// In `bearer` mode, which is what every environment still runs, it is exactly
+// what it was: the token comes from `localStorage` through `./tokenStore` and
+// goes out as an `Authorization` header, and a rotated token arriving in
+// `x-new-access-token` is written back. `@webbpulse/auth` 0.4.0 removed
+// `TokenStore` outright, which is why that store is local again rather than
+// imported.
+//
+// In `identity` mode the client is handed an `AuthClient` as `auth` instead.
+// That one object holds the access token in memory, refreshes it from an
+// httpOnly cookie, collapses concurrent refreshes into one, and replays a
+// request that came back 401. `./tokenStore` is then unreachable: the three
+// helpers below become a read-through and two no-ops, because writing an access
+// token anywhere a script can read it back is the one thing section 7.1 of the
+// identity standard forbids.
 //
 // What did NOT change is the contract this file exports. Ninety modules under
 // `src/api/`, `src/hooks/` and `src/pages/` read `response.data` off an axios
@@ -39,6 +49,8 @@ import {
   type RequestOptions,
 } from '@webbpulse/api-client';
 import { TokenStore } from './tokenStore';
+import { AUTH_MODE } from './authMode';
+import { getIdentityClient } from './identityClient';
 import { appConfig } from '../config/app';
 
 /**
@@ -54,18 +66,55 @@ const TOKEN_STORAGE_KEY = 'access_token';
  */
 const tokenStore = new TokenStore(TOKEN_STORAGE_KEY);
 
-/** Get token from storage. */
-export const getStoredToken = (): string | null => tokenStore.get();
+/**
+ * Get the token.
+ *
+ * In identity mode there is nothing in `localStorage` to get, and the access
+ * token lives in `AuthClient`'s closure. Reading it through here rather than
+ * returning null keeps the one caller that genuinely needs the raw string,
+ * `ExtensionAuth`, working in both modes off a single call.
+ */
+export const getStoredToken = (): string | null =>
+  AUTH_MODE === 'identity'
+    ? (getIdentityClient()?.getAccessToken() ?? null)
+    : tokenStore.get();
 
-/** Store token. */
+/**
+ * Store the token.
+ *
+ * A no-op in identity mode. Section 7.1 of the identity standard puts the
+ * access token in memory and nowhere a script can read it back after a reload,
+ * so writing it to `localStorage` would defeat the control the whole mode
+ * exists for. `AuthClient` owns the token; nothing outside it may put one back.
+ */
 export const setStoredToken = (token: string): void => {
+  if (AUTH_MODE === 'identity') return;
   tokenStore.set(token);
 };
 
-/** Remove token from storage. */
+/**
+ * Forget the token.
+ *
+ * In identity mode the session is the refresh cookie rather than anything
+ * local, and only the server can revoke it, so the caller wants
+ * `AuthClient.logout()` and this becomes a no-op. It is left callable so the
+ * two error paths in `AuthContext` do not need a mode branch of their own.
+ */
 export const removeStoredToken = (): void => {
+  if (AUTH_MODE === 'identity') return;
   tokenStore.clear();
 };
+
+/**
+ * The identity token provider, or undefined in bearer mode.
+ *
+ * Passing `auth` is what turns on the shared client's retry-once-on-401
+ * pipeline: it reads the access token before each request, and on a 401 calls
+ * `refresh()` once, waits on the single in-flight refresh if one is already
+ * running, and replays the request. That is the entire mechanism, and it
+ * replaces `getAuthToken` plus `onTokenRefresh` rather than joining them.
+ */
+const identityAuth = AUTH_MODE === 'identity' ? getIdentityClient() : null;
 
 const sharedClient = createApiClient({
   baseUrl: appConfig.apiBaseUrl,
@@ -77,13 +126,20 @@ const sharedClient = createApiClient({
   // environment; auth itself still rides on the Bearer token below.
   //
   // This is the shared client's default, stated explicitly because it is load
-  // bearing here rather than incidental.
+  // bearing here rather than incidental. In identity mode it is load bearing
+  // twice over: the refresh cookie is httpOnly and only travels on a
+  // credentialed request.
   credentials: 'include',
   timeoutMs: 30000,
-  getAuthToken: getStoredToken,
-  // The API issues a replacement token mid-session, for example after a
-  // username change. Storing it is what keeps that from signing the user out.
-  onTokenRefresh: setStoredToken,
+  // Exactly one of these two branches is live in a given bundle. In identity
+  // mode `auth` supplies the token and owns refreshing it; in bearer mode
+  // `getAuthToken` reads `localStorage` and `onTokenRefresh` writes back the
+  // rotated token the API sends in `x-new-access-token`, for example after a
+  // username change. Handing the client both would let a stale stored token
+  // shadow the in-memory one.
+  ...(identityAuth !== null
+    ? { auth: identityAuth }
+    : { getAuthToken: getStoredToken, onTokenRefresh: setStoredToken }),
 });
 
 /**
