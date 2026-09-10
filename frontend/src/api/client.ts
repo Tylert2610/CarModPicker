@@ -1,12 +1,19 @@
 // The shared API transport, adapted to the response shape this application
 // already reads.
 //
-// The transport is `@webbpulse/api-client` and the token store is
-// `@webbpulse/auth`. Both replace hand-rolled equivalents that used to live in
-// this file: an axios instance with a request interceptor that attached the
-// bearer token, a response interceptor that stored a rotated token from the
-// `x-new-access-token` header, a `paramsSerializer` that repeated array keys,
-// and three `localStorage` helpers.
+// The transport is `@webbpulse/api-client`, which replaced a hand-rolled
+// equivalent that used to live in this file: an axios instance with a request
+// interceptor that attached the bearer token, a response interceptor that
+// stored a rotated token from the `x-new-access-token` header, a
+// `paramsSerializer` that repeated array keys, and three `localStorage`
+// helpers.
+//
+// The token store next to it is local again. `@webbpulse/auth` 0.4.0 removed
+// `TokenStore` outright, because the identity standard it now implements keeps
+// the access token in memory and refreshes it from an httpOnly cookie. This
+// application still holds a bearer token in `localStorage` and has not adopted
+// that service, so the store moved back to `./tokenStore` unchanged rather than
+// being rewritten against a mechanism the backend does not yet speak.
 //
 // What did NOT change is the contract this file exports. Ninety modules under
 // `src/api/`, `src/hooks/` and `src/pages/` read `response.data` off an axios
@@ -31,7 +38,7 @@ import {
   type QueryParams,
   type RequestOptions,
 } from '@webbpulse/api-client';
-import { TokenStore } from '@webbpulse/auth';
+import { TokenStore } from './tokenStore';
 import { appConfig } from '../config/app';
 
 /**
@@ -41,10 +48,9 @@ import { appConfig } from '../config/app';
 const TOKEN_STORAGE_KEY = 'access_token';
 
 /**
- * Backed by `@webbpulse/auth`, which probes `localStorage` with a real write
- * and falls back to an in-memory store. Safari in private mode exposes a
- * `localStorage` whose `setItem` throws, which the previous direct calls did
- * not survive.
+ * Probes `localStorage` with a real write and falls back to an in-memory store.
+ * Safari in private mode exposes a `localStorage` whose `setItem` throws, which
+ * the direct calls this replaced did not survive.
  */
 const tokenStore = new TokenStore(TOKEN_STORAGE_KEY);
 
