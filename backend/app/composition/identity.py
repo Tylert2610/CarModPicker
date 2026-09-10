@@ -90,9 +90,11 @@ untouched and still serves, and row 9 is where the package's OAuth replaces it,
 in the same row that adds the two tables. `oauth_client_secrets` is likewise not
 passed: nothing reads it while no OAuth route is mounted.
 
-Passkeys are M5 in the package and unshipped in 0.14.0, so this row mounts none.
-CarModPicker's seven working WebAuthn routes are untouched, for the same reason
-the legacy OAuth routes are.
+Passkeys are M5, and 0.14.0, which this file pins, does not carry them, so this
+row mounts none. They shipped in 0.15.0, after this row was cut; adopting them is
+a version bump and a row of its own, not a change here. CarModPicker's seven
+working WebAuthn routes are untouched, for the same reason the legacy OAuth
+routes are.
 
 ## What this changes about a legacy login, which is nothing
 
