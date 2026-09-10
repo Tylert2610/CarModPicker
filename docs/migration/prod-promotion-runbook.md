@@ -16,6 +16,17 @@ X-Ray trace segment destination `XRay` rather than `CloudWatchLogs`, and a deplo
 role carrying no CodeArtifact or ECR grants. That is why the bootstrap path in
 6.6 applies here rather than the ordinary promote-and-apply.
 
+**Correction, row 32.** This runbook was written while the monolith
+(`carmodpicker-production-api`) was still the function on `$default`, and most of
+its counts, health checks and rollback levers assumed a monolith would be there
+to fall back to. Row 32 of `split-plan.md` retired it: the function, the zip
+chain, the artifacts bucket and the `$default` route are all gone, and
+`default_integration` is `null`. The steps below are annotated where that changes
+what to expect or what to do. The sequence itself still holds, because the
+sequencing hazards it was written around, functions and routes landing in the
+same apply and the bootstrap tag expiring, are unchanged. Section 9 changed the
+most and should be read in full before anyone rolls anything back.
+
 ---
 
 ## 0. Preconditions
@@ -27,12 +38,28 @@ Confirm all of these before merging. Each is a hard gate.
 | Both bootstrap variables exist on the prod workspace | `curl -sg -H "Authorization: Bearer $TOK" https://app.terraform.io/api/v2/workspaces/ws-oh1VvpTBPxmcrSYD/vars` | `bootstrap_image_tag` = `""` and `adopt_spans_log_group` = `"false"`, both `terraform` category, neither sensitive, neither HCL |
 | The prod speculative plan is green and has been read | Release PR checks, `Terraform Cloud/WebbPulse` | `planned_and_finished`, and the categorised diff reviewed against section 4 below |
 | No apply is in flight on the prod workspace | `GET /api/v2/workspaces/ws-oh1VvpTBPxmcrSYD/runs?page[size]=3` | Newest run is `applied` or `planned_and_finished` |
-| The monolith is healthy | `curl -si https://carmodpicker.com/api/health` | `200` |
+| The API is healthy | See the note below | `200` from a real domain prefix |
 
 **Abort if** either variable is missing or holds a different value. Applying with
 `adopt_spans_log_group` at its default of `true` is a plan time error in this
 account, because the `aws/spans` log group does not exist yet and an import block
 whose target is absent fails the plan rather than skipping.
+
+**The health check changed in row 32.** `curl -si https://carmodpicker.com/api/health`
+was the liveness probe here because `/health` fell through to the monolith on
+`$default`. With no `$default` route, `/health` matches no route key and the
+gateway answers `404` whether or not anything behind it is healthy, so that curl
+now proves nothing. Two replacements, and they answer different questions:
+
+- **Gateway liveness.** Probe a real domain prefix, for example
+  `curl -si https://carmodpicker.com/api/app-settings/`, which is public by design
+  and expects `200`. Any prefix in `local.lambda_domain_path_prefixes` works; pick
+  one that needs no credential so a non-`200` is unambiguous.
+- **Per-function liveness.** `aws lambda invoke` with a synthesised HTTP event
+  against the function directly, which is exactly what `deploy-backend.yml`'s
+  `smoke-domains` job does. That is the only way to reach `/health` on a domain
+  function now, because each entrypoint still serves the five root routes even
+  though the gateway routes none of them.
 
 ---
 
@@ -117,8 +144,11 @@ deploy role; still exactly one Lambda (`carmodpicker-production-api`);
 destination `CloudWatchLogs` with status `ACTIVE`.
 
 **Abort if** the apply fails partway. A partial apply here leaves the account in a
-mixed state but breaks nothing serving traffic: the monolith is still on
-`$default` and no route has moved. Fix forward rather than reverting, because the
+mixed state but breaks nothing serving traffic: no route has moved. (When this
+was written the reassurance was that the monolith was still on `$default`. After
+row 32 the reassurance is narrower and still true: this apply creates
+repositories, grants and streams and touches no route, so a partial failure here
+cannot move traffic off a function that is already serving it.) Fix forward rather than reverting, because the
 stream enablement in this apply is not reversible by a revert (see section 7).
 
 ---
@@ -212,6 +242,12 @@ aws apigatewayv2 get-apis --query 'Items[].ApiId' --output text
 Expected: six functions (the monolith plus five domains), and the route table
 carrying the per-domain route keys alongside `$default`.
 
+**After row 32** the monolith is not in the count and there is no `$default` row
+in the route table. On an estate at row 32 the same check reads: thirteen
+functions, the nine domains plus the four stream consumers, and a route table of
+per-domain route keys only. Adjust the number to the rows the apply you are
+running actually creates rather than reading `six` literally.
+
 **Abort if** the apply fails on `CreateFunction` with an image resolution error.
 That means the seed tag was expired out of a repository between step 3 and here by
 the keep-last-10 lifecycle. The fix is to re-dispatch the build, refresh the
@@ -233,9 +269,11 @@ passes. **`verify-route-cuts` passing is the gate that says the release worked.*
 
 **Abort if** `verify-route-cuts` fails. Read which prefix it reports. A prefix
 reading `$default` means the route for a created function did not land, which is
-the failure mode step 5 is sequenced to prevent; treat it as a live traffic issue,
-because that prefix is being served by the monolith while the domain function
-believes it owns it.
+the failure mode step 5 is sequenced to prevent. Treat it as a live traffic issue.
+Before row 32 that meant the monolith was serving the prefix while the domain
+function believed it owned it, which was wrong but not an outage. After row 32
+there is no `$default` route to report, so the same failure surfaces as a `404`
+from the gateway and the prefix is genuinely down. The urgency went up, not down.
 
 ---
 
@@ -243,7 +281,10 @@ believes it owns it.
 
 Run this list once step 6 is green.
 
-- **Prod smoke.** `curl -si https://carmodpicker.com/api/health` returns `200`.
+- **Prod smoke.** Probe a public domain prefix rather than `/api/health`; after
+  row 32 `/health` is not routed and returns `404` from the gateway regardless of
+  health. `curl -si https://carmodpicker.com/api/app-settings/` returning `200` is
+  the equivalent check.
   Exercise one route per cut domain through the site, not only the API, so the
   CloudFront and CORS paths are covered too. The CORS and verify-email host fixes
   in this release change response headers, so a browser check is worth more than
@@ -311,17 +352,44 @@ run, and wait for traffic.
 Reverting `main` to the previous sha is **not** a full rollback. What it does and
 does not undo is the part to be clear about before anyone reaches for it.
 
+**Correction, row 32: there is no monolith to fall back to.** Everything below
+was written while `carmodpicker-production-api` was on `$default` and would catch
+any route the domain functions stopped serving. Row 32 deleted the function and
+the `$default` route. Deleting a domain's route keys no longer sends its traffic
+anywhere; it makes that prefix `404` at the gateway. Read the "after row 32"
+paragraph under each bullet, not only the bullet.
+
 **A revert plus an apply does undo:**
 
 - The five domain functions and their roles, log groups and policies, because
   `bootstrap_image_tag` on the workspace would then name a tag no longer
   referenced by any declared domain. Clearing the variable back to `""` does the
   same thing more directly and is the honest lever.
+
+  **After row 32 this is a destructive lever, not a safe one.** It destroys the
+  functions that serve every API route, and nothing replaces them. Do not reach
+  for it to fix a traffic problem.
 - The API Gateway route cuts. Traffic returns to the monolith on `$default`, which
   is the meaningful half of the rollback: the monolith still serves every route it
   served before this release, so this restores working behaviour.
+
+  **After row 32 this is false.** With `default_integration = null` there is no
+  fallback integration, so removing a domain's route keys removes the only thing
+  that serves that prefix and it starts answering `404`. Deleting route keys is
+  correct only when you are also restoring something to serve them, which in
+  practice means putting the monolith or an equivalent back on `$default` first.
+  Nothing in the current configuration does that, and re-creating the monolith is
+  not a fast operation: it is a revert of row 32's Terraform plus an image or zip
+  to run. Treat route deletion as a planned change, never as an incident lever.
 - The aggregate Lambda alarm pair, and it restores the monolith's two alarms at
   the older module version.
+
+  **After row 32 there are no monolith alarms to restore.** The monolith was never
+  in `lambda_function_names`, so it had no aggregate slot to give back and nothing
+  renumbers. What row 32 actually removed on the monitoring side is two metric
+  filters, `errors["api"]` and `rate_limit_failed_open["api"]`, and the two alarm
+  descriptions that named 14 error log groups now name 13. The aggregate chunking
+  is unchanged.
 
 **A revert does not undo:**
 
@@ -351,3 +419,32 @@ functions and the route cuts in one apply and puts every route back on the
 monolith, without touching the streams, the repositories, the tables or
 Transaction Search. Reverting the merge commit on `main` is the slower path and
 buys nothing extra for the traffic problem.
+
+**After row 32 that lever is gone and the rollback is the image, not the route.**
+Clearing `bootstrap_image_tag` now destroys the functions and leaves nothing
+behind them, which turns a degraded API into a fully dead one. The rollback for a
+bad domain deploy is to put the previous image back on the function that has it:
+
+```
+aws lambda update-function-code \
+  --function-name carmodpicker-production-<domain> \
+  --image-uri <account>.dkr.ecr.us-west-2.amazonaws.com/carmodpicker-production/<domain>@sha256:<previous digest> \
+  --region us-west-2
+aws lambda wait function-updated-v2 --function-name carmodpicker-production-<domain>
+```
+
+Take the previous digest from the `deploy-images` job of the last good
+`Deploy Backend` run, or from `aws ecr describe-images --repository-name
+carmodpicker-production/<domain>` by `imagePushedAt`. This is per function, so it
+rolls back exactly the domain that regressed and leaves the other eight on the
+current image, which is a smaller blast radius than any Terraform lever ever was.
+It also touches no route, no stream and no table.
+
+Two caveats worth knowing before you need them. The ECR lifecycle policy keeps
+only the last ten `sha-` tagged images per repository, so a digest more than ten
+deploys old may no longer resolve; if it does not, the rollback is a rebuild of
+that commit rather than a digest swap. And a bad *route* cut is still a Terraform
+problem rather than an image problem: if a prefix is `404`ing because its route
+keys are wrong, the fix is to correct and apply `local.lambda_domain_path_prefixes`,
+because there is no longer a `$default` route papering over a mismatch while you
+work it out.

@@ -113,7 +113,7 @@ Browser / Chrome Extension
 
 ### Backend (`backend/app/`)
 
-- **`main.py`** — The whole-surface application, kept as the import path everything already uses (`uvicorn app.main:app`, `lambda_handler.py`, the test suite). It is a thin wrapper over `app/composition/app.py` and holds no wiring of its own.
+- **`main.py`** — The whole-surface application, kept as the import path everything already uses (`uvicorn app.main:app` for local dev, the test suite, and Root A in the route-contract tests). It is a thin wrapper over `app/composition/app.py` and holds no wiring of its own. It is no longer a deployment path: `lambda_handler.py` was deleted with the monolith in row 32 of `docs/migration/split-plan.md`, and nothing in AWS imports `main.py` any more.
 - **`composition/`** — Root A, every domain in one process. `wiring.py` holds the `Domain` descriptor and the shared app building (CORS, rate limiting, error handlers, the five root routes); `domains.py` names the nine domains and, for each, the routers it owns, its prefixes and tags, and whether it needs `SECRET_KEY`; `app.py` composes all nine and is what `main.py` serves.
 - **`entrypoints/`** — Root B, one module per deployed function (`identity`, `users`, `catalog`, `vehicles`, `build_lists`, `build_logs`, `moderation`, `media`, `admin`). Each builds an application carrying one domain plus the five root routes. `domains.py` loads routers through a callable so importing a descriptor imports no endpoint module, which is what keeps a domain image to one domain; `backend/tests/entrypoints/` asserts it in a fresh interpreter with no AWS credentials.
 - **`api/endpoints/`** — One file per domain (`auth`, `users`, `car_generations`, `parts`, `build_lists`, `build_list_parts`, `build_list_phases`, `build_logs`, `votes`, `reports`, `images`, `search`, `admin`, `crawled_pages`, `part_manufacturers`, `categories`, `retailers`, `bug_reports`).
@@ -181,23 +181,22 @@ feature/* ──PR──▶ staging ──PR──▶ main
 
 ### Workflows
 
-Seven workflows in `.github/workflows/`, three CI and four deploy, each scoped by path.
+Six workflows in `.github/workflows/`, three CI and three deploy, each scoped by path.
 
 | Workflow | Trigger | Paths |
 |---|---|---|
 | `backend-ci.yml` | `pull_request` → `main`, `staging` | `backend/**` |
 | `frontend-ci.yml` | `pull_request` → `main`, `staging` | `frontend/**` |
 | `chrome-extension-ci.yml` | `pull_request` → `main`, `staging` | `chrome-extension/**` |
-| `backend-deploy.yml` | `push` → `main`, `staging` | `backend/**` |
 | `deploy-backend.yml` | `push` → `main`, `staging`, plus `workflow_dispatch` | `backend/**` |
 | `frontend-deploy.yml` | `push` → `main`, `staging` | `frontend/**` |
 | `chrome-extension-deploy.yml` | `push` → `main` | `chrome-extension/**` |
 
 The deploy workflows are fully independent. A backend merge never rebuilds the frontend.
 
-`backend-deploy.yml` and `frontend-deploy.yml` pick their GitHub Environment from the branch (`main` → `production`, otherwise `staging`) and read every deploy-time value from that Environment. The backend deploy builds a Lambda zip (`requirements-lambda.txt` resolved for manylinux x86_64 / Python 3.13, plus `app/`), uploads it to the artifacts bucket keyed by commit SHA, waits for HCP Terraform to go idle, then runs `update-function-code` and `publish-version`.
+`deploy-backend.yml` and `frontend-deploy.yml` pick their GitHub Environment from the branch (`main` → `production`, otherwise `staging`) and read every deploy-time value from that Environment. The backend deploy builds one container image per domain and points each function at a digest; there is no zip anywhere in the chain any more.
 
-**`backend-deploy.yml` and `deploy-backend.yml` are two workflows with confusingly similar names, and the distinction is which function they deploy.** `backend-deploy.yml` is the monolith's zip chain and deploys `carmodpicker-<env>-api`, which is still the only function any API Gateway route reaches. `deploy-backend.yml` is the per-domain container image chain from row 12 of `docs/migration/split-plan.md`: `resolve-env`, `build-images`, `image-map`, `existing-functions`, `deploy-images`, `smoke-domains`, building the nine domain images from the one `backend/Dockerfile` with `DOMAIN` selecting the entrypoint. They are separate files rather than one so that an image build cannot hold back or roll back the deploy that serves traffic. Section 6.5 of the split plan retires the monolith, and that is the PR that deletes `backend-deploy.yml` and leaves `deploy-backend.yml` as the only backend deploy.
+**`deploy-backend.yml` is the only backend deploy.** It is the per-domain container image chain from row 12 of `docs/migration/split-plan.md`: `resolve-env`, `build-images`, `image-map`, `existing-functions`, `deploy-images`, `smoke-domains`, building the nine domain images from the one `backend/Dockerfile` with `DOMAIN` selecting the entrypoint. Reading git history you will also find `backend-deploy.yml`, whose name differs only in word order and which was a different workflow entirely: the monolith's zip chain, which built `requirements-lambda.txt` for manylinux x86_64 / Python 3.13 plus `app/`, uploaded the zip to `<prefix>-lambda-artifacts` keyed by commit SHA, waited for HCP Terraform to go idle, then ran `update-function-code` and `publish-version` on `carmodpicker-<env>-api`. The two lived side by side on purpose, so that an image build could not hold back or roll back the deploy that was serving traffic. Row 32 retired the monolith and deleted `backend-deploy.yml` with it. If a commit, a runbook or an old GitHub Actions run mentions that file, it is describing the world before row 32.
 
 Both halves of the image chain are gated by repository variables, and both are absent today, so `deploy-backend.yml` is inert until one is set. `BACKEND_IMAGE_BUILD_ENABLED` turns on the build, whose enabled run leaves nine images in ECR and changes no behaviour because nothing pulls them. `BACKEND_IMAGE_DEPLOY_ENABLED` turns on the deploy, which needs the domain functions to exist. `existing-functions` filters the image map down to the functions that actually exist before the deploy runs, so an estate part way through the cutover deploys what is there and skips what is not, rather than failing on `ResourceNotFoundException`.
 
@@ -209,12 +208,13 @@ Deploy variables are **environment-scoped**: they live on the `production` and `
 
 | Workflow | Variables | Secrets |
 |---|---|---|
-| `backend-deploy.yml` | `AWS_DEPLOY_ROLE_ARN`, `TFC_WORKSPACE_ID`, `LAMBDA_FUNCTION_NAME`, `LAMBDA_ARTIFACTS_BUCKET` | `TFC_API_TOKEN` |
 | `deploy-backend.yml` | `AWS_DEPLOY_ROLE_ARN` (environment), `CODEARTIFACT_DOMAIN_OWNER`, `BACKEND_IMAGE_BUILD_ENABLED`, `BACKEND_IMAGE_DEPLOY_ENABLED` (all three repository-level) | none |
 | `frontend-deploy.yml` | `AWS_DEPLOY_ROLE_ARN`, `TFC_WORKSPACE_ID`, `FRONTEND_S3_BUCKET`, `CLOUDFRONT_DISTRIBUTION_ID`, `VITE_API_URL`, `CWS_EXTENSION_ID`, `CODEARTIFACT_DOMAIN_OWNER` (repository-level) | `TFC_API_TOKEN` |
 | `chrome-extension-deploy.yml` | `CWS_CLIENT_ID`, `CWS_EXTENSION_ID` | `CWS_CLIENT_SECRET`, `CWS_REFRESH_TOKEN` |
 | `backend-ci.yml` | `CI_AWS_ROLE_ARN` (repository) | none |
 | `frontend-ci.yml` | `CI_AWS_ROLE_ARN`, `CODEARTIFACT_DOMAIN_OWNER` (both repository-level) | none |
+
+**`LAMBDA_FUNCTION_NAME` and `LAMBDA_ARTIFACTS_BUCKET` are now unused and should be deleted from both Environments.** They were `backend-deploy.yml`'s, naming the monolith function and the artifacts bucket, and row 32 deleted the workflow, the function and the bucket. Nothing reads either variable now. Leaving them set breaks nothing, but they are the kind of stale value someone later reads as a live fact, so remove them from `staging` and from `production`. `TFC_WORKSPACE_ID` and `TFC_API_TOKEN` stay, because `frontend-deploy.yml` still uses both.
 
 `frontend-ci.yml` now calls the org reusable workflow `WebbPulse/.github/.github/workflows/typescript-ci.yml@v1`, which owns the install, format check, lint, test and build steps plus the CodeArtifact login the `@webbpulse/*` packages need. Two checks stayed in this repository because the reusable workflow has no input for them: `npm audit --audit-level=moderate` and `madge --circular`. They live in a second job that installs nothing and assumes no role, since neither needs the private registry.
 
@@ -222,7 +222,7 @@ Deploy variables are **environment-scoped**: they live on the `production` and `
 
 `deploy-backend.yml` needs no `TFC_API_TOKEN`. Its Terraform wait is the reusable workflow's `aws lambda wait function-updated-v2` before and after each `update-function-code`, taken once for all functions rather than once per domain, which settles an in-flight apply without polling HCP at all. `AWS_DEPLOY_ROLE_ARN` is environment-scoped like every other deploy role, which is why the chain opens with a `resolve-env` job: a job that calls a reusable workflow with `uses:` may not carry an `environment:` key, so it cannot read an environment-scoped variable and `resolve-env` passes the ARN through a job output instead.
 
-The backend and frontend deploys poll the HCP Terraform runs API with `TFC_API_TOKEN` and wait for the workspace named by `TFC_WORKSPACE_ID` to reach a terminal state before touching Lambda or S3 — that poll is what stops a code update racing an in-flight configuration change. Production polls `ws-oh1VvpTBPxmcrSYD`; staging polls `CarModPicker-staging`.
+The frontend deploy polls the HCP Terraform runs API with `TFC_API_TOKEN` and waits for the workspace named by `TFC_WORKSPACE_ID` to reach a terminal state before touching S3, which is what stops a code update racing an in-flight configuration change. Production polls `ws-oh1VvpTBPxmcrSYD`; staging polls `CarModPicker-staging`. The backend deploy no longer polls anything: it went to `aws lambda wait function-updated-v2` in row 12 and the monolith's poll left with `backend-deploy.yml` in row 32, so `TFC_WORKSPACE_ID` and `TFC_API_TOKEN` are now frontend-only.
 
 ### A staging branch does not imply staging infrastructure
 
@@ -234,7 +234,7 @@ The intended staging profile is `full`: the same stack as production, served as 
 
 Production was cut over from App Runner + RDS PostgreSQL to Lambda + DynamoDB on 2026-09-06 and the legacy stack has been destroyed; `terraform/README.md` keeps a short record under "Production cutover". The only remaining Postgres artefact is `backend/scripts/backfill_from_postgres.py`, kept for reference.
 
-The Lambda's code is not Terraform's: the function is created from a placeholder zip with `ignore_changes` on the package, and `backend-deploy.yml` owns every update after that. Its secrets come from the `<prefix>/app` JSON secret, resolved lazily on first read by `backend/app/core/config.py` when `APP_SECRETS_ARN` is set (an environment variable of the same name wins, so local dev and tests never call AWS). Importing the application performs no Secrets Manager call, which is what lets tooling import it without credentials; `Settings.require_secrets(...)` is the point-of-use check, and `check_signing_key` runs in the application lifespan rather than at module scope for the same reason. The fetch, the JSON parse and the per-ARN cache come from `webbpulse.config.load_json_secret`; `backend/app/core/secrets.py` is a thin adapter over it that flattens the object to strings, and its `reset_cache()` clears the shared cache too. DynamoDB tables are declared once, in `backend/app/db/dynamo/tables.py`; `backend/scripts/export_dynamo_tables.py` renders them to `terraform/dynamodb_tables.json` and `tests/db/test_dynamo_tables_json_up_to_date.py` fails when the two drift.
+Lambda code is not Terraform's: each of the nine domain functions and the four stream consumers is created from the image tag in `var.bootstrap_image_tag` with `image_uri` on `ignore_changes`, and `deploy-backend.yml` owns every update after that. The bootstrap tag is a seed only, but it is load-bearing at create time and it also gates `local.domain_functions_enabled`, so it must name a tag that still resolves in every declared domain's repository before a row-cut apply. Its secrets come from the `<prefix>/app` JSON secret, resolved lazily on first read by `backend/app/core/config.py` when `APP_SECRETS_ARN` is set (an environment variable of the same name wins, so local dev and tests never call AWS). Importing the application performs no Secrets Manager call, which is what lets tooling import it without credentials; `Settings.require_secrets(...)` is the point-of-use check, and `check_signing_key` runs in the application lifespan rather than at module scope for the same reason. The fetch, the JSON parse and the per-ARN cache come from `webbpulse.config.load_json_secret`; `backend/app/core/secrets.py` is a thin adapter over it that flattens the object to strings, and its `reset_cache()` clears the shared cache too. DynamoDB tables are declared once, in `backend/app/db/dynamo/tables.py`; `backend/scripts/export_dynamo_tables.py` renders them to `terraform/dynamodb_tables.json` and `tests/db/test_dynamo_tables_json_up_to_date.py` fails when the two drift.
 
 ---
 

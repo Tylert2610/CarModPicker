@@ -48,18 +48,25 @@ resource "aws_s3_bucket_lifecycle_configuration" "crawl_data" {
   }
 }
 
-module "lambda_artifacts" {
-  source  = "app.terraform.io/WebbPulse/platform-modules/aws//modules/lambda-artifacts-bucket"
-  version = "~> 1.6"
-
-  bucket = "${local.prefix}-lambda-artifacts"
-
-  lifecycle_rule_id                      = "expire-noncurrent-artifacts"
-  noncurrent_version_expiration_days     = 30
-  abort_incomplete_multipart_upload_days = 7
-  # enable_sse and create_placeholder_object stay false: CarModPicker has neither today. Its
-  # Lambda ships the placeholder as a local filename, not through S3.
-}
+# ---------------------------------------------------------------------------
+# The Lambda artifacts bucket is gone, retired with the monolith in row 32
+# ---------------------------------------------------------------------------
+#
+# `module "lambda_artifacts"` built `<prefix>-lambda-artifacts` from
+# `platform-modules/aws//modules/lambda-artifacts-bucket`, a versioned bucket with a 30-day
+# noncurrent expiry that `backend-deploy.yml` uploaded the monolith's zip to, keyed by commit sha.
+# Nothing writes a zip any more: the nine domain functions and the four stream consumers all
+# deploy as OCI images from the `ecr.tf` repositories, so the bucket had no writer left once row
+# 31 cut the ninth domain. Section 6.5.
+#
+# This is the one destroy in this row that removes stored data rather than a control-plane object,
+# and it is worth being explicit about what goes with it. The bucket is versioned, so its contents
+# are every monolith zip from the last 30 days plus the current version of each key. The module
+# sets `force_destroy` and the bucket empties on destroy rather than failing the apply on a
+# non-empty bucket. Those zips are the only artifact of the retired deploy path, they are
+# reproducible from their commit shas, and no rollback in this repository reads one: reverting
+# this PR re-creates the bucket empty and no workflow refills it. The rollback paragraph in the
+# PR body says what that means in practice.
 
 # The frontend bucket, its public access block, the origin access control and the bucket policy
 # live in module "frontend" (cloudfront.tf), alongside the distribution that reads them.

@@ -2,10 +2,12 @@
 # Lambda proxy integrations and their invoke permissions, the routes, and the custom domain with
 # its mapping and alias record. All from the shared platform module.
 #
-# Section 3.5 and section 6 of docs/migration/split-plan.md: the strangler runs through this file.
-# Each cut adds route keys for one domain and the monolith keeps everything else through $default,
-# so a cut is one entry in local.routed_lambda_domains plus that domain's route keys, and a
-# rollback is deleting them again.
+# Section 3.5 and section 6 of docs/migration/split-plan.md: the strangler ran through this file
+# and is finished. While it ran, each cut added route keys for one domain and the monolith kept
+# everything else through $default, so a cut was one entry in local.routed_lambda_domains plus that
+# domain's route keys and a rollback was deleting them again. Row 31 cut the ninth and last domain
+# and row 32 removed $default, the "legacy" integration and the monolith behind them, so there is
+# no fallthrough left: a path no explicit route key matches is a 404 from the gateway.
 
 locals {
   # Domains that have been cut over, in the order section 6.1 cuts them. A domain belongs here only
@@ -14,8 +16,9 @@ locals {
   #
   # Row 14 is `media`, row 18 is `build-logs`, row 19 is `moderation`, row 20 is `vehicles`,
   # row 21 is `admin`, row 26 is `build-lists`, row 27 is `identity`, row 29 is `catalog` and
-  # row 31 is `users`. That is all nine: every domain in section 1.1 is now routed off `$default`,
-  # and what is left on the monolith is the five root routes and nothing else. Row 32 retires it.
+  # row 31 is `users`. That is all nine: every domain in section 1.1 is routed, and row 32 retired
+  # the monolith that had been serving the five root routes through `$default`. This list is now
+  # the whole API, and `default_integration = null` below is what says so.
   routed_lambda_domains_declared = ["media", "build-logs", "moderation", "vehicles", "admin", "build-lists", "identity", "catalog", "users"]
 
   # Gated on the same condition as the functions themselves, and it has to be. A route names an
@@ -306,41 +309,61 @@ module "api" {
   name        = "${local.prefix}-api"
   description = "CarModPicker ${var.environment} API (Lambda proxy)"
 
-  # The monolith plus every domain that has been cut. The per-domain entries are generated from
-  # module.lambda_domain rather than written out one at a time, so a domain named in
-  # local.routed_lambda_domains cannot be left without an integration.
+  # Every domain that has been cut, and nothing else. Row 32 removed the "legacy" entry along with
+  # the monolith it named. The entries are generated from module.lambda_domain rather than written
+  # out one at a time, so a domain named in local.routed_lambda_domains cannot be left without an
+  # integration.
   #
-  # The key must be "legacy" for the monolith: the module ships the two moved blocks that carry the
-  # 1.x integration and invoke permission to that exact key, so adopting 2.0 moves both resources
-  # instead of replacing them.
+  # Until row 32 this map carried a hand-written "legacy" key alongside the generated ones, spelled
+  # exactly that way because the module ships two moved blocks carrying the 1.x integration and
+  # invoke permission to that key, so adopting 2.0 moved both resources instead of replacing them.
+  # That adoption is long done and the key is gone with the function.
   #
-  # A domain's own invoke permission gets the statement id "AllowAPIGatewayInvoke-<domain>" from the
-  # module, because the bare id stays with the default_integration. That is what keeps the
-  # monolith's existing permission untouched by this change.
-  integrations = merge(
-    {
-      legacy = {
-        lambda_function_name = module.lambda_api.function_name
-        lambda_invoke_arn    = module.lambda_api.invoke_arn
-        timeout_milliseconds = 29000
-      }
-    },
-    {
-      for name in local.routed_lambda_domains : name => {
-        lambda_function_name = module.lambda_domain[name].function_name
-        lambda_invoke_arn    = module.lambda_domain[name].invoke_arn
-        # 29 seconds, the same ceiling the domain function's own timeout is set to in
-        # lambda_domains.tf. A longer function timeout would be invisible because the gateway gives
-        # up first.
-        timeout_milliseconds = 29000
-      }
-    },
-  )
+  # A domain's invoke permission is "AllowAPIGatewayInvoke-<domain>", which is unchanged by the
+  # monolith leaving. The module gives the bare, unsuffixed statement id to the default_integration
+  # entry, or to the only integration when there is exactly one; with nine integrations and no
+  # default_integration neither case applies, so all nine keep the suffixed ids they already have
+  # in state and no permission is replaced. Section 3.5.
+  integrations = {
+    for name in local.routed_lambda_domains : name => {
+      lambda_function_name = module.lambda_domain[name].function_name
+      lambda_invoke_arn    = module.lambda_domain[name].invoke_arn
+      # 29 seconds, the same ceiling the domain function's own timeout is set to in
+      # lambda_domains.tf. A longer function timeout would be invisible because the gateway gives
+      # up first.
+      timeout_milliseconds = 29000
+    }
+  }
 
-  # The monolith stays on $default for the whole migration. API Gateway matches a full route key
-  # first, then a greedy {proxy+}, then $default last, so everything not named in routes keeps
-  # falling through to the monolith and a rollback is deleting the routes entry again. Section 6.4.
-  default_integration = "legacy"
+  # No $default route at all, which is what retiring the monolith means at the gateway. The module
+  # documents null as exactly this: "Set it to null to create no $default route at all, which makes
+  # the API answer 404 for anything the explicit routes do not match. Only do that once the
+  # migration is finished." Rows 14 through 31 finished it; all nine domains carry their own keys.
+  #
+  # What this gives up, stated plainly rather than left to be discovered. The five root routes
+  # `add_root_routes` puts on every application, `/`, `/health`, `/ready`, `/sitemap.xml` and
+  # `/sitemap-{name}.xml`, were the only paths still resolving through $default, and they now have
+  # no route key and answer 404 from the gateway. That is a deliberate narrowing and not an
+  # oversight:
+  #
+  #   - Nothing calls them through this API. The deploy workflow's smoke probe reaches `/health`
+  #     with `aws lambda invoke` and a synthesised HTTP API event, never over HTTP through the
+  #     gateway, so `smoke-domains` is unaffected. `scripts/verify_route_cut.sh` probes the nine
+  #     domain prefixes, all of which keep their keys. No Route 53 health check, CloudFront
+  #     behaviour or alarm targets any of the five.
+  #   - `frontend/src/api/utility.ts` exports a `healthCheck()` calling `/health`, and no component
+  #     imports it. It is dead in the frontend today and is left alone here rather than deleted in
+  #     a backend PR; row 33 is the frontend row.
+  #   - The sitemap pair was never reachable anyway. `sitemap_service.py` bypasses the repository
+  #     bundle, so no domain was granted the three tables it reads, and every cut since row 14
+  #     recorded the pair as unreachable-through-the-gateway on purpose. A 404 is a better answer
+  #     than the AccessDeniedException a route key would have produced. `frontend/public/sitemap.xml`
+  #     is a static file served by CloudFront from the frontend bucket and is untouched by this.
+  #
+  # Giving the five a home is a decision to make on its own if one is ever wanted, and the shape is
+  # a route key per path pointing at one nominated domain plus that domain's missing S3 and table
+  # grants. It is deliberately not smuggled into the row that removes the monolith.
+  default_integration = null
 
   # Two keys per cut prefix: `media`'s pair from row 14, `build-logs`' pair from row 18,
   # `moderation`'s three pairs from row 19, `vehicles`' two pairs from row 20, `admin`'s four

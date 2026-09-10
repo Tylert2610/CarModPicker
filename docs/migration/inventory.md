@@ -1020,7 +1020,7 @@ Sizes are rough: small is under 200 lines changed, medium 200 to 800, large abov
 | 21 | `identity` domain | medium | Carve-out plus function and route |
 | 22 | `catalog` domain, including the part purge going async and the `net_votes` handler | large | Depends on PR 20. The `net_votes` write moves here from `moderation`, which then drops its last cross-domain write |
 | 23 | `users` domain, including the delete cascade going async | large | Deliberately last, it is the hardest coupling. Depends on PR 20 |
-| 24 | Retire the `$default` monolith route, the artifacts bucket, and the zip path | small | Only after every domain has run in production |
+| 24 | Retire the `$default` monolith route, the artifacts bucket, and the zip path | small | **Delivered**, as row 32 of `split-plan.md`. Landed larger than "small": `default_integration` is now `null` with no `$default` route at all, so the five root routes 404 at the gateway |
 | 25 | Log retention to 7 days everywhere | small | Single input change once the function set is stable |
 | 26 | `webbpulse` tier 1: secrets, Dynamo client, serialization, settings base, CORS, health and ready | medium | The near-identical, framework-neutral set. No conflicts to settle first. Blocked on the Platform account and CodeArtifact existing |
 | 27 | `webbpulse` OpenTelemetry module with lazy Lambda init | medium | Neutral core plus FastAPI and Lambda adapters. Land before the domain carve-outs so each domain adopts it on the way through |

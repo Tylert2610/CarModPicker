@@ -1206,7 +1206,7 @@ infrastructure.
 | 29 | `catalog`: function, routes, OTel. **Delivered, alarm chunk zero crossed** | large | 19 add, 4 change (est. 17 add) | 28 |
 | 30 | Seam 1: user delete cascade goes async. **Delivered** | large | 9 add, 5 change (est. 5 add) | 23, 29 |
 | 31 | `users`: function, routes, OTel. **Delivered, ninth and last cut, renumbers both alarm chunks** | large | 13 add, 6 change (est. 13 add, 4 change) | 30 |
-| 32 | Retire `$default`, the monolith, the artifacts bucket, the zip chain | medium | 12 destroy | 31 |
+| 32 | Retire `$default`, the monolith, the artifacts bucket, the zip chain. **Delivered, `default_integration` is now null** | medium | PLACEHOLDER_COUNTS | 31 |
 | 33 | Frontend: delete the `services/Api.ts` shim, rewriting 74 import sites | medium | 0 | none |
 
 **Rows 29 and 31 are estimates, and the arithmetic behind them is worth
