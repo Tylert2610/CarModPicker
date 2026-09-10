@@ -1203,9 +1203,9 @@ infrastructure.
 | 26 | `build-lists`: function, routes, OTel. **Delivered** | large | est. 17 add, 4 change | 23 |
 | 27 | `identity`: function, routes, OTel. **Delivered** | medium | est. 11 add, 4 change | 23 |
 | 28 | Seam 2: part purge goes async. **Delivered** | large | 9 add, 5 change (est. 2 add) | 23 |
-| 29 | `catalog`: function, routes, OTel | large | est. 17 add, 4 change | 28 |
+| 29 | `catalog`: function, routes, OTel. **Delivered, alarm chunk zero crossed** | large | 19 add, 4 change (est. 17 add) | 28 |
 | 30 | Seam 1: user delete cascade goes async | large | 5 add | 23, 29 |
-| 31 | `users`: function, routes, OTel. **Ninth cut, alarm list full** | large | est. 13 add, 4 change | 30 |
+| 31 | `users`: function, routes, OTel. **Ninth cut, joins alarm chunk one** | large | est. 13 add, 4 change | 30 |
 | 32 | Retire `$default`, the monolith, the artifacts bucket, the zip chain | medium | 12 destroy | 31 |
 | 33 | Frontend: delete the `services/Api.ts` shim, rewriting 74 import sites | medium | 0 | none |
 
@@ -3192,6 +3192,302 @@ while the apply fails, plan, apply, then dispatch Deploy Backend on staging. The
 apply has to precede the dispatch: the deploy filters the image map down to the
 functions that exist, so a dispatch before the apply skips the new consumer
 silently.
+
+**Row 29 is delivered, and it is the eighth cut, the largest of the nine by
+route count, and the row that crosses the alarm ceiling.** `catalog` gets a
+function, four route pairs and its OTel wiring, and as with every cut since row
+18 all of those arrive by adding a name to a list. `local.lambda_domains` in
+`terraform/lambda_domains.tf` gains the entry;
+`local.routed_lambda_domains_declared` and `local.lambda_domain_path_prefixes`
+in `terraform/apigateway.tf` gain the name and its four prefixes; and the alarm
+lists in `terraform/monitoring.tf` pick the domain up for free.
+
+Nothing in `backend/` changed, for the reason every cut since row 18 records:
+rows 8 and 16 had already built and instrumented all nine entrypoints, so
+`app/entrypoints/catalog.py` is byte for byte what row 16 left. This row moves
+the existing catalogue routes onto their own function and changes no behaviour.
+
+**The plan is 19 to add, 4 to change and 0 to destroy, and it is the first cut
+to come in above the settled arithmetic.** Row 18's per-cut anatomy predicts
+`5 + 2 + 2*prefixes + 2` adds and 4 changes, which for a four-prefix domain is
+17 and 4, and rows 19, 20, 21 and 26 each landed on it exactly. The extra two
+are the second aggregate alarm pair, which is the ceiling being crossed rather
+than a miscount, and they are named below with everything else.
+
+The nineteen adds:
+
+| Resource | Why |
+| --- | --- |
+| `module.lambda_domain["catalog"].aws_lambda_function.this` | The function |
+| `module.lambda_domain["catalog"].aws_iam_role.this` | Its execution role |
+| `module.lambda_domain["catalog"].aws_cloudwatch_log_group.this` | Its log group |
+| `module.lambda_domain["catalog"].aws_iam_role_policy.xray_write[0]` | The module's X-Ray policy |
+| `aws_iam_role_policy.lambda_domain["catalog"]` | This repository's runtime policy: logs, Dynamo, secrets, S3 delete, spans |
+| `module.api.aws_apigatewayv2_integration.this["catalog"]` | The integration |
+| `module.api.aws_lambda_permission.this["catalog"]` | The gateway's invoke permission |
+| `module.api.aws_apigatewayv2_route.this["catalog-0"]` | `ANY /api/parts` |
+| `module.api.aws_apigatewayv2_route.this["catalog-1"]` | `ANY /api/parts/{proxy+}` |
+| `module.api.aws_apigatewayv2_route.this["catalog-2"]` | `ANY /api/part-manufacturers` |
+| `module.api.aws_apigatewayv2_route.this["catalog-3"]` | `ANY /api/part-manufacturers/{proxy+}` |
+| `module.api.aws_apigatewayv2_route.this["catalog-4"]` | `ANY /api/categories` |
+| `module.api.aws_apigatewayv2_route.this["catalog-5"]` | `ANY /api/categories/{proxy+}` |
+| `module.api.aws_apigatewayv2_route.this["catalog-6"]` | `ANY /api/retailers` |
+| `module.api.aws_apigatewayv2_route.this["catalog-7"]` | `ANY /api/retailers/{proxy+}` |
+| `module.alarms.aws_cloudwatch_log_metric_filter.errors["catalog"]` | The new log group joins the application-errors alarm |
+| `module.alarms.aws_cloudwatch_log_metric_filter.rate_limit_failed_open["catalog"]` | And the fail-open alarm |
+| `module.alarms.aws_cloudwatch_metric_alarm.lambda_errors_aggregate[1]` | Chunk one's errors alarm, `<prefix>-lambda-errors-aggregate-2` |
+| `module.alarms.aws_cloudwatch_metric_alarm.lambda_throttles_aggregate[1]` | Chunk one's throttles alarm, `<prefix>-lambda-throttles-aggregate-2` |
+
+The four changes:
+
+| Resource | Why |
+| --- | --- |
+| `module.alarms.aws_cloudwatch_log_metric_filter.errors[0]` description | Counts log groups, now one higher |
+| `module.alarms.aws_cloudwatch_log_metric_filter.rate_limit_failed_open[0]` description | Same |
+| `module.alarms.aws_cloudwatch_metric_alarm.lambda_errors_aggregate[0]` | Metric math takes `catalog` at m7 and moves the three consumer terms |
+| `module.alarms.aws_cloudwatch_metric_alarm.lambda_throttles_aggregate[0]` | Same |
+
+`module.github_actions_role.aws_iam_role_policy.this[0]` is **not** a fifth
+change on this row. The deploy role's grants are built from
+`local.lambda_domain_names` in `ecr.tf`, which has held all nine names since row
+9, so the policy already covers `carmodpicker-<env>-catalog` and nothing about
+this cut widens it. Rows that do widen it say so; this one does not.
+
+**The alarm ceiling is crossed here, and the decision is to accept the module's
+chunking as designed.** Row 28 filled chunk zero at ten names, seven domains
+plus the three stream consumers, and `catalog` is the eleventh. `api-alarms`
+chunks `lambda_function_names` into groups of at most ten and creates one alarm
+pair per group, so the apply creates
+`<prefix>-lambda-errors-aggregate-2` and `<prefix>-lambda-throttles-aggregate-2`
+alongside the existing unsuffixed pair. Row 31's `users` becomes the twelfth and
+joins chunk one without creating anything further.
+
+Row 28's note preferred the other option, moving the three consumers to an
+aggregate of their own, and it is deliberately not taken. It would keep all nine
+domains in one expression, which reads better, and it costs a second module
+invocation, a second notification topic decision, a threshold to reason about
+twice, and a migration of three consumer terms out of an alarm that is already
+subscribed and firing correctly. Accepting the chunking costs two new alarm
+resources and an in-place update to the two that exist. Neither existing alarm
+is destroyed or recreated, so nothing an operator has already wired up moves.
+
+What it costs is worth stating rather than leaving implicit: an aggregate alarm
+now means "something in this chunk is erroring" rather than "something in the
+backend is erroring", which is the worse signal section 3.6 named when it
+described the two-aggregate option. That is tolerable for the reason section 3.6
+also gives. The aggregates are the fast signal for Lambda-level failures such as
+throttles and init errors, and `<prefix>-application-errors` is the alarm that
+scales, being a dimensionless Sum over every log group with no ceiling at all.
+An operator who wants one number watches that one, and both chunks publish to
+the same topic, so the notification is unchanged in kind and only the alarm name
+differs. Restructuring, if it is ever wanted, belongs to row 32, which retires
+the monolith and has the room.
+
+**The renumbering is the largest any cut has produced, and it is expected rather
+than drift.** Domains come first in the concat and the consumer half is sorted,
+so chunk zero was m0 `media`, m1 `build-logs`, m2 `moderation`, m3 `vehicles`,
+m4 `admin`, m5 `build-lists`, m6 `identity`, m7 `admin-price-alerts-consumer`,
+m8 `catalog-part-purge-consumer`, m9 `catalog-votes-consumer`. `catalog` is the
+eighth domain, so it takes m7 and pushes each consumer one place right, and
+`catalog-votes-consumer` is the eleventh name and opens chunk one as its m0. So
+chunk zero's expression is rewritten and the new pair covers a single function.
+`chunklist` fills each group before starting the next and the module restarts
+metric ids at m0 in every chunk, so a name added anywhere but the very end moves
+everything after it.
+
+## Routes cut: 43, matching section 1.1 exactly
+
+Counted by walking `app.routes` on the built `catalog` application rather than
+by grepping decorators, because some are generated at runtime by
+`BaseDynamoEndpointRouter` and a grep cannot see them.
+
+| Prefix | Routes | On the bare key | On `{proxy+}` |
+|---|---|---|---|
+| `/api/parts` | 21 | 2 | 19 |
+| `/api/part-manufacturers` | 10 | 2 | 8 |
+| `/api/categories` | 5 | 1 | 4 |
+| `/api/retailers` | 7 | 2 | 5 |
+
+Eight route keys, a bare and a `{proxy+}` per prefix. All 43 routes are covered
+by exactly one key, 36 through a `{proxy+}` and 7 through a bare key, with 0
+uncovered and no key ending in a slash. The five root routes `main.py` adds to
+every domain application (`/`, `/health`, `/ready`, `/sitemap.xml`,
+`/sitemap-{name}.xml`) are outside the four prefixes and are not covered by any
+key here, so they keep resolving through `$default` to the monolith exactly as
+they do today, which is what every cut since row 14 has done with them.
+
+**Every one of the four bare keys carries real traffic, which is the first time
+that is true of a whole cut.** Seven routes ride them and all seven are
+trailing-slash routes rather than routes at the bare path: `parts.py`,
+`part_manufacturers.py` and `retailers.py` each declare a `POST "/"` and have a
+`GET "/"`, and `categories.py` declares a `GET "/"`, so those seven mount at
+`/api/parts/`, `/api/part-manufacturers/`, `/api/retailers/` and
+`/api/categories/`. API Gateway normalises the trailing slash onto the bare key
+and a route key may not itself end in a slash, so the bare key is the only
+spelling that matches them. Writing the path with its slash is an apply-time
+`BadRequestException` on a plan that was green, which is the trap
+`/api/part-price-alerts` sprang in row 21 and `/api/build-lists` in row 26. Row
+27's caveat, that a `GET` on a bare path answers 404 from a healthy function,
+does not apply anywhere on this cut.
+
+The four prefixes are four sibling trees rather than one tree with children.
+Route keys match literally rather than by string prefix, so `/api/parts` does
+not claim `/api/part-manufacturers` even though one is a character prefix of the
+other, and neither claims row 21's `/api/part-price-alerts`, which is a fourth
+tree on the same stem and stays on `admin`. Nothing from another domain is swept
+along.
+
+Section 1.4's ordering concern for this domain is inside `parts.py` and survives
+untouched. `/with-votes`, `/count`, `/check-url`, `/filter-options` and
+`/find-by-part-manufacturer-and-part-number` all resolve before the generated
+`/{entity_id}` because the module registers them first, and the `{proxy+}` key
+hands the whole subtree to one function, so FastAPI's registration order keeps
+deciding exactly as it does on the monolith today.
+
+## Table grants
+
+`tables = ["parts", "part_manufacturers", "retailers", "categories", "part_cars", "part_listings", "part_price_history", "rate-limits"]`,
+`read_tables = ["users", "votes", "car_makes", "car_models", "car_generations"]`.
+
+**This is the first cut with no bundle-to-grant gap at all, and row 28 is what
+bought that.** `_CATALOG_REPOSITORIES` in `app/composition/domains.py` is twelve
+repositories and all twelve are granted, in one list or the other. The tuple was
+fifteen until row 28: `build_list_parts`, `part_price_alerts` and `reports` were
+declared because every delete route called `purge_related_rows_for_parts`, which
+reached them synchronously. Row 28 moved that cascade onto
+`carmodpicker-<env>-catalog-part-purge-consumer`, which names those repositories
+itself and carries its own IAM, so the three tables are still written by the
+`catalog` image and are written by the consumer function rather than by this
+one. Cutting this domain a row earlier would have meant granting all three here
+for a cascade that no longer runs on the request thread. Every earlier cut had a
+gap of one to nine tables; this one has none, which is what it looks like when a
+seam lands immediately before the cut that needed it.
+
+Seven real writes, each with a named caller. `part_service` calls
+`.create_unique`, `.save_unique`, `.update`, `.put` and `.delete_unique` on
+`repos.parts` and `.sync_actions` and `.unlink_action` on `repos.part_cars` from
+the create, update and delete routes; `part_manufacturers.py` calls
+`.update_unique` and `.delete_unique`; `retailers.py` calls `.create_unique`,
+`.update_unique` and `.delete_unique`, and `part_listing_service` calls the same
+two from the get-or-create path; and `part_listing_service` writes
+`part_listings` through `.create_action`, `.put_action`, `.delete` and
+`.delete_for_part` and `part_price_history` through `.put_action` and
+`.delete_for_listing`, both from the price capture that
+`POST /api/parts/{part_id}/listings` and `POST /api/parts/price-history` drive.
+
+**`categories` is the one table granted on ownership rather than on a call, and
+it is called out rather than left to be discovered.** `categories.py` is five
+`GET` routes and writes nothing, and `part_service` reaches
+`repos.categories.get` and `.get_many` to resolve a part's category, which is a
+read. It is in `tables` because `catalog` owns it per section 1.2 and
+`POST /admin/db-ops/init/part-categories` seeds it from the `admin` image, so a
+future catalog-side category write lands with the grant rather than after an
+`AccessDeniedException`. Every other entry on every cut so far has refused to
+grant without a call; this one exception is on the domain's own table.
+
+Four read-only tables. `users` is read before the seventeen routes that verify a
+token run, because `get_current_user` and `get_current_admin_user` both call
+`repos.users.get_by_username` to resolve the token subject. `votes` is read by
+`part_service.with_votes`, which calls `repos.votes.tallies` and `.user_votes`
+to decorate `GET /api/parts/with-votes`; the write that used to sit alongside it
+went to `catalog-votes-consumer` in row 24, which is why `votes` is a read here.
+`car_makes`, `car_models` and `car_generations` are `vehicles`' three, read by
+`part_service._make_names` and `._car_generations` to render fitment on a part,
+which is a cross-domain read and is allowed with read-only IAM.
+
+`rate-limits` is the shared limiter's counter, reached from global middleware
+rather than from a repository, granted on every domain function, and fail-open
+so withholding it would silently disable layer 2 rather than fail.
+
+**Checked for row 26's bundle-guard shape.** Row 26 found `app_settings` read
+through a directly constructed repository that `get_repositories()` never sees.
+It does not hide here: the one such construction in the tree is in
+`app/api/utils/subscription_utils.py` and both its callers are in
+`build_list_service`, which no catalog route reaches.
+
+## S3 and SES
+
+**`s3 = true` with `s3_delete_only = true`, which is row 26's correction
+applying to a second domain.** Section 3.4 named only `media` and `users`,
+reasoning from the domains whose names are about images.
+`DELETE /api/parts/{part_id}/images/{image_index}` calls
+`storage_service.delete_image`, a real `delete_object`, and it is the only S3
+call in any of the four endpoint modules; `append-images` and `primary-image`
+only reorder file keys in DynamoDB. So the narrow flag rather than the broad
+one: `s3:DeleteObject` and `s3:ListBucket`, without `s3:PutObject` or
+`s3:GetObject`. `ListBucket` is not optional despite nothing here listing, for
+the reason row 26 recorded: it authorizes the `head_bucket` that
+`StorageService._ensure_client` makes once per cold start, and without it the
+service disables itself and the delete becomes a silent no-op that orphans the
+object while the row loses its key.
+
+**`ses = false`, and unlike `identity` the reason is that the send is not
+reachable from this function at all.** Section 3.4 says `catalog` loses SES when
+seam 4 moves, and this is that: row 25 moved `evaluate_alerts_for_listing` onto
+`admin-price-alerts-consumer` with its grant and its `EMAIL_FROM`, and
+`part_listing_service` no longer calls it inline. A grant here would be
+configuration for a code path that cannot execute, which is the argument rows 21
+and 26 both made.
+
+**`secrets = true`.** Seventeen of the 43 routes verify a token and the
+descriptor sets `requires_secrets = ("SECRET_KEY",)`, so the runtime policy
+carries `secretsmanager:GetSecretValue` and the environment carries
+`APP_SECRETS_ARN`.
+
+**Memory is 1024 MB**, per section 3.3, which names `catalog` and `build-lists`
+as the two that start at the monolith's size rather than at 512. Right on the
+domain's own terms too: `GET /api/parts/with-votes` pages parts, tallies votes
+over the whole page and hydrates fitment through `_make_names` and
+`_car_generations`, holding every intermediate in memory, and the price capture
+dedups a listing across three lookup paths before a multi-table
+`transact_write`.
+
+**The two unauthenticated writes section 1.1 flags are unchanged by this row and
+are still open.** `POST /api/parts/{part_id}/listings` and
+`POST /api/parts/price-history` take no user dependency at all. Section 1.1 says
+carving `catalog` out puts both behind their own function with their own IAM,
+which makes the exposure easier to see and easier to fix, and that the split
+does not fix it and it should be settled on its own. That is still true after
+this row: both routes move to the new function with the rest of the prefix and
+neither gains or loses an authorisation check. What changes is the blast radius,
+which is now this function's eleven tables rather than the monolith's
+twenty-five.
+
+## The staging access gate
+
+No `authorization_type` is set on any of the eight keys, so the module's own
+choice applies, `CUSTOM` whenever `authorizer_id` is set, and each key sits
+behind the staging access gate exactly as `$default` does. That matters more on
+this cut than on any before it, because the two unauthenticated writes above are
+reachable without an application token: on staging the gate is the only thing in
+front of them, and setting `NONE` on `/api/parts` to "make them reachable" would
+remove it.
+
+## Row 28's extra function is unaffected
+
+Row 28 gave the `catalog` image a second function,
+`carmodpicker-<env>-catalog-part-purge-consumer`, and the deploy workflow maps
+it through `EXTRA_FUNCTIONS`, which keys on the image repository name
+(`catalog`) rather than on the domain function name. Nothing in this row renames
+a repository or a domain key, so that mapping resolves exactly as it did before.
+The consumer keeps its own entry in `local.lambda_stream_consumers`, its own IAM
+including the four purge tables this domain no longer grants, and its own slot
+in the alarm list.
+
+## Landing order
+
+1. Merge.
+2. Let the auto deploy run. **It will fail before the apply**, at
+   `existing-functions` or `verify-route-cuts`, because the function itself
+   ships in the apply rather than in the merge. That is expected and is not a
+   reason to roll anything back. It still builds and pushes the images.
+3. Refresh `bootstrap_image_tag` to the merge sha and confirm the tag resolves
+   in the `catalog` ECR repository. `ecr.tf`'s keep-last-10 lifecycle expires
+   old tags, the plan is green either way, and `CreateFunction` is what fails.
+4. Plan, and confirm 19 add, 4 change, 0 destroy.
+5. Apply.
+6. Dispatch Deploy Backend on staging by hand.
+7. Verify with section 6.3 plus `scripts/verify_route_cut.sh staging catalog`.
 
 PRs 1, 2, 3, 9, 10, and 33 are independent of everything else and can run in
 parallel. PR 22 is the hard gate: nothing from 23 onward can start without it,
