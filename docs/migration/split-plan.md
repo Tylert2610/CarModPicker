@@ -3673,7 +3673,15 @@ correction those descriptions are on the **alarms**, not on the log metric
 filters of the same names. The filters are `for_each` over the log groups, so a
 new function adds a filter rather than changing one.
 
-## The expected plan: 9 to add, 5 to change, 0 to destroy
+## The plan: 9 to add, 5 to change, 0 to destroy, confirmed
+
+Confirmed against the speculative plan on the pull request rather than
+predicted, and it came in on the estimate exactly: every one of the fourteen
+addresses below is the address the plan produced, and there was nothing in the
+plan that is not below. The two alarm claims were checked in the plan JSON
+rather than inferred. Chunk one goes from `m0 catalog-votes-consumer` to
+`m0 catalog-votes-consumer, m1 users-delete-consumer`, and chunk zero does not
+appear in the plan at all.
 
 The nine adds:
 
@@ -3719,7 +3727,9 @@ consumer module derives for a work queue was hardcoded to `PART_PURGE_QUEUE_URL`
 and is now `"${upper(replace(consumer.work_queue, "-", "_"))}_QUEUE_URL"`, so
 `part-purge` still yields `PART_PURGE_QUEUE_URL` and `user-delete` yields
 `USER_DELETE_QUEUE_URL`. The generalisation produces no diff on the existing
-consumer.
+consumer, which the plan confirms: no `part-purge` resource appears in it, and
+the new function's environment carries `USER_DELETE_QUEUE_URL` pointing at
+`carmodpicker-<env>-user-delete`.
 
 ## `EXTRA_FUNCTIONS`
 
