@@ -1,14 +1,21 @@
 #!/usr/bin/env bash
 #
 # Verify that one domain's routes were actually cut over to that domain's
-# function, rather than still falling through to the monolith on $default.
+# function, rather than resolving to some other route key or to no route at all.
 #
 # Section 6.3 of docs/migration/split-plan.md, "Verifying a flip". Each cut in
-# section 3.5 moves a set of route keys off the monolith, and the failure this
-# script exists to catch is the quiet one: a cut that applies cleanly, answers
-# normally, and changes nothing, because the route key did not match and API
-# Gateway sent the request to $default after all. A status code alone cannot
-# tell those apart.
+# section 3.5 moves a set of route keys onto a domain function, and the failure
+# this script exists to catch is the quiet one: a cut that applies cleanly,
+# answers normally, and changes nothing, because the route key did not match. A
+# status code alone cannot tell that apart from a working cut.
+#
+# What a miss looks like changed in row 32. While the monolith was on $default a
+# missed key fell through to it: the request was answered correctly by the wrong
+# function, and this script reported routeKey $default. Row 32 retired the
+# monolith and set default_integration = null, so there is no $default route any
+# more and a missed key now 404s at the gateway. The $default branch below is
+# kept because an estate part way through the migration, or a stage restored
+# from before row 32, can still produce it.
 #
 #   scripts/verify_route_cut.sh <env> <domain>
 #
@@ -121,7 +128,7 @@ esac
 # The path prefixes each cut moves, kept in the same order as section 3.5's
 # table and as local.lambda_domain_path_prefixes in terraform/apigateway.tf. A
 # prefix listed here must appear there for that domain, or this script will
-# correctly report it as still on the monolith.
+# correctly report it as not cut over.
 #
 # `media` from row 14, `build-logs` from row 18, `moderation` from row 19,
 # `vehicles` from row 20, `admin` from row 21, `build-lists` from row 26 and
@@ -211,7 +218,7 @@ users)
   #
   # /api/users/admin/users is section 1.4's ordering hazard for this domain and
   # nothing here touches it: the {proxy+} key hands the whole subtree to one
-  # function, so FastAPI resolves it exactly as it does on the monolith. Worth
+  # function, so FastAPI resolves it exactly as the whole-surface app did. Worth
   # knowing while reading a failure here: GET /{user_id} is registered before
   # GET /admin/users and the literal wins only on segment count, so a probe of
   # the bare /api/users/admin legitimately matches {user_id} and 404s.
@@ -574,7 +581,9 @@ for path in "${PROBE_PATHS[@]}"; do
     ;;
   '$default')
     echo "  ${path} -> routeKey '\$default'  NOT CUT OVER"
-    echo "        Still served by the monolith. Expected '${want}'."
+    echo "        Matched the \$default route rather than '${want}'. That route"
+    echo "        key did not land. Row 32 removed \$default entirely, so seeing"
+    echo "        it here means this stage predates row 32."
     NOT_CUT=$((NOT_CUT + 1))
     ;;
   *)
@@ -613,9 +622,11 @@ if [ "$FAILURES" -gt 0 ]; then
   exit 1
 fi
 if [ "$NOT_CUT" -gt 0 ]; then
-  echo "NOT CUT OVER: ${NOT_CUT} path(s) are still served by the monolith."
-  echo "The Terraform apply has not landed, or the routes map does not name"
-  echo "these prefixes."
+  echo "NOT CUT OVER: ${NOT_CUT} path(s) resolved to \$default rather than to"
+  echo "their own route key. The Terraform apply has not landed, or the routes"
+  echo "map does not name these prefixes. Since row 32 there is no \$default"
+  echo "route, so a prefix whose key did not land 404s at the gateway instead of"
+  echo "reaching this branch."
   exit 1
 fi
 

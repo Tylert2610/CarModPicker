@@ -52,7 +52,8 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 def _startup_tasks() -> None:
     """Call `app.main.run_startup_tasks`, looked up at startup rather than bound.
 
-    `tests/test_lambda_handler.py` patches `app.main.run_startup_tasks` and
+    `tests/test_main.py::test_lifespan_honors_run_startup_tasks` patches
+    `app.main.run_startup_tasks` and
     asserts the lifespan honours `settings.RUN_STARTUP_TASKS`. Going through the
     module attribute here, at the moment the lifespan runs, is what lets that
     patch take effect; a reference captured when the application was built would

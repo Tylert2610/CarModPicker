@@ -641,9 +641,11 @@ locals {
   #     `add_root_routes` puts `/sitemap.xml` and `/sitemap-{name}.xml` on every
   #     domain application including this one. No gateway request can reach it:
   #     the only route keys pointing here are `/api/auth` and its `{proxy+}`, and
-  #     the sitemap paths have no key of their own, so they resolve through
-  #     `$default` to the monolith exactly as they do today. The three tables are
-  #     therefore left out rather than granted for a path that cannot be called.
+  #     the sitemap paths have no key of their own, so they resolved through
+  #     `$default` to the monolith while it existed and answer 404 at the gateway
+  #     since row 32 removed it. Either way no gateway request reaches the code,
+  #     and the three tables are left out rather than granted for a path that
+  #     cannot be called.
   #     It would become a real gap the moment a sitemap route key were added, and
   #     it is recorded here so that change is made with the grant rather than
   #     after an AccessDeniedException.
@@ -1165,8 +1167,10 @@ locals {
   # Function creation and route cut stay in the same apply on purpose.
   # verify-route-cuts in .github/workflows/deploy-backend.yml hardcodes the
   # domain list, so a function that exists without its routes makes that job
-  # probe the prefix, find routeKey "$default", and exit 1. Gating both sets on
-  # the same condition is what keeps that middle state from existing.
+  # probe the prefix and exit 1. Before row 32 that showed up as the access log
+  # reading routeKey "$default", the monolith having answered; with `$default`
+  # gone the same middle state is a 404 from the gateway instead. Gating both
+  # sets on the same condition is what keeps that state from existing at all.
   #
   # Once the tag is set this local is the declared map, byte for byte, so an
   # environment that already has its functions sees no change from this gate.

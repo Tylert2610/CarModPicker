@@ -36,7 +36,7 @@ locals {
   # module.lambda_domain instead would shrink this policy to whatever exists today and mean an
   # IAM change riding along with every one of those eight rows. The name here has to stay in step
   # with the function_name lambda_domains.tf sets, "${local.prefix}-${domain}", which is the same
-  # shape module.lambda_api already uses.
+  # shape module.lambda_api used before row 32 retired it.
   lambda_domain_function_arns = [
     for domain in sort(local.lambda_domain_names) :
     "arn:aws:lambda:${var.aws_region}:${data.aws_caller_identity.current.account_id}:function:${local.prefix}-${domain}"
@@ -171,15 +171,20 @@ module "github_actions_role" {
 
   policy_statements = concat(
     [
-      # Lambda: upload the zip to the artifacts bucket, then point the function at it
-      {
-        actions   = ["s3:PutObject", "s3:GetObject"]
-        resources = ["${module.lambda_artifacts.bucket_arn}/*"]
-      },
-      # One statement over eleven function ARNs rather than three, because the monolith, the nine
-      # domain functions and row 24's stream consumer all take the same UpdateFunctionCode call.
-      # Only the payload differs: the monolith gets an S3 zip from the bucket above, and a domain
-      # function or a consumer gets an ECR image tag the build job has already pushed.
+      # The `s3:PutObject`/`s3:GetObject` statement on the artifacts bucket was the first entry
+      # here until row 32. It let `backend-deploy.yml` upload the monolith's zip; the bucket, the
+      # workflow and the function are all gone, so the grant goes with them. Section 6.5 names
+      # dropping it as part of the retirement, and it is the one privilege this row actually takes
+      # away from the deploy role rather than merely narrowing.
+      #
+      # Statement order is otherwise preserved. The module renders a one-element list as a bare
+      # JSON string and the order below is the order the hand-written policy had, so the remaining
+      # statements keep their rendered shape and only the removed one moves anything.
+      #
+      # One statement over thirteen function ARNs, because the nine domain functions and the four
+      # stream consumers all take the same UpdateFunctionCode call with an ECR image tag the build
+      # job has already pushed. It was fourteen until row 32: the monolith was in this list too,
+      # and it was the one entry whose payload was an S3 zip rather than an image.
       {
         actions = [
           "lambda:UpdateFunctionCode",
@@ -189,7 +194,6 @@ module "github_actions_role" {
           "lambda:GetFunctionCodeSigningConfig",
         ]
         resources = concat(
-          [module.lambda_api.function_arn],
           local.lambda_domain_function_arns,
           local.lambda_stream_consumer_function_arns,
         )
@@ -197,8 +201,9 @@ module "github_actions_role" {
       # Invoke a domain function directly for the post deploy smoke probe. Between PR 13 and that
       # domain's cutover PR the function has no API Gateway route at all, so a synthetic HTTP API
       # event through Invoke is the only way to prove a freshly shipped image answers. The
-      # monolith is left out on purpose: it is reachable at its public /health URL and does not
-      # need an invoke grant to be probed.
+      # monolith was left out on purpose while it existed, because it was reachable at its public
+      # /health URL and needed no invoke grant to be probed. Row 32 retired it and this statement
+      # is unchanged by that: it never named the monolith.
       {
         actions   = ["lambda:InvokeFunction"]
         resources = local.lambda_domain_function_arns

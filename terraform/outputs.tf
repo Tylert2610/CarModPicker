@@ -78,20 +78,17 @@ output "staging_access_gate_user_pool_id" {
   value       = one(module.staging_access_gate[*].user_pool_id)
 }
 
-output "lambda_function_name" {
-  description = "Lambda API function name"
-  value       = module.lambda_api.function_name
-}
-
-output "lambda_function_arn" {
-  description = "Lambda API function ARN"
-  value       = module.lambda_api.function_arn
-}
-
-output "lambda_artifacts_bucket" {
-  description = "S3 bucket the deploy workflow uploads Lambda zips to"
-  value       = module.lambda_artifacts.bucket_id
-}
+# `lambda_function_name`, `lambda_function_arn` and `lambda_artifacts_bucket` were removed in row
+# 32 with the monolith and the artifacts bucket they named. All three fed `backend-deploy.yml`'s
+# zip chain through the GitHub Environment variables `LAMBDA_FUNCTION_NAME` and
+# `LAMBDA_ARTIFACTS_BUCKET`, and that workflow is deleted. Nothing consumes them now:
+# `deploy-backend.yml` derives every function name from its own domain matrix and pushes images to
+# the `ecr.tf` repositories, so it reads no Terraform output at all.
+#
+# Removing an output is not a destroy and shows in the plan only as the output disappearing.
+# The two Environment variables should be deleted from the `staging` and `production` GitHub
+# Environments once this applies; they are inert either way, since the only workflow that read
+# them is gone.
 
 output "dynamodb_table_names" {
   description = "DynamoDB table names keyed by table suffix"

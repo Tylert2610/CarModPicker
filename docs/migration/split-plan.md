@@ -1206,7 +1206,7 @@ infrastructure.
 | 29 | `catalog`: function, routes, OTel. **Delivered, alarm chunk zero crossed** | large | 19 add, 4 change (est. 17 add) | 28 |
 | 30 | Seam 1: user delete cascade goes async. **Delivered** | large | 9 add, 5 change (est. 5 add) | 23, 29 |
 | 31 | `users`: function, routes, OTel. **Delivered, ninth and last cut, renumbers both alarm chunks** | large | 13 add, 6 change (est. 13 add, 4 change) | 30 |
-| 32 | Retire `$default`, the monolith, the artifacts bucket, the zip chain | medium | 12 destroy | 31 |
+| 32 | Retire `$default`, the monolith, the artifacts bucket, the zip chain. **Delivered, `default_integration` is now null, no alarm chunk renumbers** | medium | 0 add, 3 change, 17 destroy (est. 12 destroy) | 31 |
 | 33 | Frontend: delete the `services/Api.ts` shim, rewriting its import sites. **Delivered** | medium | 0 | none |
 
 **Rows 29 and 31 are estimates, and the arithmetic behind them is worth
@@ -4040,6 +4040,95 @@ through. Section 6.5 and row 32 are what retire the monolith.
 
 The expected-plan numbers are estimates for catching surprises, not commitments.
 
+---
+
+# Row 32 delivered: the monolith is gone
+
+The last row of the migration. Row 31 left every domain on its own function with
+only the five root routes still falling through, and this row removes the thing
+they fell through to. Plan: **0 add, 3 change, 17 destroy**, from
+`plan-tc545ufkc7JRKPfL`.
+
+## `default_integration` goes to null, not to a replacement
+
+The open question on this row was where the five root routes (`/`, `/health`,
+`/ready`, `/sitemap.xml`, `/sitemap-{name}.xml`) go once `$default` dies. The
+answer is that they go nowhere: the `http-api` module documents
+`default_integration = null` as creating no `$default` route at all, so the API
+answers 404 for anything the explicit routes do not match, and the module's own
+variable documentation says to do this "once the migration is finished".
+
+Nothing calls those five through the gateway. `healthCheck()` in
+`frontend/src/api/utility.ts` has no importers, the sitemap pair was never
+reachable through the API, and `frontend/public/sitemap.xml` is a static object
+on CloudFront. Every domain function still serves all five on its own
+entrypoint, which is what `smoke-domains` invokes directly, so per-function
+health checking is unaffected. What is lost is a *gateway-level* liveness probe,
+and `docs/migration/prod-promotion-runbook.md` now names two replacements.
+
+## The safety argument, machine-checked
+
+Row 31's plan showed 45 routes and 10 integrations, `legacy` among them. Since
+`$default` was the only route bound to `legacy` and the other 44 keys are
+explicit per-domain keys, removing the two together could not orphan a path.
+This row's plan confirms the result rather than the reasoning: `planned_values`
+holds **44 routes, no `$default`, and no resource mentioning `legacy`**.
+
+## Alarms: the forecast was wrong, and nothing renumbers
+
+Going in, the expectation was that chunk zero and possibly chunk one would
+renumber. They do not. The monolith was only ever in `alarm_error_log_groups`
+and never in `alarm_lambda_function_names`, and the ten-per-chunk metric-math
+grouping is built from the function list, which held thirteen names before this
+row and holds the same thirteen after. Section 3.6's ceiling arithmetic counted
+"nine domains plus the monolith is ten" against a list the monolith was never
+in; that arithmetic was over-cautious rather than wrong in effect, because the
+list reached thirteen through the four stream consumers instead.
+
+The real monitoring delta is two destroyed metric filters, `errors["api"]` and
+`rate_limit_failed_open["api"]`, and two alarm descriptions moving from 14 log
+groups to 13. Both alarm diffs are a single string each and neither alarm is
+replaced. The dimensionless `application-errors` alarm has no ceiling and
+aggregates whatever publishes to it, so losing two publishers changes its
+description and not its behaviour.
+
+## What did not go, despite section 6.5
+
+Section 6.5 lists `bootstrap_image_tag` mechanics among the zip-chain machinery.
+It stays. The tag is not a zip artefact: it seeds `image_uri` at create time for
+all nine domain functions and all four stream consumers, and it gates
+`local.domain_functions_enabled`. Removing it would break every function's
+create path and any fresh-account bootstrap. The keep-last-10 ECR trap therefore
+still applies to future applies.
+
+`backend/app/main.py` also stays, though the monolith was its only deployment
+consumer. It is Root A in the route-contract tests and eleven modules import it,
+`tests/conftest.py` at module scope among them, so deleting it would fail the
+whole suite and leave `test_route_split.py` with nothing to compare the nine
+per-domain applications against.
+
+## Landing order
+
+1. Merge.
+2. Plan, and confirm 0 add, 3 change, 17 destroy. This is the one destroy-heavy
+   row; read the destroy list before applying.
+3. Apply. The `$default` route, its integration and its permission go in the
+   same apply as the function behind them, so there is no window in which a
+   route points at a deleted function.
+4. Confirm the API still answers on a domain prefix, and that `/health` at the
+   gateway now returns 404 rather than 200. The 404 is the success condition on
+   this row, not a regression.
+5. Delete `LAMBDA_FUNCTION_NAME` and `LAMBDA_ARTIFACTS_BUCKET` from the
+   `staging` and `production` GitHub Environments. Nothing reads them; they are
+   left only as stale values that read like live facts.
+6. Confirm the two aggregate alarm pairs stay `OK` through the next evaluation
+   period. Only the descriptions changed, so a state change here would mean
+   something other than this row moved.
+
+No deploy dispatch is needed. This row creates no function and changes no image,
+so the deploy workflow has nothing to do.
+
+The expected-plan numbers are estimates for catching surprises, not commitments.
 ---
 
 # Row 33 delivered: the `services/Api.ts` shim is gone

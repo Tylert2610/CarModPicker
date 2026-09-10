@@ -158,10 +158,25 @@ locals {
     ],
   )
 
-  # The log groups the error metric filters read: the monolith's, plus one per created domain
-  # function, the same shape and the same source as the fail open list below. A metric filter is
-  # created against a named log group that must already exist, so this keys off
+  # The log groups the error metric filters read: one per created domain function and one per
+  # stream consumer, the same shape and the same source as the fail open list below. A metric
+  # filter is created against a named log group that must already exist, so this keys off
   # `local.lambda_domains` and not off the nine names.
+  #
+  # Row 32 removed the `api` key, which held `module.lambda_api.log_group_name`. The monolith is
+  # retired, so its group is deleted along with it and a metric filter against a group that no
+  # longer exists is an apply error rather than a filter that quietly matches nothing. That is a
+  # destroy of two metric filters, `errors["api"]` and `rate_limit_failed_open["api"]`, and it
+  # moves both alarm descriptions from fourteen log groups to thirteen.
+  #
+  # It does not touch the aggregate Lambda alarms, and the reason is worth stating because the
+  # obvious guess is wrong. The monolith was never in `alarm_lambda_function_names`: the decision
+  # recorded above and in open question 1 kept it out of the aggregate from the moment that list
+  # was introduced, precisely so that retiring it would not have to renumber anything. So no metric
+  # math id moves, neither chunk changes size, and the ten-name ceiling section 3.6 worried about
+  # frees its slot without a single expression being rewritten. The monolith's own
+  # `<prefix>-lambda-errors` and `<prefix>-lambda-throttles` alarms were destroyed back when
+  # `lambda_function_name` became `lambda_function_names`, not here.
   #
   # The stream consumer's group is in here too. Its handler logs through the same
   # app/core/logging.py JsonFormatter every domain function uses, so the { $.level = "ERROR" }
@@ -174,7 +189,6 @@ locals {
   # collides today, and the filters are named from these keys, so a silent overwrite here would be
   # a metric filter quietly missing rather than a plan error.
   alarm_error_log_groups = merge(
-    { api = module.lambda_api.log_group_name },
     { for name in keys(local.lambda_domains) : name => module.lambda_domain[name].log_group_name },
     {
       for name in keys(local.lambda_stream_consumers) :
@@ -211,14 +225,23 @@ module "alarms" {
   # the errors half back at the cost of the destroy-and-create being a no-op that hides the
   # decision rather than recording it.
   #
-  # The monolith is not uncovered in the meantime. Until row 31 retires it, the monolith serves
-  # every route the nine domains have not been cut yet, so an invocation error in it is a 5xx
-  # through the gateway, and "<prefix>-api-5xx" fires on exactly that. It also keeps its own log
-  # group in `error_log_groups` below, so anything it logs at ERROR still reaches
-  # "<prefix>-application-errors", and its rate limiter still reaches
-  # "<prefix>-rate-limit-failed-open". What it loses is the AWS/Lambda Errors and Throttles signal
-  # specifically, which is the narrower of the two: an error that never reaches the gateway as a
-  # 5xx is an init failure or a timeout, and the API 5xx alarm sees both of those as well.
+  # The monolith was not uncovered in the meantime. While it still served the routes the nine
+  # domains had not been cut off yet, an invocation error in it was a 5xx through the gateway and
+  # "<prefix>-api-5xx" fired on exactly that; it kept its own log group in `error_log_groups`
+  # below, so anything it logged at ERROR reached "<prefix>-application-errors" and its rate
+  # limiter reached "<prefix>-rate-limit-failed-open". What it lost was the AWS/Lambda Errors and
+  # Throttles signal specifically, the narrower of the two: an error that never reaches the gateway
+  # as a 5xx is an init failure or a timeout, and the API 5xx alarm sees both of those as well.
+  #
+  # Row 32 retired it, so the paragraph above is history rather than a live tradeoff. Its log group
+  # left `error_log_groups` with it, and the note there records what that destroys. It is also the
+  # row that vindicates keeping it out of this list: because the monolith was never a name here,
+  # its retirement rewrote no metric math and replaced no alarm.
+  #
+  # Note that the sentence above said "until row 31 retires it" while this list was being written.
+  # That was wrong by one row and is corrected rather than quietly reflowed: row 31 was the ninth
+  # and last domain cut, `users`, and row 32 is the row that retires the monolith. Section 6.1's
+  # numbered sequence has always had them as separate steps, 10 and 11.
   #
   # `lambda_aggregate_alarm` is the list being non-empty rather than a bare true, because the
   # module validates the pair: "lambda_aggregate_alarm = true needs at least one name in

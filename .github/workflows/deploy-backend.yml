@@ -6,22 +6,23 @@
 # `backend/Dockerfile`, collects their digest pinned URIs into a map, points the
 # domain functions at them and probes each one.
 #
-# **It does not deploy the monolith, and it does not replace the job that does.**
-# `backend-deploy.yml` still builds `function.zip`, waits on HCP Terraform, calls
-# `update-function-code` on `carmodpicker-staging-api` and publishes a version.
-# That function is the only one serving traffic: the nine domain functions do not
-# exist until row 13, and no API Gateway route points at one until row 14. So the
-# zip chain is untouched and lives in its own workflow file, and this one runs
-# beside it rather than in it. An image build or an image deploy that fails must
-# never hold back or roll back the deploy that actually serves requests, and two
-# separate workflow files is the strongest form of that guarantee: they cannot
-# share a `needs` edge even by accident.
+# **This is now the only backend deploy.** Row 32 retired the monolith and
+# deleted `backend-deploy.yml`, the zip chain that built `function.zip`, uploaded
+# it to `<prefix>-lambda-artifacts` and called `update-function-code` on
+# `carmodpicker-<env>-api`. That function, that bucket and that workflow are all
+# gone, and every route on the API Gateway is served by one of the nine domain
+# functions this workflow deploys.
 #
-# Section 4 describes this as replacing `backend-deploy.yml`'s build half while
-# leaving its zip chain intact. Splitting the file is how that is done here.
-# Section 6.5 retires the zip chain, and that is the PR that deletes
-# `backend-deploy.yml` outright; until then editing it at all would put the
-# monolith's deploy at risk for no gain.
+# While both existed they were deliberately two files rather than one, so that a
+# failing image build could never hold back or roll back the deploy that actually
+# served requests: two workflow files cannot share a `needs` edge even by
+# accident. That guarantee has no work left to do now that there is nothing to
+# hold back, but the separation is why this file needed no edit through rows 13
+# to 31 and needs only this comment now.
+#
+# Section 4 described this as replacing `backend-deploy.yml`'s build half while
+# leaving its zip chain intact, and section 6.5 as the row that retires the
+# chain. Row 32 is that row.
 #
 # Two repository variables gate the two halves separately, matching what
 # Portfolio ran while its own monolith was still serving:
@@ -69,7 +70,7 @@ permissions:
 
 concurrency:
   # Deliberately not `backend-deploy-${{ github.ref_name }}`, which is what
-  # `backend-deploy.yml` uses. Sharing a group would make the zip deploy and the
+  # `backend-deploy.yml` used before row 32 deleted it. Sharing a group would have made the zip deploy and the
   # image build queue behind one another, which is the coupling this file exists
   # to avoid.
   group: backend-images-${{ github.ref_name }}
