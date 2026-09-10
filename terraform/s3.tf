@@ -70,25 +70,10 @@ resource "aws_s3_bucket_lifecycle_configuration" "crawl_data" {
 
 #
 # Correction after the row 32 apply: the module defaults `force_destroy` to false and this
-# configuration never set it, so the apply destroyed the versioning, lifecycle and public access
-# block resources and then failed on the bucket itself with BucketNotEmpty. The bucket still holds
-# every monolith zip version. The block below re-adopts it as a bare resource with
-# `force_destroy = true` so the provider can empty it (all versions and delete markers) on the
-# next destroy. It is temporary: the follow-up PR removes this resource and the `moved` block
-# together, and that apply is the one that deletes the bucket. Nothing else references it.
-moved {
-  from = module.lambda_artifacts.aws_s3_bucket.this
-  to   = aws_s3_bucket.legacy_lambda_artifacts
-}
-
-resource "aws_s3_bucket" "legacy_lambda_artifacts" {
-  bucket        = "${local.prefix}-lambda-artifacts"
-  force_destroy = true
-
-  tags = {
-    Name = "${local.prefix}-lambda-artifacts"
-  }
-}
+# configuration never set it, so that apply destroyed the versioning, lifecycle and public access
+# block resources and then failed on the bucket itself with BucketNotEmpty. PR #403 re-adopted the
+# bucket as a bare resource with `force_destroy = true`; the PR that removed that resource again is
+# the apply that emptied every object version and deleted the bucket. Nothing references it now.
 
 # The frontend bucket, its public access block, the origin access control and the bucket policy
 # live in module "frontend" (cloudfront.tf), alongside the distribution that reads them.
