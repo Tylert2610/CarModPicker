@@ -13,6 +13,12 @@ Exercises every behavioral contract of the price-drop-alert evaluator:
   next observation retries
 - exception-safe iteration: one alert raising during evaluation does not block
   another alert on the same part from firing
+
+Split plan row 25 changed who calls the evaluator and nothing about what it
+does, so every contract above is unchanged. The one test that did change is the
+chokepoint integration test at the bottom, which now pins that
+`create_or_update_listing_and_price` does NOT evaluate: seam 4 moved that to the
+`part_listings` stream consumer. See `tests/consumers/test_price_alerts_consumer.py`.
 """
 
 from __future__ import annotations
@@ -351,15 +357,25 @@ def test_inactive_alert_is_skipped(db_session: Any, monkeypatch: pytest.MonkeyPa
     assert calls == []
 
 
-# --- integration with the price-write chokepoint ----------------------------
+# --- the price-write chokepoint no longer evaluates -------------------------
 
 
-def test_create_or_update_listing_and_price_invokes_evaluator(db_session: Any, monkeypatch: pytest.MonkeyPatch) -> None:
-    """End-to-end: a price-write through the chokepoint must drive the evaluator.
+def test_create_or_update_listing_and_price_does_not_invoke_evaluator(
+    db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Split plan row 25 inverted this: the chokepoint must NOT send mail.
 
-    This is the integration evidence that T03 actually wired the hook in
-    create_or_update_listing_and_price — without this test, the call could be
-    missing and unit tests above would still pass.
+    This test used to be the integration evidence that T03 wired the evaluator
+    into `create_or_update_listing_and_price`. Seam 4 removed that call, so the
+    same test now pins the opposite property, which is the one that matters
+    after the move: a price write returns as soon as its transaction commits,
+    and it neither reads `part_price_alerts` nor reaches SES. If the
+    synchronous call were ever restored, this fails.
+
+    The write still has to happen, and it still has to land the price, because
+    the stream record the consumer evaluates is produced by exactly this write.
+    A chokepoint that stopped persisting the price would move the bug from a
+    duplicate email to a silent one, which no consumer test would catch.
     """
     user = _make_user(db_session, "chokepoint")
     part = _make_part(db_session, user)
@@ -376,7 +392,18 @@ def test_create_or_update_listing_and_price_invokes_evaluator(db_session: Any, m
         price_cents=11_000,
     )
 
-    assert len(calls) == 1
+    assert calls == []
     listing = PartListingRepository().get_by_part_and_retailer(part.id, retailer.id)
     assert listing is not None
     assert listing.last_known_price_cents == 11_000
+
+    # And the observation the write persisted is exactly what the consumer needs
+    # to evaluate, which is what makes the removal safe rather than merely quiet.
+    assert listing.last_price_updated_at is not None
+    evaluate_alerts_for_listing(
+        part_id=part.id,
+        retailer_id=retailer.id,
+        price_cents=listing.last_known_price_cents,
+        observed_at=listing.last_price_updated_at,
+    )
+    assert len(calls) == 1

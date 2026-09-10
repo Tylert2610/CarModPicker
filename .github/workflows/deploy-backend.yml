@@ -40,13 +40,15 @@
 # domain function created, eight not) deploys the one and skips the eight rather
 # than failing on `ResourceNotFoundException`. See the `existing-functions` job.
 #
-# The map is not one entry per image. Split plan row 24 added the first function
-# that runs a domain's image without being a domain: `catalog-votes-consumer` is
-# the votes stream consumer, built from the `catalog` image with its container
-# command overridden in Terraform. `image-map` emits it alongside `catalog` from
-# the same manifest, `deploy-images` updates it with the same digest, and
-# `smoke-domains` skips it, because it has no API Gateway route for the probe to
-# call, not because it serves no HTTP.
+# The map is not one entry per image. Split plan rows 24 and 25 added functions
+# that run a domain's image without being a domain: `catalog-votes-consumer` is
+# the votes stream consumer built from the `catalog` image, and
+# `admin-price-alerts-consumer` is the price alert stream consumer built from the
+# `admin` image, each with its container command overridden in Terraform.
+# `image-map` emits them alongside their domain from the same manifest,
+# `deploy-images` updates them with the same digest, and `smoke-domains` skips
+# them, because they have no API Gateway route for the probe to call, not because
+# they serve no HTTP.
 name: Deploy Backend
 
 on:
@@ -292,9 +294,11 @@ jobs:
 
           # Functions that are not a domain of their own but run a domain's image,
           # mapped to the domain whose image they run. Split plan row 24 added the
-          # first: `catalog-votes-consumer` is the votes stream consumer, and it is
-          # the same image as `catalog` with the container command overridden by
-          # `image_config.command` in terraform/lambda_stream_consumers.tf.
+          # first and row 25 the second: `catalog-votes-consumer` is the votes
+          # stream consumer and `admin-price-alerts-consumer` is the price alert
+          # one. Each is the same image as its domain with the container command
+          # overridden by `image_config.command` in
+          # terraform/lambda_stream_consumers.tf.
           #
           # Sharing an image is the point rather than a shortcut. One build, one
           # push and one digest means the deploy that updates a domain updates its
@@ -304,6 +308,7 @@ jobs:
           # somewhere, and here is the only place that knows about functions at all.
           EXTRA_FUNCTIONS = {
               "catalog-votes-consumer": "catalog",
+              "admin-price-alerts-consumer": "admin",
           }
 
           env = os.environ["ENVIRONMENT"]
@@ -664,8 +669,13 @@ jobs:
           #   aws lambda invoke --function-name carmodpicker-staging-catalog-votes-consumer \
           #     --payload '{"Records":[]}' --cli-binary-format raw-in-base64-out /dev/stdout
           #
-          # which returns {"batchItemFailures":[]}. Wiring that into this job is
-          # worth doing when there is more than one consumer to justify it.
+          # which returns {"batchItemFailures":[]}, and the same payload against
+          # carmodpicker-staging-admin-price-alerts-consumer returns the same
+          # thing. Row 25 made that two consumers, which is the threshold this
+          # note named for wiring the empty batch probe into this job; it is left
+          # for its own row rather than folded into a seam change, because a probe
+          # that invokes a function is a deploy behaviour change and wants to be
+          # reviewable on its own.
           FUNCTIONS=$(printf '%s' "$FUNCTION_IMAGE_MAP" \
             | python3 -c '
           import json, sys

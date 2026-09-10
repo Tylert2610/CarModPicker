@@ -1199,7 +1199,7 @@ infrastructure.
 | 22 | Streams on `users`, `parts`, `votes`, `part_listings`, plus the six queues and the DLQ alarm. **Delivered** | large | 4 change, 9 add (recorded 16 add at the time, before the queue count was settled) | 21 |
 | 23 | Tombstone attributes and tombstone-aware reads. **Delivered** | large | 0 | 22 |
 | 24 | Seam 3: `net_votes` handler moves to `catalog`'s stream consumer, on an event source mapping. **Delivered** | medium | 6 add, 3 change (est. 3 add) | 22 |
-| 25 | Seam 4: price alert email moves to an `admin` stream handler, on an event source mapping | medium | est. 3 add | 22 |
+| 25 | Seam 4: price alert email moves to an `admin` stream handler, on an event source mapping. **Delivered** | medium | 6 add, 3 change (est. 3 add) | 22 |
 | 26 | `build-lists`: function, routes, OTel. **Delivered** | large | est. 17 add, 4 change | 23 |
 | 27 | `identity`: function, routes, OTel | medium | est. 11 add, 4 change | 23 |
 | 28 | Seam 2: part purge goes async | large | 2 add | 23 |
@@ -2490,13 +2490,15 @@ domains rather than sorted among them, because the aggregate alarms are metric
 math over positional ids and `catalog-votes-consumer` sorts before `media`, so an
 alphabetical merge would rewrite every expression on both existing alarms.
 
-That makes ten functions, which is exactly the module's chunk size. **Row 25's
-consumer is the eleventh and will chunk into a second alarm pair.** That is worth
-deciding rather than discovering: it doubles the alarms to subscribe and splits
-"the backend is erroring" across two notifications, which is the outcome open
-question 1 was protecting against. Whoever cuts row 25 should choose deliberately
-between accepting the second pair and giving the consumers an aggregate of their
-own.
+This paragraph originally said "that makes ten functions, which is exactly the
+module's chunk size", and predicted that row 25's consumer would be the eleventh
+and would chunk into a second alarm pair. **That was wrong, and row 25 found it.**
+The count of nine domains was the count of *declared* domains, but
+`alarm_lambda_function_names` filters on `contains(keys(local.lambda_domains),
+name)`, which is the domains whose function has actually been created. At row 24
+that was five, so the list held six names and not ten. The ceiling is a future
+event rather than a present one, and it arrives when the created domains plus the
+consumers first exceed ten. Row 25's note below has the corrected arithmetic.
 
 **The frontend change is smaller than open question 2 assumed, and better.** See
 that question's answer: the frontend never read `net_votes`, so there was no
@@ -2693,6 +2695,160 @@ four prefixes have no route at the bare path, so a `GET` on
 `/api/build-lists` is the exception and does serve its bare path. The gateway
 path, which CI always takes, has no such problem because it reads `routeKey` out
 of the access log.
+
+**Row 25 is delivered, and it is the last of the two stream seams row 22's
+plumbing was built for.** Seam 4 is inverted.
+`part_listing_service.create_or_update_listing_and_price` no longer calls
+`evaluate_alerts_for_listing`; `carmodpicker-<env>-admin-price-alerts-consumer`
+does, driven by an event source mapping on the `part_listings` stream row 22
+turned on. A price write now returns as soon as its transaction commits.
+
+**What actually moved, and what deliberately did not.** The evaluator itself is
+unchanged. `evaluate_alerts_for_listing` kept every rule it had, the threshold
+test, the 24 hour cooldown, the per-alert exception isolation and the rule that
+an SES failure leaves `last_fired_at` alone, and gained one optional `repos`
+parameter so the consumer can pass its own bundle instead of letting
+`get_repositories()` build all twenty-five. That is what makes this a move rather
+than a rewrite: the eleven service-level tests that pinned the semantics on the
+monolith still pin them here, and there stays exactly one place where "when does
+a user get mail" is written down. What moved is the caller.
+
+**Section 3.4's promise is kept in the same commit.** `catalog` no longer reads
+`part_price_alerts` and no longer reaches SES, because the code that did both is
+gone from its request path. The grant and the environment key arrived with the
+handler that uses them, exactly as row 21's note said they would: the consumer's
+Terraform entry carries `ses = true`, which is what adds `ses:SendEmail` and
+`EMAIL_FROM`, and **the `admin` domain descriptor is untouched.** The `admin`
+HTTP function that serves the domain's twelve routes holds no SES permission and
+never did; nothing about this row gave it one, and
+`test_the_admin_http_function_is_unchanged_by_this_row` is there so a later
+refactor cannot quietly change that.
+
+**`ses:SendEmail` only, and on two resources.** The policy copies the monolith's
+pattern in `lambda.tf`: the identity ARN and the transactional configuration set
+ARN, both of which SESv2 authorizes against on a `SendEmail` call that names a
+configuration set. `SendRawEmail` is not granted, because `app/core/email.py`
+uses the SESv2 simple content shape and never calls it. The identity resource
+stays `identity/*` rather than a single ARN, which is the one place this policy
+is broader than it looks: `local.custom_domain` decides whether the environment
+has a domain identity or a sender mailbox identity, so a single literal ARN would
+be correct in one environment and deny in the other.
+
+**This consumer reads a secret, and row 24's did not.** That is the one real
+deviation from the row 24 template and it is worth knowing before reading the
+Terraform. The alert email carries a one-click unsubscribe link, which is a 30
+day JWT, so `send_price_drop_alert_email` reaches `create_access_token` and the
+function needs `SECRET_KEY`. Its entry therefore sets `secrets = true`, its
+environment carries `APP_SECRETS_ARN`, and its `main()` calls `check_signing_key`
+where `catalog_votes_consumer` deliberately does not. Missing that would not have
+failed an invoke: it would have mailed dead unsubscribe links, which is why the
+test that covers it drives the real send path against a fake SES client rather
+than stubbing the send.
+
+**Idempotency is three layers, and the third one is left open on purpose.** A
+DynamoDB stream is at-least-once and the side effect here is an email, which
+cannot be recalled, so this needed more than row 24's recount argument. First,
+the handler compares the new image's price against the old one's and does nothing
+unless the price fell, so a redelivered record computes the same verdict and the
+crawler's re-stamp of an unchanged price evaluates nothing at all. Second,
+`last_fired_at` on the alert row is the marker: a send writes it, and a
+redelivery of a record that did fire finds it already written and is suppressed
+by the existing cooldown. Third, the window between SES accepting the message and
+that marker being written is genuinely open, and closing it would mean writing
+the marker before the send, which converts the failure mode from a duplicate
+email into a silently missing one. A repeated price alert is better than a
+missing one, so the window stays.
+
+**One evaluation per listing per batch.** Records for one listing arrive in order
+within a shard, so a batch can hold several writes to the same listing. Each is
+not evaluated separately: they are grouped by listing id and the lowest price in
+the batch wins, because evaluating each would mail the same user several times
+for one listing and the cooldown marker would only suppress the later ones after
+the first had already written it, which is a race rather than a guarantee.
+
+**`LATEST` is load bearing here in a way it was not for row 24.** Both mappings
+use it, but on `votes` it was merely correct, since the synchronous write and the
+consumer computed the identical number and there was nothing to replay. On
+`part_listings` it is a correctness requirement: `TRIM_HORIZON` would replay a
+day of listing writes on creation and mail users about drops they were already
+mailed about, which the cooldown marker would suppress only for alerts fired
+inside the last 24 hours.
+
+**Alarms: the ceiling is confirmed in the module, and is not reached yet.** The
+`api-alarms` module chunks `lambda_function_names` into groups of ten
+(`lambda_aggregate_chunk_size = 10` in its `locals.tf`), one alarm pair per
+group, with metric ids restarting at `m0` in every chunk and the name suffix
+`i == 0 ? "" : "-${i + 1}"`. That much is confirmed in the module source rather
+than assumed, and the eleventh function will produce
+`<prefix>-lambda-errors-aggregate-2` and `<prefix>-lambda-throttles-aggregate-2`
+while leaving the first pair's `m0` through `m9` expression untouched, because
+chunk zero keeps the same ten names in the same order.
+
+**Row 24's note predicted that this row would be the eleventh function and would
+cross that ceiling. It will not, and finding out why is the useful part.** The
+prediction counted the nine domains in `local.lambda_domain_names`, but
+`alarm_lambda_function_names` filters that list on
+`contains(keys(local.lambda_domains), name)`, which is the domains whose function
+has actually been created rather than the domains that are declared. With row 26
+landed the created domains are `media`, `build-logs`, `moderation`, `vehicles`,
+`admin` and `build-lists`, six of them, so this consumer makes eight names and
+`chunklist` returns a single chunk. **No second alarm pair appears in this row's
+plan and neither existing alarm's expression changes.**
+
+The ceiling is real, it is just further out: it arrives on the eleventh function,
+which on the current cut order is row 29 or 30 depending on whether seam 2's
+consumer lands first. The decision it forces has not changed either, and it is
+worth taking before a plan diff forces it: accept a second pair, or give the
+stream consumers an aggregate of their own. `monitoring.tf` carries that same
+reasoning at the point of the change so whoever hits it does not have to
+rediscover the arithmetic.
+
+**Expected plan: 6 add, 3 change, 0 destroy**, which is row 24's plan exactly,
+because the two consumers are the same shape and neither crosses the alarm
+ceiling. The adds are the four resources the `lambda-function` module creates for
+`carmodpicker-<env>-admin-price-alerts-consumer` (`aws_lambda_function`,
+`aws_iam_role`, `aws_cloudwatch_log_group`, and the X-Ray write policy), plus its
+runtime `aws_iam_role_policy` and the `aws_lambda_event_source_mapping`. The
+changes are the two aggregate Lambda alarms gaining one more metric and the
+GitHub Actions deploy policy gaining another function ARN; a new metric filter for
+the consumer's log group and the `application-errors` alarm's description are
+folded into those. **`bootstrap_image_tag` must be refreshed to a tag that
+currently resolves in the `admin` ECR repository before this is applied**, for the
+reason row 24's note gives: it seeds `image_uri` on function creation, Lambda
+pulls at `CreateFunction`, and the keep-last-10 lifecycle policy expires old tags,
+so the plan is green either way and the apply is what fails.
+
+**The ordering gotcha, which row 24 hit and this row inherits.** Merging this PR
+does not apply it, but it does trigger `Deploy Backend` on the `backend/**` path
+filter. That run reaches `existing-functions`, which asks Lambda for each name in
+the image map, and
+`carmodpicker-<env>-admin-price-alerts-consumer` does not exist yet, so the
+consumer leg fails. The sequence is therefore: **apply first, then dispatch
+`Deploy Backend`.** Apply from HCP so the function is created from
+`bootstrap_image_tag`, then dispatch the workflow manually to push the real
+digest onto it. The auto deploy that fires on the merge is expected to fail on
+that one leg and is not evidence of a problem with the change.
+
+**Verifying it in staging.** Subscribe a test user to a price alert on a part
+with a listing, then lower that listing's price through the capture path and
+watch three things: the alert email arrives, `last_fired_at` on the alert row is
+set to the observation timestamp, and
+`/aws/lambda/carmodpicker-staging-admin-price-alerts-consumer` shows one
+`price_alert_evaluated` line with `verdict=fired`. Then write the same price
+again: the consumer should log nothing, because an unchanged price is not a drop
+and never reaches the alert query. The empty batch invoke,
+
+```
+aws lambda invoke --function-name carmodpicker-staging-admin-price-alerts-consumer \
+  --payload '{"Records":[]}' --cli-binary-format raw-in-base64-out /dev/stdout
+```
+
+returns `{"batchItemFailures":[]}` and is the cheapest proof the container starts
+and the adapter forwards.
+
+The estimate in the table said 3 add, and undercounted for the same reason rows
+22 and 24 did: it counted the mapping, the function and its policy, not the three
+resources the module creates alongside a function.
 
 PRs 1, 2, 3, 9, 10, and 33 are independent of everything else and can run in
 parallel. PR 22 is the hard gate: nothing from 23 onward can start without it,

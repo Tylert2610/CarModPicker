@@ -3,16 +3,23 @@ Service for per-user price-drop alert subscriptions.
 
 Module-level functions (no class) to mirror part_listing_service.py style.
 T02 surface: subscribe upsert, list-mine, deactivate.
-T03 surface: evaluate_alerts_for_listing — invoked at the end of
-create_or_update_listing_and_price to fire emails when an observation breaches
-an active alert's threshold (24h cooldown, exception-safe per-alert iteration,
-SES failure leaves last_fired_at unchanged so retries are idempotent).
+T03 surface: evaluate_alerts_for_listing, which fires emails when an
+observation breaches an active alert's threshold (24h cooldown, exception-safe
+per-alert iteration, SES failure leaves last_fired_at unchanged so retries are
+idempotent).
+
+Split plan row 25 changed who calls it and nothing about what it does. It used
+to run at the end of create_or_update_listing_and_price, on the request thread,
+which was `catalog` reading `admin`'s alerts and calling SES. Seam 4 inverted
+that: the `part_listings` stream consumer in `app/consumers/price_alerts.py`
+calls it now, so a price write returns as soon as its transaction commits and
+`catalog` holds no SES grant.
 """
 
 import logging
 import time
 from datetime import UTC, datetime, timedelta
-from typing import Optional
+from typing import Any, Optional
 from uuid import UUID
 
 from app.api.dependencies.repositories import get_repositories
@@ -111,9 +118,21 @@ def evaluate_alerts_for_listing(
     retailer_id: UUID,
     price_cents: int,
     observed_at: datetime,
+    repos: Optional[Any] = None,
 ) -> None:
     """Evaluate every active alert on `part_id` against this observation and
     fire emails for those whose threshold is breached.
+
+    Split plan row 25 moved the only caller. This is no longer invoked from
+    `create_or_update_listing_and_price` on the request thread; the
+    `part_listings` stream consumer in `app/consumers/price_alerts.py` calls it,
+    which is seam 4. The semantics below did not change, and this function is
+    still the single place they live.
+
+    `repos` is the bundle to read and write through, defaulting to the process
+    bundle for the scripts and tests that call this directly. The consumer
+    passes its own, which is `admin`'s narrow bundle built once per execution
+    environment, rather than letting `get_repositories()` build all twenty-five.
 
     Contract:
     - Only active alerts are considered (`active=True`).
@@ -142,7 +161,8 @@ def evaluate_alerts_for_listing(
 
     observed_at = _ensure_aware(observed_at)
 
-    repos = get_repositories()
+    if repos is None:
+        repos = get_repositories()
     candidate_alerts = repos.part_price_alerts.active_at_or_below(part_id, price_cents)
     if not candidate_alerts:
         return
