@@ -1,17 +1,31 @@
-"""What the two synchronous delete cascades remove today.
+"""What the two delete cascades remove.
 
-Row 23 of `docs/migration/split-plan.md` deliberately leaves both deletes hard:
-`_delete_user_everywhere` in `app/api/endpoints/users.py` (seam 1) and
-`PartService.purge` plus `purge_related_rows_for_parts` in
-`app/api/services/part_service.py` (seam 2) still fan out across every related
-table inside the request. Rows 30 and 28 replace that fan-out with a tombstone
-write and a stream consumer draining a work queue.
+Row 23 of `docs/migration/split-plan.md` wrote these tests against the two
+synchronous cascades, deliberately, so that rows 28 and 30 would have a
+reference to diff against rather than a description. Row 28 has now cut seam 2,
+and this is that diff.
 
-Neither cascade had a test pinning what it removes, which is a bad position from
-which to make it asynchronous: the async version is correct only if it ends in
-the same state, and nothing recorded what that state was. These tests are that
-record. They are written against the current synchronous behaviour on purpose,
-so rows 28 and 30 have a reference to diff against rather than a description.
+Seam 1 is still synchronous. `_delete_user_everywhere` in
+`app/api/endpoints/users.py` still fans out across every related table inside
+the request, and `TestUserDeleteCascade` below is unchanged; row 30 is what
+replaces it.
+
+Seam 2 is now asynchronous, and the change to these tests is smaller than that
+makes it sound. `PartService.purge` writes a tombstone and removes everything
+`catalog` owns; the four cross domain deletes moved to
+`app/consumers/part_purge.py`, off the `parts` stream and through the
+`part-purge` work queue. The end state is identical, so the assertions about
+what does not survive are identical too. What changed is only that the cascade
+is driven by draining the queue rather than by a function call, which is what
+`_drain_part_purge` below stands in for.
+
+The test that did not change at all is the one that matters most:
+`test_deleting_a_part_through_the_api_removes_it_from_build_lists` still passes
+unmodified. A tombstoned part reads as absent everywhere the moment the delete
+returns, because row 23 put `is_tombstoned` on every join that reaches a part,
+so a build list drops the row without waiting for the consumer. That is the
+property that makes the asynchrony invisible to a caller, and leaving that test
+untouched is the proof of it.
 """
 
 import os
@@ -65,8 +79,25 @@ def _make_part(client: TestClient, headers: dict[str, str], category: Category, 
     return response.json()
 
 
+def _drain_part_purge(repos: Any, part_id: UUID) -> None:
+    """Run the cascade the way production runs it, minus the transport.
+
+    In production the tombstone `PartService.purge` writes reaches
+    `app/consumers/part_purge.py` over the `parts` stream, is enqueued on the
+    `part-purge` work queue, and comes back to the same function to be drained.
+    Here the handler is called directly with the part id, because what these
+    tests pin is which rows the cascade removes and that is a property of the
+    handler rather than of the two mappings in front of it. The mappings, the
+    record parsing and the idempotency of a redelivery are covered in
+    `tests/consumers/test_part_purge_consumer.py`.
+    """
+    from app.consumers.part_purge import purge_related_rows
+
+    purge_related_rows(repos, part_id)
+
+
 class TestPartPurgeCascade:
-    """Seam 2. `purge_related_rows_for_parts` names four tables; assert all four."""
+    """Seam 2. The cascade names four tables; assert all four."""
 
     def test_purging_a_part_removes_its_votes_reports_usages_and_alerts(
         self,
@@ -77,8 +108,6 @@ class TestPartPurgeCascade:
         db_session: Any,
         dynamo_tables: Any,
     ) -> None:
-        from app.api.services.part_service import purge_related_rows_for_parts
-
         headers = _headers(login_user(client, test_user.username))
         part = _make_part(client, headers, test_category, test_part_manufacturer)
         part_id = UUID(part["id"])
@@ -105,7 +134,7 @@ class TestPartPurgeCascade:
         assert repos.votes.for_entities("part", [part_id])[part_id]
         assert repos.build_list_parts.query_all("part_id-index", part_id)
 
-        purge_related_rows_for_parts([part_id])
+        _drain_part_purge(repos, part_id)
 
         assert repos.votes.for_entities("part", [part_id]).get(part_id, []) == [], "votes must not survive"
         assert repos.build_list_parts.query_all("part_id-index", part_id) == [], "build list usages must be dropped"

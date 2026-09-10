@@ -200,10 +200,16 @@ _USERS_REPOSITORIES = (
     "reports",
 )
 
-#: `catalog` owns the eleven catalogue tables. The extras are the seams: the
-#: part purge writes `build_list_parts`, `votes` and `reports` (seam 2), the
-#: price alert fan-out reads `part_price_alerts` and `users` (seam 4), and
+#: `catalog` owns the eleven catalogue tables. Two extras are left and both are
+#: seams: `users` is read by the price alert fan-out (seam 4), and `votes` is
+#: read by row 24's `net_votes` stream consumer, which `catalog` owns.
 #: `part_service` reads the car tables to infer fitment.
+#:
+#: Row 28 removed three: `build_list_parts`, `part_price_alerts` and `reports`.
+#: They were here for seam 2, the synchronous part purge, and no `catalog` route
+#: reaches them now that the cascade runs on
+#: `catalog-part-purge-consumer`. That function names them itself in
+#: `app/entrypoints/catalog_part_purge_consumer.py`.
 _CATALOG_REPOSITORIES = (
     "users",
     "car_makes",
@@ -216,21 +222,26 @@ _CATALOG_REPOSITORIES = (
     "part_cars",
     "part_listings",
     "part_price_history",
-    "part_price_alerts",
-    "build_list_parts",
     "votes",
-    "reports",
 )
 
-#: `vehicles` owns the three car tables. The other thirteen are seam 5's search
+#: `vehicles` owns the three car tables. The other ten are seam 5's search
 #: fan-out: one route reading four domains' tables, which the plan leaves
 #: synchronous because turning it into service calls would make one Dynamo round
 #: trip into three or four HTTP hops on a path that is already slow.
+#:
+#: It tracks `catalog` by construction, so row 28's three removals applied here
+#: too: the search fan-out never read `build_list_parts`, `part_price_alerts` or
+#: `reports`, it inherited them from the tuple it extends.
 _VEHICLES_REPOSITORIES = _CATALOG_REPOSITORIES + ("build_lists",)
 
 #: `build-lists` owns its four tables and `catalog`'s price capture reaches the
 #: listing tables. `build_logs` and `build_log_posts` are there because a build
 #: log is created with the list.
+#:
+#: Row 28 removed two: `part_price_alerts` and `reports`. Both were reached only
+#: through the synchronous part purge, which section 8's row 28 note predicted
+#: for `reports` by name, and both moved to the part purge consumer.
 _BUILD_LISTS_REPOSITORIES = (
     "users",
     "car_makes",
@@ -243,7 +254,6 @@ _BUILD_LISTS_REPOSITORIES = (
     "part_cars",
     "part_listings",
     "part_price_history",
-    "part_price_alerts",
     "build_lists",
     "build_list_parts",
     "build_list_phases",
@@ -251,7 +261,6 @@ _BUILD_LISTS_REPOSITORIES = (
     "build_logs",
     "build_log_posts",
     "votes",
-    "reports",
 )
 
 #: `build-logs` owns two tables and reads `build_lists` for the parent and
@@ -292,6 +301,10 @@ _MEDIA_REPOSITORIES = (
 #: `admin/db_ops` seeds and purges. It is the second widest bundle, and the
 #: breadth is why the domain is called `admin`: section 1.5 argued the contents
 #: were closer to administration than to ingestion, and the name now says so.
+#:
+#: Row 28 removed one: `build_list_parts`, reached only through the part purge
+#: that `admin/db_ops` triggers. `admin` keeps `part_price_alerts` because it
+#: owns that table and `admin/price_alerts` reads it directly.
 _ADMIN_REPOSITORIES = (
     "users",
     "oauth_accounts",
@@ -308,7 +321,6 @@ _ADMIN_REPOSITORIES = (
     "part_price_history",
     "part_price_alerts",
     "build_lists",
-    "build_list_parts",
     "build_list_phases",
     "build_logs",
     "votes",

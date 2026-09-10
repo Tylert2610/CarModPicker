@@ -1202,7 +1202,7 @@ infrastructure.
 | 25 | Seam 4: price alert email moves to an `admin` stream handler, on an event source mapping. **Delivered** | medium | 6 add, 3 change (est. 3 add) | 22 |
 | 26 | `build-lists`: function, routes, OTel. **Delivered** | large | est. 17 add, 4 change | 23 |
 | 27 | `identity`: function, routes, OTel. **Delivered** | medium | est. 11 add, 4 change | 23 |
-| 28 | Seam 2: part purge goes async | large | 2 add | 23 |
+| 28 | Seam 2: part purge goes async. **Delivered** | large | 9 add, 5 change (est. 2 add) | 23 |
 | 29 | `catalog`: function, routes, OTel | large | est. 17 add, 4 change | 28 |
 | 30 | Seam 1: user delete cascade goes async | large | 5 add | 23, 29 |
 | 31 | `users`: function, routes, OTel. **Ninth cut, alarm list full** | large | est. 13 add, 4 change | 30 |
@@ -3010,6 +3010,188 @@ no-credential fallback caveat applies: there is no route at the bare `/api/auth`
 so a `GET` there answers 404 from a perfectly healthy function, the same caveat
 row 26 recorded for three of its four prefixes. The gateway path, which CI always
 takes, reads `routeKey` out of the access log and has no such problem.
+
+**Row 28 is delivered, and it is the first row whose plan is larger than the
+estimate because the row did more than move code.** Seam 2 is asynchronous: a
+part delete writes a tombstone and returns, the `parts` stream carries it to
+`carmodpicker-<env>-catalog-part-purge-consumer`, that function fans the part id
+onto the `part-purge` work queue, and the same function drains the queue and
+performs the four deletes. The purge semantics are unchanged. Who performs the
+cascade and when is the whole of the change.
+
+**One function on two event source mappings, not two functions.** The stream
+mapping and the queue mapping both invoke it, and `app/consumers/part_purge.py`
+tells the events apart by `eventSource` on the records rather than by anything
+the route configures. Two functions would have bought a second cold start, a
+second log group, a second alarm slot against a ceiling of ten and a second
+thing to keep in step, in exchange for a distinction the logs already make.
+
+**Why a queue sits in the middle at all**, rather than the stream consumer doing
+the four deletes directly. A DynamoDB stream record survives 24 hours and a
+mapping's retries are spent in minutes; an SQS message survives four days, is
+retried five times, and lands in a dead letter queue carrying the part id rather
+than the failure metadata a stream DLQ holds. Section 6.2 asked for the
+`part-purge` queue by name and this is what it buys: a cascade that fails
+against a throttled table is replayable by hand from `part-purge-dlq`, and the
+symptom it prevents is a purged part left sitting in someone's build list.
+
+**The tombstone is written before the hard delete, and the order is load
+bearing.** `PartService.purge` writes `deleted` and `deleted_at` first, then
+performs the catalog-owned half of the delete. Written the other way round, a
+failure between the two leaves a part that is gone from `parts` and never
+produced a tombstone record, so the cascade is never enqueued and the rows in
+the other four tables outlive it with no trace that they should not. Written
+this way, the same failure leaves a tombstoned part whose stream record has
+already been emitted, and the cascade runs regardless.
+
+**The hard delete stays synchronous, which answers the first of the two open
+items above.** `repos.parts.delete_unique` releases the `gtin` and the
+`manufacturer + part_number` reservations alongside the row, and section 3.3's
+open item asked who owns them once the delete becomes a tombstone. The answer
+here is that nobody needs to: the reservations are released on the request
+thread exactly as before, because deferring them is what would break. A deferred
+release blocks re-creation of a genuinely new part carrying a purged part's
+GTIN, and it fails closed, so the user sees a duplicate error against a row no
+user can see. Seam 1 has the same question for username and email in row 30 and
+the blast radius there is different, so this row sets no precedent it cannot.
+
+**The second open item, the S3 objects behind `image_urls`, is deliberately not
+resolved here and the reason is that resolving it well is a different row.**
+`bucket_orphan_utils.py` sweeps for objects no row references, and a tombstoned
+part still has a row and still references its objects, so the storage is held
+for as long as the tombstone is. Of the two options section 3.3 names, teaching
+the sweep the tombstone predicate is the right one: clearing `image_urls` at
+tombstone time destroys the data that makes a tombstone reversible, and
+reversibility is the reason row 23 chose tombstones over hard deletes. But the
+sweep is a full-table scan behind an HTTP route and open question 6 already has
+it timing out as the tables grow, so the predicate belongs in the same change
+that moves the sweep off a request thread rather than in this one. Nothing
+regresses in the meantime: a tombstoned part holds its objects, which is what a
+tombstoned part did before this row too.
+
+**Idempotency is the property this row has to earn, and it is structural rather
+than defended.** Every step of the cascade is a query followed by a batch
+delete, and a DynamoDB `DeleteItem` against an absent key succeeds. So a
+redelivered message, a bisected batch that reruns its successful half, and a
+retry of a cascade that failed halfway all converge on the same state, and none
+of them needs a dedupe table or a processed-message marker. The tombstone write
+is to a fixed value rather than an incrementing one, so a redelivered stream
+record writes the same bytes. Enqueueing twice is safe because draining twice
+is safe, which is what permits a standard queue rather than a FIFO one.
+`backend/tests/consumers/test_part_purge_consumer.py` asserts each of those four
+cases by name rather than leaving them to the argument.
+
+**Failures are loud.** The route catches nothing. An unexpected exception
+reaches the shared error handler, which answers 500, and
+`AWS_LWA_ERROR_STATUS_CODES = "500-599"` turns that into a function error rather
+than a clean batch, exactly as row 24 found. The stream mapping bisects and
+retries twice and then writes to the `parts` stream DLQ; the queue mapping
+returns the failed `messageId` in `batchItemFailures` and the queue's redrive
+policy sends it to `part-purge-dlq` after five receives. Both DLQs are the ones
+row 22 created and the existing DLQ alarm already watches.
+
+**The queue mapping sets no batch window, and that is a constraint rather than a
+preference.** `sqs.tf` sizes the work queue's visibility timeout as
+`local.work_queue_consumer_timeout * 6`, which is 174 seconds against a
+consumer timeout of 29, and carries a note that a batch window requires raising
+it. Pinning this consumer's timeout at 29 and setting no window makes the
+existing 174 correct as it stands, so `sqs.tf` needs no change in this row.
+
+**The row narrows four bundles, and this is the part the estimate did not
+anticipate.** `catalog`, `vehicles`, `build-lists` and `admin` all declared some
+of `build_list_parts`, `reports` and `part_price_alerts`, and none of them
+declared those tables because a route of theirs reads or writes one. They
+declared them because their delete routes called
+`purge_related_rows_for_parts`, which reached all four tables. With the cascade
+gone from that function the declarations became surplus and
+`test_a_domain_declares_no_repository_its_routes_cannot_reach` failed on all
+four domains at once. That failure is the seam closing rather than a regression,
+and the tuples were trimmed to match. The consumer names its four repositories
+itself rather than taking `catalog`'s tuple, because `catalog`'s tuple is no
+longer this set.
+
+The Terraform consequence is smaller than the bundle change, and the gap between
+the two is the bundle-to-grant gap rows 19 through 21 kept recording. Only
+`admin` had a grant to lose: `build_list_parts` was in its write list and was
+reached only from the purge, so it is gone. `vehicles` never granted any of the
+three, `build-lists` was granted `part_price_alerts` for the price capture
+route's `last_fired_at` write rather than for the purge and keeps it, and
+`catalog` has no grant block until row 29. `build-lists` keeping
+`part_price_alerts` is the one place where section 3.3's "seam 2 and row 28 are
+what narrow this" turned out to name the wrong seam: that grant is seam 4's, and
+row 25 already moved the sending half of it.
+
+**Alarms: ten of ten, the chunk is now full, and the decision the ceiling forces
+is due in the next row.** `alarm_lambda_function_names` filters on the domains
+whose function has actually been created, which after row 27 is seven, plus the
+consumers from rows 24, 25 and 28, which makes ten. Ten is exactly
+`lambda_aggregate_chunk_size`, so `chunklist` still returns a single chunk and
+no second alarm pair appears in this row's plan. The next function created is
+the eleventh and produces `<prefix>-lambda-errors-aggregate-2` and
+`<prefix>-lambda-throttles-aggregate-2`, leaving chunk zero's `m0` through `m9`
+untouched. On the current cut order that is row 29's `catalog`.
+
+This row was written against a nine name count and rebased onto row 27, which
+added `identity` and took the last slot. The two rows are independent and either
+order gives the same ten, so nothing about this row changed except the arithmetic
+in the note and in `monitoring.tf`. Row 24's note made the opposite mistake by
+counting declared domains rather than created ones, so the count is worth
+recomputing on every row rather than incrementing.
+
+Both aggregate expressions change, because the consumer half of the list is
+sorted independently of the domain half: `catalog-part-purge-consumer` sorts
+between `admin-price-alerts-consumer` and `catalog-votes-consumer`, so it takes
+`m8` and pushes the votes consumer's term from `m8` to `m9`. That is a
+renumbering rather than drift, and it is the same kind row 26 recorded for a new
+domain. `monitoring.tf` carries the arithmetic at the point of the change.
+
+**Expected plan: 9 add, 5 change, 0 destroy.** The nine adds are the four
+resources the `lambda-function` module creates for
+`carmodpicker-<env>-catalog-part-purge-consumer` (`aws_lambda_function`,
+`aws_iam_role`, `aws_cloudwatch_log_group`, and the X-Ray write policy), its
+runtime `aws_iam_role_policy`, the `aws_lambda_event_source_mapping` on the
+`parts` stream, the second `aws_lambda_event_source_mapping` on the `part-purge`
+queue, and the alarm module's two log metric filters for the new log group
+(`errors` and `rate_limit_failed_open`). Those two filters are adds rather than changes, and the two alarms
+that read the same map are changes rather than adds, which is the distinction
+rows 24 and 25 collapsed. `alarm_error_log_groups` is the monolith's log group
+plus one per created domain plus one per consumer, so it is ten today (`api`,
+seven domains, two consumers) and eleven after this row. The five changes are the two aggregate
+Lambda alarms, which each gain a term and a renumbered one; the two log-based
+alarms `errors` and `rate_limit_failed_open`, whose descriptions interpolate
+`length(...)` of their log group map and so go from ten to eleven; and the GitHub
+Actions deploy policy gaining the twelfth function ARN.
+
+That last one is counted off `local.lambda_domain_names` and
+`local.lambda_stream_consumers_declared` rather than off what exists, which is
+the deliberate "grant ahead of the resource" choice `iam_github_actions.tf`
+explains: all nine domains are declared whether or not their function has been
+created, so the list is nine plus the consumers and row 27 did not move it. Nine
+plus two consumers is eleven today and this row makes it twelve. It is the one
+count in this note that does not follow the alarm arithmetic, and conflating the
+two is how a plan review talks itself into the wrong number.
+
+Rows 24 and 25 both counted six adds and three changes for a shape like this and
+both undercounted, because neither counted the two metric filters as adds and
+both folded the two log-based alarm descriptions into the aggregate changes
+rather than counting them. The two extra adds here beyond that correction are
+the second event source mapping, which no previous consumer had. The estimate in
+the table said 2 add, which counted the queue mapping and the stream mapping and
+nothing else.
+
+**`secrets = false`, and the reason is worth stating because row 25's consumer
+set it true.** The cascade signs no token and sends no mail, so the function
+needs neither `SECRET_KEY` nor `APP_SECRETS_ARN` and holds no
+`secretsmanager:GetSecretValue`. `check_signing_key` is deliberately absent from
+`main()` for the same reason, matching row 24's consumer rather than row 25's.
+
+**Landing order, which is row 24's and row 25's and is unchanged.** Merge, let
+the auto deploy build the images, refresh `bootstrap_image_tag` to the merge sha
+because the keep-last-10 ECR policy expires the old tag and the plan stays green
+while the apply fails, plan, apply, then dispatch Deploy Backend on staging. The
+apply has to precede the dispatch: the deploy filters the image map down to the
+functions that exist, so a dispatch before the apply skips the new consumer
+silently.
 
 PRs 1, 2, 3, 9, 10, and 33 are independent of everything else and can run in
 parallel. PR 22 is the hard gate: nothing from 23 onward can start without it,
