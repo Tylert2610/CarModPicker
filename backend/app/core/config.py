@@ -328,6 +328,31 @@ class Settings(BaseServiceSettings):
         description="Run lifespan startup work (car generation seed, orphan job sweep). Lambda sets this false.",
     )
 
+    # The one `IDENTITY_*` variable this class names, and the only one it ever
+    # should. `IdentitySettings` in `webbpulse.identity` is a `BaseSettings` with
+    # `env_prefix="IDENTITY_"`, so it reads `IDENTITY_AUDIENCE`,
+    # `IDENTITY_SIGNING_KEY_ARNS`, `IDENTITY_DATA_KEY_ARN` and the rest out of the
+    # environment itself. Restating them here would be a second copy of the same
+    # list, kept in step by hand, with this one's types and validation
+    # necessarily weaker than the package's.
+    #
+    # This field is the exception because `app/composition/wiring.py` needs a
+    # cheap way to answer "is the identity application configured at all" before
+    # it constructs `IdentitySettings`, which raises when it is not.
+    # `IDENTITY_ISSUER` is required by that class and set by
+    # `terraform/lambda_domains.tf` on every deployed identity function, so its
+    # presence is exactly that question. Naming it here rather than reading
+    # `os.environ` in the composition root keeps every environment variable this
+    # application reads visible in one class.
+    IDENTITY_ISSUER: str = Field(
+        default="",
+        description=(
+            "The identity issuer, as terraform/identity.tf renders it. Empty means the "
+            "webbpulse.identity router does not mount, which is the state of a local run "
+            "and of the test suite. Set on the deployed identity function only."
+        ),
+    )
+
     # DynamoDB settings
     DYNAMODB_TABLE_PREFIX: str = Field(
         default="",

@@ -488,6 +488,48 @@ def build_domain_app(
                 tags=list(tags or domain.router_tags),
             )
 
+    # The shared identity standard's M1 through M4, on the `identity` domain only.
+    # Row 5 of `docs/migration/cmp-identity-plan.md`;
+    # `app/composition/identity.py` carries the full rationale for what mounts
+    # and why, and `app/composition/identity_hooks.py` for the product policy it
+    # is given.
+    #
+    # AFTER the loop above, which is load bearing rather than tidy. The four
+    # legacy routers declare `POST /api/auth/logout` and
+    # `POST /api/auth/verify-email`, which the package also declares, and FastAPI
+    # keeps the first match. Mounting this second is what leaves both legacy
+    # routes serving, which is what makes this row additive: the legacy flow is
+    # untouched until row 13 deletes it.
+    #
+    # WITH NO PREFIX OF ITS OWN. `build_identity_router` places every route it
+    # declares under `identity_prefix(settings)`, the issuer's path, which
+    # `terraform/identity.tf` renders as `/api/auth`. Passing a prefix here would
+    # double every path to `/api/auth/api/auth/...`, and reimplementing the
+    # derivation would be a second source of truth for a URL that API Gateway
+    # builds from the issuer at `CreateAuthorizer` time. This is also why it does
+    # not go through `domain.load_routers`, which mounts everything it loads
+    # under this domain's own `/api`.
+    #
+    # Guarded on `IDENTITY_ISSUER` being set, for the reason that field's own
+    # comment in `app/core/config.py` gives: `IdentitySettings` requires it and
+    # raises without it, and a local checkout or a test that builds the identity
+    # application with no identity environment at all must not fail to construct.
+    # In a deployed identity function Terraform always sets it, so the guard is
+    # never the reason a document is missing there; a function whose environment
+    # is half configured still fails loudly at startup, inside `IdentitySettings`,
+    # naming the field it is missing.
+    #
+    # This is why Root A is unaffected. The monolith's environment carries no
+    # `IDENTITY_ISSUER`, so `tests/fixtures/route_contract.json` and
+    # `tests/test_openapi_snapshot.py` pin exactly what they pinned before, and
+    # the package's routes are a thing the identity function serves rather than a
+    # thing the published contract grows.
+    for domain in resolved:
+        if domain.name == "identity" and settings.IDENTITY_ISSUER:
+            from app.composition.identity import build_router as build_identity_router
+
+            app.include_router(build_identity_router(settings))
+
     if include_root_routes:
         add_root_routes(app)
 

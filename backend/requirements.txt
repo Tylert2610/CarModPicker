@@ -26,7 +26,22 @@
 # It pulls PyJWT and bcrypt, both of which were already pinned below and stay
 # pinned here, because this file is the resolved set and the package's own
 # ranges must not be allowed to float a different major into the image.
-webbpulse[fastapi,otel,dynamodb,aws-otel,security]==0.13.0
+#
+# `identity` is what row 5 of the identity adoption plan adds:
+# `webbpulse.identity` now serves the M1 discovery documents and the M2 to M4
+# flows on the `identity` function, mounted by `app/composition/identity.py`.
+# The extra carries `PyJWT[crypto]`, which is PyJWT plus `cryptography`: the JWK
+# the JWKS publishes is built from the DER SubjectPublicKeyInfo that
+# `kms:GetPublicKey` returns, and `cryptography` is what parses it. Both are
+# already resolved below and stay pinned there, `PyJWT` now with its `crypto`
+# extra so the dependency is declared rather than inherited from `webauthn`.
+#
+# `oauth` is deliberately absent. It carries `httpx` for the provider token
+# exchange, and no OAuth route mounts: `app/composition/identity.py` supplies
+# neither an `oauth_states` nor an `oauth_links` store, because
+# `terraform/identity.tf` creates the six M1 to M4 tables and not the two OAuth
+# ones. Row 9 is what adds both the tables and this extra.
+webbpulse[fastapi,otel,dynamodb,aws-otel,security,identity]==0.14.0
 
 # Core FastAPI and web framework dependencies
 annotated-types==0.8.0
@@ -51,7 +66,7 @@ uuid6==2025.0.1
 
 # Authentication and security
 # PyJWT — primary JWT library (AUTH-04, Phase 5 D-06).
-PyJWT==2.13.0
+PyJWT[crypto]==2.13.0
 bcrypt==5.0.0
 python-multipart==0.0.32
 pyotp==2.10.0
