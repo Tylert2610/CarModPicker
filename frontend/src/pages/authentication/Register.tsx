@@ -9,6 +9,7 @@ import { Input } from '../../components/ui/input';
 import useApiRequest from '../../hooks/UseApiRequest';
 import { useAuth } from '../../hooks/useAuth';
 import { isGoogleConfigured } from '../../hooks/useGoogleSignIn';
+import { identityAvailability } from '../../api/authMode';
 import { apiClient } from '../../api/client';
 import type { UserCreate, UserRead } from '../../types/Api';
 
@@ -244,7 +245,10 @@ function Register() {
               {isLoading ? 'Creating account...' : 'Create account'}
             </Button>
 
-            {isGoogleConfigured() && (
+            {/* Google sign in is M6 in the identity service and is not
+                shipped, so identity mode hides it rather than rendering a
+                button that 404s. Unchanged in bearer mode. */}
+            {isGoogleConfigured() && identityAvailability().googleOauth && (
               <>
                 <div className="flex items-center gap-3 my-2">
                   <div className="h-px flex-1 bg-muted"></div>

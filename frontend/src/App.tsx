@@ -10,6 +10,7 @@ import EmailVerifiedRoute from './components/routes/EmailVerifiedRoute.tsx';
 import GuestRoute from './components/routes/GuestRoute';
 import ProtectedRoute from './components/routes/ProtectedRoute';
 import { RouteGroupBoundary } from './components/routes/RouteGroupBoundary';
+import VerifyEmailRoute from './components/routes/VerifyEmailRoute';
 import BetaBanner from './components/shell/BetaBanner';
 import ChromeExtensionPromo from './components/shell/ChromeExtensionPromo';
 import CookieConsentBanner from './components/shell/CookieConsentBanner';
@@ -42,6 +43,9 @@ const ForgotPasswordConfirm = lazy(
 );
 const Login = lazy(() => import('./pages/authentication/Login.tsx'));
 const Register = lazy(() => import('./pages/authentication/Register.tsx'));
+const ResetPassword = lazy(
+  () => import('./pages/authentication/ResetPassword.tsx')
+);
 const VerifyEmail = lazy(
   () => import('./pages/authentication/VerifyEmail.tsx')
 );
@@ -103,6 +107,7 @@ const NO_AD_SPACE_PATHS = new Set([
   '/forgot-password/confirm',
   '/verify-email',
   '/verify-email/confirm',
+  '/reset-password',
   '/extension-auth',
 ]);
 
@@ -298,6 +303,15 @@ function App() {
                       element={<ForgotPassword />}
                     />
                   </Route>
+                  {/* Outside GuestRoute on purpose. A reset link is a
+                      credential in its own right and a signed in user can
+                      legitimately be holding one, so bouncing them away from
+                      it would strip the single use token. Registered
+                      unconditionally rather than behind the auth mode, because
+                      a route that only exists in one build is a route the
+                      coverage test cannot see. In bearer mode the page renders
+                      its own "not available in this deployment" state. */}
+                  <Route path="/reset-password" element={<ResetPassword />} />
                 </Route>
 
                 {/* Builder group — profile / build lists / parts / checkout (auth-gated) */}
@@ -308,8 +322,10 @@ function App() {
                     </RouteGroupBoundary>
                   }
                 >
-                  <Route element={<ProtectedRoute />}>
+                  <Route element={<VerifyEmailRoute />}>
                     <Route path="/verify-email" element={<VerifyEmail />} />
+                  </Route>
+                  <Route element={<ProtectedRoute />}>
                     <Route element={<EmailVerifiedRoute />}>
                       <Route path="/profile" element={<Profile />} />
                       <Route path="/builder" element={<Builder />} />

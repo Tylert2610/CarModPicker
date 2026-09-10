@@ -17,11 +17,18 @@ import { Alert, AlertDescription } from '../../components/ui/alert';
 import { Button } from '../../components/ui/button';
 import GoogleAuthFlow from '../../components/authentication/GoogleAuthFlow';
 import { Input } from '../../components/ui/input';
-import useApiRequest from '../../hooks/UseApiRequest';
 import { useAuth } from '../../hooks/useAuth';
 import { isGoogleConfigured } from '../../hooks/useGoogleSignIn';
+import { identityAvailability } from '../../api/authMode';
 import { authApi } from '../../api/auth';
 import { getApiErrorMessage } from '../../utils/apiError';
+import type { UserRead } from '../../types/Api';
+import {
+  acceptsRecoveryCodes,
+  completeMfa,
+  signIn,
+  type LoginChallenge,
+} from '../../api/identityAuth';
 
 /**
  * Only accept returnTo values that look like a local path. Blocks protocol-
@@ -39,23 +46,49 @@ function Login() {
   const [password, setPassword] = useState('');
   const [otp, setOtp] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [requires2FA, setRequires2FA] = useState(false);
+  // The challenge from the first leg, or null when there is no challenge in
+  // flight. Replaces the boolean this used to hold: in identity mode the second
+  // leg needs the server's ticket, and in bearer mode it needs the credentials
+  // again, so "a second factor is required" and "here is what it needs" are one
+  // fact rather than two.
+  const [challenge, setChallenge] = useState<LoginChallenge | null>(null);
   const [isPasskeyLoading, setIsPasskeyLoading] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const returnTo = safeReturnTo(searchParams.get('returnTo'));
-  const { login: authLogin } = useAuth();
-  const passkeySupported = browserSupportsWebAuthn();
+  const { login: authLogin, checkAuthStatus } = useAuth();
+  // Passkeys and Google sign in are M5 and M6 in the identity service and are
+  // not shipped, so identity mode hides both rather than rendering a button
+  // that 404s. In bearer mode both are exactly as they were.
+  const available = identityAvailability();
+  const passkeySupported = browserSupportsWebAuthn() && available.passkeys;
+  const googleAvailable = isGoogleConfigured() && available.googleOauth;
+  const requires2FA = challenge !== null;
+  // Only the identity service issues recovery codes, and one is not six digits,
+  // so the field stops being numeric when they are accepted.
+  const allowRecoveryCode = acceptsRecoveryCodes();
 
-  const loginRequestFn = (payload: URLSearchParams) =>
-    authApi.login(payload as unknown as { username: string; password: string });
+  const [apiError, setApiError] = useState<string | null>(null);
+  const isLoading = isSubmitting;
 
-  const {
-    error: apiError,
-    isLoading,
-    executeRequest: performLogin,
-    setError: setApiError,
-  } = useApiRequest(loginRequestFn);
+  /**
+   * Finishes a sign in that has already succeeded on the server.
+   *
+   * Bearer login answers with the user in the body, so it is handed straight
+   * to the context. Identity login answers with a token and no user, because
+   * this application reads roughly twenty `UserRead` fields that no token claim
+   * carries, so the user is fetched. One function rather than two so the
+   * navigate happens in one place either way.
+   */
+  const finishLogin = async (user: UserRead | null) => {
+    if (user !== null) {
+      authLogin(user);
+    } else {
+      await checkAuthStatus();
+    }
+    void navigate(returnTo);
+  };
 
   const handlePasskeyLogin = async () => {
     setApiError(null);
@@ -98,49 +131,51 @@ function Login() {
       return;
     }
 
-    // If 2FA is required, handle OTP verification
-    if (requires2FA) {
-      if (!otp.trim() || otp.length !== 6) {
+    // Second leg. The code is whatever the mode accepts: six digits always,
+    // and a recovery code too when the identity service is the one checking.
+    if (challenge !== null) {
+      const code = otp.trim();
+      if (code === '') {
+        setApiError(
+          allowRecoveryCode
+            ? 'Enter your 6-digit code or a recovery code.'
+            : 'Please enter a valid 6-digit OTP code.'
+        );
+        return;
+      }
+      if (!allowRecoveryCode && code.length !== 6) {
         setApiError('Please enter a valid 6-digit OTP code.');
         return;
       }
 
+      setIsSubmitting(true);
       try {
-        const result = await authApi.loginWith2FA({
-          username,
-          password,
-          otp,
-        });
-        if (result.data) {
-          authLogin(result.data);
-          void navigate(returnTo);
+        const result = await completeMfa(challenge, code);
+        if (result.status === 'authenticated') {
+          await finishLogin(result.user);
+        } else if (result.status === 'failed') {
+          setApiError(result.error);
         }
-      } catch (error: unknown) {
-        setApiError(
-          getApiErrorMessage(error, 'Invalid OTP code. Please try again.')
-        );
+      } finally {
+        setIsSubmitting(false);
       }
       return;
     }
 
-    // Regular login
-    const formData = new URLSearchParams();
-    formData.append('username', username);
-    formData.append('password', password);
-
+    // First leg.
+    setIsSubmitting(true);
     try {
-      const result = await performLogin(formData);
-      // Check if result is a LoginResponse with requires_2fa
-      if (result && 'requires_2fa' in result && result.requires_2fa) {
-        setRequires2FA(true);
+      const result = await signIn(username, password);
+      if (result.status === 'authenticated') {
+        await finishLogin(result.user);
+      } else if (result.status === 'mfa-required') {
+        setChallenge(result.challenge);
         setApiError(null);
-      } else if (result && 'id' in result) {
-        // Regular login success
-        authLogin(result);
-        void navigate(returnTo);
+      } else {
+        setApiError(result.error);
       }
-    } catch {
-      // Login failed - error is handled by useApiRequest
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -169,7 +204,9 @@ function Login() {
             </h2>
             <p className="text-muted-foreground">
               {requires2FA
-                ? 'Enter the 6-digit code from your authenticator app'
+                ? allowRecoveryCode
+                  ? 'Enter the 6-digit code from your authenticator app, or one of your recovery codes'
+                  : 'Enter the 6-digit code from your authenticator app'
                 : 'Sign in to your CarModPicker account'}
             </p>
           </div>
@@ -263,14 +300,20 @@ function Login() {
                       required
                       value={otp}
                       onChange={(e) => {
-                        const value = e.target.value
-                          .replace(/\D/g, '')
-                          .slice(0, 6);
-                        setOtp(value);
+                        // A recovery code is not six digits, so stripping
+                        // non-digits would make it impossible to type. The
+                        // server tells the two apart by shape.
+                        const raw = e.target.value;
+                        setOtp(
+                          allowRecoveryCode
+                            ? raw.slice(0, 32)
+                            : raw.replace(/\D/g, '').slice(0, 6)
+                        );
                       }}
-                      placeholder="000000"
+                      placeholder={allowRecoveryCode ? 'Code' : '000000'}
                       disabled={isLoading}
-                      maxLength={6}
+                      maxLength={allowRecoveryCode ? 32 : 6}
+                      inputMode={allowRecoveryCode ? 'text' : 'numeric'}
                       className="pl-10"
                     />
                   </div>
@@ -278,7 +321,7 @@ function Login() {
                 <button
                   type="button"
                   onClick={() => {
-                    setRequires2FA(false);
+                    setChallenge(null);
                     setOtp('');
                     setApiError(null);
                   }}
@@ -316,7 +359,7 @@ function Login() {
               {isLoading ? 'Signing in...' : 'Sign in'}
             </Button>
 
-            {!requires2FA && (passkeySupported || isGoogleConfigured()) && (
+            {!requires2FA && (passkeySupported || googleAvailable) && (
               <>
                 <div className="flex items-center gap-3 my-2">
                   <div className="h-px flex-1 bg-muted"></div>
@@ -342,14 +385,16 @@ function Login() {
                     </span>
                   </Button>
                 )}
-                <GoogleAuthFlow
-                  onLoggedIn={(user) => {
-                    authLogin(user);
-                    void navigate(returnTo);
-                  }}
-                  onError={(message) => setApiError(message)}
-                  disabled={isLoading || isPasskeyLoading}
-                />
+                {googleAvailable && (
+                  <GoogleAuthFlow
+                    onLoggedIn={(user) => {
+                      authLogin(user);
+                      void navigate(returnTo);
+                    }}
+                    onError={(message) => setApiError(message)}
+                    disabled={isLoading || isPasskeyLoading}
+                  />
+                )}
               </>
             )}
           </form>

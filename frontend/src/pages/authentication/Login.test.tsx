@@ -96,6 +96,15 @@ describe('Login page', () => {
     // authApi.login POSTs to /auth/token with x-www-form-urlencoded. The real
     // authApi runs (setup.ts preserves it via importOriginal) and hits the
     // mocked apiClient.post under the hood.
+    //
+    // The body is a plain object rather than a `URLSearchParams`. The page used
+    // to build the search params itself and cast them through authApi's
+    // signature; it now hands `signIn` a username and password and the
+    // form-encoding happens where it belongs, in `api/client`'s
+    // `toRequestOptions`, which converts an object body when the request
+    // carries the urlencoded content type. What reaches the wire is identical,
+    // so this asserts the fields and the header rather than the intermediate
+    // type.
     vi.mocked(apiClient.post).mockResolvedValueOnce({
       data: {
         access_token: 'tok',
@@ -114,10 +123,15 @@ describe('Login page', () => {
     expect(vi.mocked(apiClient.post).mock.calls[0]?.[0]).toBe('/auth/token');
 
     const rawBody: unknown = vi.mocked(apiClient.post).mock.calls[0]?.[1];
-    expect(rawBody).toBeInstanceOf(URLSearchParams);
-    const body = rawBody as URLSearchParams;
-    expect(body.get('username')).toBe('testuser');
-    expect(body.get('password')).toBe('password');
+    const body =
+      rawBody instanceof URLSearchParams
+        ? {
+            username: rawBody.get('username'),
+            password: rawBody.get('password'),
+          }
+        : (rawBody as { username: string; password: string });
+    expect(body.username).toBe('testuser');
+    expect(body.password).toBe('password');
 
     const rawConfig: unknown = vi.mocked(apiClient.post).mock.calls[0]?.[2];
     const config = rawConfig as { headers?: Record<string, string> };
