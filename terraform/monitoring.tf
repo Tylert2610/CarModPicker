@@ -16,8 +16,10 @@ locals {
   #
   # The filter is what keeps the list to functions that exist. `local.lambda_domain_names` is all
   # nine from row 9 onward because nine ECR repositories exist, while `local.lambda_domains` in
-  # lambda_domains.tf holds only the domains whose function has actually been created, which today
-  # is `media` and `build-logs`. A name in the metric math for a function that does not exist would
+  # lambda_domains.tf holds only the domains whose function has actually been created, which after
+  # row 26 is `media`, `build-logs`, `moderation`, `vehicles`, `admin` and `build-lists`. With row
+  # 24's consumer that is seven of the ten slots used and three left, which the ceiling paragraph
+  # below spends. A name in the metric math for a function that does not exist would
   # resolve to a metric that never reports, which is not an error but is an alarm claiming coverage
   # it does not have. It is also empty in a fresh account bootstrapping with an empty
   # `bootstrap_image_tag`, which is why `lambda_aggregate_alarm` below is conditional rather than
@@ -34,9 +36,17 @@ locals {
   #
   # The consumers are appended after the domains rather than sorted in among them, and that is the
   # order rule above rather than a preference. `catalog-votes-consumer` sorts before `media` and
-  # `moderation`, so an alphabetical merge would renumber the metric ids of every function after
-  # it and rewrite the expressions on both existing alarms. Appending gives the new function the
-  # next free id and leaves m0 through m8 exactly where they are.
+  # `moderation`, so an alphabetical merge would renumber the metric ids of every domain after it
+  # on every apply that touched the consumer list. Appending pins the consumers behind the domains
+  # instead, so a new consumer takes the next free id and disturbs nothing.
+  #
+  # A new domain is the one case that does renumber, and row 26 is the first to hit it. Domains
+  # come first in the concat, so `build-lists` took m5, which `catalog-votes-consumer` had held
+  # since row 24, and pushed that consumer to m6. Both aggregate alarms have the consumer's term
+  # rewritten as a result. That is inside the four alarm changes a cut already expects rather than
+  # extra plan noise, because both alarms change anyway for their descriptions and for the term the
+  # new function appends. Rows 27 through 31 each do the same to whatever sits behind them, so a
+  # renumbered consumer term in one of those plans is expected and is not drift.
   alarm_lambda_function_names = concat(
     [
       for name in local.lambda_domain_names : module.lambda_domain[name].function_name
