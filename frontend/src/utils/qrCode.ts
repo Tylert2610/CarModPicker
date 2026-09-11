@@ -1,62 +1,19 @@
 /**
- * A QR encoder, written here rather than pulled in as a dependency.
- *
- * Copied verbatim from WebbPulse-Portfolio, `frontend/src/utils/qrCode.ts`,
- * which introduced it for the same screen this file serves: the one TOTP
- * enrolment panel that has to render a provisioning URI. It is duplicated
- * rather than shared because it is a leaf with no imports and no product
- * knowledge, and moving it into `@webbpulse/*` would put a rendering concern
- * into a package whose job is the protocol. If a third consumer appears, that
- * is the point at which it earns a home in the shared packages.
- *
- * The only thing this application ever encodes is one `otpauth://totp/...`
- * provisioning URI, shown once during TOTP enrolment. A QR library is a large
- * surface and a supply chain entry for a single screen, and the identity
- * package deliberately ships no generator of its own: `TotpEnrolmentStarted`
- * documents that rendering the URI is the product's job. So the subset of
- * ISO/IEC 18004 that a provisioning URI needs lives here.
- *
- * ## What is implemented, and what is left out
- *
- * Byte mode only, error correction level M, versions 1 to 10. That is the
- * smallest thing that encodes the input this application has:
- *
- * - A provisioning URI is ASCII, so byte mode covers it and the alphanumeric
- *   and kanji modes would never be selected. Mode selection would be dead code.
- * - Level M is the level most authenticator documentation assumes and holds 213
- *   bytes at version 10, which is far beyond any issuer and label pair this
- *   service produces. A URI longer than that throws rather than silently
- *   producing an unreadable symbol, and {@link encodeQrCode} says so.
- * - Versions above 10 are not built, for capacity that a provisioning URI
- *   cannot reach. Versions 7 and up are, and those carry the 18 bit version
- *   information block that {@link placeVersionInformation} writes; a symbol
- *   that omits it is not merely missing a hint, because the modules it
- *   occupies would otherwise be filled with data and shift the entire stream.
- *
- * ## Why the mask is chosen rather than fixed
- *
- * All eight masks are evaluated with the four penalty rules from the standard
- * and the lowest scoring one wins. Fixing a mask is tempting and produces a
- * symbol that scans in a test, but the penalty rules exist because some data
- * and mask combinations put long runs or 1:1:3:1:1 sequences into the symbol,
- * which is what makes a reader mistake data for a finder pattern. The input
- * here varies with the account label, so the combination is not known ahead of
- * time and cannot be checked once by hand.
+ * Minimal QR encoder for the one TOTP provisioning URI this app renders.
+ * Byte mode, error correction level M, versions 1 to 10; the mask is chosen by
+ * the standard's four penalty rules rather than fixed.
  */
 
-/** The error correction level this module encodes at. See the module note. */
+/** The error correction level this module encodes at. */
 const EC_LEVEL_M = 'M';
 
-/** The highest version this module builds. See the module note. */
+/** The highest QR version this module builds. */
 const MAX_VERSION = 10;
 
 /**
- * Data codeword count and EC codewords per block for level M, versions 1 to 10.
- *
- * `[totalDataCodewords, ecCodewordsPerBlock, group1Blocks, group2Blocks]`.
- * Group 2 blocks hold exactly one more data codeword than group 1 blocks, which
- * is how the standard splits a byte count that does not divide evenly.
- * Transcribed from ISO/IEC 18004 table 9.
+ * Level M block layout per version as
+ * `[totalDataCodewords, ecCodewordsPerBlock, group1Blocks, group2Blocks]`;
+ * group 2 blocks hold one more data codeword than group 1.
  */
 const VERSION_SPECS_M: readonly (readonly [number, number, number, number])[] =
   [
@@ -74,10 +31,7 @@ const VERSION_SPECS_M: readonly (readonly [number, number, number, number])[] =
 
 /**
  * Alignment pattern centre coordinates per version, index 0 being version 1.
- *
- * Version 1 has none. From ISO/IEC 18004 table E.1. Every pair of coordinates
- * in a version's list is a centre except where it would collide with a finder
- * pattern, which {@link placeAlignmentPatterns} skips.
+ * Centres that collide with a finder pattern are skipped at placement time.
  */
 const ALIGNMENT_CENTRES: readonly (readonly number[])[] = [
   [],
@@ -209,12 +163,8 @@ function chooseVersion(byteLength: number): number {
 }
 
 /**
- * The full codeword sequence: data and error correction, interleaved.
- *
- * Interleaving is what makes a burst of damage spread across blocks rather than
- * destroying one block outright, and it is required whenever there is more than
- * one block. The order is every block's first data codeword, then every block's
- * second, and the same again over the EC codewords.
+ * Builds the interleaved data and error correction codeword sequence, so a
+ * burst of damage spreads across blocks instead of destroying one outright.
  */
 function buildCodewords(data: Uint8Array, version: number): number[] {
   const spec = VERSION_SPECS_M[version - 1] as readonly [
@@ -273,11 +223,8 @@ function buildCodewords(data: Uint8Array, version: number): number[] {
 }
 
 /**
- * Which modules are function patterns rather than data.
- *
- * Kept alongside the module grid because placement, masking and penalty
- * scoring all need to know: data is written only where this is false, and the
- * mask is applied only to data.
+ * Marks which modules are function patterns rather than data. Data is written,
+ * and the mask applied, only where this is false.
  */
 type Reserved = boolean[][];
 
@@ -367,12 +314,8 @@ function reserveFormatAreas(modules: boolean[][], reserved: Reserved): void {
 }
 
 /**
- * Writes the codeword bits along the standard's zigzag, applying `mask`.
- *
- * Columns are walked in pairs from the right, upward then downward, skipping
- * the vertical timing column. The mask is applied here rather than as a second
- * pass over the grid, which keeps it away from the function patterns without
- * needing a second reserved check.
+ * Writes the codeword bits along the standard's zigzag, applying `mask` inline
+ * so it never touches the function patterns.
  */
 function placeData(
   modules: boolean[][],
@@ -428,10 +371,8 @@ function maskAt(pattern: number, row: number, col: number): boolean {
 }
 
 /**
- * The 15 bit format information for level M and a mask, BCH coded and masked.
- *
- * The trailing XOR with 0x5412 is required by the standard and is what stops an
- * all-light format area, which a reader could not distinguish from no symbol.
+ * Returns the BCH coded 15 bit format information for level M and `mask`. The
+ * trailing XOR is required, and prevents an all-light format area.
  */
 function formatBits(mask: number): number {
   const data = (0b00 << 3) | mask;
@@ -467,16 +408,9 @@ function placeFormatInformation(modules: boolean[][], mask: number): void {
 }
 
 /**
- * Reserves and writes the 18 bit version block, for versions 7 and up.
- *
- * Two copies: a 6x3 area left of the top right finder and its transpose above
- * the bottom left one. The BCH(18,6) code is the version number in the top six
- * bits and a golay remainder under the generator 0x1f25 in the low twelve.
- *
- * Reserving matters as much as writing. These modules are not data, and an
- * encoder that skips them writes the data stream straight through the area,
- * which displaces every module after it. That produces a symbol that still
- * looks like a QR code and decodes to nothing.
+ * Reserves and writes the two 18 bit BCH version blocks, for versions 7 and up.
+ * Reserving matters as much as writing: skipping the area shifts the whole data
+ * stream and yields a symbol that decodes to nothing.
  */
 function placeVersionInformation(
   modules: boolean[][],
@@ -586,12 +520,8 @@ function penaltyScore(modules: boolean[][]): number {
 }
 
 /**
- * Encodes `text` as a QR matrix, choosing the version and the mask.
- *
- * Byte mode, error correction level M, versions 1 to 10. Throws when the text
- * is longer than a version 10 symbol holds or when it is not representable in
- * a single byte per character; see the module note for why that range is the
- * one this application needs.
+ * Encodes `text` as a QR matrix, choosing the version and mask. Throws when the
+ * text exceeds a version 10 level M symbol.
  */
 export function encodeQrCode(text: string): QrMatrix {
   const bytes = new TextEncoder().encode(text);
@@ -626,12 +556,8 @@ export function encodeQrCode(text: string): QrMatrix {
 }
 
 /**
- * The matrix as an SVG path `d` attribute, one `M`/`h`/`v` box per dark module.
- *
- * A path rather than one `<rect>` per module: a version 5 symbol is 37 squared,
- * and a thousand elements is a page the browser lays out slowly for no visual
- * difference. The four module quiet zone the standard requires is added by the
- * caller through the viewBox, which {@link qrCodeSvgPath} returns alongside.
+ * Renders the matrix as one SVG path `d` attribute, plus the viewBox carrying
+ * the required four module quiet zone. A single path beats one rect per module.
  */
 export function qrCodeSvgPath(text: string): {
   path: string;

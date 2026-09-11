@@ -1,32 +1,7 @@
 /**
- * Which OAuth providers this deployment actually has configured.
- *
- * ## Why this is a read rather than a probe
- *
- * WebbPulse-Portfolio's `services/oauthAvailability.ts` probes each provider's
- * start route with `redirect: 'manual'` and classifies the answer, because when
- * it was written there was no discovery endpoint and the only observable
- * difference between "Google is configured" and "Google is not" was what
- * `GET /api/auth/oauth/google/start` answered. The note in that file asks for
- * exactly the route this module reads.
- *
- * webbpulse-python 0.16.0 added it. `GET /api/auth/oauth/providers` is always
- * mounted, needs no credentials, and answers the configured set outright:
- *
- * ```json
- * { "providers": [{ "id": "google", "display_name": "Google" }] }
- * ```
- *
- * So this is one uncredentialed GET instead of one probe per provider, it
- * spends no start rate limit bucket, it burns no challenge row, and the login
- * page can render the real set rather than intersecting a hardcoded list with
- * per-provider guesses. A provider this build has never heard of renders from
- * the server's own `display_name`.
- *
- * `@webbpulse/auth` 0.8.0 carries no helper for this route, so the fetch and
- * the parse are here. The provider id constants still come from the package,
- * so a rename in the standard is a compile error rather than a button that
- * silently 404s.
+ * Reads `GET /api/auth/oauth/providers` to learn which OAuth providers this
+ * deployment has configured, so the login page renders the real set. One
+ * uncredentialed GET rather than a probe per provider.
  */
 import { GITHUB_PROVIDER, GOOGLE_PROVIDER } from '@webbpulse/auth';
 
@@ -38,10 +13,8 @@ export { resetAvailabilityCache } from './availabilityCache';
 export const OAUTH_PROVIDERS_PATH = '/api/auth/oauth/providers';
 
 /**
- * One provider the backend says is configured.
- *
- * `displayName` is the server's, because the server is the only thing that
- * knows about a provider this bundle predates.
+ * One provider the backend says is configured. `displayName` comes from the
+ * server, which is the only thing that knows a provider this bundle predates.
  */
 export interface OAuthProvider {
   id: string;
@@ -49,11 +22,8 @@ export interface OAuthProvider {
 }
 
 /**
- * A human name for a provider when the server did not send one.
- *
- * Only the two in the standard's mandatory baseline are named here. Anything
- * else falls through to title case, which is better than rendering a raw
- * lowercase wire value.
+ * A human name for a provider when the server sent none. Names the two baseline
+ * providers and title cases anything else.
  */
 export function providerLabel(provider: string): string {
   switch (provider) {
@@ -67,14 +37,8 @@ export function providerLabel(provider: string): string {
 }
 
 /**
- * Reads the route's body into a provider list, tolerating any shape.
- *
- * An entry without a usable `id` is dropped rather than rendered as a button
- * that cannot start anything. A missing `display_name` falls back to
- * {@link providerLabel} so a terse server still produces a readable button.
- *
- * Exported for the test, which drives the parse directly rather than through a
- * stubbed `fetch`.
+ * Parses the route body into a provider list, dropping any entry without a
+ * usable `id` and falling back to {@link providerLabel} for a missing name.
  */
 export function parseProviders(body: unknown): OAuthProvider[] {
   if (typeof body !== 'object' || body === null) return [];
@@ -96,16 +60,8 @@ export function parseProviders(body: unknown): OAuthProvider[] {
 }
 
 /**
- * The providers the backend reports, or an empty list.
- *
- * An empty list is returned for every failure mode: a 404 means this backend
- * predates 0.16.0 and has no OAuth at all, and a network failure means nothing
- * was learned. Both render no buttons, which is the same thing a user sees on a
- * deployment with no providers configured, and is always safe: a button that
- * cannot work is worse than an absent one.
- *
- * Not credentialed. Discovery is anonymous, and sending the refresh cookie to a
- * route that does not read it is a habit worth not forming.
+ * Reads the discovery route uncredentialed. Every failure mode yields an empty
+ * list, rendering no buttons, since a button that cannot work is worse.
  */
 export async function fetchProviders(
   url: string,
@@ -130,13 +86,8 @@ export async function fetchProviders(
 }
 
 /**
- * The provider list, fetched at most once per page load.
- *
- * The list itself is memoised alongside the availability answer, so the login
- * page and the connected-accounts panel share one request. A fetch that
- * learned nothing is not cached, which is the `unknown` rule in
- * `availabilityCache`: the next ask tries again rather than showing no
- * providers for the life of the page over one dropped request.
+ * The lists, keyed to match the shared availability cache so the login page and
+ * the connected-accounts panel share one request.
  */
 const lists = new Map<string, OAuthProvider[]>();
 
@@ -145,6 +96,10 @@ export function resetProvidersForTests(): void {
   lists.clear();
 }
 
+/**
+ * The configured providers, fetched at most once per page load. A fetch that
+ * learned nothing is not cached, so the next ask tries again.
+ */
 export function oauthProviders(
   url: string,
   fetchImpl: typeof fetch = fetch
