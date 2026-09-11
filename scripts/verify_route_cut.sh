@@ -410,9 +410,35 @@ for prefix in "${PREFIXES[@]}"; do
   PROBE_PATHS+=("${prefix}/verify-route-cut-probe")
 done
 
+# The explicit single-segment GET keys that row 12 added, read out of the
+# Terraform that declares them rather than listed again here.
+#
+# Row 12 gave every route needing an authenticated caller a key of its own, and
+# some of those are `GET /api/<prefix>/{some_id}`. The probe below requests
+# `GET <prefix>/verify-route-cut-probe`, which is one segment under the prefix,
+# and API Gateway resolves it by specificity: a `{some_id}` key at that depth
+# beats the prefix's `{proxy+}`. So for those prefixes the probe legitimately
+# lands on the `{some_id}` key and expecting `{proxy+}` is what is wrong.
+#
+# Derived from `local.domain_identity_jwt_route_paths` so that a key added or
+# removed there needs no edit here. Only `GET` matters, because the probe is a
+# GET, and only a single `{var}` segment, because a deeper path cannot capture a
+# one segment probe. A parse that finds nothing is not fatal: the expectation
+# simply falls back to `{proxy+}`, which is what it was before this row.
+REPO_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+APIGATEWAY_TF=${CARMODPICKER_APIGATEWAY_TF:-${REPO_ROOT}/terraform/apigateway.tf}
+
+declare -a EXPLICIT_GET_ID_KEYS=()
+if [ -r "$APIGATEWAY_TF" ]; then
+  while IFS= read -r line; do
+    [ -n "$line" ] && EXPLICIT_GET_ID_KEYS+=("$line")
+  done < <(grep -oE '"GET /api/[a-zA-Z0-9_-]+/\{[a-zA-Z0-9_]+\}"' "$APIGATEWAY_TF" |
+    tr -d '"' | sort -u)
+fi
+
 # The route key each probe path should resolve to.
 expected_key() {
-  local path=$1 prefix
+  local path=$1 prefix key
   for prefix in "${PREFIXES[@]}"; do
     if [ "$path" = "$prefix" ]; then
       echo "ANY ${prefix}"
@@ -420,6 +446,15 @@ expected_key() {
     fi
     case "$path" in
     "$prefix"/*)
+      # A more specific explicit key on this prefix wins over `{proxy+}`.
+      for key in ${EXPLICIT_GET_ID_KEYS+"${EXPLICIT_GET_ID_KEYS[@]}"}; do
+        case "$key" in
+        "GET ${prefix}/{"*"}")
+          echo "$key"
+          return
+          ;;
+        esac
+      done
       echo "ANY ${prefix}/{proxy+}"
       return
       ;;
