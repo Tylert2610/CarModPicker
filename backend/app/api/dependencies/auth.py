@@ -81,7 +81,11 @@ class IdentityAwareOAuth2(OAuth2PasswordBearer):
 
 
 # OAuth2 scheme for Bearer token extraction (FastAPI standard)
-oauth2_scheme = IdentityAwareOAuth2(tokenUrl=f"{settings.API_STR}/auth/token")
+# `scheme_name` pins the OpenAPI security scheme to the name the parent class
+# would have given it. FastAPI names the scheme after the class by default, and
+# the class is an implementation detail: the published contract, and the
+# snapshot test that pins it, must not change because of it.
+oauth2_scheme = IdentityAwareOAuth2(tokenUrl=f"{settings.API_STR}/auth/token", scheme_name="OAuth2PasswordBearer")
 # auto_error=False for optional endpoints that can work without auth
 oauth2_scheme_optional = OAuth2PasswordBearer(tokenUrl=f"{settings.API_STR}/auth/token", auto_error=False)
 
