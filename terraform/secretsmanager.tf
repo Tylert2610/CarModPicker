@@ -11,6 +11,20 @@ module "app_secrets" {
     "app" = {
       description = "JSON map of runtime secrets read by the Lambda API at cold start"
       json = {
+        # Three keys, and after row 13 of docs/identity-adoption.md they are read
+        # by three different functions rather than by all of them.
+        #
+        # SECRET_KEY is down to one caller pair: the admin price alerts consumer
+        # signs the unsubscribe link and admin's unsubscribe route verifies it.
+        # It is no longer the session signing key; see variables.tf.
+        #
+        # SENTRY_DSN is read by the monolith only. The nine domain functions
+        # report through OpenTelemetry and none of them calls init_sentry, which
+        # is why none of them needs this secret on that account.
+        #
+        # EXTENSION_API_KEY is catalog's, for the X-API-Key header on
+        # POST /api/parts/price-history. It is independent of the session layer
+        # row 13 retired, because its callers are machines with no user account.
         SECRET_KEY        = var.secret_key
         SENTRY_DSN        = var.sentry_dsn
         EXTENSION_API_KEY = var.extension_api_key

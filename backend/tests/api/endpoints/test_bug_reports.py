@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 
 from app.core.config import settings
 from app.db.dynamo.users import User, UserRepository
+from tests.conftest import auth_headers, login_user
 
 
 def get_unique_name(base_name: str) -> str:
@@ -20,7 +21,6 @@ def create_and_login_admin_user(
     client: TestClient, db_session: Any, username_suffix: str = "admin"
 ) -> tuple[dict[str, Any], str]:
     """Create an admin user and log them in. Returns (user_dict, token)."""
-    from app.api.dependencies.auth import get_password_hash
     from app.db.dynamo.users import User as DBUser
 
     username = f"admin_test_{username_suffix}"
@@ -32,7 +32,6 @@ def create_and_login_admin_user(
         DBUser(
             username=username,
             email=email,
-            hashed_password=get_password_hash(password),
             is_admin=True,
             is_superuser=False,
             email_verified=True,
@@ -41,10 +40,7 @@ def create_and_login_admin_user(
     )
 
     # Log in and get token
-    login_data = {"username": username, "password": password}
-    token_response = client.post(f"{settings.API_STR}/auth/token", data=login_data)
-    assert token_response.status_code == 200, f"Failed to login admin user: {token_response.text}"
-    token = token_response.json()["access_token"]
+    token = login_user(client, username)
 
     return admin_user.__dict__, token
 
@@ -60,11 +56,8 @@ class TestBugReports:
     ) -> None:
         """Test successfully creating a bug report as an authenticated user."""
         # Login as test user
-        login_data = {"username": test_user.username, "password": "testpassword"}
-        response = client.post(f"{settings.API_STR}/auth/token", data=login_data)
-        assert response.status_code == 200
-        token = response.json()["access_token"]
-        headers = {"Authorization": f"Bearer {token}"}
+        token = login_user(client, test_user.username)
+        headers = auth_headers(token)
 
         # Create a bug report
         bug_report_data = {
@@ -155,11 +148,8 @@ class TestBugReports:
     ) -> None:
         """Test that regular authenticated users cannot access bug reports (admin only)."""
         # Login as test user
-        login_data = {"username": test_user.username, "password": "testpassword"}
-        response = client.post(f"{settings.API_STR}/auth/token", data=login_data)
-        assert response.status_code == 200
-        token = response.json()["access_token"]
-        headers = {"Authorization": f"Bearer {token}"}
+        token = login_user(client, test_user.username)
+        headers = auth_headers(token)
 
         # Create a bug report
         bug_report_data = {
@@ -189,11 +179,8 @@ class TestBugReports:
     ) -> None:
         """Test that anonymous users cannot access bug reports (admin only)."""
         # Login as test user and create a bug report
-        login_data = {"username": test_user.username, "password": "testpassword"}
-        response = client.post(f"{settings.API_STR}/auth/token", data=login_data)
-        assert response.status_code == 200
-        token = response.json()["access_token"]
-        headers = {"Authorization": f"Bearer {token}"}
+        token = login_user(client, test_user.username)
+        headers = auth_headers(token)
 
         bug_report_data = {
             "title": "Test Bug Report",
@@ -219,11 +206,8 @@ class TestBugReports:
     ) -> None:
         """Test that admins can access any bug report."""
         # Login as test user and create a bug report
-        login_data = {"username": test_user.username, "password": "testpassword"}
-        response = client.post(f"{settings.API_STR}/auth/token", data=login_data)
-        assert response.status_code == 200
-        token = response.json()["access_token"]
-        headers = {"Authorization": f"Bearer {token}"}
+        token = login_user(client, test_user.username)
+        headers = auth_headers(token)
 
         bug_report_data = {
             "title": "Test Bug Report",
@@ -239,7 +223,7 @@ class TestBugReports:
 
         # Login as admin and get the bug report
         _, admin_token = create_and_login_admin_user(client, db_session, get_unique_name("admin"))
-        admin_headers = {"Authorization": f"Bearer {admin_token}"}
+        admin_headers = auth_headers(admin_token)
 
         response = client.get(
             f"{settings.API_STR}/bug-reports/{bug_report_id}",
@@ -259,11 +243,8 @@ class TestBugReports:
     ) -> None:
         """Test that only admins can list bug reports."""
         # Try to list bug reports as regular user
-        login_data = {"username": test_user.username, "password": "testpassword"}
-        response = client.post(f"{settings.API_STR}/auth/token", data=login_data)
-        assert response.status_code == 200
-        token = response.json()["access_token"]
-        headers = {"Authorization": f"Bearer {token}"}
+        token = login_user(client, test_user.username)
+        headers = auth_headers(token)
 
         response = client.get(
             f"{settings.API_STR}/bug-reports/admin/list",
@@ -273,7 +254,7 @@ class TestBugReports:
 
         # Login as admin and list bug reports
         _, admin_token = create_and_login_admin_user(client, db_session, get_unique_name("admin"))
-        admin_headers = {"Authorization": f"Bearer {admin_token}"}
+        admin_headers = auth_headers(admin_token)
 
         response = client.get(
             f"{settings.API_STR}/bug-reports/admin/list",
@@ -292,11 +273,8 @@ class TestBugReports:
     ) -> None:
         """Test listing bug reports with status and priority filters."""
         # Create bug reports with different statuses
-        login_data = {"username": test_user.username, "password": "testpassword"}
-        response = client.post(f"{settings.API_STR}/auth/token", data=login_data)
-        assert response.status_code == 200
-        token = response.json()["access_token"]
-        headers = {"Authorization": f"Bearer {token}"}
+        token = login_user(client, test_user.username)
+        headers = auth_headers(token)
 
         # Create multiple bug reports
         for i in range(3):
@@ -312,7 +290,7 @@ class TestBugReports:
 
         # Login as admin and filter by status
         _, admin_token = create_and_login_admin_user(client, db_session, get_unique_name("admin"))
-        admin_headers = {"Authorization": f"Bearer {admin_token}"}
+        admin_headers = auth_headers(admin_token)
 
         response = client.get(
             f"{settings.API_STR}/bug-reports/admin/list?status=pending",
@@ -332,11 +310,8 @@ class TestBugReports:
     ) -> None:
         """Test listing bug reports with details."""
         # Create a bug report
-        login_data = {"username": test_user.username, "password": "testpassword"}
-        response = client.post(f"{settings.API_STR}/auth/token", data=login_data)
-        assert response.status_code == 200
-        token = response.json()["access_token"]
-        headers = {"Authorization": f"Bearer {token}"}
+        token = login_user(client, test_user.username)
+        headers = auth_headers(token)
 
         bug_report_data = {
             "title": "Test Bug Report",
@@ -351,7 +326,7 @@ class TestBugReports:
 
         # Login as admin and get reports with details
         _, admin_token = create_and_login_admin_user(client, db_session, get_unique_name("admin"))
-        admin_headers = {"Authorization": f"Bearer {admin_token}"}
+        admin_headers = auth_headers(admin_token)
 
         response = client.get(
             f"{settings.API_STR}/bug-reports/admin/list-with-details",
@@ -378,11 +353,8 @@ class TestBugReports:
     ) -> None:
         """Test updating a bug report as an admin."""
         # Create a bug report
-        login_data = {"username": test_user.username, "password": "testpassword"}
-        response = client.post(f"{settings.API_STR}/auth/token", data=login_data)
-        assert response.status_code == 200
-        token = response.json()["access_token"]
-        headers = {"Authorization": f"Bearer {token}"}
+        token = login_user(client, test_user.username)
+        headers = auth_headers(token)
 
         bug_report_data = {
             "title": "Test Bug Report",
@@ -398,7 +370,7 @@ class TestBugReports:
 
         # Login as admin and update the bug report
         _, admin_token = create_and_login_admin_user(client, db_session, get_unique_name("admin"))
-        admin_headers = {"Authorization": f"Bearer {admin_token}"}
+        admin_headers = auth_headers(admin_token)
 
         update_data = {
             "status": "in_progress",
@@ -425,11 +397,8 @@ class TestBugReports:
     ) -> None:
         """Test that updating a bug report to resolved sets resolved_at."""
         # Create a bug report
-        login_data = {"username": test_user.username, "password": "testpassword"}
-        response = client.post(f"{settings.API_STR}/auth/token", data=login_data)
-        assert response.status_code == 200
-        token = response.json()["access_token"]
-        headers = {"Authorization": f"Bearer {token}"}
+        token = login_user(client, test_user.username)
+        headers = auth_headers(token)
 
         bug_report_data = {
             "title": "Test Bug Report",
@@ -445,7 +414,7 @@ class TestBugReports:
 
         # Login as admin and resolve the bug report
         _, admin_token = create_and_login_admin_user(client, db_session, get_unique_name("admin"))
-        admin_headers = {"Authorization": f"Bearer {admin_token}"}
+        admin_headers = auth_headers(admin_token)
 
         update_data = {
             "status": "resolved",
@@ -470,11 +439,8 @@ class TestBugReports:
     ) -> None:
         """Test deleting a bug report as an admin."""
         # Create a bug report
-        login_data = {"username": test_user.username, "password": "testpassword"}
-        response = client.post(f"{settings.API_STR}/auth/token", data=login_data)
-        assert response.status_code == 200
-        token = response.json()["access_token"]
-        headers = {"Authorization": f"Bearer {token}"}
+        token = login_user(client, test_user.username)
+        headers = auth_headers(token)
 
         bug_report_data = {
             "title": "Test Bug Report",
@@ -490,7 +456,7 @@ class TestBugReports:
 
         # Login as admin and delete the bug report
         _, admin_token = create_and_login_admin_user(client, db_session, get_unique_name("admin"))
-        admin_headers = {"Authorization": f"Bearer {admin_token}"}
+        admin_headers = auth_headers(admin_token)
 
         response = client.delete(
             f"{settings.API_STR}/bug-reports/{bug_report_id}",
@@ -513,11 +479,8 @@ class TestBugReports:
     ) -> None:
         """Test counting bug reports."""
         # Create a bug report
-        login_data = {"username": test_user.username, "password": "testpassword"}
-        response = client.post(f"{settings.API_STR}/auth/token", data=login_data)
-        assert response.status_code == 200
-        token = response.json()["access_token"]
-        headers = {"Authorization": f"Bearer {token}"}
+        token = login_user(client, test_user.username)
+        headers = auth_headers(token)
 
         bug_report_data = {
             "title": "Test Bug Report",

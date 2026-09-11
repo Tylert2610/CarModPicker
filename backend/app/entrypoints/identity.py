@@ -1,10 +1,13 @@
 """The identity domain's entrypoint.
 
 Login, token refresh, email verification, password reset, TOTP 2FA,
-WebAuthn passkeys and Google OAuth: 24 routes under `/api/auth`.
+WebAuthn passkeys and Google OAuth, all under `/api/auth`, and all of them the
+package's routes.
 
-This is the only domain that mints a token. It needs `SECRET_KEY` to sign, and
-every other domain needs it to verify.
+Row 13 of `docs/identity-adoption.md` deleted the 24 routes this application
+served here itself, and with them the HS256 session they signed. Every token
+the surviving routes issue is RS256 and signed in KMS, so this domain holds no
+signing secret at all and no longer names `SECRET_KEY`.
 
 Run by the image as `python -m app.entrypoints.identity`. `handler` is the
 Lambda entry point and is still Mangum, which is what `app/lambda_handler.py`

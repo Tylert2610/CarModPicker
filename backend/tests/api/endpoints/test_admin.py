@@ -4,13 +4,12 @@ from typing import Any
 
 from fastapi.testclient import TestClient
 
-from app.api.dependencies.auth import get_password_hash
 from app.core.config import settings
 from app.db.dynamo.catalog import Part as DBPart
 from app.db.dynamo.catalog import PartManufacturer as DBPartManufacturer
 from app.db.dynamo.users import User as DBUser
 from app.db.dynamo.users import UserRepository
-from tests.conftest import INVALID_UUID_STR, catalog_repository, save_catalog
+from tests.conftest import INVALID_UUID_STR, auth_headers, catalog_repository, login_user, save_catalog
 
 
 def create_and_login_admin_user(client: TestClient, db_session: Any, username_suffix: str = "admin") -> str:
@@ -23,7 +22,6 @@ def create_and_login_admin_user(client: TestClient, db_session: Any, username_su
         DBUser(
             username=username,
             email=email,
-            hashed_password=get_password_hash(password),
             is_admin=True,
             is_superuser=False,
             email_verified=True,
@@ -31,10 +29,7 @@ def create_and_login_admin_user(client: TestClient, db_session: Any, username_su
         )
     )
 
-    login_data = {"username": username, "password": password}
-    token_response = client.post(f"{settings.API_STR}/auth/token", data=login_data)
-    assert token_response.status_code == 200, f"Failed to login admin: {token_response.text}"
-    return token_response.json()["access_token"]
+    return login_user(client, username, password)
 
 
 def create_and_login_user(client: TestClient, db_session: Any, username_suffix: str) -> str:
@@ -54,10 +49,7 @@ def create_and_login_user(client: TestClient, db_session: Any, username_suffix: 
         if user:
             UserRepository().update(user.id, email_verified=True)
 
-    login_data = {"username": username, "password": password}
-    token_response = client.post(f"{settings.API_STR}/auth/token", data=login_data)
-    assert token_response.status_code == 200, f"Failed to login: {token_response.text}"
-    return token_response.json()["access_token"]
+    return login_user(client, username, password)
 
 
 class TestAdminDeleteAllPartManufacturers:
@@ -71,7 +63,7 @@ class TestAdminDeleteAllPartManufacturers:
     def test_delete_all_part_manufacturers_forbidden_non_admin(self, client: TestClient, db_session: Any) -> None:
         """Test delete all part_manufacturers as non-admin returns 403."""
         token = create_and_login_user(client, db_session, "delete_part_manufacturers_forbidden")
-        headers = {"Authorization": f"Bearer {token}"}
+        headers = auth_headers(token)
         response = client.post(
             f"{settings.API_STR}/admin/db-ops/part-manufacturers/delete-all",
             headers=headers,
@@ -92,7 +84,7 @@ class TestAdminDeleteAllPartManufacturers:
         part_manufacturer2 = save_catalog(part_manufacturer2)
 
         token = create_and_login_admin_user(client, db_session, "delete_part_manufacturers_success")
-        headers = {"Authorization": f"Bearer {token}"}
+        headers = auth_headers(token)
         response = client.post(
             f"{settings.API_STR}/admin/db-ops/part-manufacturers/delete-all",
             headers=headers,
@@ -126,7 +118,7 @@ class TestAdminDeleteAllPartManufacturers:
         part_id = part.id
 
         token = create_and_login_admin_user(client, db_session, "delete_part_manufacturers_nullify")
-        headers = {"Authorization": f"Bearer {token}"}
+        headers = auth_headers(token)
         response = client.post(
             f"{settings.API_STR}/admin/db-ops/part-manufacturers/delete-all",
             headers=headers,
@@ -142,7 +134,7 @@ class TestAdminDeleteAllPartManufacturers:
     def test_delete_all_part_manufacturers_empty_success(self, client: TestClient, db_session: Any) -> None:
         """Test delete all part_manufacturers when no part_manufacturers exist returns 200 with deleted_count=0."""
         token = create_and_login_admin_user(client, db_session, "delete_part_manufacturers_empty")
-        headers = {"Authorization": f"Bearer {token}"}
+        headers = auth_headers(token)
         response = client.post(
             f"{settings.API_STR}/admin/db-ops/part-manufacturers/delete-all",
             headers=headers,
@@ -157,13 +149,13 @@ class TestAdminTableCounts:
 
     def test_table_counts_forbidden_non_admin(self, client: TestClient, db_session: Any) -> None:
         token = create_and_login_user(client, db_session, "table_counts_forbidden")
-        headers = {"Authorization": f"Bearer {token}"}
+        headers = auth_headers(token)
         response = client.get(f"{settings.API_STR}/admin/stats/table-counts", headers=headers)
         assert response.status_code == 403
 
     def test_table_counts_admin_ok(self, client: TestClient, db_session: Any) -> None:
         token = create_and_login_admin_user(client, db_session, "table_counts_ok")
-        headers = {"Authorization": f"Bearer {token}"}
+        headers = auth_headers(token)
         response = client.get(f"{settings.API_STR}/admin/stats/table-counts", headers=headers)
         assert response.status_code == 200
         data = response.json()

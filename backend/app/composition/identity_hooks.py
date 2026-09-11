@@ -96,23 +96,23 @@ forgot everything else would be reporting the very thing the hook was added to
 ask about.
 
 So this counts every sign-in method that `unlink` does not count for itself.
-Row 9 makes that five rather than three, because a user may now hold a package
-passkey or a package OAuth link and nothing else:
+Row 13 makes that four rather than five: it dropped `users.hashed_password` from
+the model, and the legacy password that column held is now a row in the
+package's own `credentials` table, which is one of the two things `unlink`
+counts for itself. Removing the check loses nothing and double counting it would
+have been the error the paragraph above names.
 
-1. a **legacy password**, `users.hashed_password`, which is not the package's
-   `credentials` row and is still what the legacy `POST /api/auth/token` flow
-   verifies until row 7 migrates the hashes and row 13 drops the column;
-2. a **legacy passkey**, any row in `webauthn_credentials` for the user, which
-   is this product's own WebAuthn table and stays live until row 13 retires it;
-3. a **legacy Google link**, any row in `oauth_accounts` for the user, which is
+1. a **legacy passkey**, any row in `webauthn_credentials` for the user, which
+   is this product's own WebAuthn table and is still live;
+2. a **legacy Google link**, any row in `oauth_accounts` for the user, which is
    this product's own OAuth table and is a different table from the package's
    `oauth-links`;
-4. a **package passkey**, any row in the package's `passkeys` table for the
+3. a **package passkey**, any row in the package's `passkeys` table for the
    user, new in row 9. This is the one the package cannot infer and the one
    that matters most after migration: a user who enrolled a passkey through the
    package's M5 routes and never set a package password holds exactly one way
    in, and it is not a thing `unlink` looks at;
-5. a **package OAuth link for another provider**, any row in the package's
+4. a **package OAuth link for another provider**, any row in the package's
    `oauth-links` table for the user, new in row 9.
 
 Point 5 needs a word, because `OAuthService.unlink` does count the package's
@@ -292,8 +292,10 @@ class CarModPickerIdentityHooks:
     def has_other_sign_in_method(self, user_id: str) -> bool:
         """Whether this user holds a sign-in method `unlink` does not count.
 
-        The legacy password hash, a legacy passkey, a legacy Google link, a
-        package passkey, or a package OAuth link. Not TOTP or recovery codes,
+        A legacy passkey, a legacy Google link, a package passkey, or a package
+        OAuth link. Not the password, which since row 13 lives only in the
+        package's own `credentials` table and is therefore one of the two things
+        `unlink` counts for itself. Not TOTP or recovery codes,
         which are second factors rather than ways in. See the module docstring
         for why each is on the list it is on, and why the package's own links
         are counted here despite `unlink` counting them too.
@@ -319,9 +321,6 @@ class CarModPickerIdentityHooks:
         if parsed is None:
             return False
 
-        user = self._users.get(parsed)
-        if user is not None and user.hashed_password:
-            return True
         if self._webauthn_credentials.list_by_user(parsed):
             return True
         if self._oauth_accounts.list_by_user(parsed):
@@ -341,10 +340,13 @@ class CarModPickerIdentityHooks:
         otherwise derived from the address's local part, because `username` is
         required and unique here and the package has no concept of one.
 
-        `hashed_password` is deliberately not set. The password lives in the
-        package's `credentials` table, which it writes immediately after this
-        returns, and a placeholder in the legacy column would be a row the
-        legacy flow could try to verify against.
+        `hashed_password` is not set and is no longer a field on `User` at all
+        since row 13. The password lives in the package's `credentials` table,
+        which it writes immediately after this returns. The `pop` below stays
+        because `attributes` is the package's mapping rather than this product's
+        model, so it can still carry the key on a caller's path this product
+        does not control, and `User` would ignore it silently rather than
+        refuse it.
 
         The write is one `TransactWriteItems` carrying both `#unique#` sentinel
         rows and the user row, so a collision on either attribute fails the whole

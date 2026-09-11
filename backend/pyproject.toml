@@ -125,18 +125,31 @@ skips = ["B404", "B603", "B607"]
 test-root = "tests"
 
 [tool.webbpulse.ci.domains]
-# `_identity_routers` owns the four `/api/auth` modules. `tests/auth` is the
-# characterization suite for those flows and `tests/dependencies` is the token
-# decoding that sits directly behind them. The four `test_identity_row*.py`
-# files are the identity package adoption rows, which are identity and nothing
-# else. `test_auth_auth_coverage.py` is deliberately absent: it sweeps the whole
-# schema, so it belongs in shared.
+# `_identity_routers` no longer owns any route of this application's own: row 13
+# of `docs/identity-adoption.md` deleted the four `/api/auth` modules, and the
+# `webbpulse.identity` package's router serves that prefix now. What is left
+# here is the code that sat behind those routes and outlived them.
+#
+# Three claims left with the routers, because the files themselves were deleted:
+# `test_auth.py`, `test_webauthn.py` and `test_google_oauth.py` covered routes
+# this application no longer serves, and the package tests its own. A path in
+# this table that does not exist is not harmless, because the shared job turns
+# every claim into an `--ignore`, so a stale entry breaks CI rather than being
+# skipped. Delete the claim in the same change that deletes the file.
+#
+# `tests/auth` and `tests/dependencies` stay, and both are now smaller than
+# their names suggest. `tests/auth` is down to the two regressions that are
+# about the hashing and token primitives rather than about the deleted flows,
+# and `tests/dependencies` is the resolver behaviour behind them. The
+# `test_identity_row*.py` files are the identity package adoption rows, which
+# are identity and nothing else.
+#
+# `test_auth_auth_coverage.py` is no longer absent for its old reason: it was
+# left unclaimed because it swept the whole schema, and row 13 deleted it along
+# with the surface it swept. The other two sweeps are still in shared.
 identity = [
     "tests/auth",
     "tests/dependencies",
-    "tests/api/endpoints/test_auth.py",
-    "tests/api/endpoints/test_webauthn.py",
-    "tests/api/endpoints/test_google_oauth.py",
     "tests/utils/test_google_oauth_nonce.py",
     "tests/test_identity_row5.py",
     "tests/test_identity_row9.py",

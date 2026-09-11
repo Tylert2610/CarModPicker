@@ -3,8 +3,15 @@
 Price-drop alerts, the Chrome extension's page parser and the two admin
 modules: 12 routes.
 
-Eleven verify a token, and the price-alert unsubscribe route decodes one of its
-own, so the domain needs `SECRET_KEY`. `/api/part-price-alerts/unsubscribe` is
+Eleven verify an identity access token, which needs no application secret.
+The domain still needs `SECRET_KEY`, and after row 13 it is the only one that
+does, for exactly one route: `GET /api/part-price-alerts/unsubscribe` reads a
+30 day HS256 token that `app/core/email.py` minted into an alert email. The
+recipient of that email is by construction not signed in, so there is no
+identity access token equivalent for the link and the secret cannot leave the
+estate until that link is replaced.
+
+`/api/part-price-alerts/unsubscribe` is
 registered before the two `/{alert_id}` routes and must stay that way: it
 survives only because those two are PATCH and DELETE and there is no GET detail
 route, so adding `GET /{alert_id}` would break unsubscribe silently.

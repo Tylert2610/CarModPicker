@@ -1,113 +1,67 @@
 /**
- * Which auth mechanism this bundle runs.
+ * Which auth mechanism this bundle runs. There is only one left.
  *
- * Two mechanisms exist in the estate and CarModPicker is between them.
+ * Two mechanisms used to exist in the estate and CarModPicker was between them.
+ * `bearer` signed in against `POST /api/auth/token`, kept an HS256 token in
+ * `localStorage` through `./tokenStore`, and carried it on every request.
+ * `identity` is the unified identity standard, which `@webbpulse/auth`
+ * implements as `AuthClient`: a short lived access token held in memory only, an
+ * httpOnly refresh cookie the page cannot read, one shared in-flight refresh,
+ * and a retry-once-on-401 pipeline.
  *
- * `bearer` is what ships today and what every environment still runs.
- * `POST /api/auth/token` answers with an HS256 bearer token in the body, the
- * token goes into `localStorage` through `./tokenStore`, and every request
- * carries it through the shared client's `getAuthToken`. There is no refresh
- * route and no refresh cookie, so the token lives until it expires and the
- * user signs in again. Passkeys, Google sign in and TOTP all hang off that
- * same mechanism.
+ * Row 12 of `docs/identity-adoption.md` flipped every environment to
+ * `identity`. Row 13 deleted the 24 routes under `/api/auth` that the bearer
+ * path talked to, so there is no longer a server on the other end of it: this
+ * module keeps its name and its shape, and `AUTH_MODE` is now a constant.
  *
- * `identity` is the unified identity standard, which `@webbpulse/auth` 0.8.0
- * implements as `AuthClient`: a short lived access token held in memory only,
- * an httpOnly refresh cookie the page cannot read, one shared in-flight
- * refresh, and a retry-once-on-401 pipeline turned on by handing the client to
- * `createApiClient` as `auth`.
+ * **Why this file still exists rather than being deleted outright.** Two
+ * reasons, and neither is sentiment.
  *
- * The switch is configuration rather than a branch waiting on a rewrite. The
- * `identity` path is written and typed against the real 0.8.0 API, so turning
- * it on is a deploy time decision and not a code change.
+ * `identityAvailability` is a real function with real callers that ask which
+ * sign in affordances to render, and it needs somewhere to live. Folding it into
+ * each call site would scatter the answer.
  *
- * **Passkeys and OAuth are in the identity path as of 0.8.0.** An earlier
- * revision of this file hid both, because the server side package had shipped
- * M1 to M4 only and its own router said "Passkeys and OAuth are M5 and M6".
- * Both milestones have since landed: `@webbpulse/auth` 0.8.0 carries the
- * passkey ceremonies and the OAuth link surface, and webbpulse-python 0.16.0
- * serves `/api/auth/passkeys/*`, `/api/auth/login/passkey/*` and the OAuth
- * routes including a `GET /api/auth/oauth/providers` discovery route.
- * webbpulse-python 0.17.0 adds the matching one for passkeys,
- * `GET /api/auth/passkeys/availability`.
+ * And a constant is what makes the deletion checkable. Every remaining
+ * `AUTH_MODE === 'identity'` test is now provably true, so a type checker and a
+ * reader can both see that the branch below it is the only one, rather than
+ * inferring it from the absence of a variable. The follow up that removes those
+ * tests is an ordinary simplification with no behaviour in it.
  *
- * So neither capability is gated on the mode any more. What they are gated on
- * is the *deployment*, which is a different question and not one a constant can
- * answer: a backend can have passkey enrolment mounted with passwordless sign
- * in switched off, and can have no OAuth provider configured at all. Those are
- * asked at runtime by `./passkeyAvailability` and `./oauthProviders` rather
- * than assumed here.
- *
- * Read through `@webbpulse/config`'s `ConfigReader` rather than
- * `import.meta.env` directly, so an unrecognised value is a named startup
- * failure alongside every other configuration problem instead of a silent
- * fall through to the default.
+ * **`VITE_AUTH_MODE` is gone**, along with the `AUTH_MODE` GitHub Environment
+ * variable it was built from. See `docs/identity-migration-runbook.md` for the
+ * owner checklist that deletes it.
  */
-import { ConfigReader } from '@webbpulse/config';
 
-/** The two mechanisms. */
-export const AUTH_MODES = ['bearer', 'identity'] as const;
+/** The one mechanism. */
+export const AUTH_MODES = ['identity'] as const;
 
 /** One of {@link AUTH_MODES}. */
 export type AuthMode = (typeof AUTH_MODES)[number];
 
 /**
- * The env var that selects the mechanism. Absent or empty means `bearer`.
+ * The mode this bundle holds for its lifetime.
  *
- * Named for what it selects rather than for a flag, because it outlives the
- * migration only as the value `identity` and then goes away entirely with the
- * bearer branch.
+ * A constant rather than a read of `import.meta.env`. Nothing selects it any
+ * more, and leaving the environment lookup in place would mean an environment
+ * that still sets `VITE_AUTH_MODE=bearer` would build a bundle pointed at 24
+ * routes that no longer exist, which is a blank page rather than a fallback.
  */
-export const AUTH_MODE_ENV_KEY = 'VITE_AUTH_MODE';
+export const AUTH_MODE: AuthMode = 'identity';
 
 /**
- * Resolves the mode from an environment bag.
+ * Which sign in affordances this bundle can serve at all.
  *
- * Exported separately from the singleton below so a test can drive it with a
- * synthetic bag rather than the real `import.meta.env`.
+ * One place rather than a test at each call site.
  *
- * An empty string is treated as unset, because that is what a GitHub Actions
- * `${{ vars.AUTH_MODE }}` expands to when the repository variable is not set,
- * and the build must fall through to `bearer` rather than fail.
- */
-export const resolveAuthMode = (env: Record<string, unknown>): AuthMode => {
-  const raw = env[AUTH_MODE_ENV_KEY];
-  if (typeof raw !== 'string' || raw.trim() === '') return 'bearer';
-  const reader = new ConfigReader({ ...env, [AUTH_MODE_ENV_KEY]: raw.trim() });
-  const mode = reader.oneOf(AUTH_MODE_ENV_KEY, AUTH_MODES, 'bearer');
-  reader.assertValid();
-  return mode;
-};
-
-/** The mode this bundle holds for its lifetime, read once at startup. */
-export const AUTH_MODE: AuthMode = resolveAuthMode(import.meta.env);
-
-/**
- * Which sign in affordances the current mode can serve at all.
- *
- * One place rather than an `AUTH_MODE === 'identity'` test at each call site.
- *
- * Every affordance except `recoveryCodes` is now true in both modes, because
- * both mechanisms carry all of them: the wire protocols differ and the user
- * facing affordance does not. `recoveryCodes` is the one real asymmetry, since
- * only the identity service issues them and the legacy TOTP flow has none,
- * which is why a cutover prompts every enrolled user to generate a set.
- *
- * **This says "the mode has this", not "this deployment has this."** Whether a
+ * **This says "the bundle has this", not "this deployment has this."** Whether a
  * given backend actually has passwordless passkey sign in switched on, or any
- * OAuth provider configured, is a runtime question that a build time constant
- * cannot answer. `./passkeyAvailability` and `./oauthProviders` ask it, and the
+ * OAuth provider configured, is a runtime question a build time constant cannot
+ * answer. `./passkeyAvailability` and `./oauthProviders` ask it, and the
  * components hide themselves on the answer rather than rendering a disabled
  * control, because a control that cannot work in this deployment is not a
  * temporary state the user can wait out.
- *
- * In bearer mode the two flags stay true and the legacy implementations behind
- * them are exactly as they were: `@simplewebauthn/browser` against
- * `/auth/webauthn/*`, and `@react-oauth/google`. Nothing about `main` changes.
  */
-export const identityAvailability = (
-  mode: AuthMode = AUTH_MODE
-): {
+export const identityAvailability = (): {
   password: boolean;
   totp: boolean;
   passkeys: boolean;
@@ -116,27 +70,10 @@ export const identityAvailability = (
 } => ({
   password: true,
   totp: true,
-  // Shipped in both mechanisms as of `@webbpulse/auth` 0.8.0 and
-  // webbpulse-python 0.16.0. See the module note.
   passkeys: true,
   googleOauth: true,
-  // Only the identity service issues recovery codes; the legacy TOTP flow has
-  // none, which is why a cutover prompts every enrolled user to generate a set.
-  recoveryCodes: mode === 'identity',
+  // Only the identity service issues recovery codes. The legacy TOTP flow had
+  // none, which is why the cutover prompted every enrolled user to generate a
+  // set.
+  recoveryCodes: true,
 });
-
-/**
- * How the cutover is performed, in one place.
- *
- * A deployment decision rather than a code change: setting the `AUTH_MODE`
- * variable on a GitHub Environment to `identity` and redeploying switches that
- * environment over, and clearing it back to empty rolls the whole thing back
- * with another redeploy. Nothing about the bundle's source differs between the
- * two, which is what makes the rollback a redeploy rather than a revert.
- */
-export const IDENTITY_CUTOVER = {
-  /** The GitHub Environment variable that selects the mode at build time. */
-  environmentVariable: 'AUTH_MODE',
-  /** The value that turns the identity mode on. */
-  enabledValue: 'identity',
-} as const;

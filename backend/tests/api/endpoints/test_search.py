@@ -3,11 +3,10 @@ from typing import Any, Dict
 
 from fastapi.testclient import TestClient
 
-from app.api.dependencies.auth import get_password_hash
 from app.core.config import settings
 from app.db.dynamo.users import User as DBUser
 from app.db.dynamo.users import UserRepository
-from tests.conftest import create_car_in_db
+from tests.conftest import auth_headers, create_car_in_db, login_user
 
 
 def get_unique_name(base_name: str) -> str:
@@ -18,18 +17,19 @@ def get_unique_name(base_name: str) -> str:
 
 
 def get_auth_token(client: TestClient, username: str, password: str = "testpassword") -> str:
-    """Login and return the Bearer token for use in Authorization headers."""
-    login_data = {"username": username, "password": password}
-    response = client.post(f"{settings.API_STR}/auth/token", data=login_data)
-    assert response.status_code == 200
-    response_data = response.json()
-    assert "access_token" in response_data
-    return response_data["access_token"]
+    """The credential for `username`, for use with `auth_headers`.
+
+    A thin alias for `login_user` in `tests/conftest.py`, kept because this
+    module's tests call it by this name. Row 13 of `docs/identity-adoption.md`
+    deleted `POST /api/auth/token`, so what comes back is an identity request
+    context rather than a bearer token; `password` is accepted and ignored.
+    """
+    return login_user(client, username, password)
 
 
 def get_auth_headers(token: str) -> Dict[str, str]:
     """Get Authorization headers with Bearer token."""
-    return {"Authorization": f"Bearer {token}"}
+    return auth_headers(token)
 
 
 def create_and_login_admin_user(
@@ -45,7 +45,6 @@ def create_and_login_admin_user(
         DBUser(
             username=username,
             email=email,
-            hashed_password=get_password_hash(password),
             is_admin=True,
             is_superuser=False,
             email_verified=True,
@@ -54,10 +53,7 @@ def create_and_login_admin_user(
     )
 
     # Log in and get token
-    login_data = {"username": username, "password": password}
-    token_response = client.post(f"{settings.API_STR}/auth/token", data=login_data)
-    assert token_response.status_code == 200, f"Failed to login admin user: {token_response.text}"
-    token = token_response.json()["access_token"]
+    token = login_user(client, username)
 
     return admin_user.__dict__, token
 

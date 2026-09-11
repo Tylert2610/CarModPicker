@@ -30,29 +30,33 @@ from webbpulse.log_context import (
 )
 
 from app.db.dynamo.users import User
-from tests.conftest import login_user
+from tests.conftest import auth_headers, login_user
 
-# Loggers that emit OUTSIDE the request middleware scope in TestClient context
-# (TestClient's own httpx/asyncio machinery fires before middleware sets
-# ContextVars, and python_multipart runs during form parsing before the
-# middleware adds user context).  These are infrastructure, not app code;
-# OBS-04 cares about OUR log output, not TestClient plumbing.  In production
-# (uvicorn + real HTTP) these loggers also run outside request scope and are
-# not subject to the OBS-04 invariant.
-_OUT_OF_SCOPE_LOGGERS = (
-    "asyncio",
-    "boto3",
-    "botocore",
-    "httpx",
-    "httpcore",
-    "python_multipart",
-    "urllib3",
+# Loggers whose records OBS-04 actually governs: this application's own, plus
+# the shared package it runs on.  Everything else captured during a TestClient
+# request is third party plumbing that emits outside the middleware scope --
+# TestClient's HTTP transport and the event loop fire before the middleware sets
+# the ContextVars, botocore logs from inside the mocked AWS calls, and
+# python_multipart runs during form parsing before the middleware adds user
+# context.  In production (uvicorn + real HTTP) those same loggers also run
+# outside request scope and are not subject to the invariant either.
+#
+# Deliberately an allowlist of what IS in scope rather than a denylist of what
+# is not.  A denylist has to name every third party logger that might ever emit
+# during a request, so it silently stops testing anything the moment a
+# dependency renames its logger or a new one appears: `httpx` becoming `httpx2`
+# in a newer starlette turned this assertion into a failure about somebody
+# else's log record.  An allowlist cannot rot that way, because the set of
+# loggers OBS-04 is about is the set this repository controls.
+_IN_SCOPE_LOGGER_ROOTS = (
+    "app",
+    "webbpulse",
 )
 
 
 def _in_request_scope(rec: logging.LogRecord) -> bool:
     """True if the record comes from code that should be inside a request scope."""
-    return not any(rec.name == n or rec.name.startswith(f"{n}.") for n in _OUT_OF_SCOPE_LOGGERS)
+    return any(rec.name == n or rec.name.startswith(f"{n}.") for n in _IN_SCOPE_LOGGER_ROOTS)
 
 
 def test_log_propagation_request_scope(
@@ -69,7 +73,8 @@ def test_log_propagation_request_scope(
       * get_current_user populated user_id_var (authenticated user UUID)
       * LogContextFilter wired both ContextVars into the LogRecord
 
-    "In-scope" = records emitted by application code (not TestClient plumbing).
+    "In-scope" = records emitted by this application or the shared package, not
+    by third party plumbing; see `_IN_SCOPE_LOGGER_ROOTS`.
     """
     from fastapi import Depends
 
@@ -97,19 +102,17 @@ def test_log_propagation_request_scope(
         emitted_user_ids.append(user_id_var.get())
         return result
 
-    # Perform login OUTSIDE caplog capture so login's pre-auth records don't
-    # pollute the authenticated-request assertion.
-    token = login_user(client, test_user.username)
+    # Build the credential OUTSIDE caplog capture so the repository read
+    # `login_user` performs does not pollute the authenticated-request
+    # assertion.
+    credential = login_user(client, test_user.username)
 
     caplog_with_context.set_level(logging.DEBUG)
     caplog_with_context.clear()
 
     fastapi_app.dependency_overrides[get_current_user] = logging_current_user
     try:
-        response = client.get(
-            "/api/users/me",
-            headers={"Authorization": f"Bearer {token}"},
-        )
+        response = client.get("/api/users/me", headers=auth_headers(credential))
     finally:
         fastapi_app.dependency_overrides.pop(get_current_user, None)
     assert response.status_code == 200, response.text

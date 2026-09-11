@@ -37,13 +37,14 @@ issuer is the single thing that decides where the routes land. Passing a prefix
 here would double it to `/api/api/auth`. The test asserts the paths rather than
 the absence of an argument, because the path is what API Gateway routes on.
 
-**The legacy routes still win the two collisions.** `POST /api/auth/logout` and
-`POST /api/auth/verify-email` exist on both sides. The package router is
-included after the legacy routers and FastAPI keeps the first match, so the
-legacy handler answers both, which is what makes this row additive rather than a
-cutover. The assertion is on the winning endpoint's module, so a reordering of
-the include is a failure here rather than a silent change of behaviour on two
-paths the frontend uses today.
+**The two collisions are gone, and the package answers both paths.**
+`POST /api/auth/logout` and `POST /api/auth/verify-email` once existed on both
+sides, and the legacy handler won both because the package router was included
+after the legacy routers and FastAPI keeps the first match. Row 13 deleted the
+legacy routers, so there is one declaration of each path now and it is the
+package's. What was a test that the legacy handler wins is now a test that
+nothing under `/api/auth` is answered by `app.api.endpoints.auth`, which is the
+same property stated for a tree where that module no longer exists.
 """
 
 from __future__ import annotations
@@ -135,9 +136,12 @@ PACKAGE_PATHS = (
     ("GET", "/api/auth/passkeys/availability"),
 )
 
-#: The two `(method, path)` pairs that exist on both sides. The legacy handler
-#: answers both, and `test_the_legacy_handlers_win_both_collisions` is what says
-#: so. Row 13 resolves them by deleting the legacy routers.
+#: The two `(method, path)` pairs that once existed on both sides. Row 13 deleted
+#: the legacy routers, so each is declared once now, by the package. Kept as a
+#: named tuple because `test_the_package_answers_the_two_former_collisions` still
+#: asserts on exactly these two paths, and because the arithmetic in
+#: `test_the_mount_adds_exactly_the_package_routes_and_nothing_else` changed
+#: shape when they stopped being double declarations.
 COLLISIONS = (
     ("POST", "/api/auth/logout"),
     ("POST", "/api/auth/verify-email"),
@@ -284,7 +288,6 @@ def _user(**overrides: Any) -> User:
         "username": f"user{uuid4().hex[:8]}",
         "email": f"{uuid4().hex[:8]}@example.com",
         "email_verified": True,
-        "hashed_password": None,
         "disabled": False,
         "is_superuser": False,
         "is_admin": False,
@@ -292,6 +295,27 @@ def _user(**overrides: Any) -> User:
     }
     base.update(overrides)
     return User(**base)
+
+
+def _put_raw_attribute(user_id: str, name: str, value: Any) -> None:
+    """Write an attribute the model no longer declares, straight onto the row.
+
+    Row 13 removed `hashed_password` and `totp_secret` from
+    `app/db/dynamo/users.User`, so there is no longer a way to set either
+    through the model. Rows written before row 7's migration can still carry
+    them until `backend/scripts/clear_legacy_credentials.py` runs, and
+    `extra="ignore"` on `DynamoModel` is what lets such a row load at all. This
+    reproduces that state so the tests that care can assert on it.
+    """
+    from app.db.dynamo.users import UserRepository
+
+    repo = UserRepository()
+    repo.table.update_item(
+        Key={"id": user_id},
+        UpdateExpression="SET #n = :v",
+        ExpressionAttributeNames={"#n": name},
+        ExpressionAttributeValues={":v": value},
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -548,17 +572,24 @@ def test_create_user_refuses_to_carry_a_password_across_the_seam(
 ) -> None:
     """`hashed_password` is dropped, whatever the attributes say.
 
-    The package owns credentials now, in its own `credentials` table. A password
-    written onto the legacy user row here would be a second copy that the
-    package never rotates and `has_other_sign_in_method` would then read as a
-    live sign-in method forever.
+    The package owns credentials, in its own `credentials` table. A password
+    written onto the user row here would be a second copy that the package never
+    rotates and `has_other_sign_in_method` would then read as a live sign-in
+    method forever.
+
+    Row 5 asserted the attribute arrived as `None`. Row 13 removed the field
+    from `app/db/dynamo/users.User` altogether, so the stronger statement is now
+    available and is what is asserted: the key is not on the row at all. The
+    supplied attribute is still passed in, because the property under test is
+    that the hook drops it and not that nobody ever offers one.
     """
     created = hooks.create_user(
         email="nopass@example.com",
         attributes={"username": "nopass", "hashed_password": "$2b$12$notreal"},
     )
 
-    assert created["hashed_password"] is None
+    assert "hashed_password" not in created
+    assert "totp_secret" not in created
 
 
 def test_create_user_ignores_a_supplied_id(hooks: CarModPickerIdentityHooks) -> None:
@@ -682,16 +713,29 @@ def test_has_other_sign_in_method_is_false_for_a_user_with_nothing(
     assert hooks.has_other_sign_in_method(created["id"]) is False
 
 
-def test_a_legacy_password_counts(hooks: CarModPickerIdentityHooks) -> None:
-    """`users.hashed_password` is how every account created before this row signs in.
+def test_a_legacy_password_no_longer_counts(hooks: CarModPickerIdentityHooks) -> None:
+    """A stale `hashed_password` attribute on a row is not a sign-in method.
 
-    It is still a live sign-in method until row 7's migration moves it into the
-    package's `credentials` table, so unlinking an OAuth account for a user who
-    has one must be permitted.
+    Row 5 asserted the opposite, and correctly: `users.hashed_password` was how
+    every account created before that row signed in, and it stayed a live method
+    until row 7's migration copied it into the package's `credentials` table.
+
+    Row 13 finished that. The password check is out of
+    `has_other_sign_in_method` because every password that could be migrated was
+    migrated in row 7, and the package's own `credentials` row is already
+    counted by `OAuthService.unlink` itself. Rows written before row 7 may still
+    carry the attribute until `backend/scripts/clear_legacy_credentials.py`
+    runs, and `extra="ignore"` on `DynamoModel` means such a row still loads;
+    this test is what says a leftover attribute cannot resurrect a sign-in
+    method that no code path can use.
+
+    Written as a raw item rather than through the model, because the model no
+    longer has the field to set.
     """
-    user = hooks.user_repository().create_user(_user(hashed_password="$2b$12$notreal"))
+    user = hooks.user_repository().create_user(_user())
+    _put_raw_attribute(str(user.id), "hashed_password", "$2b$12$notreal")
 
-    assert hooks.has_other_sign_in_method(str(user.id)) is True
+    assert hooks.has_other_sign_in_method(str(user.id)) is False
 
 
 def test_a_passkey_counts(hooks: CarModPickerIdentityHooks, dynamo_tables: Any) -> None:
@@ -807,8 +851,11 @@ def test_without_an_issuer_the_identity_app_is_exactly_what_row_four_left(
 
     assert "/api/auth/.well-known/openid-configuration" not in paths
     assert "/api/auth/login" not in paths
-    # And the legacy surface is untouched, which is the point of the guard.
-    assert "/api/auth/token" in paths
+    # Row 13 deleted the legacy routers, so with the issuer unset the identity
+    # domain serves nothing of its own at all: `/api/auth` is entirely the
+    # package's now, and an unset issuer means an empty domain rather than a
+    # legacy one. This is the assertion that changed most in row 13.
+    assert not any(path.startswith("/api/auth") for path in paths)
 
 
 def test_with_an_issuer_every_package_route_is_mounted(identity_app: Any) -> None:
@@ -868,18 +915,19 @@ def test_the_issuers_path_is_where_the_routes_land(identity_app: Any) -> None:
         assert path.startswith(prefix)
 
 
-def test_the_legacy_handlers_win_both_collisions(identity_app: Any) -> None:
-    """Two paths exist on both sides, and the legacy handler answers both.
+def test_the_package_answers_the_two_former_collisions(identity_app: Any) -> None:
+    """Two paths once existed on both sides. Row 13 left one declaration of each.
 
-    `composition/domains.py` loads the legacy routers and `wiring.py` includes
-    the package router after them, and FastAPI keeps the first match. That
-    ordering is what makes this row additive: the legacy flow the frontend uses
-    today is unchanged, and no package route is reachable from the SPA until
-    row 6 wires `@webbpulse/auth`.
+    Through row 12 `composition/domains.py` loaded the legacy routers and
+    `wiring.py` included the package router after them, and FastAPI keeps the
+    first match, so the legacy handler answered both. That ordering was what
+    made row 5 additive. Row 13 deleted the legacy routers, so the package now
+    answers both, and it answers them at the same two paths the frontend was
+    already calling.
 
-    Asserted on the winning endpoint's module rather than on the mount order, so
-    that a reordering of the include is a failure here rather than a silent
-    change of behaviour on two live paths.
+    Asserted on the winning endpoint's module rather than on a route count, so
+    that re-introducing a local declaration under `/api/auth` fails here rather
+    than silently shadowing the package on a live path.
     """
     winners: dict[tuple[str, str], Any] = {}
     for route in _effective_routes(identity_app):
@@ -891,40 +939,80 @@ def test_the_legacy_handlers_win_both_collisions(identity_app: Any) -> None:
         endpoint = winners[pair]
         assert endpoint is not None
         assert endpoint.__module__.startswith(
-            "app.api.endpoints.auth"
-        ), f"{pair} is answered by {endpoint.__module__}, not the legacy router"
+            "webbpulse.identity"
+        ), f"{pair} is answered by {endpoint.__module__}, not the package router"
 
 
-def test_the_legacy_auth_surface_is_unchanged_by_the_mount(identity_app: Any, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Every legacy `/api/auth` route still exists once the package is mounted.
+def test_no_route_under_the_identity_prefix_is_this_repositorys_own(identity_app: Any) -> None:
+    """The whole point of row 13, stated once as a sweep.
 
-    The collision test says the two shared paths still reach the legacy handler.
-    This one says the other twenty-two are still there at all, which is the
-    stronger form of "the legacy CMP auth routes must keep working in this row".
+    Row 10's two extension routes are the deliberate exception: they are
+    CarModPicker's own, they live under `/api/auth` because that is where the
+    gateway already routes, and `tests/test_identity_row10.py` owns them. Every
+    other path under the prefix must come from the package.
+    """
+    from .test_identity_row10 import EXTENSION_PATHS
+
+    extension_paths = {path for _, path in EXTENSION_PATHS}
+
+    offenders = []
+    for route in _effective_routes(identity_app):
+        path = getattr(route, "path", None)
+        if not isinstance(path, str) or not path.startswith("/api/auth"):
+            continue
+        if path in extension_paths:
+            continue
+        endpoint = getattr(route, "endpoint", None)
+        module = getattr(endpoint, "__module__", "")
+        if not module.startswith("webbpulse.identity"):
+            offenders.append((path, module))
+
+    assert offenders == []
+
+
+def test_the_legacy_auth_surface_is_gone(identity_app: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The twenty-four legacy `/api/auth` routes no longer exist, mounted or not.
+
+    Through row 12 this test asserted the opposite: that every legacy route
+    survived the mount, which was the strong form of "the legacy CMP auth routes
+    must keep working in this row". Row 13 is the row that stops being true, so
+    the assertion is inverted rather than deleted. Keeping it inverted is what
+    catches a revert of the router deletion that leaves the rest of row 13 in
+    place.
+
+    Asserted with the issuer unset as well as set, because an unmounted identity
+    application is where a resurrected legacy router would be easiest to miss.
     """
     from app.core.config import settings as app_settings
 
+    from .test_identity_row10 import EXTENSION_PATHS
+
+    extension_paths = {path for _, path in EXTENSION_PATHS}
+
     with_package = {pair for pair in _pairs(identity_app) if pair[1].startswith("/api/auth")}
+    assert all(pair in PACKAGE_PATHS or pair[1] in extension_paths for pair in with_package)
 
     monkeypatch.setattr(app_settings, "IDENTITY_ISSUER", "")
     from app.entrypoints.identity import build_app
 
-    legacy_only = {pair for pair in _pairs(build_app()) if pair[1].startswith("/api/auth")}
+    without_package = {pair for pair in _pairs(build_app()) if pair[1].startswith("/api/auth")}
 
-    assert legacy_only <= with_package
+    assert without_package == set()
 
 
 def test_the_mount_adds_exactly_the_package_routes_and_nothing_else(
     identity_app: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The difference between the two applications is the nineteen new pairs,
-    plus row 10's two.
+    """The difference between the two applications is all twenty-one package
+    pairs, plus row 10's two.
 
-    Nineteen rather than twenty-one because two of the twenty-one already
-    existed on the legacy side. Pinning the difference rather than a total is
-    what makes this test survive row 8 adding a route to some other part of the
-    domain, while still failing if this mount starts declaring something it did
-    not before.
+    Twenty-one rather than row 5's nineteen: two of the twenty-one used to exist
+    on the legacy side already, so mounting the package added no new pair at
+    those two paths. Row 13 deleted the legacy routers, so those two paths are
+    now contributed by the mount like every other. Pinning the difference rather
+    than a total is what makes this test survive row 8 adding a route to some
+    other part of the domain, while still failing if this mount starts declaring
+    something it did not before.
 
     Row 10 is a deliberate instance of exactly that: the same
     `if domain.name == "identity"` block in `app/composition/wiring.py` now also
@@ -945,7 +1033,7 @@ def test_the_mount_adds_exactly_the_package_routes_and_nothing_else(
 
     added = with_package - _pairs(build_app())
 
-    assert added == (set(PACKAGE_PATHS) - set(COLLISIONS)) | set(EXTENSION_PATHS)
+    assert added == set(PACKAGE_PATHS) | set(EXTENSION_PATHS)
 
 
 # ---------------------------------------------------------------------------
@@ -985,16 +1073,20 @@ def test_no_oauth_route_is_mounted(identity_app: Any) -> None:
     that does not exist would turn a route that is absent from the OpenAPI
     document into one that 500s on the first click.
 
-    CarModPicker's own Google flow under `/api/auth/oauth/*` is untouched and
-    still serves, which is why this asserts on the package's own OAuth paths
-    rather than on the absence of the word "oauth".
+    Row 5 asserted on the package's own OAuth paths rather than on the absence
+    of the word "oauth", because CarModPicker's own Google flow lived under
+    `/api/auth/oauth/*` at the time. Row 13 deleted that flow with the rest of
+    the legacy routers, so both forms would pass now. The assertion is left on
+    the specific paths, because that is still the thing this test is about: the
+    package's OAuth routes are off because no store is supplied, not because no
+    route named "oauth" exists anywhere.
     """
     served = {path for _, path in _pairs(identity_app)}
 
     assert "/api/auth/oauth/authorize" not in served
     assert "/api/auth/oauth/callback" not in served
-    # The legacy Google flow is still there.
-    assert "/api/auth/oauth/google" in served
+    # Row 13 deleted CarModPicker's own Google flow along with the legacy routers.
+    assert "/api/auth/oauth/google" not in served
 
 
 def test_building_the_router_opens_no_network_connection(identity_app: Any) -> None:

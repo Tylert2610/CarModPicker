@@ -35,7 +35,15 @@ locals {
   # ECR repository and to the deploy role's grant.
   #
   # `secrets` is whether the function reads the carmodpicker-<env>/app secret at
-  # all; `tables` names the tables it writes and `read_tables` the ones it only
+  # all. Since row 13 of `docs/identity-adoption.md` that is a question about
+  # keys other than SECRET_KEY for two of the three entries that still set it.
+  # Row 13 deleted the 24 legacy `/api/auth` routes and the legacy HS256 branch
+  # of every auth resolver, so verifying a caller's token is now the API Gateway
+  # JWT authorizer's job against an RS256 identity token, and a function that
+  # only verifies tokens reads no application secret at all. The three entries
+  # left true each read a different key: `admin` reads SECRET_KEY, `catalog`
+  # reads EXTENSION_API_KEY and `identity` reads the two OAuth client secrets.
+  # See each entry's derivation below; `tables` names the tables it writes and `read_tables` the ones it only
   # reads, both as keys of module.dynamodb, so every ARN comes out of the module
   # rather than being rebuilt by hand and a renamed table is a plan error rather
   # than a runtime denial.
@@ -264,17 +272,25 @@ locals {
   #     `shared_rate_limiter.py`, which is why this domain has a `tables` list at
   #     all rather than an empty one. The limiter fails open, so withholding it
   #     would silently turn layer 2 off for this domain rather than failing.
-  #   - `secrets` is false, and this is the only entry where it is. Section 3.4
+  #   - `secrets` is false, and it was the first entry where it was. Section 3.4
   #     calls `vehicles` the cheapest proof that the IAM split is real: every
   #     route under both prefixes is a public read, `allow_public_read = true`
   #     keeps `get_current_user` off the generated routes, and the descriptor
-  #     sets no `requires_secrets`, so nothing in this function reads
-  #     `SECRET_KEY`. The runtime policy therefore carries no
-  #     `secretsmanager:GetSecretValue` statement and
+  #     sets no `requires_secrets`, so nothing in this function reads a key of
+  #     the carmodpicker-<env>/app secret. The runtime policy therefore carries
+  #     no `secretsmanager:GetSecretValue` statement and
   #     `local.lambda_domain_environment` sets no `APP_SECRETS_ARN`. This is only
   #     possible because section 2.3's lazy secret resolution landed; before it,
   #     importing `app.core.config` called Secrets Manager and every function
   #     needed the grant whether it used a secret or not.
+  #
+  #     It is no longer the only false entry, and that is row 13 of
+  #     `docs/identity-adoption.md` rather than any change here. Row 13 deleted
+  #     the legacy HS256 session, so five more domains joined this one: what
+  #     used to make a domain read a secret was verifying a token, and verifying
+  #     is now the gateway's JWT authorizer's job. What `vehicles` still proves
+  #     is the narrower thing it always proved, that a function reaching no
+  #     secret is granted none.
   #
   # 256 MB, the same as `build-logs` and `moderation`. Eleven read-only JSON
   # routes over DynamoDB with no Pillow and no native work. Search is the one
@@ -382,12 +398,30 @@ locals {
   #     middleware stack rather than from a repository, so the bundle cannot
   #     name it, and the limiter fails open, so withholding it would silently
   #     turn layer 2 off for this domain rather than failing.
-  #   - `secrets` is true, and back to true after `vehicles`. Eleven of the
-  #     twelve routes verify a token and the twelfth, the price-alert
-  #     unsubscribe, decodes one of its own, so `SECRET_KEY` is read on every
-  #     request; the descriptor sets `requires_secrets=("SECRET_KEY",)` to say
-  #     so. The runtime policy therefore carries `secretsmanager:GetSecretValue`
-  #     and `local.lambda_domain_environment` sets `APP_SECRETS_ARN`.
+  #   - `secrets` is true, and after row 13 of `docs/identity-adoption.md` this
+  #     is the only entry of the nine that still reads `SECRET_KEY`. It reads it
+  #     for exactly one route out of twelve, which is a much narrower claim than
+  #     this comment used to make. Eleven of the twelve verify a caller's token,
+  #     and that no longer costs an application secret: row 13 deleted the legacy
+  #     HS256 branch of every resolver, so those eleven are verified by the API
+  #     Gateway JWT authorizer against an RS256 identity token signed in KMS.
+  #
+  #     The twelfth is `GET /api/part-price-alerts/unsubscribe`, and it is the
+  #     whole reason the grant survives. It decodes a 30 day HS256 token that
+  #     `backend/app/core/email.py` mints into the price drop alert email and
+  #     `app/api/endpoints/part_price_alerts.py` verifies. The recipient of that
+  #     mail is by construction not signed in, because the entire point of a
+  #     one-click unsubscribe link is that it works from an inbox, so there is
+  #     no identity access token to verify instead and nothing the authorizer
+  #     could do here. The descriptor keeps `requires_secrets=("SECRET_KEY",)`,
+  #     the runtime policy keeps `secretsmanager:GetSecretValue` and
+  #     `local.lambda_domain_environment` keeps setting `APP_SECRETS_ARN`.
+  #
+  #     So `SECRET_KEY` cannot leave the estate yet, and what is left holding it
+  #     here is one unauthenticated link rather than the session layer. Replacing
+  #     that link with something the identity issuer signs is what lets the
+  #     variable, the secret key and this flag go; see `docs/identity-adoption.md`
+  #     row 13.
   #   - `s3` is false. `crawled_pages` is the one route that might have wanted a
   #     bucket and it does not: it parses HTML the Chrome extension posts in the
   #     request body and returns the result, touching no repository and no
@@ -505,9 +539,17 @@ locals {
   #     record: the shared limiter's counter table, reached from the middleware
   #     rather than from a repository, and it fails open, so withholding it
   #     turns layer 2 off silently rather than failing.
-  #   - `secrets` is true. Twenty of the thirty-four routes require a token and
-  #     eight more accept an optional one, so `SECRET_KEY` is read on most
-  #     requests; the descriptor sets `requires_secrets=("SECRET_KEY",)`.
+  #   - `secrets` is false, and row 13 of `docs/identity-adoption.md` is what
+  #     made it false. Twenty of the thirty-four routes require a token and eight
+  #     more accept an optional one, which is why this entry used to be true:
+  #     every one of those verifications went through the legacy HS256 branch and
+  #     read `SECRET_KEY`. Row 13 deleted that branch, so all twenty-eight now
+  #     verify an RS256 identity access token at the API Gateway JWT authorizer,
+  #     which needs no application secret. Nothing else in the four endpoint
+  #     modules reaches a key of the carmodpicker-<env>/app JSON: no OAuth client
+  #     secret, no `EXTENSION_API_KEY` and no unsubscribe link. The descriptor
+  #     sets no `requires_secrets`, so the runtime policy carries no
+  #     `secretsmanager:GetSecretValue` and no `APP_SECRETS_ARN` is set.
   #   - `s3` is true, and this is the correction to section 3.4 the schema
   #     comment above records. `DELETE
   #     /api/build-lists/{build_list_id}/images/{image_index}` calls
@@ -606,11 +648,35 @@ locals {
   #     rather than from a repository, so the bundle cannot name it, and the
   #     limiter fails open, so withholding it would turn layer 2 off silently
   #     rather than failing.
-  #   - `secrets` is true, and this is the domain that makes the key matter. It
-  #     is the only one that mints a token rather than merely verifying one:
-  #     `create_access_token` signs the login token, the refresh token, the
-  #     one-hour email verification token and the one-hour password reset token,
-  #     and its descriptor sets `requires_secrets=("SECRET_KEY",)`.
+  #   - `secrets` is true, and after row 13 of `docs/identity-adoption.md` it is
+  #     true for a completely different reason than it used to be. This entry is
+  #     worth reading carefully, because the obvious reading of row 13 is that
+  #     this is the one domain that should have lost the grant.
+  #
+  #     It used to be the domain that made `SECRET_KEY` matter: it was the only
+  #     one that minted a token rather than merely verifying one, signing the
+  #     login token, the refresh token and the one-hour verification and reset
+  #     tokens. All of that is gone. Row 13 deleted the 24 legacy routes and
+  #     every token this domain now issues is RS256 and signed in KMS, so it
+  #     holds no signing secret and its descriptor no longer names `SECRET_KEY`.
+  #
+  #     The grant stays because a different key of the same JSON is still read
+  #     here, and it is not a settings field, which is what makes it easy to
+  #     miss. `build_oauth_client_secrets` in
+  #     `backend/app/composition/identity.py` calls `fetch_app_secrets` directly
+  #     at composition time and reads `OAUTH_GOOGLE_CLIENT_SECRET` and
+  #     `OAUTH_GITHUB_CLIENT_SECRET`, passing them to the package as an argument
+  #     so they never land on an object a repr or a validation error would
+  #     render. `terraform/secretsmanager.tf` puts both in the same
+  #     carmodpicker-<env>/app blob, so reading them is the same
+  #     `secretsmanager:GetSecretValue` on the same ARN.
+  #
+  #     Deciding this flag from `requires_secrets` alone would therefore be
+  #     wrong here: that tuple is empty and the function still needs the grant.
+  #     Withholding it would not fail the cold start, because an absent client
+  #     secret is a supported state that simply leaves the provider
+  #     unadvertised. It would silently turn Google and GitHub sign-in off, with
+  #     a 503 on the start route and no other symptom.
   #   - `s3` is false, and it takes a paragraph rather than a line because there
   #     is a reachable S3 call and the decision is to leave it ungranted. No auth
   #     module imports `storage_service`, constructs an S3 client or names the
@@ -788,10 +854,31 @@ locals {
   #     stack rather than from a repository, so the bundle cannot name it, and
   #     the limiter fails open, so withholding it would silently turn layer 2
   #     off for this domain rather than failing.
-  #   - `secrets` is true. Seventeen of the 43 routes verify a token and the
-  #     descriptor sets `requires_secrets = ("SECRET_KEY",)`, so the runtime
-  #     policy carries `secretsmanager:GetSecretValue` and the environment
-  #     carries `APP_SECRETS_ARN`.
+  #   - `secrets` is true, and it stays true after row 13 of
+  #     `docs/identity-adoption.md` for a reason that has nothing to do with
+  #     `SECRET_KEY`. Seventeen of the 43 routes verify a token, which is why
+  #     this entry was true before; those seventeen now verify an RS256 identity
+  #     access token at the API Gateway JWT authorizer and cost no application
+  #     secret, and the descriptor no longer names `SECRET_KEY`.
+  #
+  #     What keeps the grant is `POST /api/parts/price-history`, which accepts a
+  #     shared `X-API-Key` header matching `EXTENSION_API_KEY`, another key of
+  #     the same carmodpicker-<env>/app JSON. `verify_api_key` in
+  #     `backend/app/api/dependencies/auth.py` reads `settings.EXTENSION_API_KEY`
+  #     and compares it with `hmac.compare_digest`. The callers are the Chrome
+  #     extension and the ingestion jobs, machines with no user account, so an
+  #     identity token is not an option for them and this key is independent of
+  #     the session layer row 13 retired.
+  #
+  #     The descriptor deliberately does not name `EXTENSION_API_KEY` in
+  #     `requires_secrets`, and that is not a contradiction with this flag.
+  #     `check_signing_key` turns that tuple into a hard `require_secrets` in
+  #     production, and an unset extension key is a supported state here: the
+  #     route falls back to accepting an admin token only. So the tuple stays
+  #     empty and the grant stays granted, which is why this flag is decided
+  #     from what the function reads rather than from `requires_secrets`.
+  #     Withholding the grant would make the key unreadable and fail the header
+  #     check closed, locking the extension out with a 401 and no other symptom.
   #   - `s3` is true and `s3_delete_only` is true, which is row 26's correction
   #     applying to a second domain. Section 3.4 named only `media` and `users`,
   #     reasoning from the domains whose names are about images;
@@ -895,10 +982,16 @@ locals {
   #     stack rather than from a repository, so the bundle cannot name it, and
   #     the limiter fails open, so withholding it would silently turn layer 2
   #     off for this domain rather than failing.
-  #   - `secrets` is true. Every one of the fourteen routes but the public
+  #   - `secrets` is false, and row 13 of `docs/identity-adoption.md` is what
+  #     made it false. Every one of the fourteen routes but the public
   #     `GET /api/app-settings/` is behind `get_current_user` or
-  #     `get_current_admin_user`, both of which decode a token, and the
-  #     descriptor sets `requires_secrets = ("SECRET_KEY",)`.
+  #     `get_current_admin_user`, which is why this entry used to be true: both
+  #     dependencies decoded a legacy HS256 token and read `SECRET_KEY` to do it.
+  #     Row 13 deleted that branch, so both now resolve an RS256 identity access
+  #     token verified by the API Gateway JWT authorizer, which needs no
+  #     application secret. Neither endpoint module reaches any other key of the
+  #     carmodpicker-<env>/app JSON, so the descriptor sets no `requires_secrets`
+  #     and the runtime policy carries no `secretsmanager:GetSecretValue`.
   #   - `s3` is true and `s3_delete_only` is **false**, and this is the second
   #     and last entry to take the broad flag after `media`. Section 3.4 named
   #     `media` and `users` as the two, and unlike row 26's and row 29's
@@ -938,7 +1031,7 @@ locals {
   # domains do.
   lambda_domains_declared = {
     media = {
-      secrets        = true
+      secrets        = false
       s3             = true
       s3_delete_only = false
       ses            = false
@@ -947,7 +1040,7 @@ locals {
       read_tables    = ["users", "car_generations", "parts", "build_lists"]
     }
     build-logs = {
-      secrets        = true
+      secrets        = false
       s3             = false
       s3_delete_only = false
       ses            = false
@@ -956,7 +1049,7 @@ locals {
       read_tables    = ["users", "build_lists", "build_logs"]
     }
     moderation = {
-      secrets        = true
+      secrets        = false
       s3             = false
       s3_delete_only = false
       ses            = false
@@ -1037,7 +1130,7 @@ locals {
       ]
     }
     build-lists = {
-      secrets = true
+      secrets = false
       # The gallery delete and nothing else; see the derivation above. The
       # narrow flag rather than the broad one, so this function can delete an
       # image it owns and cannot upload or read one.
@@ -1124,7 +1217,7 @@ locals {
       ]
     }
     users = {
-      secrets = true
+      secrets = false
       # The broad flag, and the second and last entry to take it after `media`.
       # `POST /api/users/me/profile-picture` uploads and then deletes the key it
       # replaces, so `s3:PutObject` and `s3:DeleteObject` are both reached from
@@ -1325,12 +1418,12 @@ locals {
       # every environment. Row 4 of the identity adoption plan; terraform/identity.tf
       # has the rationale for the resources these names describe.
       #
-      # NOTHING READS ANY OF THIS YET. The legacy HS256 flow in
-      # `backend/app/api/endpoints/auth/` is what serves `/api/auth` today and
-      # it reads `SECRET_KEY` out of the `carmodpicker-<env>/app` secret, not
-      # one variable below. Row 5 mounts `webbpulse.identity` and the settings
-      # object is built from these; setting them here first is what makes row 5
-      # a code change against infrastructure that already exists.
+      # EVERY ONE OF THESE IS NOW READ. This block predates the package being
+      # mounted and used to say nothing read it: the legacy HS256 flow in
+      # `backend/app/api/endpoints/auth/` served `/api/auth` and read
+      # `SECRET_KEY` instead. Row 13 of `docs/identity-adoption.md` deleted that
+      # flow, all 24 routes of it, so `webbpulse.identity` is the only thing
+      # serving that prefix and these variables are what configure it.
       #
       # Every name is a field of `webbpulse.identity.IdentitySettings`, whose
       # `env_prefix` is `IDENTITY_`, so the composition root builds the settings
@@ -1600,10 +1693,28 @@ resource "aws_iam_role_policy" "lambda_domain" {
           Resource = local.lambda_domain_read_arns[each.key]
         },
       ] : [],
-      # The one app secret, and only for the domains that read it. `media`'s
-      # descriptor in app/composition/domains.py declares
-      # requires_secrets=("SECRET_KEY",), because all eight of its routes verify
-      # a token, and SECRET_KEY is a key of the carmodpicker-<env>/app JSON.
+      # The one app secret, and only for the domains that read it. After row 13
+      # of docs/identity-adoption.md that is three of the nine, and each reads a
+      # different key of the carmodpicker-<env>/app JSON: `admin` reads
+      # SECRET_KEY for the price alert unsubscribe link, `catalog` reads
+      # EXTENSION_API_KEY for the batch price-history route's X-API-Key header,
+      # and `identity` reads the two OAuth client secrets at composition time.
+      # The other six read no key of it at all, because row 13 deleted the
+      # legacy HS256 session and verifying a caller's token is now the API
+      # Gateway JWT authorizer's job against an RS256 identity token.
+      #
+      # `media` is the clearest example of the six. All eight of its routes
+      # verify a token and it used to hold this grant for exactly that reason;
+      # it now holds none, because verification costs no application secret.
+      #
+      # Note that the flag driving this is not a mirror of `requires_secrets` in
+      # app/composition/domains.py, and must not be turned into one. That tuple
+      # is the set of secrets a cold start hard fails without, and two of the
+      # three entries above read a key that is optional at startup and therefore
+      # correctly absent from it: an unset EXTENSION_API_KEY leaves the route on
+      # admin tokens only, and an unset OAuth client secret leaves that provider
+      # unadvertised. Both are reads of this secret all the same, so the flag is
+      # decided from what the function reads at runtime.
       #
       # Written out rather than taken from module.app_secrets.read_policy_statement,
       # which Portfolio uses, because that output's policy_actions default is the

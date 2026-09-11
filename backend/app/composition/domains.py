@@ -41,19 +41,23 @@ RouterSpec = Tuple["APIRouter", str, Tuple[str, ...]]
 
 
 def _identity_routers() -> "Sequence[RouterSpec]":
-    from app.api.endpoints.auth import core as auth_core
-    from app.api.endpoints.auth import oauth as auth_oauth
-    from app.api.endpoints.auth import two_factor as auth_2fa
-    from app.api.endpoints.auth import webauthn as auth_webauthn
+    """No routers of its own. The package's router is the whole of `/api/auth`.
 
-    # `/auth` first: `core` declares the literal login and token routes, and the
-    # three sub-prefixes are strictly longer, so no pair here can shadow.
-    return [
-        (auth_core.router, "/auth", ("authentication",)),
-        (auth_2fa.router, "/auth/2fa", ("authentication",)),
-        (auth_webauthn.router, "/auth/webauthn", ("authentication",)),
-        (auth_oauth.router, "/auth/oauth", ("authentication",)),
-    ]
+    Row 13 of `docs/identity-adoption.md` deleted the four legacy routers this
+    returned: `core`, `two_factor`, `webauthn` and `oauth`, 24 routes in total.
+    Every flow they served is served by `webbpulse.identity`'s own router, which
+    `app/composition/wiring.py` mounts with no prefix because
+    `build_identity_router` already places each route under the issuer's path.
+
+    The empty sequence is the honest shape rather than an absence: this domain
+    still exists, still owns `users`, `oauth_accounts` and
+    `webauthn_credentials`, and still serves `/api/auth`. What changed is that
+    the routes under that prefix are all the package's now, which is what
+    `app/composition/identity.py` describes as the thing row 13 resolves: the
+    mount ordering that used to decide which of two routers won a shared path is
+    gone because there is only one router left.
+    """
+    return []
 
 
 def _users_routers() -> "Sequence[RouterSpec]":
@@ -325,31 +329,36 @@ _ADMIN_REPOSITORIES = (
 
 
 DOMAINS: Dict[str, Domain] = {
-    # 24 routes under /api/auth. Signs and verifies every token the application
-    # issues, so it names SECRET_KEY.
+    # The package's routes under /api/auth, and none of its own since row 13
+    # deleted the 24 legacy ones. It no longer names SECRET_KEY: the legacy
+    # HS256 session it used to sign and verify does not exist, and the identity
+    # tokens that replaced it are signed in KMS.
     "identity": Domain(
         name="identity",
         title="CarModPicker identity",
         load_routers=_identity_routers,
         repositories=_IDENTITY_REPOSITORIES,
-        requires_secrets=("SECRET_KEY",),
     ),
     # 14 routes under /api/users and /api/app-settings. Every user route is
-    # behind get_current_user or get_current_admin_user, both of which decode a
-    # token, so it names SECRET_KEY.
+    # behind get_current_user or get_current_admin_user.
+    #
+    # It no longer names SECRET_KEY. Row 13 deleted the legacy HS256 branch of
+    # every resolver, so those dependencies now verify an identity access token
+    # signed in KMS and verified by the API Gateway JWT authorizer. Nothing in
+    # this domain reads settings.SECRET_KEY on any path, and naming it would buy
+    # a secretsmanager:GetSecretValue grant the function does not use.
     "users": Domain(
         name="users",
         title="CarModPicker users",
         load_routers=_users_routers,
         repositories=_USERS_REPOSITORIES,
-        requires_secrets=("SECRET_KEY",),
     ),
     # 43 routes, the largest domain: parts, manufacturers, categories, retailers.
-    # 17 of them verify a token.
+    # 17 of them verify a token, which since row 13 means an identity access
+    # token and not SECRET_KEY, so this domain no longer names it.
     #
     # `POST /api/parts/price-history` also accepts an X-API-Key matching
-    # EXTENSION_API_KEY, another key of the same carmodpicker-<env>/app JSON, so
-    # it needs no additional grant beyond the one SECRET_KEY already buys. It is
+    # EXTENSION_API_KEY, a key of the carmodpicker-<env>/app JSON. It is
     # deliberately NOT named in requires_secrets: `check_signing_key` turns that
     # tuple into a hard `require_secrets` in production, and an unset key is a
     # supported state here (the route falls back to admin tokens only) rather
@@ -359,7 +368,6 @@ DOMAINS: Dict[str, Domain] = {
         title="CarModPicker catalog",
         load_routers=_catalog_routers,
         repositories=_CATALOG_REPOSITORIES,
-        requires_secrets=("SECRET_KEY",),
     ),
     # 11 routes, and the one domain that needs no secret: every route under
     # /api/car-generations and /api/search is a public read. `car_generations`
@@ -373,41 +381,47 @@ DOMAINS: Dict[str, Domain] = {
         repositories=_VEHICLES_REPOSITORIES,
         seeds=True,
     ),
-    # 34 routes across the four build-list modules. 28 of them verify a token.
+    # 34 routes across the four build-list modules. 28 of them verify an
+    # identity access token, which needs no application secret.
     "build-lists": Domain(
         name="build-lists",
         title="CarModPicker build lists",
         load_routers=_build_lists_routers,
         repositories=_BUILD_LISTS_REPOSITORIES,
-        requires_secrets=("SECRET_KEY",),
     ),
-    # 5 routes. 4 verify a token.
+    # 5 routes. 4 verify an identity access token, which needs no secret.
     "build-logs": Domain(
         name="build-logs",
         title="CarModPicker build logs",
         load_routers=_build_logs_routers,
         repositories=_BUILD_LOGS_REPOSITORIES,
-        requires_secrets=("SECRET_KEY",),
     ),
-    # 20 routes: votes, reports, bug reports. 17 verify a token.
+    # 20 routes: votes, reports, bug reports. 17 verify an identity access
+    # token, which needs no secret.
     "moderation": Domain(
         name="moderation",
         title="CarModPicker moderation",
         load_routers=_moderation_routers,
         repositories=_MODERATION_REPOSITORIES,
-        requires_secrets=("SECRET_KEY",),
     ),
-    # 8 routes, every one of them behind a token.
+    # 8 routes, every one of them behind an identity access token, which needs
+    # no secret.
     "media": Domain(
         name="media",
         title="CarModPicker media",
         load_routers=_media_routers,
         repositories=_MEDIA_REPOSITORIES,
-        requires_secrets=("SECRET_KEY",),
     ),
     # 12 routes: price alerts, the crawled-page parser and the two admin
-    # modules. 11 verify a token, and the price-alert unsubscribe route decodes
-    # one of its own. Named `admin` rather than `ingestion`, per section 1.5.
+    # modules. 11 verify an identity access token, which needs no secret.
+    #
+    # This is the last domain naming SECRET_KEY, and it names it for exactly one
+    # route. `GET /api/part-price-alerts/unsubscribe` reads a 30 day HS256 token
+    # that `app/core/email.py` mints into the alert email, and the recipient of
+    # that email is by construction not signed in, so there is no identity
+    # access token equivalent for it. The follow up that replaces that link is
+    # what lets SECRET_KEY leave the estate; see `docs/identity-adoption.md`
+    # row 13. Named `admin` rather than `ingestion`, per section 1.5.
     "admin": Domain(
         name="admin",
         title="CarModPicker admin",

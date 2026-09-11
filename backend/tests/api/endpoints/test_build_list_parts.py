@@ -1,15 +1,15 @@
 import os
 from typing import Any
+from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
-from app.api.dependencies.auth import get_password_hash
 from app.core.config import settings
 from app.db.dynamo.catalog import Category, PartManufacturer
 from app.db.dynamo.users import User
 from app.db.dynamo.users import User as DBUser
 from app.db.dynamo.users import UserRepository
-from tests.conftest import INVALID_UUID_STR, create_car_in_db, login_user
+from tests.conftest import INVALID_UUID_STR, auth_headers, create_car_in_db, login_user
 
 
 def get_unique_name(base_name: str) -> str:
@@ -21,7 +21,7 @@ def get_unique_name(base_name: str) -> str:
 
 def get_auth_headers(token: str) -> dict[str, str]:
     """Get Authorization headers with Bearer token."""
-    return {"Authorization": f"Bearer {token}"}
+    return auth_headers(token)
 
 
 def create_and_login_admin_user(
@@ -37,7 +37,6 @@ def create_and_login_admin_user(
         DBUser(
             username=username,
             email=email,
-            hashed_password=get_password_hash(password),
             is_admin=True,
             is_superuser=False,
             email_verified=True,
@@ -46,10 +45,7 @@ def create_and_login_admin_user(
     )
 
     # Log in and get token
-    login_data = {"username": username, "password": password}
-    token_response = client.post(f"{settings.API_STR}/auth/token", data=login_data)
-    assert token_response.status_code == 200, f"Failed to login admin user: {token_response.text}"
-    token = token_response.json()["access_token"]
+    token = login_user(client, username)
 
     return admin_user.__dict__, token
 
@@ -1035,19 +1031,30 @@ class TestBuildListParts:
         test_part_manufacturer: PartManufacturer,
         db_session: Any,
     ) -> None:
-        """Test adding a part to a build list with a disabled user account."""
-        # Disable the user and commit to database
-        test_user = UserRepository().update(test_user.id, disabled=True)
+        """A disabled account cannot add a part to a build list.
 
-        # Try to login as disabled user - this should fail
+        This used to assert that `POST /api/auth/token` answered 400, and then
+        stopped, with a comment saying the build list functionality could not be
+        reached because login had failed. Row 13 of `docs/identity-adoption.md`
+        deleted that route and moved the disabled check into `get_current_user`,
+        so the test now presents a valid credential to the real endpoint.
+        """
         from app.core.config import settings
 
-        login_data = {"username": test_user.username, "password": "testpassword"}
-        response = client.post(f"{settings.API_STR}/auth/token", data=login_data)
-        assert response.status_code == 400  # Disabled users should get 400
+        test_user = UserRepository().update(test_user.id, disabled=True)
 
-        # Since login failed, we can't test the build list functionality
-        # The test demonstrates that disabled users cannot authenticate
+        headers = auth_headers(login_user(client, test_user.username))
+
+        response = client.post(
+            f"{settings.API_STR}/build-list-parts/{uuid4()}/parts/{uuid4()}",
+            json={"quantity": 1},
+            headers=headers,
+        )
+
+        # 401 rather than the 404 the two random ids would otherwise earn:
+        # `get_current_user` refuses a disabled account before the handler runs,
+        # so the build list is never looked up.
+        assert response.status_code == 401
 
     def test_add_part_to_build_list_with_unverified_email(
         self,

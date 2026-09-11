@@ -13,7 +13,7 @@
 // bare `render` from @testing-library/react so AuthProvider wires up the REAL
 // context, and our in-file <Consumer> exercises it through useContext.
 //
-// AuthContext imports `authApi` from `../api/auth` and `apiClient` /
+// AuthContext imports `signOut` from `../api/identityAuth` and `apiClient` /
 // `removeStoredToken` from `../api/client`. This file mocks both directly so
 // it can assert on the logout and token-clearing calls.
 
@@ -28,28 +28,40 @@ import { apiClient } from '../api/client';
 import { mockUser } from '../test/mocks/api';
 
 // Hoisted mocks so the vi.mock factory can close over them.
-const { mockApiClient, mockLogout, mockRemoveStoredToken } = vi.hoisted(() => ({
-  mockApiClient: {
-    get: vi.fn().mockResolvedValue({ data: null }),
-    post: vi.fn().mockResolvedValue({ data: null }),
-    put: vi.fn().mockResolvedValue({ data: null }),
-    delete: vi.fn().mockResolvedValue({ data: null }),
-    patch: vi.fn().mockResolvedValue({ data: null }),
-  },
-  mockLogout: vi.fn(),
-  mockRemoveStoredToken: vi.fn(),
-}));
+const { mockApiClient, mockLogout, mockRemoveStoredToken, mockRestoreSession } =
+  vi.hoisted(() => ({
+    mockApiClient: {
+      get: vi.fn().mockResolvedValue({ data: null }),
+      post: vi.fn().mockResolvedValue({ data: null }),
+      put: vi.fn().mockResolvedValue({ data: null }),
+      delete: vi.fn().mockResolvedValue({ data: null }),
+      patch: vi.fn().mockResolvedValue({ data: null }),
+    },
+    mockLogout: vi.fn(),
+    mockRemoveStoredToken: vi.fn(),
+    mockRestoreSession: vi.fn(),
+  }));
 
 // AuthContext.tsx imports `apiClient` and `removeStoredToken` from
-// `../api/client` (already mocked globally by setup.ts) and `authApi` from
-// `../api/auth`. Override the two named exports whose calls this file asserts
-// on with our hoisted vi.fn()s, leaving the rest of each module intact.
-vi.mock('../api/auth', async () => {
-  const actual =
-    await vi.importActual<typeof import('../api/auth')>('../api/auth');
+// `../api/client` (already mocked globally by setup.ts) and `signOut` from
+// `../api/identityAuth`. Override the named exports whose calls this file
+// asserts on with our hoisted vi.fn()s, leaving the rest of each module intact.
+//
+// `signOut` rather than the old `authApi.logout`: row 13 of
+// docs/identity-adoption.md deleted `../api/auth` along with the routes behind
+// it, and the provider now ends the session through the identity client.
+vi.mock('../api/identityAuth', async () => {
+  const actual = await vi.importActual<typeof import('../api/identityAuth')>(
+    '../api/identityAuth'
+  );
   return {
     ...actual,
-    authApi: { logout: mockLogout },
+    signOut: mockLogout,
+    // Stubbed as well as `signOut`, because the provider's bootstrap spends the
+    // refresh cookie through this before it will call `/users/me` at all: the
+    // real one answers false in jsdom, which would skip the request every test
+    // below asserts on.
+    restoreSession: mockRestoreSession,
   };
 });
 
@@ -119,6 +131,10 @@ describe('AuthContext provider', () => {
     vi.mocked(apiClient.post).mockReset();
     mockLogout.mockReset();
     mockRemoveStoredToken.mockReset();
+    // A restored session by default, so each test below reaches `/users/me`
+    // and drives the branch it is actually about.
+    mockRestoreSession.mockReset();
+    mockRestoreSession.mockResolvedValue(true);
   });
 
   it('authenticates on mount when /users/me resolves with a user', async () => {
@@ -185,7 +201,7 @@ describe('AuthContext provider', () => {
     );
   });
 
-  it('flips state from authenticated to unauthenticated on logout and calls authApi.logout', async () => {
+  it('flips state from authenticated to unauthenticated on logout and calls signOut', async () => {
     // Mount authenticated.
     vi.mocked(apiClient.get).mockResolvedValueOnce({ data: mockUser });
     mockLogout.mockResolvedValueOnce({ data: { message: 'Logged out' } });
@@ -207,7 +223,7 @@ describe('AuthContext provider', () => {
     expect(screen.getByTestId('loading').textContent).toBe('idle');
   });
 
-  it('still clears auth state when authApi.logout rejects', async () => {
+  it('still clears auth state when signOut rejects', async () => {
     vi.mocked(apiClient.get).mockResolvedValueOnce({ data: mockUser });
     mockLogout.mockRejectedValueOnce(new Error('network down'));
 

@@ -2,7 +2,8 @@
 
 Build lists and their parts, phases and labor estimates: 34 routes.
 
-Twenty-eight of them verify a token, so the domain needs `SECRET_KEY`.
+Twenty-eight of them verify an identity access token, which needs no
+application secret, so this domain does not name `SECRET_KEY`.
 
 Run by the image as `python -m app.entrypoints.build_lists`. `handler` is the
 Lambda entry point and is still Mangum, which is what `app/lambda_handler.py`

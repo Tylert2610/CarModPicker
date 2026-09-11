@@ -11,15 +11,16 @@ type ApiEnvironment = keyof typeof API_URLS;
 /**
  * Which sign in the extension uses.
  *
- * The web app switches on `VITE_AUTH_MODE`, a build time flag. The extension
- * ships one artifact to the store and has no build time env plumbing, so the
- * equivalent here is this runtime setting. It stays on `legacy` until row 12
- * of docs/identity-adoption.md cuts over, so an existing install is unchanged
- * until someone deliberately flips it.
+ * The extension ships one artifact to the store and has no build time env
+ * plumbing, so this is a runtime setting rather than a build flag. See the
+ * matching note in `background.ts`: the default became `identity` when row 13
+ * of docs/identity-adoption.md deleted the routes the legacy flow talked to,
+ * and the checkbox is kept as the only lever for backing the new flow out on a
+ * particular install while older builds are still rolling out through Chrome.
  */
 type AuthMode = "legacy" | "identity";
 
-const DEFAULT_AUTH_MODE: AuthMode = "legacy";
+const DEFAULT_AUTH_MODE: AuthMode = "identity";
 
 function Options() {
   const [environment, setEnvironment] = useState<ApiEnvironment>("production");
@@ -48,9 +49,10 @@ function Options() {
         if (result["openInNewTab"] !== undefined) {
           setOpenInNewTab(result["openInNewTab"] as boolean);
         }
-        // Anything other than the exact string falls back to legacy, so a
-        // stale or malformed value cannot switch the flow on by accident.
-        setAuthMode(result["authMode"] === "identity" ? "identity" : "legacy");
+        // Anything other than the exact string `legacy` resolves to identity,
+        // so a stale or malformed value lands on the flow that still has a
+        // server behind it rather than on the deleted routes.
+        setAuthMode(result["authMode"] === "legacy" ? "legacy" : "identity");
       },
     );
 
@@ -168,12 +170,13 @@ function Options() {
                   />
                   <div>
                     <div className="text-sm font-medium text-neutral-300">
-                      Use the new sign in
+                      Use the current sign in
                     </div>
                     <div className="text-xs text-neutral-400">
                       Signs in through the CarModPicker website and hands the
-                      result straight back to the extension. Leave this off
-                      unless you have been asked to try it.
+                      result straight back to the extension. Leave this on:
+                      turning it off selects an older sign in that CarModPicker
+                      no longer runs, and it will not be able to sign you in.
                     </div>
                   </div>
                 </label>

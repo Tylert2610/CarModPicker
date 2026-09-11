@@ -109,9 +109,13 @@ locals {
       timeout = 60
 
       # No secrets and no S3. The consumer verifies no token and serves no
-      # request, so it needs neither SECRET_KEY nor the images bucket. This is
-      # the narrowest runtime policy of any function in the estate and it should
-      # stay that way.
+      # request, so it reads no key of the carmodpicker-<env>/app secret and
+      # needs no images bucket. This is the narrowest runtime policy of any
+      # function in the estate and it should stay that way.
+      #
+      # Row 13 of `docs/identity-adoption.md` did not change this entry, and
+      # that is worth recording: what row 13 removed was the reason a function
+      # that verifies tokens needs a secret, and this one never verified any.
       secrets = false
 
       # `parts` is written and `votes` is read, which is the seam stated as a
@@ -162,11 +166,18 @@ locals {
       timeout = 60
 
       # Unlike the votes consumer, this one reads the app secret. The alert
-      # email carries a one-click unsubscribe link, which is a 30 day JWT signed
-      # with SECRET_KEY, so `send_price_drop_alert_email` reaches
+      # email carries a one-click unsubscribe link, which is a 30 day HS256
+      # token signed with SECRET_KEY, so `send_price_drop_alert_email` reaches
       # `create_access_token`. Without the grant the send would fail per alert
       # inside the evaluation's own exception handling, where the only symptom
       # is a warning and a user who never hears about a price drop.
+      #
+      # Row 13 of `docs/identity-adoption.md` left this alone, and it is one of
+      # only two places in the estate that still mint or read that token: this
+      # function writes the link and `admin`'s unsubscribe route reads it. That
+      # pair is the whole of what keeps SECRET_KEY alive. The recipient of the
+      # mail is by construction not signed in, so an identity token cannot
+      # replace it without changing the link itself.
       secrets = true
 
       # The grant lambda_domains.tf's `admin` entry deliberately does not carry,
@@ -242,8 +253,14 @@ locals {
       timeout = 29
 
       # No secrets and no mail. The cascade signs no token and sends nothing; it
-      # deletes rows. This is the same narrow shape as the votes consumer and
-      # unlike row 25's, which needed SECRET_KEY to sign an unsubscribe link.
+      # deletes rows, so it reads no key of the carmodpicker-<env>/app secret.
+      # This is the same narrow shape as the votes consumer and unlike row 25's,
+      # which still needs SECRET_KEY to sign an unsubscribe link.
+      #
+      # Note that it shares `catalog`'s image, and `catalog` does still hold the
+      # grant, for EXTENSION_API_KEY on a route this function does not serve.
+      # Sharing an image is not sharing a policy, which is the point of a
+      # separate function.
       secrets = false
       ses     = false
 
@@ -310,9 +327,15 @@ locals {
       timeout = 29
 
       # No secrets and no mail. The cascade signs no token and sends nothing; it
-      # deletes rows. Note that `users` itself declares SECRET_KEY in
-      # `requires_secrets`, and this function shares that domain's image and not
-      # its needs, which is exactly the point of a separate function.
+      # deletes rows, so it reads no key of the carmodpicker-<env>/app secret.
+      #
+      # This used to note that `users` itself declared SECRET_KEY while this
+      # function did not, as an illustration that sharing an image is not
+      # sharing a policy. Row 13 of `docs/identity-adoption.md` retired the
+      # legacy HS256 session, so `users` declares no secret either and both
+      # halves now run with no `secretsmanager:GetSecretValue` at all. The point
+      # the note was making still holds, it is just no longer demonstrated here:
+      # `catalog` and its part purge consumer are the surviving example.
       secrets = false
       ses     = false
 
@@ -473,7 +496,9 @@ locals {
 
         # The app secret's ARN, which is what `secrets = true` above grants and
         # what config.py's lazy resolution reads SECRET_KEY out of. The
-        # unsubscribe token is signed with it.
+        # unsubscribe token is signed with it, and after row 13 of
+        # `docs/identity-adoption.md` that link is the last thing in the estate
+        # that signs one.
         APP_SECRETS_ARN = module.app_secrets.arns["app"]
     } : {})
   }

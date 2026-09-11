@@ -26,13 +26,11 @@ class TestReportService:
     def test_create_report_build_list(self, db_session: Any, test_user: User) -> None:
         """Test creating a report for a build list."""
         # Create another user and their build list
-        from app.api.dependencies.auth import get_password_hash
 
         other_user = UserRepository().create_user(
             User(
                 username=get_unique_name("other_user"),
                 email=f"{get_unique_name('other_user')}@example.com",
-                hashed_password=get_password_hash("testpassword"),
                 email_verified=True,
                 disabled=False,
             )
@@ -61,14 +59,12 @@ class TestReportService:
     def test_create_report_part(self, db_session: Any, test_user: User) -> None:
         """Test creating a report for a global part."""
         # Create another user and their global part
-        from app.api.dependencies.auth import get_password_hash
         from app.db.dynamo.catalog import Category, CategoryRepository
 
         other_user = UserRepository().create_user(
             User(
                 username=get_unique_name("other_user2"),
                 email=f"{get_unique_name('other_user2')}@example.com",
-                hashed_password=get_password_hash("testpassword"),
                 email_verified=True,
                 disabled=False,
             )
@@ -147,13 +143,11 @@ class TestReportService:
     def test_create_report_duplicate(self, db_session: Any, test_user: User) -> None:
         """Test that users cannot create duplicate pending reports."""
         # Create another user and their build list
-        from app.api.dependencies.auth import get_password_hash
 
         other_user = UserRepository().create_user(
             User(
                 username=get_unique_name("other_user3"),
                 email=f"{get_unique_name('other_user3')}@example.com",
-                hashed_password=get_password_hash("testpassword"),
                 email_verified=True,
                 disabled=False,
             )
@@ -186,13 +180,11 @@ class TestReportService:
     def test_get_reports_no_filters(self, db_session: Any, test_user: User) -> None:
         """Test getting reports with no filters."""
         # Create reports
-        from app.api.dependencies.auth import get_password_hash
 
         other_user = UserRepository().create_user(
             User(
                 username=get_unique_name("other_user4"),
                 email=f"{get_unique_name('other_user4')}@example.com",
-                hashed_password=get_password_hash("testpassword"),
                 email_verified=True,
                 disabled=False,
             )
@@ -231,14 +223,12 @@ class TestReportService:
     def test_get_reports_with_filters(self, db_session: Any, test_user: User) -> None:
         """Test getting reports with filters."""
         # Create reports
-        from app.api.dependencies.auth import get_password_hash
         from app.db.dynamo.catalog import Category, CategoryRepository
 
         other_user = UserRepository().create_user(
             User(
                 username=get_unique_name("other_user5"),
                 email=f"{get_unique_name('other_user5')}@example.com",
-                hashed_password=get_password_hash("testpassword"),
                 email_verified=True,
                 disabled=False,
             )
@@ -306,13 +296,11 @@ class TestReportService:
     def test_update_report(self, db_session: Any, test_user: User) -> None:
         """Test updating a report."""
         # Create report
-        from app.api.dependencies.auth import get_password_hash
 
         other_user = UserRepository().create_user(
             User(
                 username=get_unique_name("other_user6"),
                 email=f"{get_unique_name('other_user6')}@example.com",
-                hashed_password=get_password_hash("testpassword"),
                 email_verified=True,
                 disabled=False,
             )
@@ -348,13 +336,11 @@ class TestReportService:
     def test_delete_report(self, db_session: Any, test_user: User) -> None:
         """Test deleting a report."""
         # Create report
-        from app.api.dependencies.auth import get_password_hash
 
         other_user = UserRepository().create_user(
             User(
                 username=get_unique_name("other_user7"),
                 email=f"{get_unique_name('other_user7')}@example.com",
-                hashed_password=get_password_hash("testpassword"),
                 email_verified=True,
                 disabled=False,
             )
@@ -383,13 +369,11 @@ class TestReportService:
     def test_get_reports_with_details(self, db_session: Any, test_user: User) -> None:
         """Test getting reports with details."""
         # Create report
-        from app.api.dependencies.auth import get_password_hash
 
         other_user = UserRepository().create_user(
             User(
                 username=get_unique_name("other_user8"),
                 email=f"{get_unique_name('other_user8')}@example.com",
-                hashed_password=get_password_hash("testpassword"),
                 email_verified=True,
                 disabled=False,
             )

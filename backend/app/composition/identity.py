@@ -9,10 +9,15 @@ until row 13 retires them.
 
 It is composition, not endpoint code. This module declares no route of its own,
 it reads the product's `Settings`, and the router it returns is the package's.
-The legacy flow keeps what is genuinely its own: the four routers under
-`app/api/endpoints/auth/`, which `composition/domains.py` still loads exactly as
-it did. This module is the layer above, which is the layer that already knows
-the process runs on Lambda with a role attached.
+It is the layer above the endpoint modules, which is the layer that already
+knows the process runs on Lambda with a role attached.
+
+That separation is what made row 13 of `docs/identity-adoption.md` a deletion
+rather than a rewrite. The legacy flow's own four routers lived under
+`app/api/endpoints/auth/`, and row 13 removed that package outright along with
+the 24 routes it declared. Nothing here moved, because nothing here was ever
+part of it: `/api/auth` is now served entirely by the package's router that this
+module builds.
 
 ## Where the router mounts, which is the issuer's path and not the origin
 
@@ -460,9 +465,20 @@ def build_oauth_client_secrets(settings: "Settings") -> dict[str, str]:
     line would render, and routing them through `Settings` would give that back.
 
     `fetch_app_secrets` returns the whole flat map and caches it for the life of
-    the execution environment, so reading two more keys off it costs no extra
-    Secrets Manager call: by the time the identity function serves a request it
-    has already fetched the blob for `SECRET_KEY`.
+    the execution environment, so reading both keys off it costs one Secrets
+    Manager call at composition time and none afterwards.
+
+    That call used to be free, because the identity domain named `SECRET_KEY` in
+    `requires_secrets` and had already fetched the blob to sign the legacy HS256
+    session. Row 13 of `docs/identity-adoption.md` deleted that session, so this
+    function is now the **only** reason the identity Lambda holds a
+    `secretsmanager:GetSecretValue` grant at all. The domain descriptor's
+    `requires_secrets` is empty and stays empty, because nothing here is a
+    settings field and `check_signing_key` would turn a name there into a hard
+    startup requirement for a value that is optional. The Terraform side
+    therefore cannot read the grant off `requires_secrets` for this domain;
+    `terraform/lambda_domains.tf` keeps `secrets = true` on `identity` and says
+    why.
 
     The environment is consulted first for each key, ahead of the secret, which
     is the same precedence `Settings._resolve_secret` gives every other secret

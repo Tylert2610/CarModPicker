@@ -267,6 +267,27 @@ def _bundle_accesses(tree: ast.AST) -> Set[str]:
     return found
 
 
+#: Modules a domain reaches without any route of its own naming them.
+#:
+#: The scanner below walks out from the endpoint modules a domain's loader
+#: imports. That is the whole story for eight domains. `identity` is the
+#: exception since row 13 of `docs/identity-adoption.md` deleted its 24 legacy
+#: routes: it now loads no router of its own, and every route it serves belongs
+#: to `webbpulse.identity`. It still reads and writes three tables, through the
+#: hooks and stores CarModPicker hands the package at composition time, so the
+#: bundle it declares is real and the roots that justify it are these rather
+#: than an endpoint module.
+#:
+#: `identity_hooks.py` constructs its repositories directly rather than through
+#: a bundle, because the package calls the hooks outside any request, so
+#: `_bundle_accesses` cannot see them. The names are taken from the constructor
+#: defaults there instead, which is why this mapping is by repository name and
+#: not a module to scan.
+EXTRA_REACHABLE: Dict[str, Set[str]] = {
+    "identity": {"users", "oauth_accounts", "webauthn_credentials"},
+}
+
+
 def _reachable_repositories(domain: str) -> Set[str]:
     """Every `repos.<name>` any module the domain's routers reach can perform.
 
@@ -304,7 +325,7 @@ def _reachable_repositories(domain: str) -> Set[str]:
         tree = ast.parse(text)
         accesses |= _bundle_accesses(tree)
         stack.extend(_app_imports(tree, module))
-    return accesses
+    return accesses | EXTRA_REACHABLE.get(domain, set())
 
 
 def _read_loader_source(domain: str) -> str:
@@ -323,6 +344,10 @@ def test_a_domain_declares_every_repository_its_routes_reach(domain: str) -> Non
     It would not fail at build time and it would not fail on most routes; it
     would fail on the one route that reaches the repository, once that route is
     served by the domain function rather than by the monolith.
+
+    For `identity` it would fail outside a route entirely, on the first
+    registration or sign in the package handles, because the reach is through
+    the hooks rather than through a route. See `EXTRA_REACHABLE`.
     """
     declared = set(DOMAINS[domain].repositories)
     reachable = _reachable_repositories(domain)
