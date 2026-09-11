@@ -38,7 +38,7 @@
     "@radix-ui/react-toast": "^1.2.23",
     "@react-oauth/google": "^0.13.5",
     "@sentry/react": "^10.73.0",
-    "@simplewebauthn/browser": "^13.3.0",
+    "@simplewebauthn/browser": "^14.0.0",
     "@tailwindcss/vite": "^4.3.3",
     "@webbpulse/api-client": "^0.8.0",
     "@webbpulse/auth": "^0.8.0",
