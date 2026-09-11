@@ -1,12 +1,3 @@
-// Phase 8 plan 08-11 (D-11) — page test for ViewCar.
-//
-// ViewCar is routed as `/car-generations/:carId` and hydrates from:
-//   - carGenerationsApi.getCar(carId) → GET /car-generations/{id}
-//   - BuildListList                   → GET /build-lists/car/{id}
-//
-// We route responses by URL prefix via a single vi.mocked(apiClient.get)
-// implementation so all effects settle with deterministic data.
-
 import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -21,12 +12,6 @@ vi.mock('../../hooks/useAuth', () => ({
   useAuth: () => mockUseAuth(),
 }));
 
-// ViewCar reaches the API through `carGenerationsApi` from
-// `../../api/car_generations`, which calls the apiClient that setup.ts mocks.
-
-// Auth fixture. Inlined equivalent of the canonical testScenarios.authenticated
-// shape from `src/test/utils/test-utils.tsx` (Phase 8 D-05), so this file can
-// set the auth branch without going through customRender.
 const authenticatedAuthState = {
   isAuthenticated: true,
   isLoading: false,
@@ -80,9 +65,6 @@ describe('ViewCar page', () => {
       </MemoryRouter>
     );
 
-    // PageHeader contains the formatted make / model / year range. Wait for
-    // the car fetch to resolve and the page-level <h1> to swap from the
-    // "Car Details" loading title.
     await waitFor(() =>
       expect(
         screen.getByRole('heading', {
@@ -92,13 +74,11 @@ describe('ViewCar page', () => {
       ).toBeInTheDocument()
     );
 
-    // Make / Model / Generation / Year Range info items render.
     expect(screen.getByText('Make:')).toBeInTheDocument();
     expect(screen.getByText('Model:')).toBeInTheDocument();
     expect(screen.getByText('Generation:')).toBeInTheDocument();
     expect(screen.getByText('Year Range:')).toBeInTheDocument();
 
-    // The fetch was dispatched to the canonical /car-generations/{id} endpoint.
     expect(vi.mocked(apiClient.get)).toHaveBeenCalledWith(
       `/car-generations/${mockCar.id}`
     );
@@ -134,7 +114,6 @@ describe('ViewCar page', () => {
       ).toBeInTheDocument()
     );
 
-    // "Car Details" placeholder header is used on the error path.
     expect(
       screen.getByRole('heading', { name: /Car Details/i })
     ).toBeInTheDocument();

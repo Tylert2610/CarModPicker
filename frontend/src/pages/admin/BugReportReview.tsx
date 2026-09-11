@@ -53,6 +53,7 @@ const getPendingBugReportsCountRequestFn = (): Promise<
     limit: 1,
   });
 
+/** Admin queue for triaging submitted bug reports. */
 function BugReportReview() {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -94,14 +95,12 @@ function BugReportReview() {
     never
   >(getPendingBugReportsCountRequestFn);
 
-  // Redirect non-admin users
   useEffect(() => {
     if (user && !user.is_admin) {
       void navigate('/');
     }
   }, [user, navigate]);
 
-  // Reset to page 1 when status or priority changes
   useEffect(() => {
     setCurrentPage(1);
   }, [selectedStatus, selectedPriority]);
@@ -218,7 +217,6 @@ function BugReportReview() {
     return <PriorityBadge priority={value} />;
   };
 
-  // Extract bug reports and pagination info from the response
   const bugReports: BugReportWithDetails[] =
     bugReportsData &&
     typeof bugReportsData === 'object' &&

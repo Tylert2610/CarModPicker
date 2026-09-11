@@ -41,6 +41,10 @@ const fetchBuildLogRequestFn = (buildListId: string, page: number = 1) => {
 const fetchBuildListRequestFn = (buildListId: string) =>
   buildListsApi.getBuildList(buildListId);
 
+/**
+ * Build log for one build list, showing its posts and letting the owner add to
+ * them.
+ */
 function ViewBuildLog() {
   const { buildListId } = useParams<{ buildListId: string }>();
   const { user: currentUser } = useAuth();
@@ -101,11 +105,9 @@ function ViewBuildLog() {
       });
       setNewPostContent('');
       setIsCreateDialogOpen(false);
-      // Reset to first page after creating a post - this will trigger useEffect to refetch
       if (currentPage !== 1) {
         setCurrentPage(1);
       } else if (buildListId) {
-        // If already on page 1, manually refetch
         void fetchBuildLog(buildListId);
       }
     } catch (error) {
@@ -136,12 +138,9 @@ function ViewBuildLog() {
       await buildLogsApi.deleteBuildLogPost(postToDelete.id);
       setIsDeleteConfirmOpen(false);
       setPostToDelete(null);
-      // If we deleted the last post on the page and it's not page 1, go to previous page
-      // This will trigger useEffect to refetch
       if (buildLog && buildLog.posts.length === 1 && currentPage > 1) {
         setCurrentPage(currentPage - 1);
       } else if (buildListId) {
-        // Otherwise just refetch current page
         void fetchBuildLog(buildListId);
       }
     } catch (error) {
@@ -179,7 +178,6 @@ function ViewBuildLog() {
   ) => {
     const textarea = textareaRef.current;
     if (!textarea) {
-      // If no textarea ref, just append to the end
       contentSetter(currentContent + `\n\n![Image](${imageUrl})\n`);
       return;
     }
@@ -190,11 +188,9 @@ function ViewBuildLog() {
     const textAfter = currentContent.substring(end);
     const imageMarkdown = `![Image](${imageUrl})`;
 
-    // Insert image markdown at cursor position, or at end if no selection
     const newContent = textBefore + imageMarkdown + textAfter;
     contentSetter(newContent);
 
-    // Set cursor position after the inserted image markdown
     setTimeout(() => {
       const newCursorPos = start + imageMarkdown.length;
       textarea.setSelectionRange(newCursorPos, newCursorPos);
@@ -203,7 +199,6 @@ function ViewBuildLog() {
   };
 
   const handleImageUploaded = (_fileKey: string, presignedUrl: string) => {
-    // Insert image markdown into the create post textarea
     insertImageMarkdown(
       presignedUrl,
       createTextareaRef,
@@ -213,7 +208,6 @@ function ViewBuildLog() {
   };
 
   const handleEditImageUploaded = (_fileKey: string, presignedUrl: string) => {
-    // Insert image markdown into the edit post textarea
     insertImageMarkdown(
       presignedUrl,
       editTextareaRef,
@@ -310,7 +304,6 @@ function ViewBuildLog() {
                     totalPages={buildLog.pagination.total_pages}
                     onPageChange={(page) => {
                       setCurrentPage(page);
-                      // Scroll to top when page changes
                       window.scrollTo({ top: 0, behavior: 'smooth' });
                     }}
                     itemsPerPage={buildLog.pagination.items_per_page}
@@ -490,7 +483,6 @@ function ViewBuildLog() {
                   totalPages={buildLog.pagination.total_pages}
                   onPageChange={(page) => {
                     setCurrentPage(page);
-                    // Scroll to top when page changes
                     window.scrollTo({ top: 0, behavior: 'smooth' });
                   }}
                   itemsPerPage={buildLog.pagination.items_per_page}

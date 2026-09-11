@@ -21,6 +21,10 @@ const fetchSearchResultsRequestFn = (params: {
   limit?: number;
 }) => searchApi.search(params);
 
+/**
+ * Site search page. The query lives in the URL, so a search is shareable and
+ * survives reload, and results cover build lists and users.
+ */
 function Search() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [searchTerm, setSearchTerm] = useState(
@@ -36,7 +40,6 @@ function Search() {
     canonicalPath: '/search',
   });
 
-  // Track accumulated results and pagination state for each category
   const [buildLists, setBuildLists] = useState<BuildListRead[]>([]);
   const [users, setUsers] = useState<PublicUserRead[]>([]);
   const [displayedCounts, setDisplayedCounts] = useState<{
@@ -75,7 +78,6 @@ function Search() {
       const query = searchTerm.trim();
       setSearchParams({ q: query });
       setCurrentQuery(query);
-      // Reset accumulated results for new search
       setBuildLists([]);
       setUsers([]);
       setDisplayedCounts({
@@ -87,7 +89,6 @@ function Search() {
     }
   }, [searchTerm, setSearchParams, performSearch]);
 
-  // Live search: debounce search as user types (300ms delay)
   useEffect(() => {
     const trimmed = searchTerm.trim();
     const timer = setTimeout(() => {
@@ -114,17 +115,14 @@ function Search() {
     }
   };
 
-  // Load more results for a specific category
   const loadMore = useCallback(
     (category: 'build_lists' | 'users') => {
       if (!pagination || !currentQuery) return;
 
-      // Check if we have more results already fetched that we haven't displayed
       const currentDisplayed = displayedCounts[category];
       const allResults: BuildListRead[] | PublicUserRead[] =
         category === 'build_lists' ? buildLists : users;
 
-      // If we have more results already fetched, just increase the displayed count
       if (currentDisplayed < allResults.length) {
         setDisplayedCounts((prev) => ({
           ...prev,
@@ -134,7 +132,6 @@ function Search() {
           ),
         }));
       } else if (pagination[category].has_next) {
-        // Otherwise, fetch more from the backend
         const currentSkip = pagination[category].skip;
         const limit = SEARCH_RESULTS_LIMIT;
         void performSearch({ q: currentQuery, skip: currentSkip, limit });
@@ -150,15 +147,12 @@ function Search() {
     ]
   );
 
-  // Update accumulated results when new search results arrive
   useEffect(() => {
     if (searchResults) {
       setCurrentQuery(searchResults.query);
 
-      // If skip is 0, replace results (new search), otherwise append (load more)
       if (searchResults.build_lists.skip === 0) {
         setBuildLists(searchResults.build_lists.data);
-        // Set initial displayed count to the limit or actual count, whichever is smaller
         setDisplayedCounts((prev) => ({
           ...prev,
           build_lists: Math.min(
@@ -169,7 +163,6 @@ function Search() {
       } else {
         setBuildLists((prev) => {
           const newList = [...prev, ...searchResults.build_lists.data];
-          // When loading more, increase displayed count by the increment
           setDisplayedCounts((prevCounts) => ({
             ...prevCounts,
             build_lists: Math.min(
@@ -183,7 +176,6 @@ function Search() {
 
       if (searchResults.users.skip === 0) {
         setUsers(searchResults.users.data);
-        // Set initial displayed count to the limit or actual count, whichever is smaller
         setDisplayedCounts((prev) => ({
           ...prev,
           users: Math.min(
@@ -194,7 +186,6 @@ function Search() {
       } else {
         setUsers((prev) => {
           const newList = [...prev, ...searchResults.users.data];
-          // When loading more, increase displayed count by the increment
           setDisplayedCounts((prevCounts) => ({
             ...prevCounts,
             users: Math.min(
@@ -221,13 +212,11 @@ function Search() {
     }
   }, [searchResults]);
 
-  // Perform search when query param changes (e.g., from URL)
   useEffect(() => {
     const query = searchParams.get('q');
     if (query && query.trim()) {
       setSearchTerm(query);
       setCurrentQuery(query);
-      // Reset accumulated results
       setBuildLists([]);
       setUsers([]);
       setDisplayedCounts({

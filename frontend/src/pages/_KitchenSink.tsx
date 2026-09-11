@@ -90,6 +90,10 @@ const SECTION_CLASS =
 
 const SPINNER_SIZES: SpinnerSize[] = ['xs', 'sm', 'base', 'md', 'lg', 'xl'];
 
+/**
+ * Internal gallery rendering every shared UI component in one place, as a
+ * visual reference while building.
+ */
 export default function KitchenSink() {
   const [comboboxValue, setComboboxValue] = React.useState<string>('rx7');
   const [emptyComboboxValue, setEmptyComboboxValue] =
@@ -97,7 +101,6 @@ export default function KitchenSink() {
   const [paginationPage, setPaginationPage] = React.useState<number>(7);
 
   React.useEffect(() => {
-    // Sonner dedupes by id, so strict-mode double invocation is safe.
     toast('Sample toast', { id: 'kitchen-sink-static' });
   }, []);
 

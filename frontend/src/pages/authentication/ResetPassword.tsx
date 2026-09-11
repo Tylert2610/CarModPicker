@@ -1,27 +1,9 @@
 /**
- * The page a mailed password reset link lands on in identity mode.
+ * Landing page for a mailed password reset link in identity mode.
  *
- * ## Why this is a second page rather than a change to ForgotPasswordConfirm
- *
- * `RESET_PASSWORD_PATH` in `@webbpulse/auth` is `/reset-password`, and the
- * backend concatenates it onto the frontend base when it builds the mailed URL,
- * so that path is fixed by a contract this application does not own.
- * CarModPicker's own reset link lands on `/forgot-password/confirm` and calls
- * `/auth/reset-password/confirm`, a route the identity service does not serve.
- *
- * Both stay. `/forgot-password/confirm` keeps working for every link already
- * sitting in a mailbox, which matters because a reset link outlives the deploy
- * that sent it, and this page serves the links the identity service sends.
- * Folding them into one page would mean one component holding two token
- * formats and two endpoints, and the older of the two goes away entirely at the
- * end of the migration rather than being maintained.
- *
- * ## Why the token is read at first render but spent only on submit
- *
- * Unlike verification, a reset needs a new password, so there is a form and the
- * token is spent when it is submitted. Reading it early is what lets the page
- * say "this link is missing its token" before the user types a password it is
- * going to throw away.
+ * Separate from `/forgot-password/confirm` because `RESET_PASSWORD_PATH` is
+ * fixed by the identity service contract; both paths stay so links already in
+ * a mailbox keep working. The token is read at render and spent on submit.
  */
 import React, { useState } from 'react';
 import { RESET_PASSWORD_PATH, readLinkToken } from '@webbpulse/auth';
@@ -34,12 +16,8 @@ import { Input } from '../../components/ui/input';
 import { getIdentityClient } from '../../api/identityClient';
 
 /**
- * The sentence for each refusal the package models.
- *
- * `password-rejected` is deliberately separate from `invalid-link` even though
- * both mean the link is now spent, because the remedies differ: one is "ask for
- * another link", the other is "ask for another link and pick a better
- * password", and only the second is the user's own doing.
+ * The sentence shown for each refusal the package models. `password-rejected`
+ * is separate from `invalid-link` because the two have different remedies.
  */
 const REFUSAL_FALLBACKS: Record<string, string> = {
   'invalid-link':
@@ -52,6 +30,10 @@ const REFUSAL_FALLBACKS: Record<string, string> = {
     'Email is not configured for this deployment, so reset links cannot be sent. Contact support.',
 };
 
+/**
+ * Reads the token from the link, takes a new password, and spends the token
+ * on submit.
+ */
 function ResetPassword() {
   const [newPassword, setNewPassword] = useState('');
   const [confirmNewPassword, setConfirmNewPassword] = useState('');
@@ -60,9 +42,6 @@ function ResetPassword() {
   const [error, setError] = useState<string | null>(null);
 
   const identity = getIdentityClient();
-  // `expectedPath` keeps a verification token from being read off this page and
-  // presented to the reset endpoint, which the server refuses as a
-  // wrong-purpose token.
   const token = readLinkToken({ expectedPath: RESET_PASSWORD_PATH });
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -73,9 +52,6 @@ function ResetPassword() {
       setError('Missing reset token.');
       return;
     }
-    // Checked here rather than by the server, because sending a password the
-    // user has already contradicted would spend the single use token on an
-    // attempt that cannot succeed.
     if (newPassword !== confirmNewPassword) {
       setError("Passwords don't match.");
       return;

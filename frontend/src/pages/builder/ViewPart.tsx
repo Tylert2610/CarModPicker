@@ -74,10 +74,11 @@ const deletePartRequestFn = (partId: string) => partsApi.deletePart(partId);
 const fetchListingsRequestFn = (partId: string) =>
   partsApi.getPartListings(partId);
 
-/** Map the chart's calendar-anchored picker option to the closest API
- *  rolling window. The chart applies a client-side calendar filter on top,
- *  so it's fine for the API window to be slightly larger than the picker
- *  intends — we just need it to span at least the picker range. */
+/**
+ * Map the chart's calendar anchored picker option to the closest API rolling
+ * window. The window may be larger than the picker range, which the chart's
+ * own client side filter then narrows.
+ */
 function dateRangeToApiWindow(
   range: DateRangeOption
 ): '7d' | '30d' | '1y' | 'all' {
@@ -115,15 +116,15 @@ function trendArrow(trend: 'up' | 'down' | 'flat'): string {
   return '·';
 }
 
+/**
+ * Detail page for one part, including its price history chart over a
+ * selectable window.
+ */
 function ViewPart() {
   const { partId } = useParams<{ partId: string }>();
   const { user: currentUser } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  // Admins opening a part from the Parts Curation page can pass
-  // ?admin_curation=1 to inspect the raw (non-canonical) record instead of
-  // being silently redirected to the canonical. Gated on is_admin so
-  // end users can't manufacture the param to see hidden duplicates.
   const adminCurationView =
     searchParams.get('admin_curation') === '1' && !!currentUser?.is_admin;
 
@@ -208,7 +209,6 @@ function ViewPart() {
     executeRequest: fetchPriceSummary,
   } = useApiRequest(fetchPriceSummaryRequestFn);
 
-  // Fetch all primary data when partId changes
   useEffect(() => {
     if (!partId) return;
     void fetchPart(partId);
@@ -217,18 +217,11 @@ function ViewPart() {
     void fetchListings(partId);
   }, [partId, fetchPart, fetchVoteSummary, fetchCategories, fetchListings]);
 
-  // Refetch price summary whenever the date-range selection changes — the
-  // chart is the source of truth for the loaded history dataset, so summary
-  // stats and per-retailer sparklines re-derive from this same response.
   useEffect(() => {
     if (!partId) return;
     void fetchPriceSummary({ partId, range: historyDateRange });
   }, [partId, historyDateRange, fetchPriceSummary]);
 
-  // If the loaded part is a duplicate (canonical_part_id is set), redirect to
-  // the canonical so the user lands on the surface record for this product.
-  // Admins inspecting from /admin/parts-curation opt out via ?admin_curation=1
-  // so they can validate the dedup by seeing the raw duplicate record.
   useEffect(() => {
     if (adminCurationView) return;
     if (part?.canonical_part_id && part.canonical_part_id !== partId) {
@@ -236,7 +229,6 @@ function ViewPart() {
     }
   }, [part?.canonical_part_id, partId, navigate, adminCurationView]);
 
-  // Fetch dependent data when part loads
   useEffect(() => {
     if (part?.user_id) {
       void fetchUser(part.user_id);
@@ -251,7 +243,6 @@ function ViewPart() {
     fetchPartManufacturer,
   ]);
 
-  // Fetch compatible cars when part has car_ids
   useEffect(() => {
     const carIds = part?.car_ids ?? [];
     if (carIds.length === 0) {
@@ -301,8 +292,8 @@ function ViewPart() {
 
   const handlePartUpdated = async () => {
     if (partId) {
-      await fetchPart(partId); // Refresh part data
-      await fetchVoteSummary(partId); // Refresh vote data
+      await fetchPart(partId);
+      await fetchVoteSummary(partId);
     }
     setIsEditPartFormOpen(false);
   };
@@ -331,7 +322,6 @@ function ViewPart() {
     setDeletePartError(null);
     setIsDeleteConfirmOpen(true);
 
-    // Fetch build list count when opening the dialog
     if (part?.id) {
       try {
         const response = await buildListPartsApi.countBuildListsContainingPart(
@@ -728,23 +718,11 @@ function ViewPart() {
                 );
               }
 
-              // Concatenate pre-window anchors into the chart's data so its
-              // carry-over logic can pin a "last known" point on the y-axis
-              // when the selected window is sparse. Anchors sit before the
-              // window cutoff, so the chart's in-window filter naturally
-              // excludes them from the visible series.
               const history = [
                 ...(priceSummary?.history ?? []),
                 ...(priceSummary?.pre_window_anchors ?? []),
               ];
-              // Keep the chart (and its window picker) visible whenever a
-              // summary has loaded — even if the currently-selected window
-              // returned no observations — so the user can switch back to
-              // a window that does have data.
               const showChart = priceSummary != null;
-              // Sparklines mirror the chart's calendar-anchored window so
-              // the mini-graphs and main graph always tell the same story
-              // even when the API returned a slightly larger rolling window.
               const sparkCutoffMs = getDateRangeStartMs(historyDateRange);
 
               const summaryLine =
@@ -812,10 +790,6 @@ function ViewPart() {
                                       sparkCutoffMs)
                               )
                             : [];
-                          // Mirror the main chart's carry-over: prepend the
-                          // retailer's pre-window anchor so the sparkline trends
-                          // from the last known price into the in-window data
-                          // instead of stranding a single point.
                           const retailerAnchor = row.fromHistory
                             ? (priceSummary?.pre_window_anchors ?? []).find(
                                 (a) => a.retailer_id === row.retailerId

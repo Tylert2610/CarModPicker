@@ -14,17 +14,19 @@ import { adminApi } from '../../api/admin';
 import { appSettingsApi } from '../../api/app_settings';
 import { imageApi } from '../../api/images';
 
+/**
+ * Admin page for system and database operations: migrations, seed data, and
+ * destructive maintenance actions.
+ */
 function SystemAdmin() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const { settings: appSettings, setSettings: setAppSettings } =
     useAppSettings();
 
-  // Global app settings (e.g. premium-system kill switch)
   const [isSavingAppSettings, setIsSavingAppSettings] = useState(false);
   const [appSettingsError, setAppSettingsError] = useState<string | null>(null);
 
-  // Migrations
   const [isRunningMigrations, setIsRunningMigrations] = useState(false);
   const [migrationResult, setMigrationResult] = useState<{
     success: boolean;
@@ -35,7 +37,6 @@ function SystemAdmin() {
   const [currentRevision, setCurrentRevision] = useState<string | null>(null);
   const [isLoadingRevision, setIsLoadingRevision] = useState(false);
 
-  // Data initialization
   const [isInitCarGenerations, setIsInitCarGenerations] = useState(false);
   const [initCarGenerationsResult, setInitCarGenerationsResult] = useState<{
     success: boolean;
@@ -47,7 +48,6 @@ function SystemAdmin() {
     message: string;
   } | null>(null);
 
-  // Deletions
   const [isDeleteAllCarsConfirmOpen, setIsDeleteAllCarsConfirmOpen] =
     useState(false);
   const [isDeletingAllCars, setIsDeletingAllCars] = useState(false);
@@ -96,7 +96,6 @@ function SystemAdmin() {
     deleted_count: number;
   } | null>(null);
 
-  // Bucket orphan cleanup
   const [orphanedResult, setOrphanedResult] = useState<{
     count: number;
     total_bucket: number;
@@ -109,7 +108,6 @@ function SystemAdmin() {
     useState(false);
   const [purgeOrphanError, setPurgeOrphanError] = useState<string | null>(null);
 
-  // Redirect non-admin users
   useEffect(() => {
     if (user && !user.is_admin) {
       void navigate('/');

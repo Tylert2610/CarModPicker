@@ -7,6 +7,10 @@ import { PREMIUM_MONTHLY_PRICE_USD } from '../constants';
 import { useAuth } from '../hooks/useAuth';
 import { isPremium } from '../utils/subscription';
 
+/**
+ * Subscription checkout page, showing the order summary and the signed in
+ * user's billing email before payment is wired up.
+ */
 function Checkout() {
   const { user } = useAuth();
   const userIsPremium = isPremium(user);

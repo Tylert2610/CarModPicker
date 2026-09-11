@@ -1,10 +1,3 @@
-// Phase 8 Plan 10 (D-11 Wave 3) — ForgotPasswordConfirm page coverage.
-//
-// Reads ?token=... from the URL via useSearchParams. If token is absent the
-// page shows an error + "Request new reset link" CTA. If token is present the
-// form accepts a new password + confirmation and posts via
-// authApi.resetPasswordConfirm(token, { password }).
-
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   render,
@@ -26,8 +19,6 @@ describe('ForgotPasswordConfirm page', () => {
       ...testScenarios.unauthenticated,
       route: '/reset-password/confirm?token=abc',
     });
-    // The phrase "Set new password" appears twice: once as the card title
-    // and once as the submit button label. Assert at least one match.
     expect(screen.getAllByText(/set new password/i).length).toBeGreaterThan(0);
     expect(screen.getByPlaceholderText(/^new password$/i)).toBeInTheDocument();
     expect(
@@ -73,8 +64,6 @@ describe('ForgotPasswordConfirm page', () => {
       ...testScenarios.unauthenticated,
       route: '/reset-password/confirm',
     });
-    // Page surfaces the "no reset token" copy and a link to request a new
-    // reset. Both confirm we're in the error branch.
     await waitFor(() => {
       expect(screen.getByText(/no reset token found/i)).toBeInTheDocument();
     });

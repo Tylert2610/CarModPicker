@@ -46,7 +46,7 @@ function formatStatCount(value: number | null): string {
   return value?.toLocaleString() ?? '—';
 }
 
-/** Panel with a 2-column metric grid so values align within the card (no full-width label/value stretch). */
+/** Panel with a two column metric grid, so values align within the card. */
 function StatPanel({
   title,
   children,
@@ -70,7 +70,7 @@ function StatPanel({
   );
 }
 
-/** One metric row: must be direct children of StatPanel's grid (fragment = two cells). */
+/** One metric row. Renders a fragment of two cells for StatPanel's grid. */
 function StatRow({ label, value }: { label: string; value: number | null }) {
   return (
     <>
@@ -155,6 +155,7 @@ interface EntityCounts {
   backgroundJobs: number | null;
 }
 
+/** Admin dashboard of system wide counts and storage metrics. */
 function SystemStatistics() {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -198,7 +199,6 @@ function SystemStatistics() {
   const [isLoadingBuckets, setIsLoadingBuckets] = useState(false);
   const [bucketsError, setBucketsError] = useState<string | null>(null);
 
-  // Redirect non-admin users
   useEffect(() => {
     if (user && !user.is_admin) {
       void navigate('/');

@@ -34,6 +34,10 @@ function formatPercent(ratio: number): string {
   return `${(ratio * 100).toFixed(1)}%`;
 }
 
+/**
+ * Admin view of extraction health, reporting adapter compliance and per tier
+ * field coverage.
+ */
 function ExtractionHealth() {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -43,7 +47,6 @@ function ExtractionHealth() {
   const [loading, setLoading] = useState<boolean>(true);
   const [reloadTick, setReloadTick] = useState<number>(0);
 
-  // Mirror AdminDashboard's redirect: if a non-admin lands here, send them home.
   useEffect(() => {
     if (user && !user.is_admin) {
       void navigate('/');

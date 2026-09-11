@@ -28,6 +28,10 @@ type Tier = {
   iconColor: string;
 };
 
+/**
+ * Public pricing page. Tier calls to action route to checkout when signed in
+ * and to registration otherwise.
+ */
 function Pricing() {
   useDocumentMeta({
     title: 'Pricing',

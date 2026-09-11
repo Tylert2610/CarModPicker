@@ -1,8 +1,3 @@
-// The /reset-password landing page for identity mode reset links.
-//
-// The behaviour worth pinning is that the local checks run before the token is
-// spent: it is single use, so a mismatched confirmation field must not consume
-// it on an attempt that could never have succeeded.
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   render,
@@ -23,10 +18,8 @@ vi.mock('../../api/identityClient', () => ({
 import ResetPassword from './ResetPassword';
 
 /**
- * Puts a token in the URL the way a mailed link would.
- *
- * Relative rather than absolute: `readLinkToken` checks the path against
- * `RESET_PASSWORD_PATH`, and jsdom refuses a `replaceState` across origins.
+ * Put a token in the URL the way a mailed link would. Relative, because
+ * jsdom refuses a `replaceState` across origins.
  */
 const arriveWithToken = (token: string | null) => {
   window.history.replaceState(
@@ -68,8 +61,6 @@ describe('ResetPassword', () => {
   });
 
   it('does not spend the token when the two fields disagree', async () => {
-    // The point of checking locally. The token survives, so the user can fix
-    // the typo and submit the same link again.
     render(<ResetPassword />);
     submitPasswords('a-good-password', 'a-typo');
     expect(
@@ -88,7 +79,6 @@ describe('ResetPassword', () => {
   });
 
   it('separates a rejected password from a dead link', async () => {
-    // Two different remedies. Only one of them is the user's own doing.
     confirmPasswordReset.mockResolvedValue({
       ok: false,
       reason: 'password-rejected',
@@ -156,9 +146,6 @@ describe('ResetPassword', () => {
   });
 
   it('says password reset is unavailable in bearer mode', () => {
-    // The route is registered unconditionally so the route coverage test can
-    // see it, which means a bearer bundle can reach it. CarModPicker's own
-    // reset link lands on /forgot-password/confirm and still works.
     clientIsNull = true;
     render(<ResetPassword />);
     expect(

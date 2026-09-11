@@ -47,6 +47,7 @@ const getPendingReportsCountRequestFn = (): Promise<
   ApiClientResponse<PaginatedResponse<ReportWithDetails>>
 > => reportsApi.getReportsWithDetails({ status: 'pending', skip: 0, limit: 1 });
 
+/** Admin queue for reviewing user submitted reports across all entity types. */
 function ReportReview() {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -85,14 +86,12 @@ function ReportReview() {
     never
   >(getPendingReportsCountRequestFn);
 
-  // Redirect non-admin users
   useEffect(() => {
     if (user && !user.is_admin) {
       void navigate('/');
     }
   }, [user, navigate]);
 
-  // Reset to page 1 when status changes
   useEffect(() => {
     setCurrentPage(1);
   }, [selectedStatus]);
@@ -185,7 +184,6 @@ function ReportReview() {
     return <StatusBadge variant={variant} />;
   };
 
-  // Extract reports and pagination info from the response
   const reports: ReportWithDetails[] =
     reportsData && typeof reportsData === 'object' && 'data' in reportsData
       ? Array.isArray(reportsData.data)

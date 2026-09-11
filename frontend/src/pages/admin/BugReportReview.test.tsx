@@ -1,22 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment --
- * vi.mocked(apiClient.put) is the canonical Phase 8 mocking pattern.
- * `expect.objectContaining(...)` returns `any` and trips no-unsafe-assignment
- * when nested as a property value — false positive in this matcher pattern.
- */
-
-// Phase 8 plan 08-17 (D-02) — BugReportReview admin page: open-list render +
-// in-progress (assign) + resolve + auth-deny for non-admin.
-//
-// BugReportReview imports `apiClient` from `../../api/client` and
-// `bugReportsApi` from `../../api/bug_reports`. setup.ts mocks the client and
-// the domain module calls through it
-// (bugReportsApi.getBugReportsWithDetails -> apiClient.get), so no per-file
-// vi.mock is needed.
-//
-// Update path: page calls `apiClient.put('/bug-reports/<id>', { status, priority,
-// admin_notes })` with status='in_progress' (Mark In Progress / assign), 'resolved'
-// (Resolve), or 'dismissed' (Dismiss). Per plan <action> note: "Adjust URL shapes
-// per actual source." — no separate /admin prefix exists; triage happens via PUT.
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -35,8 +17,6 @@ import BugReportReview from './BugReportReview';
 describe('BugReportReview page', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    // Both list + pending-count fetches hit /bug-reports/admin/list-with-details
-    // via apiClient.get. Single default resolution covers both.
     vi.mocked(apiClient.get).mockResolvedValue({
       data: {
         data: [makeBugReportWithDetails({ status: 'pending' })],
@@ -63,7 +43,6 @@ describe('BugReportReview page', () => {
         })
       )
     );
-    // Row renders the bug title + reporter + Review action.
     expect(
       await screen.findByRole('heading', { name: /Test bug report/i })
     ).toBeInTheDocument();
@@ -112,7 +91,6 @@ describe('BugReportReview page', () => {
     const reviewBtn = await screen.findByRole('button', { name: /^Review$/i });
     await user.click(reviewBtn);
 
-    // Exact match — "Resolve" (not "Resolved" status badge text / toggle).
     const resolveBtn = await screen.findByRole('button', {
       name: /^Resolve$/i,
     });
@@ -127,9 +105,6 @@ describe('BugReportReview page', () => {
   });
 
   it('denies access to non-admin authenticated users', () => {
-    // Use mockUser (non-admin) inline to avoid the pre-existing typing gap in
-    // testScenarios.authenticated's createMockUser helper (id: number + missing
-    // subscription fields vs. UserRead).
     render(<BugReportReview />, {
       initialAuthState: {
         isAuthenticated: true,

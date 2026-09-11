@@ -1,15 +1,3 @@
-// Phase 8 Plan 10 (D-11 Wave 3) — VerifyEmail page coverage.
-//
-// Authenticated-only screen that lets a user who hasn't verified their email
-// request a new verification link. Three branches matter:
-//   1. No user → "User not found" error + sign-in link.
-//   2. email_verified=true → "Email Already Verified" confirmation.
-//   3. email_verified=false → "Send Verification Email" button → apiClient.post.
-//
-// Authenticated state is constructed from the canonical UserRead mockUser
-// (testScenarios.authenticated's user shape is incompatible with UserRead —
-// see ExtensionAuth.test.tsx for the same workaround).
-
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   render,
@@ -48,7 +36,6 @@ describe('VerifyEmail page', () => {
         isLoading: false,
       },
     });
-    // Page displays user email and a "Send Verification Email" button.
     expect(
       screen.getAllByText(new RegExp(mockUser.email, 'i')).length
     ).toBeGreaterThan(0);

@@ -1,18 +1,3 @@
-// Phase 8 plan 08-16 (Wave 4) — SystemAdmin admin page coverage.
-//
-// SystemAdmin imports `adminApi` from `../../api/admin`, `appSettingsApi`
-// from `../../api/app_settings` and `imageApi` from `../../api/images`, and
-// also consumes `useAppSettings` (AppSettingsContext). Each of those modules
-// calls the apiClient that setup.ts mocks.
-//
-// `useAppSettings` is mocked directly to avoid wiring an AppSettingsProvider
-// (matches the Support.test.tsx precedent — mock the hook rather than the
-// context layer). `useAuth` is mocked the same way.
-//
-// Covers the major sections enumerated in 08-PATTERNS.md §11 + plan 08-16
-// task 2: Global App Settings toggle, Database Migrations run, Data
-// Initialization (init car generations), and the destructive operations.
-
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
@@ -23,7 +8,6 @@ import { mockUseAuth } from '../../test/utils/test-mocks';
 import { testScenarios } from '../../test/utils/test-utils';
 import { mockUser } from '../../test/mocks/api';
 
-// Use the canonical admin scenario fixture for the authenticated-admin user.
 const adminUser = testScenarios.adminAuthenticated.initialAuthState.user;
 
 const mockSetAppSettings = vi.fn();
@@ -57,7 +41,6 @@ describe('SystemAdmin page', () => {
       logout: vi.fn(),
       checkAuthStatus: vi.fn(),
     });
-    // Default: current-revision fetch resolves to a known rev string.
     vi.mocked(apiClient.get).mockResolvedValue({
       data: { current_revision: 'abc123' },
     });
@@ -84,7 +67,6 @@ describe('SystemAdmin page', () => {
       screen.getByRole('heading', { name: /data initialization/i })
     ).toBeInTheDocument();
 
-    // On mount, fetchCurrentRevision fires — assert the GET landed.
     await waitFor(() =>
       expect(vi.mocked(apiClient.get)).toHaveBeenCalledWith(
         '/admin/db-ops/migrations/current'
@@ -104,7 +86,6 @@ describe('SystemAdmin page', () => {
       </BrowserRouter>
     );
 
-    // The checkbox for "Disconnect premium system" — find by the label text.
     const premiumLabel = screen.getByText(/disconnect premium system/i);
     const toggle = premiumLabel
       .closest('label')!
@@ -149,7 +130,6 @@ describe('SystemAdmin page', () => {
         '/admin/db-ops/migrations/run'
       )
     );
-    // Success message renders after resolution.
     await waitFor(() =>
       expect(
         screen.getByText(/migrations completed successfully/i)
@@ -188,9 +168,6 @@ describe('SystemAdmin page', () => {
 
   it('lists orphaned bucket objects from the destructive-ops section', async () => {
     const user = userEvent.setup();
-    // First GET is for current_revision (auto-fired). Queue a second GET for
-    // the orphan-listing click — use mockResolvedValueOnce chained via the
-    // default resolver.
     vi.mocked(apiClient.get).mockImplementation((url: string) => {
       if (url === '/images/admin/orphaned') {
         return Promise.resolve({
@@ -211,7 +188,6 @@ describe('SystemAdmin page', () => {
       </BrowserRouter>
     );
 
-    // Open the <details> wrapping destructive ops so the inner buttons render.
     const summary = screen.getByText(/deletion options \(cars, global parts/i);
     await user.click(summary);
 
@@ -225,7 +201,6 @@ describe('SystemAdmin page', () => {
         '/images/admin/orphaned'
       )
     );
-    // Result summary shows count 2.
     await waitFor(() =>
       expect(screen.getByText(/orphaned object\(s\) of/i)).toBeInTheDocument()
     );

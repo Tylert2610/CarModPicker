@@ -1,13 +1,3 @@
-// Phase 8 plan 08-14 (D-11) — Pricing page tier-card render test.
-//
-// Pricing is a public page; tier CTAs route to /checkout (auth) vs /register
-// (unauth). Cover both branches + feature list visibility.
-//
-// NOTE: bypasses test-utils.tsx's customRender because its testScenarios
-// pass createMockUser() which omits subscription_* fields and trips strict
-// TS on exactOptionalPropertyTypes. We manually wire mockUseAuth + render
-// through a BrowserRouter here.
-
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { BrowserRouter } from 'react-router-dom';
@@ -44,7 +34,6 @@ describe('Pricing page', () => {
     expect(
       screen.getByRole('heading', { name: /simple pricing/i })
     ).toBeInTheDocument();
-    // Tier card headings: Free and Premium.
     expect(
       screen.getByRole('heading', { name: /^free$/i })
     ).toBeInTheDocument();

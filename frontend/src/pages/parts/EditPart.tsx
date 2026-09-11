@@ -13,6 +13,7 @@ import Spinner from '../../components/ui/spinner';
 
 const fetchPartRequestFn = (partId: string) => partsApi.getPart(partId);
 
+/** Form for editing a part the signed in user owns. */
 function EditPart() {
   const { partId } = useParams<{ partId: string }>();
   const { user: currentUser } = useAuth();
@@ -34,7 +35,6 @@ function EditPart() {
   const handlePartUpdated = async () => {
     if (partId) {
       await fetchPart(partId);
-      // Navigate back to the part view page
       void navigate(`/parts/${partId}`);
     }
   };
@@ -92,7 +92,6 @@ function EditPart() {
     );
   }
 
-  // Check if user can edit this part
   const canEdit =
     currentUser &&
     (currentUser.id === part.user_id ||
@@ -115,7 +114,6 @@ function EditPart() {
     );
   }
 
-  // Safety check - ensure part has required fields
   if (!part || !part.id || !part.name) {
     return (
       <div className="container mx-auto px-4 py-8">

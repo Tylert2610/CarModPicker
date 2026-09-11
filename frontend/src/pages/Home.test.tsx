@@ -1,14 +1,3 @@
-// Phase 8 plan 08-14 (D-11) — Home page happy-path + auth-branch tests.
-//
-// Home pulls named domain APIs (buildListsApi/partsApi/retailersApi/
-// partManufacturersApi) from their `../api/<domain>` modules, which route
-// through the apiClient that setup.ts mocks, so assertions land on
-// vi.mocked(apiClient.get) without a per-file module mock.
-//
-// We render manually with BrowserRouter plus an inline mockUseAuth setup
-// rather than through test-utils.tsx's customRender, so this file controls the
-// auth branch directly.
-
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import { BrowserRouter } from 'react-router-dom';
@@ -69,7 +58,6 @@ describe('Home page', () => {
       </BrowserRouter>
     );
 
-    // Hero "Create Build" CTA links to /builder.
     const createBuildLinks = screen.getAllByRole('link', {
       name: /create build/i,
     });

@@ -30,6 +30,7 @@ import Spinner from '../../components/ui/spinner';
 
 const fetchCarRequestFn = (carId: string) => carGenerationsApi.getCar(carId);
 
+/** Detail page for one car and the build lists attached to it. */
 function ViewCar(): React.JSX.Element {
   const { carId } = useParams<{ carId: string }>();
   const { user: currentUser } = useAuth();
@@ -62,7 +63,7 @@ function ViewCar(): React.JSX.Element {
 
   const handleBuildListCreated = () => {
     setBuildListRefreshTrigger((prev) => prev + 1);
-    setIsCreateBuildListFormOpen(false); // Close dialog
+    setIsCreateBuildListFormOpen(false);
   };
 
   const handleBuildListSearchChange = (

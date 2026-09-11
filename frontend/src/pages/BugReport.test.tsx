@@ -1,12 +1,3 @@
-// Phase 8 plan 08-14 (D-11) — BugReport page form render + submit + error.
-//
-// BugReport imports `bugReportsApi` from `../api/bug_reports`, which calls the
-// apiClient that setup.ts mocks, so the submit path is observable on
-// vi.mocked(apiClient.post).
-//
-// We render manually rather than through test-utils.tsx's customRender, so
-// this file controls the auth branch directly.
-
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
@@ -92,7 +83,6 @@ describe('BugReport page', () => {
 
     await user.type(screen.getByLabelText(/^description/i), 'Some description');
 
-    // Bypass HTML5 `required` validation so the JS guard in handleSubmit runs.
     const form = document.querySelector('form');
     if (!form) throw new Error('No form element found');
     form.noValidate = true;

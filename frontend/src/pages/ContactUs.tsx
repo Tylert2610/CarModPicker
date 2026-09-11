@@ -1,6 +1,7 @@
 import { Card } from '../components/ui/card';
 import { useDocumentMeta } from '../hooks/useDocumentMeta';
 
+/** Static contact page listing the business, support, and DMCA addresses. */
 function ContactUs() {
   useDocumentMeta({
     title: 'Contact Us',

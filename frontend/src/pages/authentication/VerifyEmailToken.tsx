@@ -1,30 +1,9 @@
 /**
- * The page a mailed verification link lands on in identity mode.
+ * Landing page for a mailed verification link in identity mode.
  *
- * ## Why this shares a path with the request page
- *
- * `VERIFY_EMAIL_PATH` in `@webbpulse/auth` is `/verify-email`, and the backend
- * builds the mailed URL by concatenating it onto the frontend base, so the
- * landing path is fixed by a contract this application does not own.
- * CarModPicker already had a `/verify-email`, and it means something else: a
- * signed in user asking for a fresh verification email.
- *
- * Both behaviours have to live at that one path, and the query string is what
- * tells them apart. A URL carrying `?token=` came from an email and is a
- * confirmation; a bare `/verify-email` is a person who navigated there and
- * wants a link sent. `VerifyEmail` does the routing between the two, and this
- * component is only ever mounted for the token branch, which is why it does no
- * mode check of its own.
- *
- * ## Why the token is spent in an effect and guarded by a ref
- *
- * The token is single use and confirming it is the whole job of the page, so
- * there is no button to wait for. That puts the call in a mount effect, and
- * React's strict mode runs mount effects twice in development. The second run
- * would present an already spent token and the user would be told their link
- * was invalid, which is exactly the bug this page exists to avoid reporting.
- * A ref rather than state because it must not trigger a render and must be set
- * synchronously before the await.
+ * Mounted by `VerifyEmail` only for the `?token=` branch of `/verify-email`.
+ * The token is single use, so a ref guards the mount effect against the double
+ * invocation React strict mode performs in development.
  */
 import { useEffect, useRef, useState } from 'react';
 import {
@@ -47,12 +26,8 @@ type State =
   | { kind: 'unavailable' };
 
 /**
- * The sentence for each refusal the package models.
- *
- * The server's own message is preferred where it has one, because it is written
- * to be read. These are the fallbacks, and each one names the next step rather
- * than only the problem: a user holding a dead link needs to know what to do,
- * not what happened.
+ * Fallback sentence for each refusal the package models, used when the server
+ * sends no message of its own. Each one names the user's next step.
  */
 const REFUSAL_FALLBACKS: Record<string, string> = {
   'invalid-link':
@@ -63,14 +38,13 @@ const REFUSAL_FALLBACKS: Record<string, string> = {
     'Email is not configured for this deployment, so verification links cannot be sent. Contact support.',
 };
 
+/** Spends a mailed verification token once on mount and reports the outcome. */
 function VerifyEmailToken() {
   const [state, setState] = useState<State>({ kind: 'confirming' });
   const spent = useRef(false);
   const { checkAuthStatus } = useAuth();
 
   useEffect(() => {
-    // Strict mode runs this twice in development. The token is single use, so
-    // the second run would spend nothing and report a dead link.
     if (spent.current) return;
     spent.current = true;
 
@@ -79,9 +53,6 @@ function VerifyEmailToken() {
       setState({ kind: 'unavailable' });
       return;
     }
-    // `expectedPath` guards against reading a reset token off this page and
-    // presenting it to the verification endpoint, which the server refuses as
-    // a wrong-purpose token.
     const token = readLinkToken({ expectedPath: VERIFY_EMAIL_PATH });
     if (token === null) {
       setState({
@@ -96,9 +67,6 @@ function VerifyEmailToken() {
         const outcome = await identity.confirmEmailVerification({ token });
         if (outcome.ok) {
           setState({ kind: 'confirmed' });
-          // The signed in user's `email_verified` just changed, and
-          // `EmailVerifiedRoute` gates on it. Refetching here is what lets the
-          // user go straight to their profile rather than bouncing back.
           await checkAuthStatus();
           return;
         }

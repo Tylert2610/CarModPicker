@@ -3,14 +3,8 @@ import type { ReactElement } from 'react';
 import { Button } from '../components/ui/button';
 
 /**
- * Phase 6 FE-03 — extracted from inline 404 element in App.tsx so the catch-all
- * `*` route can be lazy-loaded like every other page. This lets
- * frontend/src/App.coverage.test.tsx force the same throwing-stub mock to
- * apply to the 404 path, which in turn lets the parametrized coverage test
- * verify the catch-all <Route> is wrapped in RouteGroupBoundary("public") via
- * the same mechanism as every other route (D-10 / D-24).
- *
- * No visual change vs the previous inline JSX (App.tsx pre-06-03 lines 285-309).
+ * The 404 page the catch-all route renders. A module of its own so the route
+ * can be lazy loaded and boundary wrapped like every other page.
  */
 function NotFound(): ReactElement {
   return (

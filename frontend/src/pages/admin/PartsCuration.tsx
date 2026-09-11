@@ -142,6 +142,10 @@ function MemberRow({
   );
 }
 
+/**
+ * Admin tool for curating parts, linking duplicates into groups and choosing
+ * which part is canonical.
+ */
 function PartsCuration() {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -203,7 +207,6 @@ function PartsCuration() {
     }
   }, []);
 
-  // Load on mount if ?part= is in the URL.
   useEffect(() => {
     const fromUrl = searchParams.get('part');
     if (fromUrl) {
@@ -278,7 +281,6 @@ function PartsCuration() {
     setActionError(null);
     try {
       await adminApi.unlinkPartFromCanonical(partId);
-      // After unlinking, reload the original anchor so the admin sees the reduced group.
       if (linkGroup) {
         const resp = await adminApi.getPartLinkGroup(linkGroup.canonical_id);
         setLinkGroup(resp.data);
@@ -291,9 +293,6 @@ function PartsCuration() {
   };
 
   const handleView = (partId: string) => {
-    // admin_curation=1 tells ViewPart to skip the duplicate→canonical redirect
-    // so the admin can inspect the raw record of whichever member they clicked.
-    // ViewPart gates the bypass on is_admin, so non-admins can't use the param.
     void navigate(`/parts/${partId}?admin_curation=1`);
   };
 

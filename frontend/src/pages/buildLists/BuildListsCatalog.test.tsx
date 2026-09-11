@@ -1,18 +1,3 @@
-// Phase 8 plan 08-13 (D-11) — page test for BuildListsCatalog.
-//
-// The page calls:
-//   - carGenerationsApi.getCarMakeStats()        → GET /car-generations/stats/car-makes
-//   - buildListsApi.getBuildListsWithVotes(...)  → GET /build-lists/with-votes
-//   - carGenerationsApi.getCar(carId) (URL init) → GET /car-generations/:id
-//   - carGenerationsApi.getCarsByMake(make)      → GET /car-generations/car-makes/:make
-//
-// Tests exercise: (1) render with data, (2) empty state, (3) car_id URL
-// deeplink forwards to API.
-//
-// buildListsApi and carGenerationsApi come from their `../../api/<domain>`
-// modules, which call through the apiClient that setup.ts mocks, so no
-// per-file module mock is needed.
-
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MemoryRouter } from 'react-router-dom';
@@ -21,9 +6,6 @@ import { apiClient } from '../../api/client';
 import { mockBuildList, mockCar } from '../../test/mocks/api';
 import BuildListsCatalog from './BuildListsCatalog';
 
-// Helper: seed the apiClient.get mock with a URL-routed implementation so
-// initial mount (make stats + paginated build-lists fetch) resolves with the
-// requested shape.
 function seedApiClient(buildLists: (typeof mockBuildList)[] = [mockBuildList]) {
   vi.mocked(apiClient.get).mockImplementation((url: string) => {
     if (url.includes('/car-generations/stats/car-makes')) {
@@ -33,7 +15,6 @@ function seedApiClient(buildLists: (typeof mockBuildList)[] = [mockBuildList]) {
       return Promise.resolve({ data: [mockCar] });
     }
     if (url.includes('/car-generations/') && !url.includes('stats')) {
-      // GET /car-generations/:id — used for ?car_id=... deeplink
       return Promise.resolve({ data: mockCar });
     }
     if (url.includes('/build-lists/with-votes')) {
@@ -75,16 +56,13 @@ describe('BuildListsCatalog page', () => {
       </MemoryRouter>
     );
 
-    // Static page header + section title render synchronously.
     expect(screen.getByText('Build Lists Catalog')).toBeInTheDocument();
     expect(screen.getByText('All Build Lists')).toBeInTheDocument();
 
-    // Build list card name resolves from paginated fetch.
     await waitFor(() =>
       expect(screen.getByText(mockBuildList.name)).toBeInTheDocument()
     );
 
-    // Paginated endpoint was hit at least once.
     expect(
       vi
         .mocked(apiClient.get)
@@ -116,9 +94,6 @@ describe('BuildListsCatalog page', () => {
       </MemoryRouter>
     );
 
-    // Wait for initial effect chain: page first fetches make stats, then
-    // carFromUrl, then cars-by-make. The deeplink car_id should flow into a
-    // GET /car-generations/:id call.
     await waitFor(() => {
       const calls = vi.mocked(apiClient.get).mock.calls;
       const deeplinked = calls.some(([url]) => {

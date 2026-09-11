@@ -1,19 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment --
- * vi.mocked(apiClient.post/put) is the canonical Phase 8 mocking pattern.
- * `expect.objectContaining(...)` returns `any` and trips no-unsafe-assignment
- * when nested as a property value — false positive in this matcher pattern.
- */
-
-// Phase 8 plan 08-14 (D-11) — Profile page: authenticated render + image
-// upload via FormData + upload error path.
-//
-// Profile uses `apiClient` from `../api/client` directly via
-// apiClient.put<UserRead> for profile updates, AND transitively via
-// ImageUpload -> imageApi.uploadImage -> apiClient.post(FormData). setup.ts
-// mocks the client, so both paths land on the same mocked Axios surface.
-//
-// We render manually rather than through test-utils.tsx's customRender, so
-// this file controls the auth branch directly.
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -50,8 +35,6 @@ describe('Profile page', () => {
       </BrowserRouter>
     );
 
-    // PageHeader subtitle contains the username, and Username/Email
-    // CardInfoItems also render it. Use getAllByText for robustness.
     await waitFor(() =>
       expect(
         screen.getAllByText(new RegExp(mockUser.username)).length
@@ -78,12 +61,8 @@ describe('Profile page', () => {
       </BrowserRouter>
     );
 
-    // Click Edit Profile to expose the ImageUpload component.
     await user.click(screen.getByRole('button', { name: /edit profile/i }));
 
-    // ImageUpload exposes a hidden <input type="file"> and a "Choose Image"
-    // button that triggers the input. userEvent.upload targets the input
-    // directly.
     const fileInput =
       document.querySelector<HTMLInputElement>('input[type="file"]');
     if (!fileInput) throw new Error('Could not find hidden file input');
@@ -103,7 +82,6 @@ describe('Profile page', () => {
       )
     );
 
-    // Verify the FormData actually carries the file under the 'file' key.
     const call = vi
       .mocked(apiClient.post)
       .mock.calls.find(
@@ -135,7 +113,6 @@ describe('Profile page', () => {
     const file = new File(['hello'], 'avatar.jpg', { type: 'image/jpeg' });
     await user.upload(fileInput, file);
 
-    // ImageUpload surfaces the error via ErrorAlert in its own subtree.
     await waitFor(() =>
       expect(screen.getByText(/upload failed/i)).toBeInTheDocument()
     );

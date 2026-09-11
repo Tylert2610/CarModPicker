@@ -56,6 +56,10 @@ const fetchVoteSummaryRequestFn = (buildListId: string) =>
 const deleteBuildListRequestFn = (buildListId: string) =>
   apiClient.delete<Record<string, string>>(`/build-lists/${buildListId}`);
 
+/**
+ * Detail page for one build list, showing its parts and letting the owner edit
+ * or copy it.
+ */
 function ViewBuildList() {
   const { buildListId } = useParams<{ buildListId: string }>();
   const { user: currentUser } = useAuth();
@@ -183,7 +187,6 @@ function ViewBuildList() {
 
     _newVote: 'upvote' | 'downvote' | null
   ) => {
-    // Refresh vote summary after voting
     if (buildListId) {
       void fetchVoteSummary(buildListId);
     }
@@ -197,7 +200,7 @@ function ViewBuildList() {
 
   const handleBuildListUpdated = () => {
     if (buildListId) {
-      void fetchBuildList(buildListId); // Refresh build list data
+      void fetchBuildList(buildListId);
     }
     setIsEditBuildListFormOpen(false);
   };
@@ -235,15 +238,13 @@ function ViewBuildList() {
     setCopyBuildListError(null);
     const result = await executeCopyBuildList(buildListId);
     if (result !== null) {
-      // Navigate to the newly copied build list
       void navigate(`/build-lists/${result.id}`);
     }
   };
 
-  // Handlers for Part creation
   const handlePartAdded = () => {
-    setPartsRefreshTrigger(partsRefreshTrigger + 1); // Trigger BuildListParts refresh
-    setIsCreatePartFormOpen(false); // Close dialog
+    setPartsRefreshTrigger(partsRefreshTrigger + 1);
+    setIsCreatePartFormOpen(false);
   };
 
   const openCreatePartDialog = () => setIsCreatePartFormOpen(true);
@@ -286,7 +287,6 @@ function ViewBuildList() {
     );
   }
 
-  // Check if current user owns the build list (build lists have their own user_id)
   const canManage =
     currentUser && buildList && currentUser.id === buildList.user_id;
 

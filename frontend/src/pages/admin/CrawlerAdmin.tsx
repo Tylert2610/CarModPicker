@@ -27,36 +27,16 @@ import { adminApi } from '../../api/admin';
 import { categoriesApi } from '../../api/categories';
 import type { CategoryResponse } from '../../types/Api';
 
-// ── Fetcher-tier visual system ───────────────────────────────────────────
-// Adapters declare a FETCHER_TIER on the backend; the UI groups them by
-// blocking difficulty: T0 = plain HTTP, T1 = TLS impersonation, T2 = headless
-// browser via FlareSolverr. T4 is a frontend-only override for newly-written
-// adapters that haven't been smoke-tested yet — remove entries from
-// UNVERIFIED_ADAPTERS as each one is validated.
-
 type FetcherTier = 'http' | 'tls' | 'browser' | 'unverified';
 
-// Phase 1 adapters (landed 2026-04-20) flagged as T4 = unverified until they
-// pass a live smoke test. The backend still reports their real FETCHER_TIER
-// (currently all "http"); this set only affects the UI grouping + chip. When
-// an adapter has been confirmed to produce correct ScrapedPayload end-to-end
-// on a real crawl, delete it from this set.
 const UNVERIFIED_ADAPTERS: ReadonlySet<string> = new Set([
-  // Inquiry-only brochure sites with no purchasable PDPs (no cart, no SKU,
-  // no price — see each adapter's docstring). Crawl shape works but every
-  // resulting Part row is a marketing stub. Hold T4 until a product-detection
-  // story lands.
   'ecutek',
   'hennessey',
   'injectordynamics',
-  // Stub adapters — no live storefront on any candidate host. Discovery
-  // returns 0 URLs by design (see each adapter's docstring for recon).
   'jltperformance',
   'racerwholesale',
   'roadraceengineering',
   'stoptech',
-  // Blanket robots.txt Disallow — adapter is for Chrome-extension capture
-  // and archive rescrape only.
   'skunk2',
 ]);
 
@@ -124,11 +104,10 @@ function TierBadge({ tier }: { tier: FetcherTier | undefined }) {
   );
 }
 
-// ── Job display helpers ──────────────────────────────────────────────────
-
-/** Parse a server datetime string as UTC. Pydantic serialises naive datetimes
- *  without a timezone suffix, so JS would parse them as local time — causing a
- *  wrong offset equal to the user's UTC offset. Appending 'Z' forces UTC. */
+/**
+ * Parse a server datetime string as UTC. Pydantic serialises naive datetimes
+ * with no timezone suffix, which JS would otherwise read as local time.
+ */
 function parseServerDate(s: string): Date {
   if (!s.endsWith('Z') && !/[+-]\d{2}:\d{2}$/.test(s)) {
     return new Date(s + 'Z');
@@ -145,9 +124,6 @@ function fmtElapsed(startedAt: Date, endedAt?: Date | null): string {
   return `${m}m ${s}s`;
 }
 
-// Self-ticking elapsed-time display. Owns its own 1 s setInterval so the
-// surrounding page does NOT re-render every second — only this leaf node
-// updates. When `endedAt` is provided, the timer doesn't tick.
 function ElapsedTimer({
   startedAt,
   endedAt,
@@ -189,7 +165,6 @@ function UrlSampleList({
     <div className="divide-y divide-gray-800/60">
       {shown.map((entry, idx) => (
         <div
-          // URLs can repeat across outcomes; composite with index keeps keys stable within one render.
           // eslint-disable-next-line react-x/no-array-index-key
           key={`${entry.url}-${entry.outcome ?? entry.bucket ?? ''}-${idx}`}
           className="py-1.5"
@@ -419,9 +394,6 @@ function ArchiveRescrapeProgress({
   startedAt: Date;
   endedAt?: Date | null | undefined;
 }) {
-  // Self-tick once per second so the rate display stays current while running.
-  // Mirrors RunningCrawlerProgress — scoped to this subtree so the parent page
-  // doesn't re-render every second.
   const [, setTick] = useState(0);
   useEffect(() => {
     if (endedAt) return;
@@ -444,8 +416,6 @@ function ArchiveRescrapeProgress({
   );
   const rateMinute =
     elapsedSec > 0 ? Math.round((processed / elapsedSec) * 60) : 0;
-  // Rough ETA based on the trailing average rate. Hidden until we've actually
-  // processed something — a zero-rate ETA is meaningless and just flashes.
   const remaining = hasTotal ? Math.max(0, total - processed) : 0;
   const etaSec =
     rateMinute > 0 && remaining > 0
@@ -565,8 +535,6 @@ function ArchiveRescrapeResult({
     summary['failures_total'] ?? failures.length ?? 0
   );
   const truncated = Boolean(summary['failures_truncated']);
-  // Wall-clock rate so post-run the operator can compare runs at a glance.
-  // Falls back to processed when total isn't recorded (older summaries).
   const processedForRate = Number(
     summary['processed'] ?? summary['parsed_ok'] ?? 0
   );
@@ -714,9 +682,6 @@ function adapterProgressLabel(
   return { parsed, total, tooltip };
 }
 
-// Determine an adapter's target URL count for this run so we can draw a
-// proportional progress bar. Falls back through per-adapter limit → global
-// limit → the adapter's known catalog size (parsed + pending + gone).
 function effectiveRunTarget(
   adapter: string,
   params: Record<string, unknown> | null,
@@ -737,9 +702,6 @@ function effectiveRunTarget(
   return null;
 }
 
-// Classify per-adapter activity based on how recently last_parsed_at was
-// updated vs the server-side `now` timestamp. Used to color-code rows and
-// differentiate "actively working" from "probably done or queued".
 type ActivityLevel = 'active' | 'idle' | 'stalled' | 'queued' | 'done';
 
 function classifyActivity(
@@ -798,8 +760,6 @@ function RunningCrawlerProgress({
   statusCounts: Record<string, Record<string, number>>;
   startedAt: Date;
 }) {
-  // Self-tick once per second so the rate display stays current. Scoped to
-  // this subtree — the parent page does not re-render every second.
   const [, setTick] = useState(0);
   useEffect(() => {
     const id = setInterval(() => setTick((n) => n + 1), 1000);
@@ -813,7 +773,6 @@ function RunningCrawlerProgress({
   const adaptersData = progress?.adapters ?? {};
   const serverNow = progress?.now ?? new Date().toISOString();
 
-  // Totals across adapters.
   let parsedTotal = 0;
   let activeCount = 0;
   let doneCount = 0;
@@ -836,8 +795,6 @@ function RunningCrawlerProgress({
   const rateMinute =
     elapsedSec > 0 ? Math.round((parsedTotal / elapsedSec) * 60) : 0;
 
-  // Sort: active first, then idle/stalled (things needing attention), then
-  // queued, then done — operators want to see live action at the top.
   const order: Record<ActivityLevel, number> = {
     active: 0,
     idle: 1,
@@ -902,8 +859,6 @@ function RunningCrawlerProgress({
                   ? 100
                   : 0;
             const style = ACTIVITY_STYLES[activity];
-            // Bar color shades with activity: green for healthy (active/done),
-            // yellow/orange when falling behind, flat gray for queued.
             const barColor =
               activity === 'active' || activity === 'done'
                 ? 'bg-success/70'
@@ -970,11 +925,6 @@ function RunningCrawlerProgress({
   );
 }
 
-// Self-buffered text input. Owns its own local state so keystrokes do NOT
-// re-render the (very heavy) parent on each character. Commits the value to
-// the parent only on blur or Enter. Used for inputs whose value isn't read
-// reactively elsewhere on the page (e.g. the create-schedule name + the
-// global crawler limit).
 const LocalTextInput = memo(function LocalTextInput({
   initialValue,
   onCommit,
@@ -994,12 +944,9 @@ const LocalTextInput = memo(function LocalTextInput({
   inputMode?: 'numeric' | 'text' | undefined;
   min?: string | undefined;
   id?: string | undefined;
-  // Allow callers to force the input to re-sync with `initialValue` (e.g.
-  // when a preset button writes a new value into parent state).
   inputKey?: string | number | undefined;
 }) {
   const [value, setValue] = useState(initialValue);
-  // Re-sync if the parent forces a new initialValue via inputKey change.
   const lastKeyRef = useRef(inputKey);
   if (lastKeyRef.current !== inputKey) {
     lastKeyRef.current = inputKey;
@@ -1276,11 +1223,6 @@ const BackgroundJobsCard = memo(function BackgroundJobsCard({
   );
 });
 
-// Wrapper around the Live Crawlers per-adapter row list. Memoized so that
-// re-renders of CrawlerAdmin caused by unrelated state (e.g. typing into a
-// schedule name) do NOT re-execute the 100-row map + 100 createElement
-// calls. Each LiveCrawlerRow inside is also memoized; together they collapse
-// the cost of unrelated re-renders to ~zero for this list.
 const LiveCrawlerRowList = memo(function LiveCrawlerRowList({
   sortedAdapters,
   adapterTiers,
@@ -1315,11 +1257,6 @@ const LiveCrawlerRowList = memo(function LiveCrawlerRowList({
     </div>
   );
 });
-
-// ── Memoized whole-section components ────────────────────────────────────
-// Extracted so unrelated parent state changes (e.g. typing into the New
-// Schedule name input) don't re-execute these sections' JSX. Each takes a
-// stable set of props; React.memo skips re-render when none change.
 
 const AdapterTuningCard = memo(function AdapterTuningCard({
   isLoadingConfigs,
@@ -1392,13 +1329,6 @@ const AdapterTuningCard = memo(function AdapterTuningCard({
     </Card>
   );
 });
-
-// ── Memoized per-adapter row components ──────────────────────────────────
-// These lists render ~100 rows each in three+ sections. Without memoization,
-// a single keystroke into ANY controlled input on the page (e.g. a schedule
-// name, a global limit, or one adapter's per-run limit) re-renders the entire
-// CrawlerAdmin tree, which is hundreds of inputs and buttons. Memoizing each
-// row + stabilising the per-row callbacks keeps keystroke cost O(1).
 
 const TIER_SORT_ORDER: Record<FetcherTier, number> = {
   http: 0,
@@ -1600,11 +1530,6 @@ const AdapterTuningRow = memo(function AdapterTuningRow({
   );
 });
 
-// Compact selected-only adapter picker for a schedule. Renders ONLY the
-// adapters this schedule already includes (typically <20) as removable
-// chips, plus a native <select> to add unselected adapters. Replaces the
-// previous "render all 100 adapters as chips" UI which was the page's
-// dominant render cost.
 const ScheduleAdapterPicker = memo(function ScheduleAdapterPicker({
   row,
   sortedAdapters,
@@ -1622,12 +1547,10 @@ const ScheduleAdapterPicker = memo(function ScheduleAdapterPicker({
     () => new Set(row.adapters.map((a) => a.adapter_name)),
     [row.adapters]
   );
-  // Adapters the user can add — sorted by tier already, just filter.
   const unselectedSorted = useMemo(
     () => sortedAdapters.filter((name) => !memberNames.has(name)),
     [sortedAdapters, memberNames]
   );
-  // Selected chips, also kept in tier order for visual consistency.
   const selectedSorted = useMemo(
     () => sortedAdapters.filter((name) => memberNames.has(name)),
     [sortedAdapters, memberNames]
@@ -1641,8 +1564,6 @@ const ScheduleAdapterPicker = memo(function ScheduleAdapterPicker({
       const name = e.target.value;
       if (!name) return;
       void onToggle(row, name);
-      // Reset select so the same option can be added again immediately
-      // after another remove + re-add cycle.
       e.target.value = '';
     },
     [onToggle, row]
@@ -1699,9 +1620,6 @@ const ScheduleAdapterPicker = memo(function ScheduleAdapterPicker({
   );
 });
 
-// Compact selected-only adapter picker for the New Schedule form. Same
-// pattern as ScheduleAdapterPicker but operates on the local selection
-// array rather than a saved schedule.
 const NewScheduleAdapterPicker = memo(function NewScheduleAdapterPicker({
   selected,
   sortedAdapters,
@@ -1781,8 +1699,6 @@ const NewScheduleAdapterPicker = memo(function NewScheduleAdapterPicker({
   );
 });
 
-// Module-level pure lookup so it's not re-created per render and can be
-// shared by ScheduleRow + SchedulesCard without prop-drilling a callback.
 function presetForExpression(
   expression: string,
   presets: Record<string, string>
@@ -1793,10 +1709,6 @@ function presetForExpression(
   return 'custom';
 }
 
-// ── New schedule form ────────────────────────────────────────────────────
-// State lives here so typing into the name input only re-renders this small
-// form, NOT the surrounding SchedulesCard (which would in turn reconcile
-// every existing schedule row).
 const NewScheduleForm = memo(function NewScheduleForm({
   sortedAdapters,
   adapterTiers,
@@ -1919,10 +1831,6 @@ const NewScheduleForm = memo(function NewScheduleForm({
   );
 });
 
-// ── Schedule row ─────────────────────────────────────────────────────────
-// Memoized per-row so a state change in one row (e.g. typing into row A's
-// custom-cron field) doesn't reconcile rows B, C, D… With ~10+ schedules
-// this is the difference between snappy and laggy interactions.
 type ScheduleDraft = { preset: string; customExpression: string };
 
 const ScheduleRow = memo(function ScheduleRow({
@@ -2127,12 +2035,6 @@ const ScheduleRow = memo(function ScheduleRow({
   );
 });
 
-// ── Schedules card ───────────────────────────────────────────────────────
-// Owns ALL schedule-related state + API calls so unrelated parent re-renders
-// (Manual Run inputs, jobs polling every 5 s) don't reconcile this section,
-// AND interactions inside this card (typing the new-schedule name, editing a
-// cron, toggling an enable switch) don't bubble up and reconcile the rest of
-// the page. Memoized on the small set of stable props it needs from parent.
 const SchedulesCard = memo(function SchedulesCard({
   userIsAdmin,
   sortedAdapters,
@@ -2193,8 +2095,6 @@ const SchedulesCard = memo(function SchedulesCard({
     }
   }, [userIsAdmin]);
 
-  // Read live presets through a ref so mergeScheduleRow stays referentially
-  // stable for memoized children downstream.
   const schedulePresetsRef = useRef(schedulePresets);
   useEffect(() => {
     schedulePresetsRef.current = schedulePresets;
@@ -2397,11 +2297,14 @@ const SchedulesCard = memo(function SchedulesCard({
   );
 });
 
+/**
+ * Admin console for the retailer crawler: launches runs, tunes per adapter
+ * settings, and follows progress of jobs in flight.
+ */
 function CrawlerAdmin() {
   const { user, isLoading: isAuthLoading } = useAuth();
   const navigate = useNavigate();
 
-  // Crawler tools
   const [crawlerAdapters, setCrawlerAdapters] = useState<string[]>([]);
   const [adapterTiers, setAdapterTiers] = useState<Record<string, FetcherTier>>(
     {}
@@ -2413,10 +2316,6 @@ function CrawlerAdmin() {
     {}
   );
   const [globalCrawlerLimit, setGlobalCrawlerLimit] = useState<string>('');
-  // Bumped whenever an external write (preset button click) needs to push a
-  // new value into the LocalTextInput. The text input ignores parent value
-  // changes until this counter ticks — keeping typing snappy without losing
-  // the click-to-set behaviour.
   const [globalLimitSyncKey, setGlobalLimitSyncKey] = useState(0);
   const [crawlerDefaultCategoryId, setCrawlerDefaultCategoryId] =
     useState<string>('');
@@ -2433,7 +2332,6 @@ function CrawlerAdmin() {
   const [crawlerHtmlSaveDir, setCrawlerHtmlSaveDir] = useState<string>('');
   const [skipKnownUrls, setSkipKnownUrls] = useState<boolean>(false);
 
-  // Rescrape
   const [isRescrapingArchives, setIsRescrapingArchives] = useState(false);
   const [rescrapeArchivesResult, setRescrapeArchivesResult] =
     useState<RescrapeArchivesQueuedResponse | null>(null);
@@ -2441,16 +2339,10 @@ function CrawlerAdmin() {
     string | null
   >(null);
 
-  // Background jobs
   const [jobsList, setJobsList] = useState<BackgroundJobList | null>(null);
   const [isLoadingJobs, setIsLoadingJobs] = useState(false);
   const [expandedJobId, setExpandedJobId] = useState<string | null>(null);
 
-  // Schedules state lives entirely inside SchedulesCard so unrelated parent
-  // state churn (jobs poll, manual-run inputs) doesn't reconcile schedules,
-  // and schedule-side interactions don't reconcile the rest of the page.
-
-  // Per-adapter retailer tuning (separate from schedule membership).
   const [adapterConfigs, setAdapterConfigs] = useState<CrawlerAdapterConfig[]>(
     []
   );
@@ -2458,20 +2350,14 @@ function CrawlerAdmin() {
   const [savingConfigName, setSavingConfigName] = useState<string | null>(null);
   const [configSaveError, setConfigSaveError] = useState<string | null>(null);
 
-  // Per-adapter crawled_pages breakdown by parse_status (pending/parsed/gone/failed).
-  // Drives the parsed/total progress pill so catalog size stays visible across
-  // interrupted runs.
   const [adapterStatusCounts, setAdapterStatusCounts] = useState<
     Record<string, Record<string, number>>
   >({});
 
-  // Stable handlers for the BackgroundJobsCard so its memo can skip on
-  // unrelated parent re-renders.
   const handleToggleJobExpanded = useCallback((id: string) => {
     setExpandedJobId((prev) => (prev === id ? null : id));
   }, []);
 
-  // Redirect non-admin users
   useEffect(() => {
     if (user && !user.is_admin) {
       void navigate('/');
@@ -2490,8 +2376,6 @@ function CrawlerAdmin() {
           .catch(() => ({ data: {} })),
       ]);
       setCrawlerAdapters(adaptersRes.data.adapters);
-      // Default to all selected on first load so the common workflow is
-      // "set a global limit, uncheck anything to skip, Run selected."
       setSelectedCrawlers((prev) =>
         prev.size === 0 ? new Set(adaptersRes.data.adapters) : prev
       );
@@ -2575,16 +2459,10 @@ function CrawlerAdmin() {
     void fetchAdapterConfigs();
   }, [fetchCrawlers, fetchJobs, fetchAdapterConfigs]);
 
-  // Per-running-crawler-job live progress keyed by job id. Populated by the
-  // 5 s poll below and consumed by the in-progress card.
   const [jobProgress, setJobProgress] = useState<
     Record<string, CrawlerJobProgress>
   >({});
 
-  // Read jobsList through a ref inside the polling callback so the function
-  // identity stays stable. If we put jobsList in the dep array, the 5 s poll
-  // interval below would tear down and recreate every time jobs update —
-  // which is every poll cycle, defeating the throttle.
   const jobsListRef = useRef(jobsList);
   useEffect(() => {
     jobsListRef.current = jobsList;
@@ -2611,8 +2489,6 @@ function CrawlerAdmin() {
       for (const entry of results) {
         if (entry) next[entry[0]] = entry[1];
       }
-      // Bail on setState if nothing changed — keeps referential equality for
-      // consumers memoized on jobProgress.
       const prevKeys = Object.keys(prev).sort();
       const nextKeys = Object.keys(next).sort();
       if (
@@ -2626,14 +2502,9 @@ function CrawlerAdmin() {
     });
   }, []);
 
-  // Poll jobs every 5 s while any job is running. Keyed on the running-state
-  // transition rather than jobsList so the interval isn't recreated on every
-  // poll's setState.
   const hasRunningJob = !!jobsList?.items.some((j) => j.status === 'running');
   useEffect(() => {
     if (!hasRunningJob) return;
-    // Fetch progress immediately on transition into running so the panel
-    // doesn't look empty for up to 5 s.
     void fetchProgressForRunning();
     const id = setInterval(() => {
       void fetchJobs();
@@ -2642,7 +2513,6 @@ function CrawlerAdmin() {
     return () => clearInterval(id);
   }, [hasRunningJob, fetchJobs, fetchProgressForRunning]);
 
-  // Stable handler for the BackgroundJobsCard cancel button.
   const handleCancelJob = useCallback(
     (id: string) => {
       void adminApi
@@ -2665,8 +2535,6 @@ function CrawlerAdmin() {
     });
   }, []);
 
-  // Stable per-adapter limit setter so memoized rows don't re-render when the
-  // parent re-renders for unrelated reasons.
   const setCrawlerLimitForAdapter = useCallback(
     (adapter: string, value: string) => {
       setCrawlerLimits((prev) =>
@@ -2685,10 +2553,8 @@ function CrawlerAdmin() {
   };
 
   /**
-   * Toggle every adapter of a given fetcher tier at once without disturbing
-   * adapters from other tiers. If the tier is already fully selected, deselect
-   * all of its members; otherwise select every member (covers the mixed/empty
-   * case with a single click).
+   * Toggle every adapter of one fetcher tier at once, leaving other tiers
+   * alone. A fully selected tier clears; any other state selects all of it.
    */
   const toggleTierSelection = (tier: FetcherTier) => {
     const membersOfTier = crawlerAdapters.filter(
@@ -2707,11 +2573,6 @@ function CrawlerAdmin() {
     });
   };
 
-  // Sorted adapter list — only recomputes when adapters or tier metadata
-  // changes. Used by Live Crawlers, New Schedule chips, and any other
-  // tier-grouped renderer. Sorting ~100 items per render is cheap on its
-  // own but compounds with the rest of the page; memoizing also hands a
-  // stable reference to memoized children.
   const sortedAdapters = useMemo(
     () => sortAdaptersByTier(crawlerAdapters, adapterTiers),
     [crawlerAdapters, adapterTiers]
@@ -2729,9 +2590,6 @@ function CrawlerAdmin() {
     [adapterConfigs, adapterTiers]
   );
 
-  // Tier toggle stats for the Live Crawlers selector. Recomputes only when
-  // the adapter set, their tiers, or the selection actually change — not on
-  // unrelated keystrokes (e.g. typing into the new-schedule name input).
   const tierToggleStats = useMemo(() => {
     return (['http', 'tls', 'browser', 'unverified'] as const)
       .map((tier) => {
