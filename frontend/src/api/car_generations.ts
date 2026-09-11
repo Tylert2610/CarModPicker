@@ -1,8 +1,11 @@
-// Car Generations domain API. Mirrors backend endpoints/car_generations.py.
-// Read-only; cars are seeded from backend car_generations_data.
+/**
+ * Car generation lookup and search, the vehicle taxonomy build lists hang from.
+ */
+
 import { apiClient } from './client';
 import type { CarGenerationRead } from '../types/Api';
 
+/** Car generation lookup, search, and make or model browsing. */
 export const carGenerationsApi = {
   getCar: (carId: string) =>
     apiClient.get<CarGenerationRead>(`/car-generations/${carId}`),
@@ -32,7 +35,6 @@ export const carGenerationsApi = {
     apiClient.get<CarGenerationRead[]>('/car-generations/by-ids', {
       params: { ids },
     }),
-  // Stats and count endpoints
   getCarMakeStats: () =>
     apiClient.get<Record<string, number>>('/car-generations/stats/car-makes'),
   countCars: () => apiClient.get<{ count: number }>('/car-generations/count'),

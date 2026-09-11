@@ -1,22 +1,7 @@
-// Phase 8 plan 08-02: authApi coverage tests.
-//
-// Covers every exported method on `authApi` (23 total) plus the branching
-// behavior inside `login`, `loginWith2FA`, `webauthnLoginVerify`, `googleLink`,
-// `googleSignup`, and `oauthTwoFactor` (token-storage side effects + user-
-// payload unwrap semantics). Also covers the special `logout` path that calls
-// `removeStoredToken` after a successful POST.
-//
-// Mocking pattern (canonical Wave 1 — see PATTERNS.md §7): setup.ts (Phase 8
-// D-18) installs `vi.mock('../api/client')` globally, which means importing
-// `apiClient`, `setStoredToken`, and `removeStoredToken` from `./client` gives
-// us `vi.fn()` references automatically. We narrow each mock at module scope
-// via a cast to `MockedFunction<typeof apiClient.<verb>>` / `typeof
-// setStoredToken`, which lets us use the mock methods (`mockResolvedValueOnce`,
-// `toHaveBeenCalledWith`) without the per-call lint noise.
-//
-// Lint note: `@typescript-eslint/unbound-method` fires on `apiClient.<verb>` in
-// argument position (detached method reference). Since apiClient IS the mock,
-// the cast is runtime-safe — we silence the rule at each module-scope capture.
+/**
+ * Tests for authApi.
+ */
+
 import {
   beforeEach,
   describe,
@@ -99,7 +84,6 @@ describe('authApi — login', () => {
       data: {
         access_token: 'tok-456',
         token_type: 'bearer',
-        // intentionally no user field
       },
     });
 

@@ -1,15 +1,13 @@
+/**
+ * Picks a grid column count from the measured container width.
+ */
+
 import { useMemo, useRef } from 'react';
 
 /**
- * Given a list of column keys, their drop priorities, and their minimum widths,
- * returns the subset of columns that fit within containerWidth.
- *
- * Columns with priority <= 1 are pinned and never dropped.
- * All others are dropped highest-priority-number-first until the total fits.
- * Returns all keys when containerWidth === 0 (not yet measured).
- *
- * visibleColumns preserves its array reference when the column set is unchanged,
- * so downstream memos that depend on it don't re-run on every resize.
+ * Returns the columns that fit `containerWidth`, dropping the highest priority
+ * numbers first and never those at priority 1 or below. The array reference is
+ * preserved while the set is unchanged, so downstream memos survive a resize.
  */
 export function useResponsiveColumns<K extends string>(
   keys: K[],

@@ -1,3 +1,7 @@
+/**
+ * Test-only providers that supply routing and a mocked auth state.
+ */
+
 import React from 'react';
 import { BrowserRouter } from 'react-router-dom';
 import { vi } from 'vitest';
@@ -19,11 +23,11 @@ const defaultAuthState = {
   user: null,
 };
 
+/** Wraps children in routing and a mocked auth state for tests. */
 export const TestProviders: React.FC<TestProvidersProps> = ({
   children,
   initialAuthState = defaultAuthState,
 }) => {
-  // Set up the mock useAuth hook to return the initial state
   mockUseAuth.mockReturnValue({
     isAuthenticated: initialAuthState.isAuthenticated,
     user: initialAuthState.user,

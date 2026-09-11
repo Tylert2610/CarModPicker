@@ -1,13 +1,14 @@
-// Phase 8 D-06: Report fixture factories for admin (Reports / Moderation) tests.
-//
-// Factory pattern per research §Pitfall 6 — every call returns a fresh object
-// so parallel Vitest workers do not leak fixture state across files.
+/**
+ * Content report fixtures for the admin tests.
+ */
+
 import type {
   PaginatedResponse,
   ReportRead,
   ReportWithDetails,
 } from '../../../types/Api';
 
+/** Builds a content report fixture, overriding any field. */
 export const makeReport = (
   overrides: Partial<ReportRead> = {}
 ): ReportRead => ({
@@ -26,6 +27,7 @@ export const makeReport = (
   ...overrides,
 });
 
+/** Builds a content report fixture carrying reporter details. */
 export const makeReportWithDetails = (
   overrides: Partial<ReportWithDetails> = {}
 ): ReportWithDetails => ({
@@ -37,9 +39,11 @@ export const makeReportWithDetails = (
   ...overrides,
 });
 
+/** Builds a list of content report fixtures. */
 export const makeReportList = (items?: ReportRead[]): ReportRead[] =>
   items ?? [makeReport()];
 
+/** Builds a list of detailed content report fixtures. */
 export const makeReportWithDetailsList = (
   items?: ReportWithDetails[]
 ): PaginatedResponse<ReportWithDetails> => {

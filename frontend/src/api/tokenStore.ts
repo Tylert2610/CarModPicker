@@ -1,21 +1,7 @@
 /**
- * Token storage, local to this application.
- *
- * This used to be `TokenStore` from `@webbpulse/auth`. Version 0.4.0 of that
- * package removed the whole `localStorage`-backed token store rather than
- * deprecating it: section 7.1 of the identity standard holds the access token
- * in memory only, refreshed from an httpOnly cookie, and leaving the storage
- * class exported invites exactly the use the design exists to stop.
- *
- * CarModPicker has not adopted the shared identity service, so it still holds a
- * bearer token in `localStorage` and there is nothing in 0.5.0 to hold it
- * instead. `AuthClient` is not a drop-in replacement, it is a different
- * mechanism, and moving to it is the identity migration rather than a
- * dependency bump. So the code comes back here unchanged, which keeps this bump
- * behaviour-neutral and leaves the migration a separate, deliberate change.
- *
- * The behaviour below is byte-for-byte the 0.3.0 implementation, minus the
- * two-application key comment that no longer applies to a single consumer.
+ * Bearer token storage, local to this application since `@webbpulse/auth` 0.4.0
+ * removed its `localStorage` backed store. Falls back to memory where
+ * `localStorage` is unusable.
  */
 
 /** Minimal storage contract. `localStorage` satisfies it. */
@@ -47,11 +33,8 @@ export class MemoryTokenStorage implements TokenStorage {
 }
 
 /**
- * Returns `localStorage` when it is usable, an in memory store otherwise.
- *
- * The probe is a real write. Safari in private mode, and any browser set to
- * block site data, exposes a `localStorage` object whose `setItem` throws, so
- * a presence check alone is not enough.
+ * Returns `localStorage` when usable, an in memory store otherwise. Probes with
+ * a real write, since a blocked store is present but throws on `setItem`.
  */
 export function defaultTokenStorage(): TokenStorage {
   try {
@@ -85,17 +68,16 @@ export class TokenStore {
   set(token: string): void {
     try {
       this.storage.setItem(this.key, token);
-    } catch {
-      // A browser that refuses the write leaves the session in memory only.
-      // Failing the login over it would be worse than a shorter session.
+    } catch (error) {
+      void error;
     }
   }
 
   clear(): void {
     try {
       this.storage.removeItem(this.key);
-    } catch {
-      // Nothing useful to do; the token was already unreachable.
+    } catch (error) {
+      void error;
     }
   }
 }

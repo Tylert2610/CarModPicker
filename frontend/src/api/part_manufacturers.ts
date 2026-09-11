@@ -1,4 +1,7 @@
-// Part Manufacturers domain API. Mirrors backend endpoints/part_manufacturers.py.
+/**
+ * Part manufacturer lookup, used to populate filters and part forms.
+ */
+
 import { apiClient } from './client';
 import type {
   PartManufacturerCreate,
@@ -7,6 +10,7 @@ import type {
   PartRead,
 } from '../types/Api';
 
+/** Part manufacturer lookup and editing. */
 export const partManufacturersApi = {
   getPartManufacturers: (activeOnly: boolean = true) =>
     apiClient.get<PartManufacturerResponse[]>('/part-manufacturers/', {

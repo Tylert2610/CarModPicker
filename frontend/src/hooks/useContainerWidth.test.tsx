@@ -1,3 +1,7 @@
+/**
+ * Tests for useContainerWidth.
+ */
+
 import { act, renderHook } from '@testing-library/react';
 import {
   afterEach,
@@ -9,11 +13,6 @@ import {
   vi,
 } from 'vitest';
 import { useContainerWidth } from './useContainerWidth';
-
-// Phase 8 D-09 — useContainerWidth wires a ResizeObserver to a DOM element
-// via a callback ref. jsdom does not implement ResizeObserver, so we install
-// a capturing stub that lets the test fire the resize callback manually.
-// Pattern mirrors App.coverage.test.tsx:54-68.
 
 type ObserverCallback = (
   entries: Array<Pick<ResizeObserverEntry, 'contentRect'>>
@@ -38,7 +37,6 @@ beforeAll(() => {
   (
     globalThis as unknown as { ResizeObserver: typeof ResizeObserverStub }
   ).ResizeObserver = ResizeObserverStub;
-  // Also stub requestAnimationFrame so the observer callback fires inline.
   vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback): number => {
     cb(0);
     return 0;
@@ -114,7 +112,6 @@ describe('useContainerWidth', () => {
     rerender();
     expect(result.current[1]).toBe(100);
 
-    // Fire the captured ResizeObserver callback with a new width.
     const cb = Array.from(observedCallbacks)[0];
     expect(cb).toBeDefined();
     act(() => {
@@ -145,7 +142,6 @@ describe('useContainerWidth', () => {
     });
     expect(observedCallbacks.size).toBe(1);
 
-    // Detach — observerRef.current.disconnect() should remove the callback.
     act(() => {
       result.current[0](null);
     });

@@ -1,3 +1,7 @@
+/**
+ * Sample entities and api mock wiring shared by the component tests.
+ */
+
 import { vi } from 'vitest';
 import type {
   BuildListRead,
@@ -8,7 +12,7 @@ import type {
   VoteSummary,
 } from '../../types/Api';
 
-// Mock user data
+/** Baseline user fixture the other fixtures and tests build on. */
 export const mockUser: UserRead = {
   id: '11111111-1111-7111-8111-111111111111',
   username: 'testuser',
@@ -24,7 +28,7 @@ export const mockUser: UserRead = {
   totp_enabled: false,
 };
 
-// Mock car data
+/** Baseline car generation fixture. */
 export const mockCar: CarGenerationRead = {
   id: '22222222-2222-7222-8222-222222222222',
   car_make_name: 'Toyota',
@@ -38,7 +42,7 @@ export const mockCar: CarGenerationRead = {
   image_urls: ['https://example.com/car.jpg'],
 };
 
-// Mock build list data
+/** Baseline build list fixture. */
 export const mockBuildList: BuildListRead = {
   id: '33333333-3333-7333-8333-333333333333',
   name: 'Test Build',
@@ -51,12 +55,12 @@ export const mockBuildList: BuildListRead = {
   updated_at: '2024-01-01T00:00:00Z',
 };
 
-// Mock global part data
+/** Baseline part fixture. */
 export const mockPart: PartRead = {
   id: '44444444-4444-7444-8444-444444444444',
   name: 'Test Part',
   description: 'Test part description',
-  best_price_cents: 10000, // $100.00
+  best_price_cents: 10000,
   image_urls: ['https://example.com/part.jpg'],
   category_id: '55555555-5555-7555-8555-555555555555',
   user_id: '11111111-1111-7111-8111-111111111111',
@@ -69,7 +73,7 @@ export const mockPart: PartRead = {
   updated_at: '2024-01-01T00:00:00Z',
 };
 
-// Mock category data
+/** Baseline category fixture. */
 export const mockCategory: CategoryResponse = {
   id: '55555555-5555-7555-8555-555555555555',
   name: 'engine',
@@ -82,7 +86,7 @@ export const mockCategory: CategoryResponse = {
   updated_at: '2024-01-01T00:00:00Z',
 };
 
-// Mock vote summary
+/** Baseline vote summary fixture. */
 export const mockVoteSummary: VoteSummary = {
   entity_id: '44444444-4444-7444-8444-444444444444',
   entity_type: 'part',
@@ -93,34 +97,28 @@ export const mockVoteSummary: VoteSummary = {
   user_vote: 'upvote',
 };
 
-// Mock API responses
+/** Canned responses keyed by path, with a 404 fallback. */
 export const mockApiResponses = {
-  // Auth endpoints
   '/auth/login': { data: { access_token: 'mock-token', token_type: 'bearer' } },
   '/auth/logout': { data: { message: 'Logged out successfully' } },
   '/users/me': { data: mockUser },
 
-  // Cars endpoints
   '/cars': { data: [mockCar] },
   '/cars/1': { data: mockCar },
 
-  // Build lists endpoints
   '/build-lists': { data: [mockBuildList] },
   '/build-lists/1': { data: mockBuildList },
 
-  // Global parts endpoints
   '/parts': { data: [mockPart] },
   '/parts/1': { data: mockPart },
   '/parts/1/votes': { data: mockVoteSummary },
 
-  // Categories endpoints
   '/categories': { data: [mockCategory] },
 
-  // Default error response
   default: { data: null, status: 404 },
 };
 
-// Mock axios instance
+/** Vitest mock standing in for the real api client. */
 export const mockApiClient = {
   get: vi.fn(),
   post: vi.fn(),
@@ -129,12 +127,10 @@ export const mockApiClient = {
   patch: vi.fn(),
 };
 
-// Setup default mock responses
+/** Resets the api mocks and wires them to the canned responses. */
 export const setupApiMocks = () => {
-  // Reset all mocks
   vi.clearAllMocks();
 
-  // Setup default responses
   mockApiClient.get.mockImplementation((url: string) => {
     const response =
       mockApiResponses[url as keyof typeof mockApiResponses] ||

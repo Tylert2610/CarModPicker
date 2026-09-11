@@ -1,15 +1,18 @@
-// Images domain API. Mirrors backend endpoints/images.py.
-//
-// Co-located response types per D-04. The admin bucket-summary types are
-// authoritative here and `admin.ts` imports them from this module.
+/**
+ * Presigned S3 upload flow for user images, plus the admin bucket usage report.
+ * Uploads go straight to S3 so image bytes never pass through the API.
+ */
+
 import { apiClient } from './client';
 
+/** Presigned upload target plus the key the caller stores. */
 export interface ImageUploadResponse {
   file_key: string;
   presigned_url: string;
   message: string;
 }
 
+/** A presigned URL for reading or writing one object. */
 export interface PresignedUrlResponse {
   presigned_url: string;
   file_key: string;
@@ -24,6 +27,7 @@ export interface BucketEntityTypeCountResponse {
   size_gb?: number;
 }
 
+/** Presigned image upload and the admin bucket usage report. */
 export const imageApi = {
   uploadImage: async (
     file: File,

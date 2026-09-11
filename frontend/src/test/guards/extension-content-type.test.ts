@@ -1,15 +1,16 @@
+/**
+ * Guard: the Chrome extension must send a Content-Type FastAPI accepts.
+ */
+
 import { readFileSync } from 'fs';
 import { globSync } from 'glob';
 import { describe, expect, it } from 'vitest';
 import { resolve } from 'path';
 
 /**
- * Walks `src` starting at `startIdx`, which must point at an opening `{`.
- * Returns the index just past the matching closing `}`, or -1 if unbalanced.
- * Treats string literals (single, double, backtick) as opaque so braces inside
- * strings do not affect the depth count. Ignores `//` line comments and `/*`
- * block comments. This intentionally does not try to be a full JS parser —
- * it only needs to be correct for the shape of real fetch(...) options objects.
+ * Returns the index just past the brace matching the one at `startIdx`, or -1
+ * when unbalanced. Skips string literals and comments, which is enough for the
+ * shape of a real fetch options object without being a full parser.
  */
 function findMatchingBrace(src: string, startIdx: number): number {
   if (src[startIdx] !== '{') return -1;
@@ -18,21 +19,18 @@ function findMatchingBrace(src: string, startIdx: number): number {
   const len = src.length;
   while (i < len) {
     const ch = src[i];
-    // Line comment
     if (ch === '/' && src[i + 1] === '/') {
       const nl = src.indexOf('\n', i + 2);
       if (nl === -1) return -1;
       i = nl + 1;
       continue;
     }
-    // Block comment
     if (ch === '/' && src[i + 1] === '*') {
       const end = src.indexOf('*/', i + 2);
       if (end === -1) return -1;
       i = end + 2;
       continue;
     }
-    // String literal (single, double, backtick). Skip escaped chars.
     if (ch === '"' || ch === "'" || ch === '`') {
       const quote = ch;
       i++;
@@ -46,8 +44,6 @@ function findMatchingBrace(src: string, startIdx: number): number {
           i++;
           break;
         }
-        // In template literals, handle ${...} interpolation by recursively
-        // skipping the embedded block so braces inside expressions do not leak.
         if (quote === '`' && c === '$' && src[i + 1] === '{') {
           const end = findMatchingBrace(src, i + 1);
           if (end === -1) return -1;
@@ -69,23 +65,18 @@ function findMatchingBrace(src: string, startIdx: number): number {
 }
 
 /**
- * Extract every options-object literal passed to `fetch(...)` in `src`.
- * Returns the substring of each options object (including the wrapping braces).
- * Uses brace balancing so nested object literals (e.g. `headers: { ... }`) do
- * not truncate the match — fixes WR-01 from the Phase 6 code review.
+ * Extracts every options-object literal passed to `fetch(...)`, balancing braces
+ * so a nested literal such as `headers` does not truncate the match.
  */
 function extractFetchOptionsObjects(src: string): string[] {
   const results: string[] = [];
   const fetchRe = /\bfetch\s*\(/g;
   let m: RegExpExecArray | null;
   while ((m = fetchRe.exec(src)) !== null) {
-    // Find the options object: scan forward for the first top-level `{` before
-    // the matching close-paren of the fetch call.
     let i = m.index + m[0].length;
     let parenDepth = 1;
     while (i < src.length && parenDepth > 0) {
       const ch = src[i];
-      // Skip strings so we don't trip on parens/braces inside them.
       if (ch === '"' || ch === "'" || ch === '`') {
         const quote = ch;
         i++;

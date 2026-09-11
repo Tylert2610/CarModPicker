@@ -1,10 +1,7 @@
-// The OAuth provider discovery read, and the cache underneath it.
-//
-// Driven through a stubbed `fetch` rather than a stubbed client, because what
-// is under test is the wire shape tolerance: this route crosses a version
-// boundary and the parse has to survive a backend that predates the route, one
-// that answers an empty set, and one that answers a provider this build has
-// never heard of.
+/**
+ * Tests for OAuth provider discovery and caching.
+ */
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   OAUTH_PROVIDERS_PATH,
@@ -50,7 +47,6 @@ describe('parseProviders', () => {
   });
 
   it('keeps a provider this build has never heard of', () => {
-    // The whole point of reading the route rather than hardcoding a list.
     expect(
       parseProviders({
         providers: [{ id: 'okta', display_name: 'Acme SSO' }],
@@ -121,9 +117,6 @@ describe('oauthProviders', () => {
   });
 
   it('asks again after a read that learned nothing', async () => {
-    // An empty answer is not cached: it is indistinguishable from a dropped
-    // request, and hiding every provider for the life of the page over one is
-    // worse than one extra GET.
     const failing = vi.fn().mockRejectedValue(new TypeError('offline'));
     await oauthProviders(URL_UNDER_TEST, failing);
     const succeeding = answering(200, {
@@ -135,8 +128,6 @@ describe('oauthProviders', () => {
   });
 
   it('does not send credentials', async () => {
-    // Discovery is anonymous, and sending the refresh cookie to a route that
-    // does not read it is a habit worth not forming.
     const fetchImpl = answering(200, { providers: [] });
     await oauthProviders(URL_UNDER_TEST, fetchImpl);
     expect(fetchImpl).toHaveBeenCalledWith(

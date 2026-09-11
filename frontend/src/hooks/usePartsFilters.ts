@@ -1,3 +1,7 @@
+/**
+ * Loads the category and manufacturer options that back the parts filter UI.
+ */
+
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { LARGE_FETCH_LIMIT } from '../constants';
@@ -16,6 +20,7 @@ import useApiRequest from './UseApiRequest';
 
 const PARTS_PER_PAGE = 100;
 
+/** Scoping and URL sync options for the parts filter hook. */
 export interface UsePartsFiltersOptions {
   /** When set, list and filter-options are scoped to this user (e.g. My Parts). */
   user_id?: string;
@@ -23,8 +28,8 @@ export interface UsePartsFiltersOptions {
   syncToUrl?: boolean;
 }
 
+/** Filter state, the derived query params, and the setters that change them. */
 export interface UsePartsFiltersReturn {
-  // List API params (include sort so server sorts full result set; pagination then returns correct page)
   params: {
     skip: number;
     limit: number;
@@ -43,7 +48,6 @@ export interface UsePartsFiltersReturn {
   paginationInfo: PaginationInfo | null;
   setPaginationInfo: (info: PaginationInfo | null) => void;
 
-  // Filter state
   selectedCategoryIds: string[];
   setSelectedCategoryIds: (ids: string[]) => void;
   selectedPartManufacturerIds: string[];
@@ -63,11 +67,9 @@ export interface UsePartsFiltersReturn {
   setPriceMin: (s: string) => void;
   setPriceMax: (s: string) => void;
 
-  // Sort (server-side; included in params and URL so page 2+ respects sort)
   sortParam: string;
   setSortParam: (s?: string) => void;
 
-  // Data
   categories: CategoryResponse[];
   availableMakes: string[];
   availableCars: CarGenerationRead[];
@@ -82,7 +84,6 @@ export interface UsePartsFiltersReturn {
     make_names?: string[];
   } | null;
 
-  // Derived
   availableCategoryIds: string[];
   availablePartManufacturerIds: string[];
   hasPriceRange: boolean;
@@ -93,14 +94,13 @@ export interface UsePartsFiltersReturn {
   toggleCategory: (id: string) => void;
   togglePartManufacturer: (id: string) => void;
 
-  // Loading
   isLoadingMakes: boolean;
   isLoadingCars: boolean;
 
-  // URL (only meaningful when syncToUrl is true)
   isInitializedFromUrl: boolean;
 }
 
+/** Holds parts list filter state and derives the api query params from it. */
 export function usePartsFilters(
   options: UsePartsFiltersOptions = {}
 ): UsePartsFiltersReturn {
@@ -171,8 +171,8 @@ export function usePartsFilters(
     try {
       const response = await categoriesApi.getCategories();
       setCategories(response.data);
-    } catch {
-      // ignore
+    } catch (error) {
+      void error;
     }
   }, []);
 
@@ -180,8 +180,8 @@ export function usePartsFilters(
     try {
       const response = await partManufacturersApi.getPartManufacturers(true);
       setAvailablePartManufacturers(response.data);
-    } catch {
-      // ignore
+    } catch (error) {
+      void error;
     }
   }, []);
 
@@ -191,8 +191,6 @@ export function usePartsFilters(
     void loadPartManufacturers();
   }, [fetchMakes, loadCategories, loadPartManufacturers]);
 
-  // When part_manufacturer/category/search filters are applied, filter-options returns make_names;
-  // otherwise use all makes from makeStats.
   useEffect(() => {
     if (filterOptions?.make_names?.length) {
       setAvailableMakes([...filterOptions.make_names].sort());
@@ -201,7 +199,6 @@ export function usePartsFilters(
     }
   }, [makeStats, filterOptions?.make_names]);
 
-  // When vehicle options are scoped by filters, clear vehicle selection if selected make is no longer valid
   useEffect(() => {
     if (
       filterOptions?.make_names?.length &&
@@ -214,7 +211,6 @@ export function usePartsFilters(
     }
   }, [filterOptions?.make_names, selectedMake]);
 
-  // Restrict to car_ids from filter-options when part_manufacturer/category/search filters are applied
   useEffect(() => {
     const list = normalizeCarReadList(carsByMake ?? undefined);
     if (filterOptions?.car_ids?.length) {
@@ -261,7 +257,6 @@ export function usePartsFilters(
     ]
   );
 
-  // Stable key so we only fetch filter-options when the logical request changes (avoids duplicate fetches from re-renders)
   const filterOptionsRequestKey = `${selectedCategoryIds.join(',')}-${selectedPartManufacturerIds.join(',')}-${showUniversalParts}-${effectiveCarIds.join(',')}-${searchTerm}-${userId ?? ''}`;
 
   useEffect(() => {
@@ -424,7 +419,6 @@ export function usePartsFilters(
   useEffect(() => {
     if (selectedMake && !isInitializingFromUrlRef.current) {
       void fetchCarsByMake(selectedMake);
-      // Only clear model/generation when user changed make; preserve when restoring from URL (car_id)
       if (
         !selectedGeneration ||
         (selectedGeneration.car_make_name ?? '') !== selectedMake
@@ -718,4 +712,5 @@ export function usePartsFilters(
   };
 }
 
+/** Page size for parts lists, shared so paging math agrees across callers. */
 export const GLOBAL_PARTS_PARTS_PER_PAGE = PARTS_PER_PAGE;

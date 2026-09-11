@@ -1,8 +1,6 @@
-// Phase 8 Wave 1 API-module test pattern (PATTERNS.md §7).
-// `vi.mocked(apiClient.method)` and `expect(apiClient.method).toHaveBeenCalledWith(...)`
-// both reference methods as unbound values; the eslint rule `@typescript-eslint/unbound-method`
-// is a false positive here because vitest's mock runtime invokes them via the same
-// `mockApiClient` object identity (see frontend/src/test/setup.ts dual-mock block).
+/**
+ * Tests for votesApi and the per entity vote helpers.
+ */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiClient } from './client';
@@ -15,7 +13,6 @@ import {
 } from '../test/mocks/api';
 import type { VoteCreate, VoteRead } from '../types/Api';
 
-// Reusable VoteRead fixture — matches the backend VoteRead response shape.
 const makeVoteRead = (overrides: Partial<VoteRead> = {}): VoteRead => ({
   id: '66666666-6666-7666-8666-666666666666',
   user_id: '11111111-1111-7111-8111-111111111111',
@@ -31,8 +28,6 @@ describe('votesApi (polymorphic)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
-
-  // --- voteOnEntity — polymorphic dispatch ---
 
   it('voteOnEntity forwards entity_type=part in URL', async () => {
     const body: VoteCreate = {
@@ -93,8 +88,6 @@ describe('votesApi (polymorphic)', () => {
     );
   });
 
-  // --- removeVote — polymorphic dispatch ---
-
   it('removeVote DELETEs /votes/:entityType/:entityId for part', async () => {
     vi.mocked(apiClient.delete).mockResolvedValueOnce({
       data: { message: 'Vote removed' },
@@ -116,8 +109,6 @@ describe('votesApi (polymorphic)', () => {
       `/votes/build_list/${mockBuildList.id}`
     );
   });
-
-  // --- getVoteSummary — polymorphic dispatch ---
 
   it('getVoteSummary GETs /votes/:entityType/:entityId/summary for part', async () => {
     vi.mocked(apiClient.get).mockResolvedValueOnce({
@@ -153,8 +144,6 @@ describe('votesApi (polymorphic)', () => {
     expect(result.data.entity_type).toBe('build_list');
   });
 
-  // --- getFlaggedEntities — polymorphic admin endpoint ---
-
   it('getFlaggedEntities GETs /votes/admin/flagged/:entityType for part with limit param', async () => {
     vi.mocked(apiClient.get).mockResolvedValueOnce({ data: [] });
 
@@ -186,8 +175,6 @@ describe('votesApi (polymorphic)', () => {
       { params: { limit: 5 } }
     );
   });
-
-  // --- countVotes ---
 
   it('countVotes GETs /votes/count', async () => {
     vi.mocked(apiClient.get).mockResolvedValueOnce({ data: { count: 42 } });

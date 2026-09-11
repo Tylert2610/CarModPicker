@@ -1,15 +1,15 @@
-// Admin domain API. Mirrors backend endpoints/admin/*.
-//
-// All admin-specific response types are co-located here per D-04. Re-imports
-// `BucketEntityTypeCountResponse` from `./images` to avoid duplicating the
-// images-bucket type that's already authoritative there.
+/**
+ * Admin-only endpoints: migrations, background jobs, crawler adapters, curation,
+ * and moderation queues. Separated from the user-facing api so admin surface
+ * changes never widen the bundle every visitor loads.
+ */
+
 import { apiClient } from './client';
 import type { BucketEntityTypeCountResponse } from './images';
 
-// Re-export the cross-domain images bucket type so admin call sites can pull
-// it from this module alongside the admin-specific types.
 export type { BucketEntityTypeCountResponse };
 
+/** Outcome of running database migrations, including captured output. */
 export interface MigrationResult {
   success: boolean;
   output: string;
@@ -17,16 +17,19 @@ export interface MigrationResult {
   current_revision: string | null;
 }
 
+/** The migration revision the database is currently at. */
 export interface CurrentRevisionResult {
   current_revision: string;
   output: string;
 }
 
+/** Outcome of seeding initial reference data. */
 export interface InitDataResult {
   success: boolean;
   message: string;
 }
 
+/** Counts removed when purging crawler created parts. */
 export interface DeleteCrawlerPartsResult {
   deleted_count: number;
   service_account_count: number;
@@ -48,6 +51,7 @@ export interface BackgroundJob {
   created_by_user_id: string | null;
 }
 
+/** A page of background job records. */
 export interface BackgroundJobList {
   items: BackgroundJob[];
   total: number;
@@ -55,11 +59,13 @@ export interface BackgroundJobList {
   offset: number;
 }
 
+/** How much one adapter has parsed during the current run. */
 export interface CrawlerAdapterProgress {
   parsed_this_run: number;
   last_parsed_at: string | null;
 }
 
+/** Live progress of a crawler job, broken down by adapter. */
 export interface CrawlerJobProgress {
   job_id: string;
   status: string;
@@ -77,6 +83,7 @@ export interface CrawlerRunResponse {
   message: string;
 }
 
+/** Parameters for starting a crawler run. */
 export interface CrawlerRunRequest {
   adapters: string[];
   crawler_user_id?: string;
@@ -97,6 +104,7 @@ export interface RescrapeArchivesRequest {
   default_category_id: string;
 }
 
+/** Acknowledgement that an archive rescrape was queued. */
 export interface RescrapeArchivesQueuedResponse {
   status: string;
   job_id: string;
@@ -152,6 +160,7 @@ export interface CanonicalLinkGroupMember {
   created_at: string;
 }
 
+/** A canonical part and every part linked to it. */
 export interface CanonicalLinkGroupResponse {
   canonical_id: string;
   members: CanonicalLinkGroupMember[];
@@ -168,6 +177,7 @@ export interface UrlLookupMatch {
   retailer_id: string | null;
 }
 
+/** Parts found for a product URL, after normalization. */
 export interface UrlLookupResponse {
   normalized_url: string;
   /**
@@ -207,10 +217,12 @@ export interface CrawlerAdapterConfig {
   updated_at: string;
 }
 
+/** Every per adapter crawler configuration. */
 export interface CrawlerAdapterConfigList {
   items: CrawlerAdapterConfig[];
 }
 
+/** Editable fields on a crawler adapter configuration. */
 export interface CrawlerAdapterConfigUpdate {
   delay_sec?: number;
   per_run_limit?: number | null;
@@ -234,11 +246,13 @@ export interface CrawlerSchedule {
   adapters: { adapter_name: string }[];
 }
 
+/** Crawler schedules plus the named presets available to them. */
 export interface CrawlerScheduleList {
   items: CrawlerSchedule[];
   presets: Record<string, string>;
 }
 
+/** New crawler schedule submission. */
 export interface CrawlerScheduleCreate {
   name: string;
   description?: string | null;
@@ -248,6 +262,7 @@ export interface CrawlerScheduleCreate {
   adapters: string[];
 }
 
+/** Editable fields on a crawler schedule. */
 export interface CrawlerScheduleUpdate {
   description?: string | null;
   enabled?: boolean;
@@ -256,21 +271,17 @@ export interface CrawlerScheduleUpdate {
   adapters?: string[];
 }
 
+/** Whether one schedule reconciled against the scheduler. */
 export interface CrawlerReconcileResult {
   schedule_name: string;
   ok: boolean;
   error: string | null;
 }
 
+/** Reconcile outcome for every crawler schedule. */
 export interface CrawlerReconcileAllResponse {
   results: CrawlerReconcileResult[];
 }
-
-// Extraction-health (admin only) — mirrors backend Pydantic models in
-// `backend/app/api/endpoints/admin/extraction_health.py`. Per MEM046/D009 the
-// failure-rate signal is sourced from `crawled_pages.parse_status` over a
-// 7-day rolling window (NOT CloudWatch EMF). Per MEM037 the canonical adapter
-// count is 108 (T0:83 / T1:15 / T2:10).
 
 /** Per-tier coverage block: parts with any specs + per-field presence ratios. */
 export interface CoverageTierBlock {
@@ -317,6 +328,7 @@ export interface ExtractionHealthResponse {
   window: WindowMeta;
 }
 
+/** Admin endpoint calls, grouped so admin surface stays in one module. */
 export const adminApi = {
   runMigrations: () =>
     apiClient.post<MigrationResult>('/admin/db-ops/migrations/run'),
@@ -327,7 +339,6 @@ export const adminApi = {
   initPartCategories: () =>
     apiClient.post<InitDataResult>('/admin/db-ops/init/part-categories'),
 
-  // Crawlers
   getCrawlers: () =>
     apiClient.get<{
       adapters: string[];
@@ -344,26 +355,16 @@ export const adminApi = {
     ),
 
   /**
-   * Admin: archived page count per source (adapter name or chrome_extension).
-   *
-   * NOTE: URL is under `/crawled-pages/...` rather than `/admin/crawled-pages/...`
-   * because the backend crawled_pages router is mounted at `/crawled-pages`
-   * (see backend/app/main.py EndpointRegistry). Admin-only access is enforced
-   * at the handler level via `Depends(get_current_admin_user)` on
-   * `count_crawled_pages_by_source` in
-   * backend/app/api/endpoints/crawled_pages.py — verified in Phase 6 WR-05.
-   * A non-admin token will receive 403 Forbidden from the backend.
+   * Archived page count per source. Sits under `/crawled-pages` rather than
+   * `/admin`, because that is where the backend router mounts; admin access is
+   * enforced on the handler and a non-admin token gets a 403.
    */
   getCrawledPageCountsBySource: () =>
     apiClient.get<Record<string, number>>('/crawled-pages/counts-by-source'),
 
   /**
-   * Admin: per-source, per-parse_status counts — drives the parsed/total progress pill.
-   *
-   * Admin access is enforced by the backend handler
-   * (`count_crawled_pages_by_source_and_status` uses
-   * `Depends(get_current_admin_user)`); see note on
-   * `getCrawledPageCountsBySource` above for the URL-prefix rationale.
+   * Per-source, per-parse-status counts, driving the parsed/total progress pill.
+   * Admin access is enforced on the backend handler.
    */
   getCrawledPageCountsBySourceAndStatus: () =>
     apiClient.get<Record<string, Record<string, number>>>(
@@ -402,7 +403,6 @@ export const adminApi = {
   getCrawlBucketSummary: () =>
     apiClient.get<CrawlBucketSummaryResponse>('/admin/stats/crawl-bucket'),
 
-  // Background jobs
   listJobs: (params?: {
     status?: string;
     job_type?: string;
@@ -416,7 +416,6 @@ export const adminApi = {
   cancelJob: (jobId: string) =>
     apiClient.post<BackgroundJob>(`/admin/jobs/${jobId}/cancel`),
 
-  // Crawler schedules (user-defined, N-to-N with adapters, reconciled to EventBridge)
   listCrawlerSchedules: () =>
     apiClient.get<CrawlerScheduleList>('/admin/crawler-schedules/'),
   createCrawlerSchedule: (body: CrawlerScheduleCreate) =>
@@ -433,7 +432,6 @@ export const adminApi = {
       '/admin/crawler-schedules/reconcile'
     ),
 
-  // Per-adapter retailer tuning (used by every schedule the adapter is in)
   listCrawlerAdapterConfigs: () =>
     apiClient.get<CrawlerAdapterConfigList>('/admin/crawler-adapter-configs/'),
   updateCrawlerAdapterConfig: (
@@ -445,7 +443,6 @@ export const adminApi = {
       body
     ),
 
-  // Canonical-part curation (admin-only)
   getPartLinkGroup: (partId: string) =>
     apiClient.get<CanonicalLinkGroupResponse>(
       `/admin/parts/${partId}/link-group`
@@ -471,14 +468,9 @@ export const adminApi = {
   }) => apiClient.post<RescanResponse>('/admin/parts/rescan', body),
 
   /**
-   * Admin extraction-health snapshot — compliance counts, per-tier coverage
-   * gradient, and 7-day per-adapter failure rates. Backend handler is mounted
-   * at `/admin/extraction-health/` (router prefix + `@router.get("/")`). Call
-   * with the trailing slash: FastAPI's no-slash 307 redirect points at the
-   * upstream (localhost:8000), which is cross-origin from the Vite dev server
-   * (localhost:4000), and browsers drop the Authorization header on cross-origin
-   * redirects → 401. Sources failure-rate from `crawled_pages.parse_status`
-   * (D009) — works in dev/test without IAM.
+   * Admin extraction-health snapshot: compliance counts, per-tier coverage, and
+   * seven day per-adapter failure rates. The trailing slash is required, since
+   * the redirect without it is cross-origin in dev and drops the auth header.
    */
   getExtractionHealth: () =>
     apiClient.get<ExtractionHealthResponse>('/admin/extraction-health/'),

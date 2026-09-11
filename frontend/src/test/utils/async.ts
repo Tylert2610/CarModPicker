@@ -1,38 +1,28 @@
+/**
+ * Fake-timer helpers for the admin polling tests, which drive `setInterval`
+ * only.
+ */
+
 import { act } from '@testing-library/react';
 import { vi } from 'vitest';
 
 /**
- * Phase 8 D-07: shared async helpers for admin-area polling tests (Wave 4).
- *
- * Research §1 verdict: CrawlerAdmin (the only admin page currently known to
- * poll) uses `setInterval` only — no server-sent-events streaming. This file
- * therefore ships fake-timer helpers ONLY; no streaming stub (a stub would
- * be dead code).
- */
-
-/**
- * Enter fake-timer mode. Pair with `stopFakeTimers()` in afterEach.
- *
- * Uses an explicit `toFake` list (setInterval / setTimeout / Date) to leave
- * microtasks alone — research §Pitfall 5 + §Assumptions Log A4 flag that
- * full fake-timer mode can interact badly with async `waitFor` calls.
+ * Enters fake-timer mode, pairing with `stopFakeTimers()`. Fakes only timers
+ * and `Date`, leaving microtasks real so async `waitFor` still settles.
  */
 export function startFakeTimers(): void {
   vi.useFakeTimers({ toFake: ['setInterval', 'setTimeout', 'Date'] });
 }
 
+/** Restores real timers, pairing with startFakeTimers(). */
 export function stopFakeTimers(): void {
   vi.useRealTimers();
 }
 
 /**
- * Advance timers and flush React state updates. ALWAYS await this wrapper in
- * polling tests — per research §Pitfall 5, a bare `vi.advanceTimersByTime()`
- * leaves React with an unflushed batch and assertions see stale DOM.
- *
- * Uses `vi.advanceTimersByTimeAsync(...)` so that any promise chains kicked
- * off by polling callbacks (e.g. `setInterval(() => apiClient.get(...))`)
- * get a chance to settle within the same `act(...)` batch.
+ * Advances timers and flushes React state inside one `act` batch, so promise
+ * chains started by a polling callback settle before assertions run. Await it
+ * rather than calling `vi.advanceTimersByTime`, which leaves stale DOM.
  */
 export async function advanceTimersAndFlush(ms: number): Promise<void> {
   await act(async () => {

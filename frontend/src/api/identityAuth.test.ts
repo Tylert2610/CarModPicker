@@ -1,9 +1,7 @@
-// The sign in flows, in both modes.
-//
-// The identity branch is driven through a stubbed `AuthClient` rather than a
-// stubbed `fetch`, because what is under test here is the translation from the
-// package's outcome types to the union the login page renders, not the wire
-// format. The package has its own tests for the wire format.
+/**
+ * Tests for identity mode sign in and session restore.
+ */
+
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { ApiError } from '@webbpulse/api-client';
 import { apiClient } from './client';
@@ -27,13 +25,8 @@ const loadWith = async (stub: Stub | null) => {
 };
 
 /**
- * An `ApiError` carrying the identity envelope.
- *
- * Built through the real constructor with a real envelope body rather than a
- * hand-shaped object, because `getAuthErrorCode` reads the code out of the body
- * through `getWebbPulseError`, which validates the envelope's shape. A stub that
- * merely carried an `error_code` property would take the "not an envelope"
- * branch and every code test would pass for the wrong reason.
+ * An `ApiError` carrying a real identity envelope. A hand-shaped stub would
+ * fail the envelope validation and pass every code test for the wrong reason.
  */
 const identityError = (status: number, code: string, message: string) =>
   new ApiError({
@@ -62,11 +55,6 @@ afterEach(() => {
 
 describe('signIn in identity mode', () => {
   it('reports authenticated with no user, leaving the fetch to the caller', async () => {
-    // No `loadUser` is configured on the client, deliberately: this application
-    // reads roughly twenty `UserRead` fields that no token claim carries, and
-    // two fetchers for one thing is how the two copies drift. So a successful
-    // identity login carries a null user and the caller follows with
-    // `checkAuthStatus`.
     const login = vi.fn().mockResolvedValue({ mfaRequired: false, user: null });
     const { signIn } = await loadWith({ login });
     await expect(signIn('someone@example.test', 'pw')).resolves.toEqual({
@@ -80,8 +68,6 @@ describe('signIn in identity mode', () => {
   });
 
   it('carries the server ticket back for the second leg', async () => {
-    // The identity difference that matters: the ticket replaces re-sending the
-    // password, and the service never sees the password twice.
     const login = vi.fn().mockResolvedValue({
       mfaRequired: true,
       ticket: 'tkt-1',
@@ -146,8 +132,6 @@ describe('completeMfa in identity mode', () => {
   });
 
   it('sends a recovery code down the same path as a TOTP code', async () => {
-    // One field and one call. The server tells them apart by shape, so the user
-    // never has to pick which kind they are typing.
     const completeTotp = vi
       .fn()
       .mockResolvedValue({ mfaRequired: false, user: null });
@@ -189,8 +173,6 @@ describe('completeMfa in identity mode', () => {
 
 describe('bearer mode is unchanged', () => {
   it('sends the legacy credentials and returns the user from the body', async () => {
-    // `authApi.login` unwraps `data.user` into `data` and stores the bearer
-    // token on the way past, so what reaches `signIn` is already the user.
     const user = { id: 'u1', username: 'someone' };
     vi.mocked(apiClient.post).mockResolvedValueOnce({
       data: { access_token: 'tok', token_type: 'bearer', user },
@@ -202,8 +184,6 @@ describe('bearer mode is unchanged', () => {
   });
 
   it('carries the credentials forward as the challenge', async () => {
-    // The legacy server holds no state between the legs, so the credentials
-    // are the ticket. The page treats it as opaque either way.
     vi.mocked(apiClient.post).mockResolvedValueOnce({
       data: { requires_2fa: true },
     });
@@ -237,8 +217,6 @@ describe('bearer mode is unchanged', () => {
   });
 
   it('does not accept recovery codes', async () => {
-    // The legacy service issues none, so widening the field would only let a
-    // user type something that can never be right.
     const { acceptsRecoveryCodes } = await loadWith(null);
     expect(acceptsRecoveryCodes()).toBe(false);
   });
@@ -251,8 +229,6 @@ describe('bearer mode is unchanged', () => {
 
 describe('restoreSession', () => {
   it('is a no-op in bearer mode', async () => {
-    // There is nothing to restore: the token is already in localStorage if
-    // there is one, so the bootstrap goes straight to /users/me.
     const { restoreSession } = await loadWith(null);
     await expect(restoreSession()).resolves.toBe(false);
   });
@@ -265,8 +241,6 @@ describe('restoreSession', () => {
   });
 
   it('reports false when there was no session, without throwing', async () => {
-    // Arriving signed out is the ordinary case for most page loads, not an
-    // error to log or a crash boundary to trip.
     const initialize = vi.fn().mockRejectedValue(new Error('no session'));
     const getAccessToken = vi.fn().mockReturnValue(null);
     const { restoreSession } = await loadWith({ initialize, getAccessToken });

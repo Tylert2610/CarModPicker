@@ -1,21 +1,6 @@
-// Phase 8 plan 08-09 (D-10) — provider test for AuthContext.
-//
-// Covers the provider-internal state transitions that the useAuth hook tests
-// (plan 08-08) cannot exercise: the checkAuthStatus useEffect on mount, the
-// authenticated-on-mount success path, the 401-on-mount invalid-token path,
-// the login() transition, and the logout() transition.
-//
-// Per PATTERNS.md §10 + Gotcha #3: AuthProvider calls useNavigate() at render,
-// so every test MUST wrap in <MemoryRouter>.
-//
-// Per Gotcha #8 + PATTERNS.md: test-utils.tsx customRender silently mocks
-// `../../hooks/useAuth`. This test does NOT use customRender — it calls the
-// bare `render` from @testing-library/react so AuthProvider wires up the REAL
-// context, and our in-file <Consumer> exercises it through useContext.
-//
-// AuthContext imports `authApi` from `../api/auth` and `apiClient` /
-// `removeStoredToken` from `../api/client`. This file mocks both directly so
-// it can assert on the logout and token-clearing calls.
+/**
+ * Tests for AuthContext provider.
+ */
 
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
@@ -27,7 +12,6 @@ import { buildApiError } from '../test/apiResponse';
 import { apiClient } from '../api/client';
 import { mockUser } from '../test/mocks/api';
 
-// Hoisted mocks so the vi.mock factory can close over them.
 const { mockApiClient, mockLogout, mockRemoveStoredToken } = vi.hoisted(() => ({
   mockApiClient: {
     get: vi.fn().mockResolvedValue({ data: null }),
@@ -40,10 +24,6 @@ const { mockApiClient, mockLogout, mockRemoveStoredToken } = vi.hoisted(() => ({
   mockRemoveStoredToken: vi.fn(),
 }));
 
-// AuthContext.tsx imports `apiClient` and `removeStoredToken` from
-// `../api/client` (already mocked globally by setup.ts) and `authApi` from
-// `../api/auth`. Override the two named exports whose calls this file asserts
-// on with our hoisted vi.fn()s, leaving the rest of each module intact.
 vi.mock('../api/auth', async () => {
   const actual =
     await vi.importActual<typeof import('../api/auth')>('../api/auth');
@@ -53,30 +33,20 @@ vi.mock('../api/auth', async () => {
   };
 });
 
-// setup.ts mocks `../api/client` wholesale, so a file-level mock replaces it
-// rather than merging. Re-declare the same shape here, binding
-// `removeStoredToken` to the hoisted spy this file asserts on and keeping the
-// same mocked Axios surface so no request escapes to the network.
 vi.mock('../api/client', () => ({
   default: mockApiClient,
   apiClient: mockApiClient,
   setStoredToken: vi.fn(),
   getStoredToken: vi.fn(() => null),
   removeStoredToken: mockRemoveStoredToken,
-  // The real predicate: it does no I/O, and stubbing it would make the 401
-  // branch below unreachable no matter what the request rejected with.
   isApiErrorWithStatus: (error: unknown): error is ApiError =>
     error instanceof ApiError,
 }));
 
-// Silence Sentry.setUser — AuthContext calls it unconditionally on every user
-// change. Namespace import (`import * as Sentry`) only needs `setUser`.
 vi.mock('@sentry/react', () => ({
   setUser: vi.fn(),
 }));
 
-// Import the provider AFTER the vi.mock declarations (hoisted, but explicit
-// here for readers).
 import { AuthProvider } from './AuthContext';
 import { useAuth } from '../hooks/useAuth';
 
@@ -114,7 +84,6 @@ function renderWithProvider(children: ReactNode = <Consumer />) {
 describe('AuthContext provider', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    // Reset per-test mock behavior — each test redeclares the promises it needs.
     vi.mocked(apiClient.get).mockReset();
     vi.mocked(apiClient.post).mockReset();
     mockLogout.mockReset();
@@ -164,12 +133,10 @@ describe('AuthContext provider', () => {
     );
 
     expect(screen.getByTestId('state').textContent).toBe('anon');
-    // Resolve path — no invalid-token removal, unlike the 401 path.
     expect(mockRemoveStoredToken).not.toHaveBeenCalled();
   });
 
   it('flips state to authenticated when login() is called directly', async () => {
-    // Initial mount: no auth.
     vi.mocked(apiClient.get).mockResolvedValueOnce({ data: null });
 
     renderWithProvider();
@@ -186,7 +153,6 @@ describe('AuthContext provider', () => {
   });
 
   it('flips state from authenticated to unauthenticated on logout and calls authApi.logout', async () => {
-    // Mount authenticated.
     vi.mocked(apiClient.get).mockResolvedValueOnce({ data: mockUser });
     mockLogout.mockResolvedValueOnce({ data: { message: 'Logged out' } });
 
@@ -203,7 +169,6 @@ describe('AuthContext provider', () => {
     );
 
     expect(mockLogout).toHaveBeenCalledTimes(1);
-    // Loading should settle back to idle after the logout finally-block runs.
     expect(screen.getByTestId('loading').textContent).toBe('idle');
   });
 
@@ -223,8 +188,6 @@ describe('AuthContext provider', () => {
       expect(screen.getByTestId('state').textContent).toBe('anon')
     );
 
-    // When authApi.logout throws, the catch branch calls removeStoredToken
-    // before the finally-block resets user state.
     expect(mockRemoveStoredToken).toHaveBeenCalled();
   });
 });

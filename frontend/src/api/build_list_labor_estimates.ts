@@ -1,11 +1,15 @@
-// Build List Labor Estimates domain API. Mirrors backend endpoints/build_list_labor_estimates.py.
-// Update/delete by labor estimate ID; list/create live on buildListsApi (parent-scoped).
+/**
+ * Labor estimate rows on a build list. Estimates are created through the phase
+ * endpoints, so only update and delete live here.
+ */
+
 import { apiClient } from './client';
 import type {
   BuildListLaborEstimateRead,
   BuildListLaborEstimateUpdate,
 } from '../types/Api';
 
+/** Update and delete for build list labor estimates. */
 export const buildListLaborEstimatesApi = {
   updateLaborEstimate: (
     laborEstimateId: string,

@@ -1,16 +1,12 @@
+/**
+ * Tests for Sentry initialization and its environment gate.
+ */
+
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
- * OBS-05 init + config + beforeErrorSampling coverage for frontend Sentry.
- *
- * Decision refs: 02-CONTEXT.md D-32..D-43, D-51.
- * Landmine refs: 02-RESEARCH.md §5 Landmine 14 (beforeErrorSampling decides
- * replay attach, NOT error reporting — auth-route errors still report, replay
- * just doesn't attach).
- *
- * Must mock @sentry/react because it is an external npm package. vi.stubEnv
- * is the vitest idiom for import.meta.env.* overrides. Tests use dynamic
- * import after stubEnv so the module re-reads env at load time.
+ * Covers Sentry initialisation, its options, and the replay sampling gate.
+ * Imports dynamically after `vi.stubEnv` so the module re-reads env at load.
  */
 
 const mockedInit = vi.fn();

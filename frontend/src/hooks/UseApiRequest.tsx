@@ -1,3 +1,8 @@
+/**
+ * Hook that runs one api call and tracks its data, error, and loading state, so
+ * components do not repeat the same try and catch.
+ */
+
 import { type ApiClientResponse } from '../api/client';
 import { useCallback, useState } from 'react';
 import { getApiErrorMessage } from '../utils/apiError';
@@ -25,7 +30,6 @@ function useApiRequest<TData, TPayload = unknown>(
       setIsLoading(true);
       setErrorState(null);
       try {
-        // Use empty object as default payload if none provided
         const actualPayload = (payload ?? {}) as TPayload;
         const response = await requestFn(actualPayload);
         setData(response.data);

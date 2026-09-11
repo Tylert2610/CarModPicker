@@ -1,28 +1,7 @@
 /**
- * The sign in and sign out operations, in the one shape both modes answer.
- *
- * `./auth` is the legacy surface and stays exactly as it is: it speaks
- * `/auth/token`, stores a bearer token, and is what runs in every environment
- * today. This module sits above both mechanisms and hands the pages a result
- * they can render without knowing which one produced it.
- *
- * ## Why a union rather than a thrown error
- *
- * The identity standard makes an MFA challenge a *successful* outcome of the
- * first leg that simply carries no access token. The legacy flow models the
- * same thing as `requires_2fa: true` in a 200 body. Neither is an error, and
- * the login page has three things to render rather than two, so the return type
- * says so. What is left to throw is a network failure, which no form can render
- * a field level message for anyway.
- *
- * ## Why the two second legs are not the same call
- *
- * Legacy `/auth/token/2fa` re-sends the username and password alongside the
- * code, because the server holds no state between the legs. Identity issues a
- * short lived ticket in the first leg and takes `{ ticket, code }` in the
- * second, and deliberately never sees the password twice. `LoginChallenge`
- * below carries whichever of the two the mode produced, so the page holds one
- * opaque value and hands it back.
+ * Sign in and sign out in one shape for both the legacy bearer flow and the
+ * identity service, so pages render a result without knowing which ran. An MFA
+ * challenge is a successful outcome here, not a thrown error.
  */
 import { describeAuthError, getAuthErrorCode } from '@webbpulse/auth';
 import { AUTH_MODE } from './authMode';
@@ -33,12 +12,8 @@ import type { UserRead } from '../types/Api';
 import { getApiErrorMessage } from '../utils/apiError';
 
 /**
- * What the second leg of a sign in needs, whichever mechanism ran the first.
- *
- * In identity mode the ticket is the server's, and the password is gone. In
- * bearer mode the server keeps no state between the legs, so the credentials
- * are the ticket. The page treats it as opaque either way, which is what keeps
- * the login form free of a mode branch.
+ * Opaque carrier for the second sign in leg: a server ticket in identity mode,
+ * the credentials in bearer mode, so the login form needs no mode branch.
  */
 export type LoginChallenge =
   | { kind: 'identity-ticket'; ticket: string; factors: string[] }
@@ -51,22 +26,14 @@ export type LoginResult =
   | { status: 'failed'; error: string };
 
 /**
- * True when the code field should also accept a recovery code.
- *
- * Only the identity service issues recovery codes; the legacy TOTP flow has
- * none. This is what widens the input from six digits to free text, and it is a
- * function rather than a constant so a test can drive both.
+ * True when the code field should also accept a recovery code, which only the
+ * identity service issues. A function so tests can drive both modes.
  */
 export const acceptsRecoveryCodes = (): boolean => AUTH_MODE === 'identity';
 
 /**
- * Runs the first leg of a sign in.
- *
- * The identity branch never touches `localStorage`: `AuthClient` settles the
- * access token into its own closure and the refresh cookie is set by the
- * server. It also returns no user, because this application reads roughly
- * twenty `UserRead` fields that no token claim carries, so the caller follows a
- * success with `checkAuthStatus()` in both modes.
+ * Runs the first leg of a sign in. Returns no user in identity mode, so the
+ * caller follows a success with `checkAuthStatus()` in both modes.
  */
 export const signIn = async (
   username: string,
@@ -86,9 +53,6 @@ export const signIn = async (
           },
         };
       }
-      // `user` is whatever `loadUser` produced, and no `loadUser` is
-      // configured, so it is null by construction. The caller fetches the
-      // user; see `identityClient`.
       return { status: 'authenticated', user: null };
     } catch (error) {
       return { status: 'failed', error: describeIdentityFailure(error) };
@@ -97,8 +61,6 @@ export const signIn = async (
 
   try {
     const response = await authApi.login({ username, password });
-    // Already `UserRead | LoginResponse`: `authApi.login` returns the 2FA
-    // challenge body untouched and unwraps `data.user` otherwise.
     const body = response.data;
     if ('requires_2fa' in body && body.requires_2fa === true) {
       return {
@@ -117,9 +79,7 @@ export const signIn = async (
 
 /**
  * Runs the second leg with a TOTP code or, in identity mode, a recovery code.
- *
- * The server tells the two apart by length and shape, so there is one field and
- * one call rather than a radio button the user has to get right.
+ * The server tells them apart, so the form needs one field rather than a choice.
  */
 export const completeMfa = async (
   challenge: LoginChallenge,
@@ -136,9 +96,6 @@ export const completeMfa = async (
         code,
       });
       if (outcome.mfaRequired) {
-        // A second challenge from the second leg means the ticket was spent
-        // and reissued, which the server does not do. Treated as a refusal
-        // rather than looping.
         return { status: 'failed', error: 'That code was not accepted.' };
       }
       return { status: 'authenticated', user: null };
@@ -163,12 +120,8 @@ export const completeMfa = async (
 };
 
 /**
- * Ends the session.
- *
- * Both branches are a server call rather than a local clear, because in both
- * mechanisms the thing that actually ends the session lives on the server: the
- * legacy route revokes, and the identity route clears the httpOnly refresh
- * cookie the page cannot touch.
+ * Ends the session. A server call in both modes, since the session itself lives
+ * server side as a revocable token or an httpOnly refresh cookie.
  */
 export const signOut = async (): Promise<void> => {
   const identity = getIdentityClient();
@@ -180,12 +133,8 @@ export const signOut = async (): Promise<void> => {
 };
 
 /**
- * Restores a session at startup, if the browser still holds one.
- *
- * Identity only. `initialize()` spends the refresh cookie for a fresh access
- * token, and a failure means "no session", not "something broke": arriving
- * signed out is the normal state for most page loads. So this resolves to a
- * boolean rather than throwing, and the caller treats false as anonymous.
+ * Spends the refresh cookie for an access token at startup, identity mode only.
+ * Resolves false rather than throwing, since arriving signed out is normal.
  */
 export const restoreSession = async (): Promise<boolean> => {
   const identity = getIdentityClient();
@@ -199,12 +148,8 @@ export const restoreSession = async (): Promise<boolean> => {
 };
 
 /**
- * Turns a thrown identity error into a sentence for a form.
- *
- * `describeAuthError` already prefers the server's own message, which is
- * written to be shown. The two codes named here are the ones whose server
- * wording is deliberately vague for enumeration resistance and which a user
- * needs a concrete next step for.
+ * Turns a thrown identity error into a sentence for a form, replacing the two
+ * deliberately vague enumeration-resistant messages with a concrete next step.
  */
 export const describeIdentityFailure = (error: unknown): string => {
   switch (getAuthErrorCode(error)) {
@@ -218,11 +163,8 @@ export const describeIdentityFailure = (error: unknown): string => {
 };
 
 /**
- * Requests a verification email for the signed in user.
- *
- * The legacy route takes the address in the body; the identity route takes it
- * too, and answers identically whether or not the address has an account.
- * Both are a fire and forget from this application's point of view.
+ * Requests a verification email. Both modes answer identically whether or not
+ * the address has an account.
  */
 export const requestVerificationEmail = async (
   email: string
@@ -242,18 +184,9 @@ export const requestVerificationEmail = async (
 };
 
 /**
- * Requests a password reset email.
- *
- * The mailed link is the reason this has to follow the mode rather than stay on
- * the legacy route. Whichever service sends the mail also builds the URL in it
- * and is the only one that can confirm the token it carries: the legacy mail
- * points at `/auth/reset-password/confirm` and the identity mail points at
- * `RESET_PASSWORD_PATH`, which `ResetPassword` serves. Sending the request to
- * one service and landing the user on the other's confirm page is a link that
- * always fails, so the two halves are kept on the same mechanism here.
- *
- * Both answer identically whether or not the address has an account, which is
- * deliberate on both sides and is why the caller gets no way to tell.
+ * Requests a password reset email. Follows the auth mode because the service
+ * that sends the mail also builds and confirms the link it carries; splitting
+ * the two halves across mechanisms yields a link that always fails.
  */
 export const requestPasswordReset = async (
   email: string

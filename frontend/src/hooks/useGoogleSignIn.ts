@@ -1,3 +1,8 @@
+/**
+ * Drives Google sign in and the follow up states it can require: linking an
+ * existing account, completing signup, or a second factor.
+ */
+
 import { useCallback, useMemo, useState } from 'react';
 import { GOOGLE_CLIENT_ID } from '../config/google';
 import { authApi } from '../api/auth';
@@ -10,15 +15,9 @@ import type {
 } from '../types/Api';
 import { getApiErrorMessage } from '../utils/apiError';
 
-// Kept as a function for symmetry with future per-environment toggles, even though
-// the client id is currently always present. Components call this to decide whether
-// to render the Google button.
+/** Whether a Google client id is present, so callers can hide the button. */
 export const isGoogleConfigured = (): boolean => Boolean(GOOGLE_CLIENT_ID);
 
-// 32-byte URL-safe nonce for OIDC. Frontend generates it, includes it in the ID
-// token request, and forwards it to our backend; backend verifies the token's
-// `nonce` claim matches. Protects against replaying a leaked ID token across
-// sessions.
 const makeNonce = (): string => {
   const bytes = new Uint8Array(32);
   crypto.getRandomValues(bytes);
@@ -37,13 +36,12 @@ interface UseGoogleSignInOptions {
   onError: (message: string) => void;
 }
 
+/** Runs Google sign in and surfaces whichever follow up step it requires. */
 export const useGoogleSignIn = ({
   onLoggedIn,
   onError,
 }: UseGoogleSignInOptions) => {
   const [state, setState] = useState<Pending>({ kind: 'idle' });
-  // Nonce is stable across re-renders within this hook instance; the library
-  // forwards it to Google and the backend ties verification to the same value.
   const nonce = useMemo(makeNonce, []);
 
   const handleResponse = useCallback(

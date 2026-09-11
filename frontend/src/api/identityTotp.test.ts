@@ -1,10 +1,7 @@
-// The TOTP and recovery code operations in identity mode.
-//
-// The thing worth pinning down here is the shape of the request: the identity
-// service takes `{ code }` and nothing else, where the legacy route takes the
-// account password alongside it. A regression that reintroduced the password
-// would fail on the server rather than here, which is exactly why the
-// assertion is on the call and not only on the result.
+/**
+ * Tests for identity mode TOTP enrolment and verification.
+ */
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 type Stub = Record<string, ReturnType<typeof vi.fn>>;
@@ -109,8 +106,6 @@ describe('regenerateRecoveryCodes', () => {
 
 describe('in bearer mode', () => {
   it('refuses every operation rather than throwing', async () => {
-    // A panel reached in the wrong mode says so from the same code path it
-    // renders every other refusal from. See `./identityClient`.
     const module = await loadWith(null);
     for (const result of await Promise.all([
       module.enrolTotp(),

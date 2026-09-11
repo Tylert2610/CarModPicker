@@ -1,3 +1,7 @@
+/**
+ * Tests for the car display and normalization helpers.
+ */
+
 import { describe, expect, it } from 'vitest';
 import { carFullDisplayName } from './carUtils';
 import type { CarGenerationRead } from '../types/Api';
@@ -90,7 +94,6 @@ describe('carFullDisplayName', () => {
       display_name: null,
       display_label: 'ZN6',
     });
-    // "ZN6" does not contain "86" as a whole word
     expect(carFullDisplayName(car)).toBe('Toyota 86 ZN6');
   });
 });

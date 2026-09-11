@@ -1,3 +1,7 @@
+/**
+ * Tests for usePartsFilters.
+ */
+
 import type { ReactNode } from 'react';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
@@ -5,19 +9,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiClient } from '../api/client';
 import { mockCar, mockCategory } from '../test/mocks/api';
 import { usePartsFilters } from './usePartsFilters';
-
-// Phase 8 D-09 — usePartsFilters is the URL-state-backed filter hook used
-// by /parts. It pulls categories, makes, manufacturers, and the filter-options
-// response from the API (all mocked via setup.ts) and exposes the derived
-// params + setters that the parts page feeds to partsApi.getParts.
-//
-// We focus on the highest-branch-density surfaces: initial state shape,
-// URL-derived initialization, setter branches, and clearAllFilters reset.
-//
-// The hook imports `partsApi`, `categoriesApi`, `carGenerationsApi`, and
-// `partManufacturersApi` from their `../api/<domain>` modules. Those modules
-// call the shared apiClient, which setup.ts already mocks, so no per-file
-// module mock is needed.
 
 function routerWrapper(initialEntries: string[]) {
   const Wrapper = ({ children }: { children: ReactNode }) => (
@@ -29,7 +20,6 @@ function routerWrapper(initialEntries: string[]) {
 beforeEach(() => {
   vi.clearAllMocks();
 
-  // Default responses for the cascade of fetches the hook kicks off on mount.
   vi.mocked(apiClient.get).mockImplementation((url: string) => {
     if (url === '/categories/') {
       return Promise.resolve({ data: [mockCategory] });

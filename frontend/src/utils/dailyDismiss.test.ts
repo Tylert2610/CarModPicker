@@ -1,3 +1,7 @@
+/**
+ * Tests for dailyDismiss.
+ */
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { dismissForToday, isDismissedToday } from './dailyDismiss';
 

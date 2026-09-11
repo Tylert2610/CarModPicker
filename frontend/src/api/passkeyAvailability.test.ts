@@ -1,9 +1,7 @@
-// The passkey discovery route, and the two questions read off it.
-//
-// Each case is driven directly through `fetchPasskeyCapabilities` rather than
-// through the cached wrapper, because the cache is the thing that makes a
-// second call unobservable and a test of the classification needs every case to
-// actually run.
+/**
+ * Tests for passkey capability detection.
+ */
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   PASSKEY_AVAILABILITY_PATH,
@@ -44,10 +42,6 @@ describe('parseCapabilities', () => {
   });
 
   it('reads passkeys on but not a way in', () => {
-    // The state production starts in: a passkey is a managed credential and a
-    // second factor, so the settings panel offers to add one and the sign in
-    // button must not appear. The old probe could only see this as a
-    // `PASSKEY_LOGIN_DISABLED` refusal; the route states it as a field.
     expect(parseCapabilities({ enabled: true, passwordless: false })).toEqual({
       enabled: 'available',
       passwordless: 'unavailable',
@@ -62,8 +56,6 @@ describe('parseCapabilities', () => {
   });
 
   it('reads a malformed body as unknown, not as unavailable', () => {
-    // A backend answering something this bundle does not understand is a
-    // reason to learn nothing, not a reason to state that a capability is off.
     for (const body of [
       null,
       'nope',
@@ -90,9 +82,6 @@ describe('fetchPasskeyCapabilities', () => {
   });
 
   it('reads an unmounted route as unknown, not as unavailable', async () => {
-    // The route mounts in every deployment from 0.17.0 onwards, so a 404 means
-    // a backend older than that rather than a capability that is off. Reading
-    // it as "off" would be the ambiguity the probe had.
     await expect(
       fetchPasskeyCapabilities(URL_UNDER_TEST, answering(404))
     ).resolves.toEqual({ enabled: 'unknown', passwordless: 'unknown' });
@@ -124,8 +113,6 @@ describe('fetchPasskeyCapabilities', () => {
   });
 
   it('reads anonymously with a plain GET', async () => {
-    // Discovery has no session by definition, and sending the refresh cookie
-    // to a route that does not read it is a habit worth not forming.
     const fetchImpl = answering(200, { enabled: true, passwordless: true });
     await fetchPasskeyCapabilities(URL_UNDER_TEST, fetchImpl);
     expect(fetchImpl).toHaveBeenCalledWith(
@@ -199,8 +186,6 @@ describe('passkeyEnrolmentAvailability', () => {
   });
 
   it('shares the one request with the sign in gate', async () => {
-    // A page that asks both questions asks the network once. This is the whole
-    // reason the two fields come off one route rather than two.
     const fetchImpl = answering(200, { enabled: true, passwordless: false });
     const [login, enrolment] = await Promise.all([
       passkeyLoginAvailability(URL_UNDER_TEST, fetchImpl),

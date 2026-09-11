@@ -1,5 +1,6 @@
-// Phase 8 Wave 1 API-module test pattern (PATTERNS.md §7).
-// See build_lists.test.ts for eslint-disable rationale.
+/**
+ * Tests for buildLogsApi.
+ */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiClient } from './client';

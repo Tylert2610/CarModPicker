@@ -1,13 +1,7 @@
-// Phase 8 plan 08-02: usersApi coverage tests.
-//
-// Covers every method on `usersApi` (12 total) plus the FormData-based
-// `uploadProfilePicture` path (POST /users/me/profile-picture with a
-// multipart/form-data header and FormData body). See PATTERNS.md §7 for the
-// canonical Wave 1 scaffold.
-//
-// apiClient is auto-mocked by setup.ts (Phase 8 D-18). Narrow the HTTP verbs
-// at module scope via MockedFunction cast — same pattern as
-// admin.test.ts / votes.test.ts / search.test.ts.
+/**
+ * Tests for usersApi.
+ */
+
 import {
   beforeEach,
   describe,
@@ -102,8 +96,6 @@ describe('usersApi — profile picture (FormData)', () => {
       { headers: { 'Content-Type': 'multipart/form-data' } }
     );
 
-    // Inspect FormData contents directly — confirms the file was appended
-    // under the expected key.
     const fd = postMock.mock.calls[0]?.[1] as FormData;
     expect(fd).toBeInstanceOf(FormData);
     expect(fd.get('file')).toBe(file);

@@ -1,8 +1,12 @@
-// Build List Phases domain API. Mirrors backend endpoints/build_list_phases.py.
-// Update/delete by phase ID; create lives on buildListsApi (parent-scoped).
+/**
+ * Phases that group a build list's parts. Phases are created through the build
+ * list endpoints, so only update and delete live here.
+ */
+
 import { apiClient } from './client';
 import type { BuildListPhaseRead, BuildListPhaseUpdate } from '../types/Api';
 
+/** Update and delete for build list phases. */
 export const buildListPhasesApi = {
   updatePhase: (phaseId: string, data: BuildListPhaseUpdate) =>
     apiClient.put<BuildListPhaseRead>(`/build-list-phases/${phaseId}`, data),

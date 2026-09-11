@@ -1,13 +1,7 @@
-// The passkey operations, and the shapes the panels render.
-//
-// Driven through a stubbed `AuthClient` rather than a stubbed `fetch`, matching
-// `./identityAuth.test.ts`: what is under test is the translation from the
-// package's outcome unions to the one shape the panels hold, not the wire
-// format, which the package tests itself.
-//
-// The distinction this file exists to pin down is **cancelled is not failed**.
-// A user who dismissed the browser's sheet did not hit an error, and a panel
-// that shows one is arguing with somebody who already knows what they did.
+/**
+ * Tests for identity mode passkey enrolment and sign in.
+ */
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 type Stub = Record<string, ReturnType<typeof vi.fn>>;
@@ -121,8 +115,6 @@ describe('deletePasskey', () => {
   });
 
   it("keeps the last credential rule's own sentence", async () => {
-    // The refusal names a concrete next step, which a generic failure message
-    // would throw away. See the module note in `./identityPasskeys`.
     const deletePasskey = vi.fn().mockResolvedValue({
       ok: false,
       reason: 'last-credential',
@@ -150,9 +142,6 @@ describe('signInWithPasskey', () => {
   });
 
   it('carries an MFA ticket through to the second leg', async () => {
-    // A passkey proves possession; an account with TOTP on still owes the
-    // second factor, and the ticket goes to the same `completeMfa` the password
-    // flow uses.
     const signIn = vi.fn().mockResolvedValue({
       ok: true,
       kind: 'mfa-required',

@@ -1,8 +1,7 @@
-// Phase 8 D-06: canonical-link-group / curation fixture factories for
-// admin canonical-part curation tab tests.
-//
-// Factory pattern per research §Pitfall 6 — every call returns a fresh object
-// so parallel Vitest workers do not leak fixture state across files.
+/**
+ * Curation queue fixtures for the admin tests.
+ */
+
 import type {
   CanonicalLinkGroupMember,
   CanonicalLinkGroupResponse,
@@ -11,6 +10,7 @@ import type {
   UrlLookupResponse,
 } from '../../../api/admin';
 
+/** Builds a curation queue candidate fixture. */
 export const makeCurationCandidate = (
   overrides: Partial<CanonicalLinkGroupMember> = {}
 ): CanonicalLinkGroupMember => ({
@@ -26,6 +26,7 @@ export const makeCurationCandidate = (
   ...overrides,
 });
 
+/** Builds a curation queue response. */
 export const makeCurationQueue = (
   items?: CanonicalLinkGroupMember[]
 ): CanonicalLinkGroupResponse => {
@@ -36,6 +37,7 @@ export const makeCurationQueue = (
   };
 };
 
+/** Builds a URL lookup response fixture. */
 export const makeUrlLookup = (
   overrides: Partial<UrlLookupResponse> = {}
 ): UrlLookupResponse => ({
@@ -44,6 +46,7 @@ export const makeUrlLookup = (
   ...overrides,
 });
 
+/** Builds one entry of a canonical rescan diff. */
 export const makeRescanDiffEntry = (
   overrides: Partial<RescanDiffEntry> = {}
 ): RescanDiffEntry => ({
@@ -54,6 +57,7 @@ export const makeRescanDiffEntry = (
   ...overrides,
 });
 
+/** Builds a full rescan summary fixture. */
 export const makeRescanResponse = (
   overrides: Partial<RescanResponse> = {}
 ): RescanResponse => ({

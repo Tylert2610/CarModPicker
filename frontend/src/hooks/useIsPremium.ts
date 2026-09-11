@@ -1,3 +1,7 @@
+/**
+ * Premium entitlement checks that also honor the admin kill switch.
+ */
+
 import { useAuth } from './useAuth';
 import { useAppSettings } from './useAppSettings';
 import { isPremium } from '../utils/subscription';

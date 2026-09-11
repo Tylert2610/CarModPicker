@@ -1,12 +1,12 @@
+/**
+ * Tests for useDocumentMeta.
+ */
+
 import { renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { useDocumentMeta } from './useDocumentMeta';
 
-// Phase 8 D-09 — useDocumentMeta mutates document.title and head meta/link
-// tags. No providers needed — jsdom's document is all this hook touches.
-
 describe('useDocumentMeta', () => {
-  // Snapshot + restore the title/head between tests so we don't leak state.
   let originalTitle = '';
   let originalHead = '';
 

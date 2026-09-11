@@ -1,3 +1,7 @@
+/**
+ * Tests for external image URL building.
+ */
+
 import { describe, expect, it } from 'vitest';
 import { buildExternalImageUrl } from './externalImageUrls';
 

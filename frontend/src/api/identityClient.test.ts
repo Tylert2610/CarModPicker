@@ -1,10 +1,7 @@
-// The identity client and, mostly, the URL derivation it depends on.
-//
-// `identityOriginFrom` gets the bulk of the coverage because it is the one
-// piece of this migration with a known, silent failure mode: `joinUrl` in
-// `@webbpulse/api-client` concatenates rather than resolving, so handing
-// `AuthClient` the `/api` base sends every identity call to `/api/api/auth/...`
-// and every one of them 404s with nothing in the console to say why.
+/**
+ * Tests for identity client construction and origin resolution.
+ */
+
 import { describe, expect, it, vi, afterEach } from 'vitest';
 import { identityOriginFrom, getIdentityClient } from './identityClient';
 
@@ -15,8 +12,6 @@ afterEach(() => {
 
 describe('identityOriginFrom', () => {
   it('strips a deployed API base back to its origin', () => {
-    // The shape production runs: the API is its own host and the application
-    // routes live under /api, but identity mounts at /api/auth on the origin.
     expect(identityOriginFrom('https://api.carmodpicker.com/api')).toBe(
       'https://api.carmodpicker.com'
     );
@@ -35,9 +30,6 @@ describe('identityOriginFrom', () => {
   });
 
   it('returns an empty base for a root relative API base', () => {
-    // The dev and same-origin shape. `/api` cannot be parsed as a URL, and the
-    // right answer is an empty base so that `/api/auth/login` resolves against
-    // the page's own origin and goes through the same Vite proxy.
     expect(identityOriginFrom('/api')).toBe('');
   });
 
@@ -46,16 +38,10 @@ describe('identityOriginFrom', () => {
   });
 
   it('returns a malformed value unchanged', () => {
-    // Deliberately not a throw. A bad configuration should fail visibly at the
-    // request rather than at module load, where it would take down every page
-    // including the ones that need no auth.
     expect(identityOriginFrom('not a url')).toBe('not a url');
   });
 
   it('never produces a base that would double the api prefix', () => {
-    // The regression this whole function exists to prevent. Whatever comes
-    // back, appending the package's own absolute path must not yield
-    // /api/api/auth.
     for (const base of [
       'https://api.carmodpicker.com/api',
       'http://localhost:8000/api',
@@ -70,9 +56,6 @@ describe('identityOriginFrom', () => {
 
 describe('getIdentityClient', () => {
   it('returns null in bearer mode', async () => {
-    // The default every environment runs today. A null client is what the
-    // pages branch on to render their "not available in this deployment"
-    // states, so this is load bearing rather than incidental.
     vi.stubEnv('VITE_AUTH_MODE', '');
     vi.resetModules();
     const { getIdentityClient: fresh } = await import('./identityClient');
@@ -92,9 +75,6 @@ describe('getIdentityClient', () => {
     const { getIdentityClient: fresh } = await import('./identityClient');
     const first = fresh();
     expect(first).not.toBeNull();
-    // One instance for the bundle's lifetime. Two would each hold their own
-    // access token and their own refresh timer, and a refresh through one
-    // would leave the other holding a token the server has rotated away.
     expect(fresh()).toBe(first);
   });
 

@@ -1,5 +1,6 @@
-// Phase 8 Wave 1 API-module test pattern (PATTERNS.md §7).
-// Mirrors build_list_phases.test.ts.
+/**
+ * Tests for buildListLaborEstimatesApi.
+ */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiClient } from './client';

@@ -1,10 +1,12 @@
-// Search domain API. Mirrors backend endpoints/search.py.
-//
-// Co-located response types per D-04 (these are not pydantic-generated; they
-// describe the bespoke search-result envelope produced by the search router).
+/**
+ * Cross-entity search returning build lists, users, and parts in one response so
+ * the results page needs a single request.
+ */
+
 import { apiClient } from './client';
 import type { BuildListRead, PartRead, PublicUserRead } from '../types/Api';
 
+/** One category's slice of a search response, with its own paging. */
 export interface SearchCategoryResults<T> {
   data: T[];
   total: number;
@@ -13,6 +15,7 @@ export interface SearchCategoryResults<T> {
   limit: number;
 }
 
+/** Search hits grouped by entity type, echoing the query. */
 export interface SearchResults {
   build_lists: SearchCategoryResults<BuildListRead>;
   users: SearchCategoryResults<PublicUserRead>;
@@ -20,6 +23,7 @@ export interface SearchResults {
   query: string;
 }
 
+/** Cross entity search in a single request. */
 export const searchApi = {
   search: (params: { q: string; skip?: number; limit?: number }) =>
     apiClient.get<SearchResults>('/search/', { params }),

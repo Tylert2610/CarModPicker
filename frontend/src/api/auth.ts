@@ -1,7 +1,9 @@
-// Auth domain API. Mirrors backend endpoints/auth/*.
-//
-// WebAuthn helper response types are co-located here (D-04) — they are not
-// pydantic-generated and only consumed by the auth flow.
+/**
+ * Bearer-mode auth: password login, TOTP, WebAuthn, and Google OAuth. Each call
+ * that returns a token stores it, so callers receive a plain user and never
+ * handle the token themselves.
+ */
+
 import {
   apiClient,
   setStoredToken,
@@ -29,11 +31,13 @@ import type {
   UserRead,
 } from '../types/Api';
 
+/** WebAuthn ceremony options plus the token that ties them to a verify call. */
 export interface WebAuthnOptionsResponse {
   options: Record<string, unknown>;
   challenge_token: string;
 }
 
+/** A registered passkey as shown in account settings. */
 export interface WebAuthnCredentialSummary {
   id: string;
   nickname: string;
@@ -45,6 +49,7 @@ export interface WebAuthnCredentialSummary {
   last_used_at?: string | null;
 }
 
+/** Bearer mode auth calls. Token bearing responses store the token before returning. */
 export const authApi = {
   login: async (
     data: BodyLoginForAccessToken
@@ -52,23 +57,17 @@ export const authApi = {
     const response = await apiClient.post<LoginResponse>('/auth/token', data, {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     });
-    // If 2FA is required, return the response as-is
     if (response.data.requires_2fa) {
       return response;
     }
-    // Store the token
     if (response.data.access_token) {
       setStoredToken(response.data.access_token);
     }
-    // Enforce the contract: non-2FA login MUST return a user payload.
-    // Previously `response.data.user!` silently produced ApiClientResponse<UserRead>
-    // whose .data was `undefined`, causing confusing downstream crashes.
     if (!response.data.user) {
       throw new Error(
         'Login response missing user payload (server contract violation)'
       );
     }
-    // Return response with user data as the main data field
     return {
       ...response,
       data: response.data.user,
@@ -82,11 +81,9 @@ export const authApi = {
       token_type: string;
       user: UserRead;
     }>('/auth/token/2fa', data);
-    // Store the token
     if (response.data.access_token) {
       setStoredToken(response.data.access_token);
     }
-    // Return response with user data as the main data field
     return {
       ...response,
       data: response.data.user,
@@ -113,7 +110,6 @@ export const authApi = {
   logout: async () => {
     const response =
       await apiClient.post<Record<string, string>>('/auth/logout');
-    // Remove token from storage
     removeStoredToken();
     return response;
   },
@@ -164,9 +160,6 @@ export const authApi = {
       `/auth/webauthn/credentials/${id}`
     ),
 
-  // Google sign-in. The first call returns one of four shapes (token / 2fa / link
-  // required / signup required); the caller dispatches on the discriminator. Token
-  // storage happens in the page handler so the merge / signup flows can complete first.
   googleSignIn: (data: GoogleSignInRequest) =>
     apiClient.post<GoogleSignInResponse>('/auth/oauth/google', data),
   googleLink: async (

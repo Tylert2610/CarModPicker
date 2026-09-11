@@ -1,10 +1,10 @@
-// Phase 8 D-06: BackgroundJob fixture factories for admin (CrawlerAdmin) tests.
-//
-// Factory pattern (not mutable singletons) per research §Pitfall 6 — Vitest
-// parallelizes per-file, so a shared mutable list would leak between workers.
-// Every call returns a fresh object.
+/**
+ * Background job fixtures for the admin tests.
+ */
+
 import type { BackgroundJob, BackgroundJobList } from '../../../api/admin';
 
+/** Builds a background job fixture, overriding any field. */
 export const makeJob = (
   overrides: Partial<BackgroundJob> = {}
 ): BackgroundJob => ({
@@ -23,6 +23,7 @@ export const makeJob = (
   ...overrides,
 });
 
+/** Builds a paged background job list response. */
 export const makeJobsList = (
   opts: { running?: boolean; items?: BackgroundJob[] } = {}
 ): BackgroundJobList => {

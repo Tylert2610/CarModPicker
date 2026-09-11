@@ -1,6 +1,7 @@
-// Reports domain API. Mirrors backend endpoints/reports.py (polymorphic).
-// Polymorphic `reportsApi` is the canonical surface; `partReportsApi` is a
-// thin entity-typed wrapper kept for existing callers.
+/**
+ * User-submitted content reports and the admin queue that resolves them.
+ */
+
 import { apiClient } from './client';
 import type {
   PaginatedResponse,
@@ -10,6 +11,7 @@ import type {
   ReportWithDetails,
 } from '../types/Api';
 
+/** Content report submission and the admin moderation queue. */
 export const reportsApi = {
   reportEntity: (
     entityType: 'build_list' | 'part',
@@ -48,7 +50,7 @@ export const reportsApi = {
   countReports: () => apiClient.get<{ count: number }>('/reports/count'),
 };
 
-// Legacy part-scoped wrapper (callers should migrate to reportsApi).
+/** Report endpoints scoped to parts. */
 export const partReportsApi = {
   reportPart: (
     partId: string,

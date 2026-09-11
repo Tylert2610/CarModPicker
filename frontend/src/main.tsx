@@ -1,3 +1,8 @@
+/**
+ * Browser entry point. Starts Sentry and mounts the app inside the router and
+ * the auth and settings providers.
+ */
+
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';

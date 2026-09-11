@@ -1,3 +1,7 @@
+/**
+ * Tests for useAppSettings.
+ */
+
 import { createElement, type ReactNode } from 'react';
 import { renderHook } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
@@ -7,14 +11,6 @@ import {
   type AppSettingsContextType,
 } from '../contexts/AppSettingsContextDefinition';
 import type { AppSettings } from '../api/app_settings';
-
-// Phase 8 D-09 — hook that consumes AppSettingsContext. We wrap renderHook in
-// a plain AppSettingsContext.Provider to exercise the real hook against a
-// deterministic context value (no need for the full AppSettingsProvider which
-// would fire a real appSettingsApi.get()).
-//
-// File is .ts (not .tsx) per the plan's files_modified list — wrapper built
-// with React.createElement so no JSX is required.
 
 function makeValue(
   overrides: Partial<AppSettingsContextType> = {}

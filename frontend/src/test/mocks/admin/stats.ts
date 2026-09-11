@@ -1,12 +1,13 @@
-// Phase 8 D-06: admin stats fixture factories for Stats / Dashboard tab tests.
-//
-// Factory pattern per research §Pitfall 6 — every call returns a fresh object
-// so parallel Vitest workers do not leak fixture state across files.
+/**
+ * Admin dashboard statistics fixtures.
+ */
+
 import type {
   AdminTableCountsResponse,
   CrawlBucketSummaryResponse,
 } from '../../../api/admin';
 
+/** Builds an admin table counts fixture. */
 export const makeSystemStats = (
   overrides: Partial<AdminTableCountsResponse> = {}
 ): AdminTableCountsResponse => ({
@@ -28,6 +29,7 @@ export const makeSystemStats = (
   ...overrides,
 });
 
+/** Builds a crawl bucket summary fixture. */
 export const makeCrawlBucketSummary = (
   overrides: Partial<CrawlBucketSummaryResponse> = {}
 ): CrawlBucketSummaryResponse => ({

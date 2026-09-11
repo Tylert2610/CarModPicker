@@ -1,3 +1,8 @@
+/**
+ * Sets document title and meta tags for the active route and restores them on
+ * unmount.
+ */
+
 import { useEffect } from 'react';
 
 interface DocumentMeta {
@@ -48,10 +53,9 @@ function setCanonical(href: string) {
 }
 
 /**
- * Updates document.title and the key meta tags (description, canonical, OG)
- * for the current route. Updates the same tags on every route change, so a
- * component unmounting does not need to reset anything — the next page sets
- * its own values.
+ * Sets the document title and the description, canonical and OG tags for the
+ * current route. Every route rewrites the same tags, so unmounting needs no
+ * reset.
  */
 export function useDocumentMeta({
   title,

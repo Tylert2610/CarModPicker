@@ -1,4 +1,7 @@
-// Bug Reports domain API. Mirrors backend endpoints/bug_reports.py.
+/**
+ * User bug report submission plus the admin triage list.
+ */
+
 import { apiClient } from './client';
 import type {
   BugReportCreate,
@@ -8,6 +11,7 @@ import type {
   PaginatedResponse,
 } from '../types/Api';
 
+/** Bug report submission and the admin triage endpoints. */
 export const bugReportsApi = {
   createBugReport: (data: BugReportCreate) =>
     apiClient.post<BugReportRead>('/bug-reports/', data),

@@ -1,6 +1,7 @@
-// Ported from `@webbpulse/auth` 0.3.0's `storage.test.ts`, alongside the source
-// it covers. 0.4.0 of that package removed both; see `tokenStore.ts` for why
-// this application still needs them.
+/**
+ * Tests for the token stores backing the api client.
+ */
+
 import { describe, expect, it, vi } from 'vitest';
 import {
   MemoryTokenStorage,
@@ -54,8 +55,6 @@ describe('TokenStore', () => {
   });
 
   it('scopes each key to its own store', () => {
-    // The key is a constructor argument rather than a constant, so two stores
-    // over one storage must not read each other's token.
     const storage = new MemoryTokenStorage();
     const accessToken = new TokenStore('access_token', storage);
     const other = new TokenStore('authToken', storage);
@@ -88,8 +87,6 @@ describe('TokenStore', () => {
 
 describe('defaultTokenStorage', () => {
   it('falls back to memory when localStorage throws on write', () => {
-    // Safari private mode exposes a localStorage whose setItem throws, so a
-    // presence check alone would hand back an unusable object.
     vi.stubGlobal('localStorage', throwingStorage());
     try {
       expect(defaultTokenStorage()).toBeInstanceOf(MemoryTokenStorage);

@@ -1,29 +1,7 @@
 /**
- * The passkey operations in identity mode.
- *
- * Sits above `AuthClient` the way `./identityAuth` does for sign in: the pages
- * get one shape to render and do not hold the package's outcome unions, and
- * bearer mode keeps its own `@simplewebauthn/browser` path in `./auth`
- * untouched.
- *
- * ## Where the WebAuthn adapter is injected
- *
- * `AuthClient` takes a `WebAuthnAdapter`, a structural two-method surface that
- * defaults to `navigator.credentials`. It is a **constructor** option rather
- * than a per-call one, so it is supplied once in `./identityClient` through
- * `setWebAuthnAdapterForTests` rather than threaded through every function
- * here. A jsdom test run has no authenticator and cannot produce a real
- * credential, and that seam is what lets the tests drive an enrolment and a
- * sign in without a browser.
- *
- * ## The last credential rule
- *
- * Deleting a passkey is refused by the server when it is the only credential
- * left on an account that has no other way in, which the package surfaces as
- * `PasskeyLastCredential`. It is a refusal rather than an error: the user did
- * nothing wrong and there is a concrete next step, which is to set a password
- * or enrol a second key first. `deletePasskey` returns it as such so the panel
- * renders the server's sentence rather than a generic failure.
+ * Passkey operations in identity mode, giving the panels one shape to render
+ * above `AuthClient`'s outcome unions. Bearer mode keeps its own
+ * `@simplewebauthn/browser` path in `./auth`.
  */
 import {
   isPasskeyCancellation,
@@ -45,11 +23,8 @@ export type PasskeyOutcome<T> =
 const UNAVAILABLE = 'Passkeys are not available in this deployment.';
 
 /**
- * Turns a thrown package error into an outcome.
- *
- * A cancellation is its own status rather than a failure, because a user who
- * dismissed the browser's sheet did not hit an error and should not be shown
- * one: the panel simply stops.
+ * Turns a thrown package error into an outcome. A dismissed browser sheet is
+ * its own status, so the panel stops rather than showing an error.
  */
 const fromError = (
   error: unknown,
@@ -63,12 +38,8 @@ const fromError = (
 };
 
 /**
- * Enrols a new passkey for the signed in user.
- *
- * Runs both legs of the ceremony inside `AuthClient`, which is deliberate: the
- * options are spent by exactly one attempt, and holding them across a user
- * interaction is how a ceremony ends up half finished with a challenge row
- * already consumed.
+ * Enrols a new passkey, running both ceremony legs inside `AuthClient` so the
+ * single-use options are never held across a user interaction.
  */
 export const enrolPasskey = async (
   name: string
@@ -121,10 +92,8 @@ export const renamePasskey = async (
 };
 
 /**
- * Removes one passkey.
- *
- * A refusal carrying the last-credential rule comes back as a `failed` with the
- * server's own sentence, which explains what to do first. See the module note.
+ * Removes one passkey. Deleting the last credential on an account with no other
+ * way in is refused, carrying the server's own explanation.
  */
 export const deletePasskey = async (
   credentialId: string
@@ -149,17 +118,9 @@ export type PasskeySignInResult =
   | { status: 'failed'; error: string };
 
 /**
- * Signs in with a passkey and no password.
- *
- * `mediation` is passed through so the login page can ask for `conditional`,
- * which is what puts the account chooser inline in the username field's
- * autofill rather than in a modal sheet. A conditional request that finds no
- * credential resolves to nothing rather than erroring, which is why a
- * cancellation is a status rather than a failure here too.
- *
- * An `mfa-required` outcome is the ordinary case for an account with TOTP on:
- * the passkey proved possession and the second factor is still owed, and the
- * ticket goes to the same `completeMfa` the password flow uses.
+ * Signs in with a passkey and no password. `mediation` is passed through so the
+ * page can request `conditional` autofill. An `mfa-required` outcome is ordinary
+ * for an account with TOTP on, and its ticket goes to the usual `completeMfa`.
  */
 export const signInWithPasskey = async (
   input: {

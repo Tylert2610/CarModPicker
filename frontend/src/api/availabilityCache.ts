@@ -1,38 +1,12 @@
 /**
- * The one-read-per-page-load cache the capability gates share.
- *
- * ## Why there is a cache at all
- *
- * Whether a deployment has OAuth providers configured, and what it does with
- * passkeys, are both facts the bundle can only learn by asking the backend.
- * Each is a real request, and a login screen that re-asked on every render
- * would make one per keystroke while a user typed a password.
- *
- * ## Why promises are cached rather than results
- *
- * Two components asking in the same tick is the ordinary case rather than the
- * edge one: the login form and its passkey button both ask on first paint.
- * Caching the in-flight promise makes the second ask join the first request
- * instead of racing it, which is the difference between one read and two.
- *
- * ## Why `unknown` is not cached
- *
- * A read that failed on a flaky network learned nothing. Caching that answer
- * would hide the affordance for the life of the page over one dropped request,
- * so an `unknown` result is evicted as it resolves and the next ask reads
- * again. `unavailable` is a deployment fact and does not change under the page,
- * so it is kept.
- *
- * Shared with WebbPulse-Portfolio's `services/availabilityCache.ts`, which
- * solves the same problem the same way.
+ * One-read-per-page-load cache shared by the capability gates. Caches the
+ * in-flight promise so concurrent asks join one request, and evicts `unknown`
+ * so a dropped request does not hide an affordance for the life of the page.
  */
 
 /**
- * What one read concluded.
- *
- * `unknown` is deliberately not `unavailable`: it is what a network failure or
- * a CORS surprise leaves behind, and a caller renders nothing rather than
- * telling a user a capability is off when the read simply could not be made.
+ * What one read concluded. `unknown` means the read could not be made, which is
+ * not the same as the capability being off.
  */
 export type Availability = 'available' | 'unavailable' | 'unknown';
 
@@ -47,12 +21,7 @@ export function resetAvailabilityCache(): void {
   cache.clear();
 }
 
-/**
- * Runs `read` at most once per key per page load.
- *
- * See the file note for why the promise rather than the result is stored and
- * why an `unknown` answer is evicted.
- */
+/** Runs `read` at most once per key per page load. */
 export function cachedAvailability(
   key: string,
   read: () => Promise<Availability>
