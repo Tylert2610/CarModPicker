@@ -3,11 +3,8 @@ import React, { useState } from 'react';
 import type { VoteMutationResult } from '../../types/Api';
 
 /**
- * Both calls resolve to `{ data: VoteMutationResult }`, which carries the
- * entity's tallies as of the write. Split plan row 24 moved the parts
- * aggregate onto the votes stream, so the counts on the write response are the
- * authoritative ones and this component applies them over its optimistic guess
- * rather than re-reading a summary that may still be behind.
+ * Vote write calls. Each response carries the entity's tallies as of the write,
+ * which are authoritative and replace this component's optimistic guess.
  */
 interface VoteApi {
   voteOnEntity: (
@@ -30,6 +27,9 @@ interface VoteButtonsProps {
   size?: 'sm' | 'md' | 'lg';
 }
 
+/**
+ * Up and down vote controls, applying the write response's authoritative tallies.
+ */
 const VoteButtons: React.FC<VoteButtonsProps> = ({
   entityId,
   upvotes,
@@ -50,23 +50,19 @@ const VoteButtons: React.FC<VoteButtonsProps> = ({
     try {
       setIsVoting(true);
 
-      // Optimistic update - immediately update the UI
       let newUpvotes = localUpvotes;
       let newDownvotes = localDownvotes;
       let newUserVote: 'upvote' | 'downvote' | null = localUserVote || null;
 
-      // Remove previous vote if it exists
       if (localUserVote === 'upvote') {
         newUpvotes -= 1;
       } else if (localUserVote === 'downvote') {
         newDownvotes -= 1;
       }
 
-      // If user already voted the same way, remove the vote
       if (localUserVote === voteType) {
         newUserVote = null;
       } else {
-        // Otherwise, vote or change vote
         newUserVote = voteType;
         if (voteType === 'upvote') {
           newUpvotes += 1;
@@ -75,16 +71,10 @@ const VoteButtons: React.FC<VoteButtonsProps> = ({
         }
       }
 
-      // Update local state immediately
       setLocalUpvotes(newUpvotes);
       setLocalDownvotes(newDownvotes);
       setLocalUserVote(newUserVote);
 
-      // Make the API call, then replace the optimistic guess with the counts
-      // the server actually recorded. The two agree whenever this client is
-      // the only one voting; they diverge as soon as anyone else votes on the
-      // same entity between the render and the click, and the server's numbers
-      // are the right ones in that case.
       if (localUserVote === voteType) {
         const { data } = await voteApi.removeVote(entityId);
         setLocalUpvotes(data.upvotes);
@@ -99,11 +89,9 @@ const VoteButtons: React.FC<VoteButtonsProps> = ({
         onVoteUpdate(entityId, voteType);
       }
     } catch {
-      // Revert optimistic update on error
       setLocalUpvotes(upvotes);
       setLocalDownvotes(downvotes);
       setLocalUserVote(userVote);
-      // You might want to show a toast notification here
     } finally {
       setIsVoting(false);
     }
@@ -135,7 +123,6 @@ const VoteButtons: React.FC<VoteButtonsProps> = ({
 
   return (
     <div className={`flex items-center space-x-2 ${getSizeClasses()}`}>
-      {/* Upvote Button */}
       <button
         type="button"
         onClick={() => {
@@ -168,7 +155,6 @@ const VoteButtons: React.FC<VoteButtonsProps> = ({
         </svg>
       </button>
 
-      {/* Vote Count */}
       <span
         className={`
         font-semibold min-w-[2rem] text-center
@@ -179,7 +165,6 @@ const VoteButtons: React.FC<VoteButtonsProps> = ({
         {totalVotes}
       </span>
 
-      {/* Downvote Button */}
       <button
         type="button"
         onClick={() => {
@@ -212,7 +197,6 @@ const VoteButtons: React.FC<VoteButtonsProps> = ({
         </svg>
       </button>
 
-      {/* Total Votes */}
       <span className="text-gray-500 text-xs">
         ({localUpvotes + localDownvotes} votes)
       </span>

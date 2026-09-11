@@ -42,6 +42,7 @@ const fetchCarsRequestFn = () =>
 const fetchPartManufacturersRequestFn = () =>
   partManufacturersApi.getPartManufacturers(true);
 
+/** Edits an existing part's details, fitment, and images. */
 function EditPartForm({ part, onPartUpdated, onCancel }: EditPartFormProps) {
   const [formData, setFormData] = useState({
     name: '',
@@ -88,7 +89,7 @@ function EditPartForm({ part, onPartUpdated, onCancel }: EditPartFormProps) {
     void fetchCars();
     void fetchPartManufacturers();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Only fetch once on mount - request functions are stable
+  }, []);
 
   useEffect(() => {
     if (categoriesData && Array.isArray(categoriesData)) {
@@ -123,7 +124,6 @@ function EditPartForm({ part, onPartUpdated, onCancel }: EditPartFormProps) {
         car_ids: [...carIds],
         is_universal: part.is_universal ?? false,
       });
-      // Note: part.image_urls[0] is a presigned URL from the API
       setImageFileKey(null);
       setImageChanged(false);
     } catch {
@@ -164,7 +164,6 @@ function EditPartForm({ part, onPartUpdated, onCancel }: EditPartFormProps) {
       ...prev,
       part_manufacturer_id: part_manufacturerId,
     }));
-    // Clear pending part_manufacturer if an existing part_manufacturer is selected or value is cleared
     if (part_manufacturerId !== null || value === null) {
       setPendingPartManufacturerName(null);
     }
@@ -178,15 +177,12 @@ function EditPartForm({ part, onPartUpdated, onCancel }: EditPartFormProps) {
   );
 
   const handleCreateNewPartManufacturer = (part_manufacturerName: string) => {
-    // Store the part_manufacturer name to be created later, don't create it yet
     setPendingPartManufacturerName(part_manufacturerName.trim());
-    // Clear the part_manufacturer_id since we're creating a new part_manufacturer
     setFormData((prev) => ({ ...prev, part_manufacturer_id: null }));
     if (validationError) setValidationError(null);
   };
 
   const handlePartManufacturerInputChange = (text: string) => {
-    // Clear pending part_manufacturer if user types something different
     if (
       pendingPartManufacturerName &&
       text.trim() !== pendingPartManufacturerName
@@ -195,7 +191,6 @@ function EditPartForm({ part, onPartUpdated, onCancel }: EditPartFormProps) {
     }
   };
 
-  // Convert part_manufacturers to SearchableSelect options
   const part_manufacturerOptions: SearchableSelectOption[] = useMemo(() => {
     return part_manufacturers
       .filter((part_manufacturer) => part_manufacturer.is_active)
@@ -207,7 +202,6 @@ function EditPartForm({ part, onPartUpdated, onCancel }: EditPartFormProps) {
       }));
   }, [part_manufacturers]);
 
-  // Filter function for part_manufacturers
   const filterPartManufacturers = useCallback(
     (
       options: SearchableSelectOption[],
@@ -243,7 +237,6 @@ function EditPartForm({ part, onPartUpdated, onCancel }: EditPartFormProps) {
       return;
     }
 
-    // Create part manufacturer first if there's a pending part_manufacturer name
     let part_manufacturerId = formData.part_manufacturer_id;
     if (pendingPartManufacturerName) {
       try {
@@ -253,7 +246,6 @@ function EditPartForm({ part, onPartUpdated, onCancel }: EditPartFormProps) {
         });
         if (part_manufacturerResult !== null && part_manufacturerResult.id) {
           part_manufacturerId = part_manufacturerResult.id;
-          // Refresh part_manufacturers list
           await fetchPartManufacturers();
         } else {
           setValidationError(
@@ -274,7 +266,7 @@ function EditPartForm({ part, onPartUpdated, onCancel }: EditPartFormProps) {
     const partData: PartUpdate = {
       name: formData.name.trim(),
       part_number: formData.part_number.trim() || null,
-      part_manufacturer_id: part_manufacturerId!, // part_manufacturerId is guaranteed to be set at this point due to validation
+      part_manufacturer_id: part_manufacturerId!,
       description: formData.description.trim() || null,
       category_id: formData.category_id,
       is_universal: formData.is_universal,
@@ -286,17 +278,13 @@ function EditPartForm({ part, onPartUpdated, onCancel }: EditPartFormProps) {
       partData,
     });
     if (result !== null) {
-      // Handle image changes separately so existing images are not wiped
       if (imageChanged) {
         if (imageFileKey) {
-          // Append the new image to the gallery (preserves existing images)
           await partsApi.appendPartImages(part.id, [imageFileKey]);
         } else {
-          // User removed the displayed image — delete only the first one (index 0)
           await partsApi.removePartImage(part.id, 0);
         }
       }
-      // Clear pending part_manufacturer after successful update
       setPendingPartManufacturerName(null);
       await onPartUpdated();
     }

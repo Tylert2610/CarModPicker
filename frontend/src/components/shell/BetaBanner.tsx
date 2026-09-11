@@ -3,6 +3,9 @@ import { FaTimes, FaWrench } from 'react-icons/fa';
 
 const SESSION_KEY = 'beta_banner_dismissed';
 
+/**
+ * A dismissible banner noting the site is under active development, per session.
+ */
 function BetaBanner() {
   const [dismissed, setDismissed] = useState(
     () => sessionStorage.getItem(SESSION_KEY) === 'true'

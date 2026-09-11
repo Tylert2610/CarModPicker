@@ -10,10 +10,12 @@ const TREND_ARROW: Record<PriceHistorySummary['trend'], string> = {
   flat: '·',
 };
 
+/** Cents as a whole-dollar amount. */
 function formatDollars(cents: number): string {
   return `$${Math.round(cents / 100).toLocaleString()}`;
 }
 
+/** An ISO timestamp as a local date, falling back to the raw value. */
 function formatLocalDate(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
@@ -24,6 +26,7 @@ function formatLocalDate(iso: string): string {
   });
 }
 
+/** A one-line summary of how a part's price has moved over the window. */
 export default function PriceDeltaLine({ summary }: PriceDeltaLineProps) {
   if (!summary) return null;
   if (summary.observation_count === 0) return null;
@@ -45,10 +48,6 @@ export default function PriceDeltaLine({ summary }: PriceDeltaLineProps) {
     );
   }
 
-  // observation_count >= 2 — render min → max range without duration.
-  // The summary lacks an earliest-observed timestamp, so the calendar-day
-  // span between earliest and last_observed_at isn't computable here; per the
-  // task plan this collapses to the "$<min> → $<max>" fallback.
   const minStr =
     summary.min_cents !== null ? formatDollars(summary.min_cents) : '—';
   const maxStr =

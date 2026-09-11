@@ -27,6 +27,7 @@ const cardVariants = cva(
   }
 );
 
+/** Props for Card: div attributes plus the card's visual variant. */
 export interface CardProps
   extends
     React.HTMLAttributes<HTMLDivElement>,
@@ -34,6 +35,7 @@ export interface CardProps
   ref?: React.Ref<HTMLDivElement>;
 }
 
+/** A bordered surface that groups related content. */
 export function Card({
   className,
   variant,
@@ -54,6 +56,7 @@ type DivWithRef = React.HTMLAttributes<HTMLDivElement> & {
   ref?: React.Ref<HTMLDivElement>;
 };
 
+/** The top section of a Card, holding its title and description. */
 export function CardHeader({ className, ref, ...props }: DivWithRef) {
   return (
     <div
@@ -64,6 +67,7 @@ export function CardHeader({ className, ref, ...props }: DivWithRef) {
   );
 }
 
+/** The heading inside a CardHeader. */
 export function CardTitle({ className, ref, ...props }: DivWithRef) {
   return (
     <div
@@ -77,6 +81,7 @@ export function CardTitle({ className, ref, ...props }: DivWithRef) {
   );
 }
 
+/** The supporting text under a CardTitle. */
 export function CardDescription({ className, ref, ...props }: DivWithRef) {
   return (
     <div
@@ -87,10 +92,12 @@ export function CardDescription({ className, ref, ...props }: DivWithRef) {
   );
 }
 
+/** The main body section of a Card. */
 export function CardContent({ className, ref, ...props }: DivWithRef) {
   return <div ref={ref} className={cn('p-6 pt-0', className)} {...props} />;
 }
 
+/** The bottom section of a Card, usually holding actions. */
 export function CardFooter({ className, ref, ...props }: DivWithRef) {
   return (
     <div

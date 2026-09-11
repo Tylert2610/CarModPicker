@@ -2,6 +2,7 @@ import { Toaster as SonnerToaster, type ToasterProps } from 'sonner';
 
 export type { ToasterProps };
 
+/** Mounts the app's toast host, themed to match the app surface. */
 export const Toaster = ({ className, ...props }: ToasterProps) => (
   <SonnerToaster
     theme="dark"

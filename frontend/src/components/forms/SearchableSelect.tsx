@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+/** One entry in a SearchableSelect: its value and display label. */
 export interface SearchableSelectOption {
   id: number | string;
   label: string;
@@ -24,10 +25,11 @@ interface SearchableSelectProps {
   onCreateNew?: (searchText: string) => void | Promise<void>;
   createNewLabel?: string;
   isCreatingNew?: boolean;
-  displayValue?: string | null; // Display text when value is null (e.g., for pending creation)
-  onInputChange?: (text: string) => void; // Callback when input text changes
+  displayValue?: string | null;
+  onInputChange?: (text: string) => void;
 }
 
+/** A single-select dropdown with type-to-filter and an optional clear button. */
 function SearchableSelect({
   options,
   value,
@@ -53,10 +55,8 @@ function SearchableSelect({
   const inputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Find selected option
   const selectedOption = options.find((opt) => opt.value === value) || null;
 
-  // Default filter function - searches in label
   const defaultFilterOptions = (
     opts: SearchableSelectOption[],
     text: string
@@ -68,19 +68,15 @@ function SearchableSelect({
 
   const filterOptionsFn = customFilterOptions || defaultFilterOptions;
 
-  // Filter options based on search text
   const filteredOptions = filterOptionsFn(options, searchText);
 
-  // Check if we should show "Create new" option
-  // Don't show if there's already a displayValue (pending creation)
   const shouldShowCreateNew =
     onCreateNew &&
     searchText.trim() &&
     filteredOptions.length === 0 &&
     !isLoading &&
-    !displayValue; // Don't show create button if we already have a pending value
+    !displayValue;
 
-  // Close dropdown when displayValue is set (pending creation)
   useEffect(() => {
     if (displayValue && isOpen) {
       setIsOpen(false);
@@ -88,16 +84,13 @@ function SearchableSelect({
     }
   }, [displayValue, isOpen]);
 
-  // Adjust highlighted index for "Create new" option
   const totalOptions = filteredOptions.length + (shouldShowCreateNew ? 1 : 0);
 
-  // Handle selection
   const handleSelect = useCallback(
     (selectedValue: number | string | null) => {
       onChange(selectedValue);
       setIsOpen(false);
       setHighlightedIndex(-1);
-      // Update search text to show selected option
       const option = options.find((opt) => opt.value === selectedValue);
       if (option) {
         setSearchText(option.label);
@@ -109,24 +102,19 @@ function SearchableSelect({
     [onChange, options]
   );
 
-  // Update search text when value changes externally
   useEffect(() => {
-    // Always prioritize displayValue if it exists (pending creation)
     if (displayValue) {
       setSearchText(displayValue);
     } else if (value === null || value === '') {
       setSearchText('');
     } else if (selectedOption && searchText !== selectedOption.label) {
-      // Only update if the search text doesn't match the selected option
-      // This prevents clearing user input while typing
       if (!isOpen) {
         setSearchText(selectedOption.label);
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value, selectedOption, isOpen, displayValue]); // searchText intentionally excluded to prevent loops
+  }, [value, selectedOption, isOpen, displayValue]);
 
-  // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (
@@ -135,7 +123,6 @@ function SearchableSelect({
       ) {
         setIsOpen(false);
         setHighlightedIndex(-1);
-        // Reset search text to selected option when closing
         if (selectedOption) {
           setSearchText(selectedOption.label);
         } else if (displayValue) {
@@ -152,7 +139,6 @@ function SearchableSelect({
     };
   }, [selectedOption, displayValue]);
 
-  // Handle keyboard navigation
   useEffect(() => {
     if (!isOpen) return;
 
@@ -172,13 +158,11 @@ function SearchableSelect({
             shouldShowCreateNew &&
             highlightedIndex === filteredOptions.length
           ) {
-            // Create new option
             void handleCreateNew();
           } else if (filteredOptions[highlightedIndex]) {
             handleSelect(filteredOptions[highlightedIndex].value);
           }
         } else if (shouldShowCreateNew && searchText.trim()) {
-          // If nothing is highlighted but we can create new, create it
           void handleCreateNew();
         }
       } else if (e.key === 'Escape') {
@@ -194,7 +178,6 @@ function SearchableSelect({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, filteredOptions, highlightedIndex, handleSelect]);
 
-  // Scroll highlighted option into view
   useEffect(() => {
     if (
       highlightedIndex >= 0 &&
@@ -216,12 +199,10 @@ function SearchableSelect({
     setIsOpen(true);
     setHighlightedIndex(-1);
 
-    // Notify parent of input change (e.g., to clear pending state)
     if (onInputChange) {
       onInputChange(newText);
     }
 
-    // If user clears the input, clear the selection
     if (!newText.trim()) {
       onChange(null);
     }
@@ -229,10 +210,7 @@ function SearchableSelect({
 
   const handleInputFocus = () => {
     setIsOpen(true);
-    // When focusing, preserve displayValue if it exists (pending creation)
-    // Otherwise, clear search text to allow new search
     if (displayValue) {
-      // Keep the display value when focusing if it's a pending creation
       setSearchText(displayValue);
     } else if (selectedOption) {
       setSearchText('');
@@ -250,14 +228,11 @@ function SearchableSelect({
   const handleCreateNew = async () => {
     if (onCreateNew && searchText.trim()) {
       await onCreateNew(searchText.trim());
-      // Keep dropdown open and search text after creation
-      // The parent component should update the options and select the new item
     }
   };
 
   return (
     <div className="relative" ref={containerRef}>
-      {/* Label */}
       {label && (
         <label
           htmlFor={id}
@@ -267,7 +242,6 @@ function SearchableSelect({
         </label>
       )}
 
-      {/* Input Container */}
       <div className="relative">
         <input
           ref={inputRef}
@@ -278,11 +252,7 @@ function SearchableSelect({
           onChange={handleInputChange}
           onFocus={handleInputFocus}
           onBlur={() => {
-            // On blur, preserve displayValue if it exists and user hasn't changed it
             if (displayValue) {
-              // Only restore if the current text doesn't match what user might have typed
-              // If onInputChange cleared displayValue, it means user typed something different
-              // Otherwise, restore the displayValue
               const currentText = inputRef.current?.value || '';
               if (currentText.trim() === displayValue || !currentText.trim()) {
                 setSearchText(displayValue);
@@ -295,7 +265,6 @@ function SearchableSelect({
           autoComplete="off"
         />
 
-        {/* Clear button */}
         {value !== null && value !== '' && !disabled && (
           <button
             type="button"
@@ -319,7 +288,6 @@ function SearchableSelect({
           </button>
         )}
 
-        {/* Dropdown arrow */}
         {!value && (
           <div className="absolute right-3 top-1/2 transform -translate-y-1/2 pointer-events-none text-white/60">
             <svg
@@ -339,7 +307,6 @@ function SearchableSelect({
         )}
       </div>
 
-      {/* Dropdown */}
       {isOpen && !disabled && !displayValue && (
         <div
           ref={dropdownRef}

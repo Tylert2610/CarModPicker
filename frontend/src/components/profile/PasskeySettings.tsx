@@ -12,6 +12,7 @@ import { Input } from '../ui/input';
 import Spinner from '../ui/spinner';
 import { getApiErrorMessage } from '../../utils/apiError';
 
+/** A date for display, falling back to the raw value rather than throwing. */
 function formatDate(value?: string | null): string {
   if (!value) return '—';
   try {
@@ -21,6 +22,7 @@ function formatDate(value?: string | null): string {
   }
 }
 
+/** The legacy passkeys tab, speaking the app's own WebAuthn routes. */
 function PasskeySettings() {
   const [credentials, setCredentials] = useState<WebAuthnCredentialSummary[]>(
     []

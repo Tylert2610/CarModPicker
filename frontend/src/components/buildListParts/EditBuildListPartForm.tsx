@@ -19,6 +19,9 @@ interface EditBuildListPartFormProps {
   loading?: boolean;
 }
 
+/**
+ * Edits a part's quantity, notes, phase, and purchase state within a build list.
+ */
 const EditBuildListPartForm: React.FC<EditBuildListPartFormProps> = ({
   buildListPart,
   phases,

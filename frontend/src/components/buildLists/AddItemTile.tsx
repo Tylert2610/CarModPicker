@@ -8,12 +8,12 @@ interface AddItemTileProps {
   className?: string;
 }
 
+/** A dashed placeholder tile that invites the user to add a new item. */
 const AddItemTile: React.FC<AddItemTileProps> = ({
   title,
   description,
   onClick,
   className = '',
-  // icon,
 }) => {
   return (
     <Card

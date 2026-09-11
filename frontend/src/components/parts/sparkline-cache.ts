@@ -6,16 +6,12 @@ interface CacheEntry {
   cachedAt: number;
 }
 
-// Module-level in-memory cache. Per the task plan: 5-minute TTL, keyed by
-// partId. Survives re-renders within the SPA session; cleared when the tab
-// reloads. Intentionally small — the window/retailer key is implicit '90d'/all.
 const CACHE_TTL_MS = 5 * 60 * 1000;
 const historyCache = new Map<string, CacheEntry>();
 
-// Track in-flight requests so re-mounted rows for the same partId don't fan
-// out into duplicate network calls.
 const inflight = new Map<string, Promise<PartPriceHistoryReadWithRetailer[]>>();
 
+/** Returns a part's cached price history, or null when absent or stale. */
 export function getCachedHistory(
   partId: string
 ): PartPriceHistoryReadWithRetailer[] | null {
@@ -28,6 +24,10 @@ export function getCachedHistory(
   return entry.history;
 }
 
+/**
+ * Fetches a part's 90 day price history and caches it, sharing one request
+ * per part id so a table of sparklines does not refetch the same part.
+ */
 export function fetchHistory(
   partId: string
 ): Promise<PartPriceHistoryReadWithRetailer[]> {
@@ -52,7 +52,7 @@ export function fetchHistory(
   return p;
 }
 
-// Test seam — vitest can clear the cache between tests via this export.
+/** Clears the cache and in-flight map. For tests. */
 export function __resetSparklineCellCache(): void {
   historyCache.clear();
   inflight.clear();

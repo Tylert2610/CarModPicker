@@ -32,7 +32,7 @@ interface FormState {
   name: string;
   costDollars: string;
   description: string;
-  phaseId: string; // empty string means unassigned
+  phaseId: string;
 }
 
 const EMPTY_FORM: FormState = {
@@ -65,6 +65,7 @@ const fetchEstimatesFn = (buildListId: string) =>
 const fetchPhasesFn = (buildListId: string) =>
   buildListsApi.getPhases(buildListId);
 
+/** A build list's labor estimates, with add, edit, and delete. */
 const LaborEstimatesSection: React.FC<Props> = ({
   buildListId,
   canManage,
@@ -185,7 +186,6 @@ const LaborEstimatesSection: React.FC<Props> = ({
   const items = estimates ?? [];
   const totalCents = items.reduce((sum, item) => sum + item.cost_cents, 0);
 
-  // Hide the tile entirely when there's nothing to show and no edit access.
   if (!canManage && items.length === 0) {
     return null;
   }
@@ -203,7 +203,6 @@ const LaborEstimatesSection: React.FC<Props> = ({
   return (
     <>
       <div className="space-y-2">
-        {/* Header row mirrors BuildListPartTable's category header (line 295-303 of BuildListPartList.tsx) */}
         <div className="flex items-center justify-between gap-2 px-1 py-0.5">
           <div className="flex items-center gap-2">
             <span className="text-base">{LABOR_ICON}</span>
@@ -329,7 +328,6 @@ const LaborEstimatesSection: React.FC<Props> = ({
         </Card>
       </div>
 
-      {/* Dialogs are portaled — safe to render inside a CSS columns container */}
       {canManage && (
         <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
           <DialogContent>

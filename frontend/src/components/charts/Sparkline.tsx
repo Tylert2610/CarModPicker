@@ -12,6 +12,7 @@ const DEFAULT_WIDTH = 80;
 const DEFAULT_HEIGHT = 24;
 const STROKE_WIDTH = 1.5;
 
+/** A compact inline SVG trend line for a series of numbers. */
 export default function Sparkline({
   history,
   width = DEFAULT_WIDTH,

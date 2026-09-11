@@ -8,6 +8,7 @@ import {
   SiYoutube,
 } from 'react-icons/si';
 
+/** A user's social profile URLs; only non-empty entries are rendered. */
 export interface SocialLinksData {
   instagram_url?: string | null;
   facebook_url?: string | null;
@@ -64,11 +65,8 @@ const PLATFORMS: Array<{
 ];
 
 /**
- * Renders a list of social profile links with platform logos (Simple Icons).
- * Opens in new tab with rel="noopener noreferrer" for security.
- * Icons are from Simple Icons (react-icons/si), used per common practice for
- * linking to a user's presence on each platform; platforms generally allow
- * this use when linking to their service.
+ * Renders a user's non-empty social profile links with platform logos,
+ * opening each in a new tab with rel="noopener noreferrer".
  */
 const SocialLinks: React.FC<SocialLinksProps> = ({
   links,

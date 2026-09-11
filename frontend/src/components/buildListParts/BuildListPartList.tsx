@@ -27,7 +27,6 @@ type TableColumnKey =
   | 'price'
   | 'actions';
 
-// Lower = higher priority (kept longer). `part` and `price` are pinned and never drop.
 const COLUMN_PRIORITY: Record<TableColumnKey, number> = {
   part: 0,
   price: 1,
@@ -103,10 +102,15 @@ interface BuildListPartTableProps {
   onDropOnPhase?: (targetPhaseId: string | null) => void;
 }
 
+/** A car's display name, falling back to "Vehicle" when it resolves empty. */
 function formatCarName(car: CarGenerationRead): string {
   return carFullDisplayName(car).trim() || 'Vehicle';
 }
 
+/**
+ * The Fit column's label for a part, and a tooltip listing the vehicles
+ * when it fits more than one.
+ */
 function getFitCell(
   part: BuildListPartReadWithPart,
   carsById: Record<string, CarGenerationRead>
@@ -131,6 +135,9 @@ function getFitCell(
     : { label: `${n} vehicles` };
 }
 
+/**
+ * A part's manufacturer name, resolved by id when not denormalised onto the part.
+ */
 function getPartManufacturerName(
   part: BuildListPartReadWithPart,
   part_manufacturers: PartManufacturerResponse[]
@@ -146,9 +153,7 @@ function getPartManufacturerName(
   return '—';
 }
 
-// Build a comparator for the active sort. Falls back to part name on ties so
-// the order is stable across renders. Empty/missing values sort last regardless
-// of direction so blanks don't crowd the top when descending.
+/** A comparator for the current sort column and direction, tie-broken by name. */
 function buildSortComparator(
   sort: SortState,
   part_manufacturers: PartManufacturerResponse[],
@@ -196,8 +201,7 @@ function buildSortComparator(
       const av = numericValue(a);
       const bv = numericValue(b);
       if (av == null && bv == null) cmp = 0;
-      else if (av == null)
-        cmp = 1; // missing → last
+      else if (av == null) cmp = 1;
       else if (bv == null) cmp = -1;
       else cmp = (av - bv) * dirMul;
     } else {
@@ -220,6 +224,7 @@ interface SortableHeaderProps {
   align?: 'left' | 'right';
 }
 
+/** A table header cell that sorts its column when clicked. */
 const SortableHeader: React.FC<SortableHeaderProps> = ({
   sortKey,
   label,
@@ -259,6 +264,9 @@ const SortableHeader: React.FC<SortableHeaderProps> = ({
   );
 };
 
+/**
+ * One group's table of build list parts, sortable and drag-aware in phase view.
+ */
 const BuildListPartTable: React.FC<BuildListPartTableProps> = ({
   group,
   categoryName,
@@ -324,8 +332,6 @@ const BuildListPartTable: React.FC<BuildListPartTableProps> = ({
           if (!isDragOver) setIsDragOver(true);
         },
         onDragLeave: (e: React.DragEvent) => {
-          // Only clear when leaving the group entirely, not when moving
-          // between child elements inside it.
           if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
             setIsDragOver(false);
           }
@@ -348,7 +354,6 @@ const BuildListPartTable: React.FC<BuildListPartTableProps> = ({
       }`}
       {...dropProps}
     >
-      {/* Category Header */}
       <div className="flex items-center gap-2 px-1 py-0.5">
         <span className="text-base">{categoryIcon}</span>
         <h2 className="text-base font-semibold text-gray-200">
@@ -359,7 +364,6 @@ const BuildListPartTable: React.FC<BuildListPartTableProps> = ({
         </span>
       </div>
 
-      {/* Table - matching parts/search layout; columns use % so table fills width */}
       <Card className="p-0 !overflow-visible">
         <ResponsiveTableWrapper
           visibleColumns={visibleColumns}
@@ -458,7 +462,6 @@ const BuildListPartTable: React.FC<BuildListPartTableProps> = ({
                     dndEnabled
                       ? (e) => {
                           e.dataTransfer.effectAllowed = 'move';
-                          // Some browsers require data to be set to start a drag.
                           e.dataTransfer.setData(
                             'text/plain',
                             buildListPart.id
@@ -718,6 +721,7 @@ const PURCHASED_ICON = '✅';
 const NOT_PURCHASED_ICON = '🛒';
 const UNASSIGNED_LABEL = 'Unassigned';
 
+/** A build list's parts grouped by category, phase, or purchase state. */
 const BuildListPartList: React.FC<BuildListPartListProps> = ({
   buildListParts,
   categories,
@@ -738,8 +742,6 @@ const BuildListPartList: React.FC<BuildListPartListProps> = ({
   emptyMessage = 'No parts added to this build list yet.',
   trailingTile,
 }) => {
-  // Drag-and-drop: the part currently being dragged is shared across all phase
-  // group tables so a part can be dropped onto a different group than its own.
   const draggedPartRef = useRef<BuildListPartReadWithPart | null>(null);
   const dndEnabled = viewMode === 'phase' && canEdit && onPhaseChange != null;
   const handleDropOnPhase = useCallback(
@@ -753,7 +755,6 @@ const BuildListPartList: React.FC<BuildListPartListProps> = ({
     [onPhaseChange]
   );
 
-  // Shared sort state across all groups. Resets on reload (component unmount).
   const [sort, setSort] = useState<SortState>(DEFAULT_SORT);
   const handleSortChange = (key: SortKey) => {
     setSort((prev) =>
@@ -763,14 +764,12 @@ const BuildListPartList: React.FC<BuildListPartListProps> = ({
     );
   };
 
-  // Create a map of category_id to category for quick lookup
   const categoryMap = useMemo(() => {
     const map = new Map<string, CategoryResponse>();
     categories.forEach((cat) => map.set(cat.id, cat));
     return map;
   }, [categories]);
 
-  // Group and sort parts by category
   const groupedParts = useMemo(() => {
     const groups = new Map<
       string,
@@ -780,7 +779,6 @@ const BuildListPartList: React.FC<BuildListPartListProps> = ({
       }
     >();
 
-    // Group parts by category_id
     buildListParts.forEach((part) => {
       const categoryId = part.part.category_id;
       if (!groups.has(categoryId)) {
@@ -792,12 +790,10 @@ const BuildListPartList: React.FC<BuildListPartListProps> = ({
       groups.get(categoryId)!.parts.push(part);
     });
 
-    // Sort parts within each category alphabetically by part name
     groups.forEach((group) => {
       group.parts.sort((a, b) => a.part.name.localeCompare(b.part.name));
     });
 
-    // Convert to array and sort by category display_name
     return Array.from(groups.values()).sort((a, b) => {
       const nameA =
         a.category?.display_name || a.category?.name || 'Uncategorized';
@@ -807,7 +803,6 @@ const BuildListPartList: React.FC<BuildListPartListProps> = ({
     });
   }, [buildListParts, categoryMap]);
 
-  // Phase map: id -> sort_order and id -> name
   const phaseOrderMap = useMemo(() => {
     const map = new Map<string, number>();
     phases.forEach((p) => map.set(p.id, p.sort_order));
@@ -822,11 +817,8 @@ const BuildListPartList: React.FC<BuildListPartListProps> = ({
     () => [...phases].sort((a, b) => a.sort_order - b.sort_order),
     [phases]
   );
-  // When reassignment is enabled, show every phase (incl. empty ones) so they
-  // can serve as drop targets. Otherwise keep the old behavior: hide empties.
   const seedEmptyPhaseGroups = onPhaseChange != null && viewMode === 'phase';
 
-  // Group and sort parts by phase (build_list_phase_id; null = Unassigned)
   const groupedByPhase = useMemo(() => {
     const groups = new Map<
       string,
@@ -838,8 +830,6 @@ const BuildListPartList: React.FC<BuildListPartListProps> = ({
       }
     >();
 
-    // Seed a group per known phase plus Unassigned so empty phases still render
-    // as drop targets and reassignment can move the last part out of a phase.
     if (seedEmptyPhaseGroups) {
       sortedPhasesAll.forEach((p) => {
         groups.set(p.id, {
@@ -895,8 +885,6 @@ const BuildListPartList: React.FC<BuildListPartListProps> = ({
     seedEmptyPhaseGroups,
   ]);
 
-  // Group by purchased state: "Not purchased" first, then "Purchased".
-  // Empty groups are dropped so we don't render a blank section.
   const groupedByPurchased = useMemo(() => {
     const notPurchased: BuildListPartReadWithPart[] = [];
     const purchased: BuildListPartReadWithPart[] = [];
@@ -993,7 +981,6 @@ const BuildListPartList: React.FC<BuildListPartListProps> = ({
 
   return (
     <div className="space-y-3">
-      {/* Parts grouped by category, phase, or purchased state — masonry: 2 cols on md+, 1 col below */}
       <div className="columns-1 md:columns-2 gap-4 [column-fill:_balance]">
         {buildListParts.length === 0 && (
           <div className="break-inside-avoid mb-4">

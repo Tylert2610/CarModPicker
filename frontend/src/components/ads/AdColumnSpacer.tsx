@@ -12,6 +12,10 @@ interface AdColumnSpacerProps {
   side: Side;
 }
 
+/**
+ * Invisible spacer matching the ad column's footprint, so layout stays put
+ * when ads are hidden. Dimensions must track AdBanner.
+ */
 export default function AdColumnSpacer({ side }: AdColumnSpacerProps) {
   return (
     <aside

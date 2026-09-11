@@ -6,6 +6,7 @@ interface HeaderNavLinkProps extends LinkProps {
   icon?: React.ReactNode;
 }
 
+/** A header navigation link with an optional leading icon. */
 const HeaderNavLink: React.FC<HeaderNavLinkProps> = ({
   children,
   to,

@@ -5,6 +5,7 @@ import SearchableSelect, {
   type SearchableSelectOption,
 } from '../forms/SearchableSelect';
 
+/** A car's display name with its year range appended. */
 function formatCarLabel(car: CarGenerationRead): string {
   return `${carFullDisplayName(car)} (${car.start_year ?? ''}${
     car.end_year ? `-${car.end_year}` : '+'
@@ -25,6 +26,9 @@ interface CarModelMultiSelectProps {
 /**
  * Multi-select for car models: shows selected cars as removable chips
  * and a searchable dropdown to add more.
+ */
+/**
+ * Multi-select for car models: selected cars as removable chips plus a searchable dropdown.
  */
 function CarModelMultiSelect({
   cars,
@@ -93,7 +97,6 @@ function CarModelMultiSelect({
           {label}
         </label>
       )}
-      {/* Selected cars as chips */}
       {selectedCars.length > 0 && (
         <div className="flex flex-wrap gap-2">
           {selectedCars.map((car) => (
@@ -133,7 +136,6 @@ function CarModelMultiSelect({
           ))}
         </div>
       )}
-      {/* Add-car dropdown: only show when there are cars not yet selected */}
       {!disabled && availableOptions.length > 0 && (
         <SearchableSelect
           id="car-model-add"

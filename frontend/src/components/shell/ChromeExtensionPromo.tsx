@@ -10,11 +10,10 @@ import { dismissForToday, isDismissedToday } from '../../utils/dailyDismiss';
 import { Button } from '../ui/button';
 
 const DISMISS_KEY = 'chrome_extension_promo_last_dismissed';
-// Content scripts run at document_idle, which can land after our first effect.
-// Poll briefly so we don't flash the banner at users who already have the extension.
 const DETECTION_TIMEOUT_MS = 2000;
 const DETECTION_INTERVAL_MS = 200;
 
+/** True when the extension's content script has marked the document. */
 function isExtensionInstalled(): boolean {
   return (
     document.documentElement.dataset[EXTENSION_INSTALLED_DATA_ATTR] ===
@@ -22,22 +21,25 @@ function isExtensionInstalled(): boolean {
   );
 }
 
+/** True on Chromium browsers, where the extension can be installed. */
 function isChromiumBrowser(): boolean {
   if (typeof navigator === 'undefined') return false;
   const ua = navigator.userAgent;
-  // Exclude Firefox and Safari (non-Chromium). Chrome/Edge/Brave/Opera all match.
   if (/Firefox\//i.test(ua)) return false;
   if (/Safari\//i.test(ua) && !/Chrome\//i.test(ua) && !/Chromium\//i.test(ua))
     return false;
   return /Chrome\//i.test(ua) || /Chromium\//i.test(ua);
 }
 
+/**
+ * Prompts Chromium users to install the extension, once a day. Polls briefly
+ * for the content script so an installed extension does not flash the banner.
+ */
 function ChromeExtensionPromo() {
   const [visible, setVisible] = useState(false);
   const { consent } = useCookieConsent();
 
   useEffect(() => {
-    // Wait until the cookie consent decision is made — both render at bottom z-50.
     if (consent === null) return;
     if (isDismissedToday(DISMISS_KEY) || !isChromiumBrowser()) return;
 

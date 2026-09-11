@@ -3,6 +3,7 @@ import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import Spinner from '../ui/spinner';
 
+/** Guards routes that need a signed-in user with a verified email address. */
 const EmailVerifiedRoute: React.FC = () => {
   const { isAuthenticated, user, isLoading } = useAuth();
   const location = useLocation();

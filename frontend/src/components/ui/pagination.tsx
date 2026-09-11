@@ -4,6 +4,7 @@ import { cn } from '../../lib/utils';
 import { Button } from './button';
 import { PAGINATION_MAX_VISIBLE_PAGES } from '../../constants';
 
+/** Props for Pagination: current page, total pages, and a page-change handler. */
 export interface PaginationProps {
   currentPage: number;
   totalPages: number;
@@ -13,6 +14,7 @@ export interface PaginationProps {
   className?: string;
 }
 
+/** Page controls for a paginated list. */
 const Pagination: React.FC<PaginationProps> = ({
   currentPage,
   totalPages,

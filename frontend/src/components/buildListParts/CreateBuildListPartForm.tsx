@@ -41,6 +41,9 @@ const fetchCarsRequestFn = () =>
 const fetchPhasesRequestFn = (buildListId: string) =>
   buildListsApi.getPhases(buildListId);
 
+/**
+ * Adds a part to a build list, either creating a new part or picking an existing one.
+ */
 function CreateBuildListPartForm({
   buildListId,
   onPartAdded,
@@ -109,7 +112,7 @@ function CreateBuildListPartForm({
     void fetchCategories();
     void fetchPartManufacturers();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Only fetch once on mount - request functions are stable
+  }, []);
 
   useEffect(() => {
     if (buildListId) void fetchPhases(buildListId);
@@ -136,30 +139,25 @@ function CreateBuildListPartForm({
     }
   }, [part_manufacturersData]);
 
-  // Debounced URL checking effect (only when in create mode)
   useEffect(() => {
-    // Only check URL when in create mode
     if (mode !== 'create') {
       setDuplicatePartId(null);
       setIsCheckingUrl(false);
       return;
     }
 
-    // Clear any existing timeout
     if (urlCheckTimeoutRef.current) {
       clearTimeout(urlCheckTimeoutRef.current);
     }
 
     const url = formData.product_url.trim();
 
-    // Don't check if URL is empty
     if (!url) {
       setDuplicatePartId(null);
       setIsCheckingUrl(false);
       return;
     }
 
-    // Basic URL validation - only check if it looks like a URL
     const urlPattern = /^https?:\/\/.+/;
     if (!urlPattern.test(url)) {
       setDuplicatePartId(null);
@@ -167,11 +165,9 @@ function CreateBuildListPartForm({
       return;
     }
 
-    // Set checking state
     setIsCheckingUrl(true);
     setDuplicatePartId(null);
 
-    // Debounce the check - wait 500ms after user stops typing
     urlCheckTimeoutRef.current = window.setTimeout(() => {
       void (async () => {
         try {
@@ -182,7 +178,6 @@ function CreateBuildListPartForm({
             setDuplicatePartId(null);
           }
         } catch {
-          // Silently fail - don't show error for URL checks
           setDuplicatePartId(null);
         } finally {
           setIsCheckingUrl(false);
@@ -190,7 +185,6 @@ function CreateBuildListPartForm({
       })();
     }, 500);
 
-    // Cleanup function
     return () => {
       if (urlCheckTimeoutRef.current) {
         clearTimeout(urlCheckTimeoutRef.current);
@@ -202,7 +196,6 @@ function CreateBuildListPartForm({
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
     if (validationError) setValidationError(null);
-    // Don't clear duplicatePartId here - let the useEffect handle it
   };
 
   const handleCarIdsChange = useCallback(
@@ -222,12 +215,10 @@ function CreateBuildListPartForm({
     [validationError]
   );
 
-  // Convert global parts to SearchableSelectOption format
   const partOptions: SearchableSelectOption[] = useMemo(() => {
     if (!parts) return [];
     return parts
       .sort((a, b) => {
-        // Sort by name first
         return a.name.localeCompare(b.name);
       })
       .map((part) => {
@@ -243,7 +234,6 @@ function CreateBuildListPartForm({
       });
   }, [parts, part_manufacturers]);
 
-  // Filter function for global parts
   const filterParts = useCallback(
     (
       options: SearchableSelectOption[],
@@ -273,7 +263,6 @@ function CreateBuildListPartForm({
     [parts, part_manufacturers]
   );
 
-  // Convert categories to SearchableSelect options (only active categories)
   const categoryOptions: SearchableSelectOption[] = useMemo(() => {
     return categories
       .filter((category) => category.is_active)
@@ -285,7 +274,6 @@ function CreateBuildListPartForm({
       }));
   }, [categories]);
 
-  // Filter function for categories
   const filterCategories = useCallback(
     (
       options: SearchableSelectOption[],
@@ -307,7 +295,6 @@ function CreateBuildListPartForm({
     [categories]
   );
 
-  // Convert part_manufacturers to SearchableSelect options
   const part_manufacturerOptions: SearchableSelectOption[] = useMemo(() => {
     return part_manufacturers
       .filter((part_manufacturer) => part_manufacturer.is_active)
@@ -319,7 +306,6 @@ function CreateBuildListPartForm({
       }));
   }, [part_manufacturers]);
 
-  // Filter function for part_manufacturers
   const filterPartManufacturers = useCallback(
     (
       options: SearchableSelectOption[],
@@ -350,7 +336,6 @@ function CreateBuildListPartForm({
         ...prev,
         part_manufacturer_id: part_manufacturerId,
       }));
-      // Clear pending part_manufacturer if an existing part_manufacturer is selected or value is cleared
       if (part_manufacturerId !== null || value === null) {
         setPendingPartManufacturerName(null);
       }
@@ -366,16 +351,13 @@ function CreateBuildListPartForm({
   );
 
   const handleCreateNewPartManufacturer = (part_manufacturerName: string) => {
-    // Store the part_manufacturer name to be created later, don't create it yet
     setPendingPartManufacturerName(part_manufacturerName.trim());
-    // Clear the part_manufacturer_id since we're creating a new part_manufacturer
     setFormData((prev) => ({ ...prev, part_manufacturer_id: null }));
     if (validationError) setValidationError(null);
   };
 
   const handlePartManufacturerInputChange = useCallback(
     (text: string) => {
-      // Clear pending part_manufacturer if user types something different
       if (
         pendingPartManufacturerName &&
         text.trim() !== pendingPartManufacturerName
@@ -428,7 +410,6 @@ function CreateBuildListPartForm({
       setCreateError(null);
 
       try {
-        // Create part manufacturer first if there's a pending part_manufacturer name
         let part_manufacturerId = formData.part_manufacturer_id;
         if (pendingPartManufacturerName) {
           try {
@@ -441,7 +422,6 @@ function CreateBuildListPartForm({
               part_manufacturerResult.id
             ) {
               part_manufacturerId = part_manufacturerResult.id;
-              // Refresh part_manufacturers list
               await fetchPartManufacturers();
             } else {
               setCreateError(
@@ -469,7 +449,7 @@ function CreateBuildListPartForm({
           category_id: formData.category_id,
           is_universal: formData.is_universal,
           car_ids: formData.is_universal ? [] : formData.car_ids,
-          part_manufacturer_id: part_manufacturerId!, // part_manufacturerId is guaranteed to be set at this point due to validation
+          part_manufacturer_id: part_manufacturerId!,
           part_number: formData.part_number.trim() || null,
         };
 
@@ -485,7 +465,6 @@ function CreateBuildListPartForm({
           buildListPartData
         );
 
-        // Clear pending part_manufacturer after successful creation
         setPendingPartManufacturerName(null);
         onPartAdded();
       } catch (error) {
@@ -534,14 +513,12 @@ function CreateBuildListPartForm({
 
   const isLoading = isCreating || isAddingExisting;
 
-  // Reset form when mode changes
   const handleModeChange = (newMode: 'create' | 'select') => {
     setMode(newMode);
     setValidationError(null);
     setCreateError(null);
     setAddExistingError(null);
     if (newMode === 'select') {
-      // Clear create form data when switching to select mode
       setFormData({
         name: '',
         part_number: '',
@@ -557,7 +534,6 @@ function CreateBuildListPartForm({
       setImageFileKey(null);
       setPendingPartManufacturerName(null);
     } else {
-      // Clear selection when switching to create mode
       setSelectedPartId(null);
     }
   };
@@ -575,7 +551,6 @@ function CreateBuildListPartForm({
         />
       )}
 
-      {/* Mode Selection - Either-Or Toggle */}
       <div className="mb-6">
         <label className="block text-sm font-medium text-gray-300 mb-3">
           Choose an option:
@@ -616,7 +591,6 @@ function CreateBuildListPartForm({
       </div>
 
       {mode === 'create' ? (
-        /* Create New Part Form */
         <div className="space-y-4">
           <div className="mb-4">
             <h3 className="text-lg font-semibold text-gray-200">
@@ -848,7 +822,6 @@ function CreateBuildListPartForm({
           )}
         </div>
       ) : (
-        /* Select Existing Part */
         <div className="space-y-4">
           <div className="mb-4">
             <h3 className="text-lg font-semibold text-gray-200">
@@ -890,7 +863,6 @@ function CreateBuildListPartForm({
                 filterOptions={filterParts}
               />
 
-              {/* Show selected part details */}
               {selectedPartId && (
                 <div className="mt-4 p-4 bg-gray-800/50 border border-gray-700 rounded-lg">
                   {(() => {
@@ -901,7 +873,6 @@ function CreateBuildListPartForm({
                     return (
                       <div className="space-y-4">
                         <div className="flex items-start gap-4">
-                          {/* Part Image */}
                           <div className="flex-shrink-0">
                             <div className="w-32 h-32">
                               <ImageWithPlaceholder
@@ -914,7 +885,6 @@ function CreateBuildListPartForm({
                             </div>
                           </div>
 
-                          {/* Part Details */}
                           <div className="flex-1 min-w-0">
                             <div className="flex items-start justify-between gap-2">
                               <div className="flex-1 min-w-0">
@@ -992,7 +962,6 @@ function CreateBuildListPartForm({
         </div>
       )}
 
-      {/* Quantity & Notes (Common to both modes) */}
       <div className="space-y-4 pt-4 border-t border-gray-700">
         <div>
           <h3 className="text-lg font-semibold text-gray-200 mb-1">

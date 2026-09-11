@@ -32,6 +32,7 @@ interface FieldProps {
   children: React.ReactNode;
 }
 
+/** A labelled form field with optional icon and helper text. */
 function Field({ id, label, helperText, icon, children }: FieldProps) {
   return (
     <div>
@@ -59,6 +60,7 @@ function Field({ id, label, helperText, icon, children }: FieldProps) {
   );
 }
 
+/** The security settings panel: password change and two-factor setup. */
 function SecuritySettings({
   onPasswordChanged,
   on2FAEnabled,
@@ -68,7 +70,6 @@ function SecuritySettings({
   const [activeTab, setActiveTab] = useState<TabType>('password');
   const [isExpanded, setIsExpanded] = useState(false);
 
-  // Password change state
   const [passwordData, setPasswordData] = useState({
     currentPassword: '',
     newPassword: '',
@@ -79,7 +80,6 @@ function SecuritySettings({
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [passwordSuccess, setPasswordSuccess] = useState<string | null>(null);
 
-  // 2FA state
   const [setupData, setSetupData] = useState<TOTPSetupResponse | null>(null);
   const [otp, setOtp] = useState('');
   const [disablePassword, setDisablePassword] = useState('');
@@ -113,13 +113,11 @@ function SecuritySettings({
     setTwoFASuccess(null);
   };
 
-  // Password change handlers
   const handlePasswordChange = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setPasswordError(null);
     setPasswordSuccess(null);
 
-    // Validation
     if (!passwordData.currentPassword.trim()) {
       setPasswordError('Current password is required.');
       return;
@@ -140,7 +138,6 @@ function SecuritySettings({
       return;
     }
 
-    // If 2FA is enabled, require OTP
     if (user?.totp_enabled) {
       if (!passwordData.otp.trim() || passwordData.otp.length !== 6) {
         setPasswordError(
@@ -162,7 +159,6 @@ function SecuritySettings({
         password: passwordData.newPassword,
       };
 
-      // Include OTP if 2FA is enabled
       if (user?.totp_enabled) {
         updateData.otp = passwordData.otp;
       }
@@ -189,7 +185,6 @@ function SecuritySettings({
     }
   };
 
-  // 2FA handlers
   const handleSetup = async () => {
     setTwoFAError(null);
     setTwoFASuccess(null);
@@ -199,9 +194,8 @@ function SecuritySettings({
       if (result) {
         setSetupData(result);
       }
-    } catch {
-      // Error handled by useApiRequest
-    }
+      // eslint-disable-next-line no-empty
+    } catch {}
   };
 
   const handleVerify = async () => {
@@ -234,7 +228,6 @@ function SecuritySettings({
     setTwoFAError(null);
     setTwoFASuccess(null);
 
-    // Validation
     if (!disablePassword.trim()) {
       setTwoFAError('Password is required to disable 2FA.');
       return;
@@ -287,7 +280,6 @@ function SecuritySettings({
 
       {isExpanded && (
         <div className="space-y-6 animate-slideInUp">
-          {/* Tabs */}
           <div className="flex border-b border-gray-700">
             <button
               type="button"
@@ -319,7 +311,6 @@ function SecuritySettings({
             </button>
           </div>
 
-          {/* Password Change Tab */}
           {activeTab === 'password' && (
             <form
               onSubmit={(e) => void handlePasswordChange(e)}
@@ -451,7 +442,6 @@ function SecuritySettings({
             </form>
           )}
 
-          {/* 2FA Tab */}
           {activeTab === '2fa' && (
             <div className="space-y-6">
               {twoFASuccess && <ConfirmationAlert message={twoFASuccess} />}

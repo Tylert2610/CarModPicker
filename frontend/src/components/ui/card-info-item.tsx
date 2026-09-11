@@ -2,10 +2,11 @@ import React from 'react';
 
 interface CardInfoItemProps {
   label: string;
-  children: React.ReactNode; // Content for the value (can be text or other components)
+  children: React.ReactNode;
   className?: string;
 }
 
+/** A labelled value pair inside a Card. */
 const CardInfoItem: React.FC<CardInfoItemProps> = ({
   label = '',
   children,

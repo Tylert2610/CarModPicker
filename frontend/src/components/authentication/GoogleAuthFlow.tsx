@@ -18,6 +18,7 @@ interface GoogleAuthFlowProps {
   disabled?: boolean;
 }
 
+/** The legacy Google sign-in button and its two-factor follow-up dialog. */
 const GoogleAuthFlow: React.FC<GoogleAuthFlowProps> = ({
   onLoggedIn,
   onError,
@@ -38,8 +39,6 @@ const GoogleAuthFlow: React.FC<GoogleAuthFlowProps> = ({
   const openSignup = state.kind === 'signup';
   const open2FA = state.kind === 'twoFactor';
 
-  // Pre-fill the username field when the signup dialog first opens. Resetting back
-  // to '' on close prevents a stale value bleeding into a later dialog.
   useEffect(() => {
     if (state.kind === 'signup') {
       setUsername(state.payload.suggested_username);

@@ -34,6 +34,7 @@ const buttonVariants = cva(
   }
 );
 
+/** Props for Button: button attributes plus variant, size, and asChild. */
 export interface ButtonProps
   extends
     React.ButtonHTMLAttributes<HTMLButtonElement>,
@@ -43,6 +44,7 @@ export interface ButtonProps
   ref?: React.Ref<HTMLButtonElement> | undefined;
 }
 
+/** The app's button, styled by variant and size. */
 export function Button({
   className,
   variant,

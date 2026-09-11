@@ -17,6 +17,9 @@ interface TwoFactorAuthDialogProps {
   isEnabled: boolean;
 }
 
+/**
+ * The legacy two-factor dialog, which takes the account password alongside the code.
+ */
 function TwoFactorAuthDialog({
   isOpen,
   onClose,
@@ -49,9 +52,8 @@ function TwoFactorAuthDialog({
       if (result) {
         setSetupData(result);
       }
-    } catch {
-      // Error handled by useApiRequest
-    }
+      // eslint-disable-next-line no-empty
+    } catch {}
   };
 
   const handleVerify = async () => {
@@ -83,7 +85,6 @@ function TwoFactorAuthDialog({
     setError(null);
     setSuccess(null);
 
-    // Validation
     if (!disablePassword.trim()) {
       setError('Password is required to disable 2FA.');
       return;

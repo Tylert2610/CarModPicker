@@ -23,7 +23,7 @@ interface BuildListCatalogListProps {
     max_cost_cents?: number;
     sort?: 'votes' | 'votes_asc' | 'price_asc' | 'price_desc';
   };
-  carIds?: string[]; // Optional: filter by car IDs
+  carIds?: string[];
   refreshKey?: number;
   title?: string;
   emptyMessage?: string;
@@ -43,7 +43,7 @@ const fetchBuildListsRequestFn = (params?: {
   sort?: 'votes' | 'votes_asc' | 'price_asc' | 'price_desc';
 }) => buildListsApi.getBuildListsWithVotes(params);
 
-// Type predicate to check if response is a PaginatedResponse
+/** Narrows an API response to the paginated envelope. */
 function isPaginatedResponse<T>(
   response: unknown
 ): response is PaginatedResponse<T> {
@@ -56,6 +56,9 @@ function isPaginatedResponse<T>(
   );
 }
 
+/**
+ * The public catalog of build lists, filterable by vehicle and sortable, in list or card layout.
+ */
 function BuildListCatalogList({
   params,
   carIds,
@@ -69,7 +72,6 @@ function BuildListCatalogList({
     BuildListReadWithVotes[]
   >([]);
 
-  // Use standard fetch when no carIds are provided
   const {
     data: buildListsResponse,
     isLoading,
@@ -89,35 +91,28 @@ function BuildListCatalogList({
     }
   >(fetchBuildListsRequestFn);
 
-  // Update buildListsWithVotes when response changes
   useEffect(() => {
     if (isPaginatedResponse<BuildListReadWithVotes>(buildListsResponse)) {
-      // Extract the array from PaginatedResponse
-
       setBuildListsWithVotes(buildListsResponse.data);
     } else if (buildListsResponse === null) {
-      // If response is null, clear the votes list
       setBuildListsWithVotes([]);
     }
   }, [buildListsResponse]);
 
   const handleVoteUpdate = useCallback(
     (buildListId: string, newVote: 'upvote' | 'downvote' | null) => {
-      // Update local state optimistically
       setBuildListsWithVotes((prev) =>
         prev.map((bl) => {
           if (bl.id === buildListId) {
             let newUpvotes = bl.upvotes;
             let newDownvotes = bl.downvotes;
 
-            // Remove previous vote
             if (bl.user_vote === 'upvote') {
               newUpvotes -= 1;
             } else if (bl.user_vote === 'downvote') {
               newDownvotes -= 1;
             }
 
-            // Add new vote
             if (newVote === 'upvote') {
               newUpvotes += 1;
             } else if (newVote === 'downvote') {
@@ -139,7 +134,6 @@ function BuildListCatalogList({
     []
   );
 
-  // Stable request key so we only refetch when the actual request changes (avoids duplicate fetches from parent re-renders)
   const fetchRequestKey = `${refreshKey}-${carIds?.join(',') ?? ''}-${params?.skip ?? 0}-${params?.limit ?? 0}-${params?.sort ?? ''}-${params?.search ?? ''}-${params?.min_cost_cents ?? ''}-${params?.max_cost_cents ?? ''}`;
 
   useEffect(() => {
@@ -153,17 +147,13 @@ function BuildListCatalogList({
     }
   }, [fetchRequestKey]); // eslint-disable-line react-hooks/exhaustive-deps -- intentionally only refetch when request key changes; fetchBuildLists/params/carIds are used inside
 
-  // Filter build lists by search term if provided
-  // When carIds is set we use the with-votes endpoint with car_ids - data is in buildListsWithVotes
   let filteredBuildLists: (BuildListRead | BuildListReadWithVotes)[] = [];
   if (carIds && carIds.length > 0) {
     filteredBuildLists = buildListsWithVotes;
   } else {
-    // No carIds - use buildListsResponse
     if (showVoteButtons) {
       filteredBuildLists = buildListsWithVotes;
     } else {
-      // Extract the array from PaginatedResponse
       if (isPaginatedResponse<BuildListReadWithVotes>(buildListsResponse)) {
         filteredBuildLists = buildListsResponse.data;
       } else {

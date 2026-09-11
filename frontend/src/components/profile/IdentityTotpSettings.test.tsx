@@ -1,9 +1,3 @@
-// The identity mode TOTP panel: enrol, activate, disable, replace codes.
-//
-// The recovery code gate gets the most attention here. Those codes are shown
-// exactly once because the server keeps only hashes, so a user who dismisses
-// them without saving has lost the only way back into an account whose
-// authenticator is on a lost phone.
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   render,
@@ -56,8 +50,6 @@ describe('IdentityTotpSettings when no factor is enrolled', () => {
     enrolTotp.mockResolvedValue(anEnrolment);
     render(<IdentityTotpSettings enabled={false} onChanged={vi.fn()} />);
     fireEvent.click(screen.getByRole('button', { name: /set up two-factor/i }));
-    // Both routes in, because a user on a desktop browser with the
-    // authenticator on a phone cannot scan their own screen.
     expect(await screen.findByText('JBSWY3DPEHPK3PXP')).toBeInTheDocument();
     expect(screen.getByRole('img', { name: /qr code/i })).toBeInTheDocument();
   });
@@ -75,12 +67,10 @@ describe('IdentityTotpSettings when no factor is enrolled', () => {
     expect(await screen.findByText('code-0')).toBeInTheDocument();
     expect(screen.getByText('code-9')).toBeInTheDocument();
     expect(activateTotp).toHaveBeenCalledWith({ code: '123456' });
-    // The caller refetches the user, because `totp_enabled` just changed.
     expect(onChanged).toHaveBeenCalled();
   });
 
   it('will not let the codes be dismissed until they are confirmed saved', async () => {
-    // The whole point of the gate. Dismissing has to be a deliberate act.
     enrolTotp.mockResolvedValue(anEnrolment);
     activateTotp.mockResolvedValue({ ok: true, recoveryCodes: TEN_CODES });
     render(<IdentityTotpSettings enabled={false} onChanged={vi.fn()} />);
@@ -156,8 +146,6 @@ describe('IdentityTotpSettings when no factor is enrolled', () => {
 
 describe('IdentityTotpSettings when a factor is enrolled', () => {
   it('disables with only a code, no account password', async () => {
-    // The identity difference worth pinning: the fresh code is the proof, so
-    // the panel never asks for the password the legacy flow required.
     disableTotp.mockResolvedValue({ ok: true });
     const onChanged = vi.fn();
     render(<IdentityTotpSettings enabled={true} onChanged={onChanged} />);
@@ -186,8 +174,6 @@ describe('IdentityTotpSettings when a factor is enrolled', () => {
   });
 
   it('keeps both actions inert until a code is entered', () => {
-    // Neither call can succeed without one, and sending an empty code would
-    // only spend a rate limit allowance.
     render(<IdentityTotpSettings enabled={true} onChanged={vi.fn()} />);
     expect(screen.getByRole('button', { name: /turn off/i })).toBeDisabled();
     expect(
@@ -196,8 +182,6 @@ describe('IdentityTotpSettings when a factor is enrolled', () => {
   });
 
   it('trims a pasted code before sending it', async () => {
-    // Authenticator apps and password managers both tend to paste with
-    // surrounding whitespace.
     disableTotp.mockResolvedValue({ ok: true });
     render(<IdentityTotpSettings enabled={true} onChanged={vi.fn()} />);
     typeCode('  123456  ');
@@ -208,8 +192,6 @@ describe('IdentityTotpSettings when a factor is enrolled', () => {
   });
 
   it('accepts a recovery code in the same field as a TOTP code', async () => {
-    // One field, because the server tells the two apart by shape and a user
-    // reaching for a recovery code has already lost their phone.
     disableTotp.mockResolvedValue({ ok: true });
     render(<IdentityTotpSettings enabled={true} onChanged={vi.fn()} />);
     typeCode('abcd-efgh-ijkl');

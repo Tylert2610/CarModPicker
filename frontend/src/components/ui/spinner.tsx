@@ -3,8 +3,10 @@ import { Loader2 } from 'lucide-react';
 
 import { cn } from '../../lib/utils';
 
+/** The sizes a Spinner can render at. */
 export type SpinnerSize = 'xs' | 'sm' | 'base' | 'md' | 'lg' | 'xl';
 
+/** Props for Spinner: size and optional class overrides. */
 export interface SpinnerProps {
   size?: SpinnerSize;
   className?: string;
@@ -21,6 +23,7 @@ const sizeClasses: Record<SpinnerSize, string> = {
   xl: 'h-12 w-12',
 };
 
+/** The app's loading spinner, at one of the named sizes. */
 const Spinner: React.FC<SpinnerProps> = ({
   size = 'md',
   className,

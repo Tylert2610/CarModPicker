@@ -14,11 +14,13 @@ import { Check, ChevronsUpDown } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { Button } from './button';
 
+/** One selectable entry in a Combobox: its value and its display label. */
 export interface ComboboxOption {
   value: string;
   label: string;
 }
 
+/** Props for Combobox: the options, the selected value, and a change handler. */
 export interface ComboboxProps {
   options: ComboboxOption[];
   value?: string;
@@ -32,6 +34,7 @@ export interface ComboboxProps {
   ref?: React.Ref<HTMLButtonElement>;
 }
 
+/** A single-select dropdown with type-to-filter over its options. */
 export function Combobox({
   options,
   value,

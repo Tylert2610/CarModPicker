@@ -67,8 +67,8 @@ describe('PriceDeltaLine', () => {
       <PriceDeltaLine
         summary={makeSummary({
           observation_count: 8,
-          min_cents: 4500, // $45
-          max_cents: 5500, // $55
+          min_cents: 4500,
+          max_cents: 5500,
           trend: 'down',
         })}
       />
@@ -84,8 +84,8 @@ describe('PriceDeltaLine', () => {
       <PriceDeltaLine
         summary={makeSummary({
           observation_count: 4,
-          min_cents: 4949, // rounds to $49
-          max_cents: 5550, // rounds to $56 (banker's-naive round; 5550/100=55.5 → 56)
+          min_cents: 4949,
+          max_cents: 5550,
           trend: 'up',
         })}
       />

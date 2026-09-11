@@ -7,6 +7,7 @@ interface AuthRedirectLinkProps {
   to: string;
 }
 
+/** The footer line on an auth page pointing at the other auth route. */
 const AuthRedirectLink: React.FC<AuthRedirectLinkProps> = ({
   text,
   linkText,

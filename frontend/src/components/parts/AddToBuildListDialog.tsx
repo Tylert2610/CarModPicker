@@ -23,6 +23,9 @@ interface AddToBuildListDialogProps {
   onPartAdded: () => void;
 }
 
+/**
+ * Adds a part to one or more of the user's build lists, with quantity and optional phase.
+ */
 function AddToBuildListDialog({
   isOpen,
   onClose,
@@ -42,8 +45,6 @@ function AddToBuildListDialog({
   const [phases, setPhases] = useState<BuildListPhaseRead[]>([]);
   const [selectedPhaseId, setSelectedPhaseId] = useState<string | null>(null);
 
-  // Phases are scoped to a single build list, so a single picker only makes
-  // sense when exactly one list is selected.
   const singleSelectedBuildListId =
     selectedBuildListIds.size === 1
       ? Array.from(selectedBuildListIds)[0]
@@ -61,7 +62,6 @@ function AddToBuildListDialog({
     });
   };
 
-  // Check if any selected build list is for a different car model than the part
   const hasCarMismatch =
     part != null &&
     !part.is_universal &&
@@ -105,8 +105,6 @@ function AddToBuildListDialog({
     }
   }, [isOpen]);
 
-  // Fetch phases whenever exactly one build list is selected. Reset the picker
-  // when the selection changes (a phase from list A is meaningless for list B).
   useEffect(() => {
     setSelectedPhaseId(null);
     if (singleSelectedBuildListId == null) {
@@ -144,7 +142,6 @@ function AddToBuildListDialog({
     const buildListPartData: BuildListPartCreate = {
       quantity: Math.max(1, quantity),
       notes: null,
-      // Only meaningful when a single build list is selected (see picker below).
       ...(singleSelectedBuildListId != null &&
         selectedPhaseId != null && {
           build_list_phase_id: selectedPhaseId,
@@ -197,7 +194,6 @@ function AddToBuildListDialog({
         >
           {error && <ErrorAlert message={error} />}
 
-          {/* Part Preview */}
           <Card>
             <div className="mb-4">
               <p className="text-sm text-muted-foreground">
@@ -240,7 +236,6 @@ function AddToBuildListDialog({
             </div>
           </Card>
 
-          {/* Quantity */}
           <div className="space-y-2">
             <label
               htmlFor="add-to-build-list-quantity"
@@ -262,7 +257,6 @@ function AddToBuildListDialog({
             />
           </div>
 
-          {/* Build List Selection */}
           <div className="space-y-4">
             <h3 className="text-xl font-semibold text-foreground">
               Select Build List(s)
@@ -353,7 +347,6 @@ function AddToBuildListDialog({
             )}
           </div>
 
-          {/* Phase selection — only when a single build list with phases is chosen */}
           {singleSelectedBuildListId != null && phases.length > 0 && (
             <div className="space-y-2">
               <label
@@ -383,7 +376,6 @@ function AddToBuildListDialog({
             </div>
           )}
 
-          {/* Car mismatch disclaimer */}
           {hasCarMismatch && (
             <div className="rounded-lg border border-warning/50 bg-warning/10 p-4">
               <div className="flex gap-3">

@@ -27,6 +27,7 @@ const statusLabels: Record<NonNullable<StatusBadgeProps['variant']>, string> = {
   dismissed: 'Dismissed',
 };
 
+/** Props for StatusBadge: span attributes plus a status variant. */
 export interface StatusBadgeProps
   extends
     Omit<React.HTMLAttributes<HTMLSpanElement>, 'children'>,
@@ -36,6 +37,7 @@ export interface StatusBadgeProps
   ref?: React.Ref<HTMLSpanElement>;
 }
 
+/** A small pill showing a record's status, labelled from its variant. */
 export function StatusBadge({
   className,
   variant,
@@ -81,6 +83,7 @@ const priorityLabels: Record<
   critical: 'Critical',
 };
 
+/** Props for PriorityBadge: span attributes plus a priority variant. */
 export interface PriorityBadgeProps
   extends
     Omit<React.HTMLAttributes<HTMLSpanElement>, 'children'>,
@@ -90,6 +93,7 @@ export interface PriorityBadgeProps
   ref?: React.Ref<HTMLSpanElement>;
 }
 
+/** A small pill showing a priority level, labelled from its variant. */
 export function PriorityBadge({
   className,
   priority,

@@ -6,6 +6,7 @@ import {
 import type { CarGenerationRead } from '../../types/Api';
 import Spinner from '../ui/spinner';
 
+/** Props for VehicleFilterSection: the selected vehicles and a change handler. */
 export interface VehicleFilterSectionProps {
   showUniversalParts: boolean;
   setShowUniversalParts: (v: boolean) => void;
@@ -37,6 +38,9 @@ const optionButtonClass = (active: boolean) =>
 const inputClass =
   'w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white text-sm placeholder-gray-500 focus:ring-2 focus:ring-info focus:border-info/50 transition-colors';
 
+/**
+ * Picks a vehicle by make, model, and generation, or opts into universal parts.
+ */
 const VehicleFilterSection: React.FC<VehicleFilterSectionProps> = (props) => {
   const {
     showUniversalParts,

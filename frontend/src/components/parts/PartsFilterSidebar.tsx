@@ -9,10 +9,12 @@ import type {
   CategoryResponse,
 } from '../../types/Api';
 
+/**
+ * Props for PartsFilterSidebar: current filter values and their change handlers.
+ */
 export interface PartsFilterSidebarProps {
   hasActiveFilters: boolean;
   clearAllFilters: () => void;
-  // Car / Vehicle
   showUniversalParts: boolean;
   setShowUniversalParts: (v: boolean) => void;
   selectedMake: string;
@@ -26,18 +28,15 @@ export interface PartsFilterSidebarProps {
   generations: CarGenerationRead[];
   isLoadingMakes: boolean;
   isLoadingCars: boolean;
-  // Price
   priceMin: string;
   priceMax: string;
   setPriceMin: (s: string) => void;
   setPriceMax: (s: string) => void;
-  // Categories (multi-select)
   activeCategories: CategoryResponse[];
   availableCategoryIds: string[];
   selectedCategoryIds: string[];
   toggleCategory: (id: string) => void;
   setSelectedCategoryIds: (ids: string[]) => void;
-  // PartManufacturers (multi-select)
   availablePartManufacturers: PartManufacturerResponse[];
   availablePartManufacturerIds: string[];
   selectedPartManufacturerIds: string[];
@@ -45,6 +44,9 @@ export interface PartsFilterSidebarProps {
   setSelectedPartManufacturerIds: (ids: string[]) => void;
 }
 
+/**
+ * The parts search sidebar: vehicle, price, category, and manufacturer filters.
+ */
 const PartsFilterSidebar: React.FC<PartsFilterSidebarProps> = (props) => {
   const [part_manufacturerSearchTerm, setPartManufacturerSearchTerm] =
     useState('');
@@ -106,7 +108,6 @@ const PartsFilterSidebar: React.FC<PartsFilterSidebarProps> = (props) => {
             )}
           </div>
           <div className="p-4 space-y-6 overflow-y-auto max-h-[calc(100vh-8rem)] lg:max-h-none lg:flex-1 lg:min-h-0">
-            {/* Car / Vehicle Filter */}
             <VehicleFilterSection
               showUniversalParts={showUniversalParts}
               setShowUniversalParts={setShowUniversalParts}
@@ -123,7 +124,6 @@ const PartsFilterSidebar: React.FC<PartsFilterSidebarProps> = (props) => {
               isLoadingCars={isLoadingCars}
             />
 
-            {/* Price range filter */}
             <div>
               <h3 className={sectionTitleClass}>Price Range</h3>
               <div className="space-y-2">
@@ -164,7 +164,6 @@ const PartsFilterSidebar: React.FC<PartsFilterSidebarProps> = (props) => {
               </div>
             </div>
 
-            {/* Category Filter */}
             <div>
               <h3 className={sectionTitleClass}>Part Category</h3>
               <div className="space-y-2">
@@ -195,7 +194,6 @@ const PartsFilterSidebar: React.FC<PartsFilterSidebarProps> = (props) => {
               </div>
             </div>
 
-            {/* PartManufacturer Filter */}
             <div>
               <h3 className={sectionTitleClass}>Part Manufacturer</h3>
               <div className="space-y-2">

@@ -19,6 +19,7 @@ const REPORT_REASONS = [
   { display: 'Other', value: 'other' },
 ];
 
+/** Lets a user report a part, choosing a reason and adding optional detail. */
 const ReportDialog: React.FC<ReportDialogProps> = ({
   isOpen,
   onClose,
@@ -40,15 +41,13 @@ const ReportDialog: React.FC<ReportDialogProps> = ({
         description: description.trim() || null,
       });
 
-      // Reset form
       setReason('');
       setDescription('');
 
-      // Close dialog and notify parent
       onClose();
       onReportSubmitted?.();
+      // eslint-disable-next-line no-empty
     } catch {
-      // You might want to show an error message here
     } finally {
       setIsSubmitting(false);
     }

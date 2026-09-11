@@ -10,16 +10,16 @@ export type { DateRangeOption } from './priceHistoryDateRange';
 
 /** Distinct colors for retailer lines - visible on dark backgrounds */
 const RETAILER_COLORS = [
-  '#3b82f6', // blue
-  '#10b981', // emerald
-  '#f59e0b', // amber
-  '#ef4444', // red
-  '#8b5cf6', // violet
-  '#06b6d4', // cyan
-  '#ec4899', // pink
-  '#84cc16', // lime
-  '#f97316', // orange
-  '#6366f1', // indigo
+  '#3b82f6',
+  '#10b981',
+  '#f59e0b',
+  '#ef4444',
+  '#8b5cf6',
+  '#06b6d4',
+  '#ec4899',
+  '#84cc16',
+  '#f97316',
+  '#6366f1',
 ];
 
 const DEFAULT_PADDING = { top: 20, right: 20, bottom: 50, left: 60 };
@@ -45,6 +45,7 @@ const DATE_RANGE_OPTIONS: { value: DateRangeOption; label: string }[] = [
 /** User's local timezone for consistent date formatting */
 const LOCAL_TZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
+/** Parses an observation timestamp, treating a naive one as UTC. */
 function parseObservedAt(iso: string): Date {
   const s = iso.trim();
   if (
@@ -57,6 +58,7 @@ function parseObservedAt(iso: string): Date {
   return new Date(s);
 }
 
+/** The x-axis bounds for a range option, widened to a minimum span. */
 function getDateRangeBounds(
   range: DateRangeOption,
   data: PartPriceHistoryReadWithRetailer[]
@@ -136,6 +138,7 @@ interface PriceHistoryLineChartProps {
   padding?: { top: number; right: number; bottom: number; left: number };
 }
 
+/** An SVG chart of a part's price over time, one line per retailer. */
 export default function PriceHistoryLineChart({
   data,
   dateRange,
@@ -148,8 +151,6 @@ export default function PriceHistoryLineChart({
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(width);
 
-  // Debounce ResizeObserver via rAF so scroll-triggered layout shifts don't
-  // continuously trigger chartData recomputation.
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -221,10 +222,6 @@ export default function PriceHistoryLineChart({
     }
     const aggregated = [...byRetailerDay.values()];
 
-    // For windowed views, carry the last known price from before the window
-    // so each retailer's line extends back to the window start. Computed
-    // before the y-range so carry-over prices are factored into chart bounds
-    // (otherwise a pinned point could render off-chart).
     const cutoffMs = getDateRangeStartMs(dateRange);
     const lastKnownBeforeWindow =
       cutoffMs !== null
@@ -283,8 +280,6 @@ export default function PriceHistoryLineChart({
     const yScale = (c: number) =>
       padding.top + chartHeight - ((c - yMin) / yRange) * chartHeight;
 
-    // Include retailers that only have pre-window data so their carry-over
-    // marker still appears (otherwise the line would vanish entirely).
     const retailersInWindow = [
       ...new Set(aggregated.map((d) => d.retailer_name)),
     ];
@@ -322,14 +317,8 @@ export default function PriceHistoryLineChart({
           ? lastKnownBeforeWindow.get(retailerName)
           : undefined;
       if (carryOver) {
-        // Pin to the y-axis (xMin) when the original observation is off-chart,
-        // otherwise show at its natural day position. The point's `observedAt`
-        // still carries the real date, which the date label and tooltip use.
         const carryOverX = Math.max(xMin, dayStartMs(carryOver.observed_at));
         const firstInWindowX = points[0]?.x;
-        // Skip when the carry-over would land exactly on the first in-window
-        // point — same x AND same price means the dashed segment is zero-
-        // length and the markers stack with no story to tell.
         const wouldOverlapExactly =
           firstInWindowX !== undefined &&
           firstInWindowX === carryOverX &&
@@ -351,9 +340,6 @@ export default function PriceHistoryLineChart({
         .map((p, i) => `${i === 0 ? 'M' : 'L'} ${xScale(p.x)} ${yScale(p.y)}`)
         .join(' ');
 
-      // Split into a dashed segment (carry-over → first real point) and a
-      // solid segment (real points only). When the window has no real
-      // points, the carry-over renders as a marker alone with no line.
       const carryOverPoint = points.find((p) => p.isCarryOver);
       const realPoints = points.filter((p) => !p.isCarryOver);
       const firstRealPoint = realPoints[0];
@@ -382,8 +368,6 @@ export default function PriceHistoryLineChart({
       };
     });
 
-    // Precompute co-located point groups so onMouseEnter is O(1) instead of O(n*m).
-    // Key = "roundedCx,roundedCy" → all entries within CO_LOCATED_THRESHOLD pixels.
     const coLocatedGroups = new Map<
       string,
       Array<{ retailerName: string; observedAt: string; priceCents: number }>
@@ -392,7 +376,6 @@ export default function PriceHistoryLineChart({
       for (const pt of line.points) {
         const cx = Math.round(xScale(pt.x));
         const cy = Math.round(yScale(pt.y));
-        // Check all existing group keys to find co-located ones
         let placed = false;
         for (const [key, group] of coLocatedGroups) {
           const [kx, ky] = key.split(',').map(Number);
@@ -430,11 +413,6 @@ export default function PriceHistoryLineChart({
 
     const xTickValuesRaw: Date[] = [];
     const startDate = new Date(xMin);
-    // Cap label density to whatever the chart width can accommodate without
-    // labels colliding. Each "MM/DD/YY" label is ~60px wide including a small
-    // gap, so we floor the available chart width by 70 for breathing room.
-    // Clamp to [2, 8] so very narrow widths still show endpoints and we never
-    // exceed the historical max.
     const maxXTicks = Math.max(2, Math.min(8, Math.floor(chartWidth / 70)));
     const dayCount = Math.ceil(xRange / MS_PER_DAY);
     const step = Math.max(1, Math.ceil(dayCount / maxXTicks));
@@ -479,8 +457,6 @@ export default function PriceHistoryLineChart({
       coLocatedGroups,
     };
   }, [filteredData, data, dateRange, effectiveWidth, height, padding]);
-
-  // ── Hover state via refs + direct DOM mutation (no React re-render per hover) ──
 
   /** Refs to each retailer's <g> element for direct opacity manipulation */
   const lineGroupRefs = useRef<Map<string, SVGGElement>>(new Map());
@@ -581,7 +557,6 @@ export default function PriceHistoryLineChart({
           aria-label="Price history by retailer"
           style={{ direction: 'ltr' }}
         >
-          {/* Grid lines */}
           {yTickValuesGrid.slice(1, -1).map((v) => (
             <line
               key={`grid-y-${v}`}
@@ -607,7 +582,6 @@ export default function PriceHistoryLineChart({
             />
           ))}
 
-          {/* Y-axis labels */}
           {yTickValues.map((v) => (
             <text
               key={`y-${v}`}
@@ -621,7 +595,6 @@ export default function PriceHistoryLineChart({
             </text>
           ))}
 
-          {/* X-axis labels */}
           {xTickValues.map((d) => (
             <text
               key={`x-${d.getTime()}`}
@@ -634,7 +607,6 @@ export default function PriceHistoryLineChart({
             </text>
           ))}
 
-          {/* Axis lines */}
           <line
             x1={padding.left}
             y1={padding.top}
@@ -654,7 +626,6 @@ export default function PriceHistoryLineChart({
             strokeWidth={1}
           />
 
-          {/* Data lines — each <g> is registered in lineGroupRefs for direct opacity control */}
           {lines.map(
             ({
               retailerName,
@@ -694,7 +665,6 @@ export default function PriceHistoryLineChart({
                       strokeLinejoin="round"
                     />
                   )}
-                  {/* Wide transparent hit area covers both segments */}
                   {fullPathD && (
                     <path
                       d={fullPathD}
@@ -725,7 +695,6 @@ export default function PriceHistoryLineChart({
             }
           )}
 
-          {/* Data point hit areas — co-located groups precomputed, no per-hover O(n*m) loop */}
           {lines.map(({ retailerName, color, points }) =>
             points.map((p) => {
               const cx = chartData.xScale(p.x);
@@ -803,7 +772,6 @@ export default function PriceHistoryLineChart({
           )}
         </svg>
 
-        {/* Tooltip — rendered in portal; only this updates on hover, not the SVG */}
         {tooltip &&
           svgRef.current &&
           (() => {
@@ -838,7 +806,6 @@ export default function PriceHistoryLineChart({
             );
           })()}
 
-        {/* Legend — legend item refs registered for direct opacity control */}
         <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2">
           {lines.map(({ retailerName, color }) => (
             <div

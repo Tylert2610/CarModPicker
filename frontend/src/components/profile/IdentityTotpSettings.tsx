@@ -1,30 +1,7 @@
 /**
  * The TOTP panel for identity mode: enrol, disable, and replace recovery codes.
- *
- * Modelled on WebbPulse-Portfolio's `components/admin/SecuritySection.tsx`,
- * which serves the same three operations against the same package.
- *
- * ## Why this is a separate component from the existing 2FA tab
- *
- * The tab this replaces is not a different rendering of the same flow, it is a
- * different flow. The legacy one takes the account password alongside the code
- * to disable a factor, gets a `secret` and a data-URI QR image from the server,
- * and issues no recovery codes because the legacy service has none. The
- * identity service takes only a code (the fresh code *is* the proof), returns a
- * provisioning URI for the client to render, and issues ten single use recovery
- * codes on activation that are shown exactly once.
- *
- * Trying to hold both in one component would mean a mode branch at every field,
- * every call and every piece of copy. Two components with one switch at the top
- * is smaller, and the legacy one is deleted whole when the cutover finishes
- * rather than being unpicked from this one.
- *
- * ## Why the recovery codes are behind a confirmation
- *
- * They are shown once and never again: the server stores hashes. A user who
- * closes the panel without saving them has lost their only way back into an
- * account whose authenticator is on a lost phone. The checkbox is what makes
- * dismissing them a deliberate act rather than a stray click.
+ * Recovery codes are issued once on activation and sit behind a confirmation,
+ * since the server keeps only hashes and cannot show them again.
  */
 import React, { useState } from 'react';
 import { FaShieldAlt } from 'react-icons/fa';
@@ -41,11 +18,8 @@ type Step =
   | { kind: 'codes'; codes: string[] };
 
 /**
- * The sentence for each refusal the package models.
- *
- * The server's own message wins where it has one. Every refusal a user can
- * reach with a form open in front of them is here, because a form that shows
- * "an error occurred" for a mistyped code is a form that teaches nothing.
+ * The sentence shown for each refusal the package models, so a mistyped code
+ * gets a usable message instead of a generic failure. Server text wins.
  */
 const REFUSAL_FALLBACKS: Record<string, string> = {
   'invalid-code':
@@ -71,8 +45,6 @@ const ProvisioningQr: React.FC<{ uri: string }> = ({ uri }) => {
   try {
     path = qrCodeSvgPath(uri);
   } catch {
-    // A URI too long for version 10 at level M. The secret below is the
-    // fallback every authenticator accepts, so the panel stays usable.
     return null;
   }
   return (
@@ -133,6 +105,7 @@ interface Props {
   onChanged: () => void;
 }
 
+/** The TOTP panel body: enrol, disable, and replace recovery codes. */
 const IdentityTotpSettings: React.FC<Props> = ({ enabled, onChanged }) => {
   const [step, setStep] = useState<Step>({ kind: 'idle' });
   const [code, setCode] = useState('');

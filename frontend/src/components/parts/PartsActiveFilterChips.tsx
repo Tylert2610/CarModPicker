@@ -8,6 +8,9 @@ import type {
 } from '../../types/Api';
 import { carFullDisplayName } from '../../utils/carUtils';
 
+/**
+ * Props for PartsActiveFilterChips: the active part filters and how to clear them.
+ */
 export interface PartsActiveFilterChipsProps {
   hasActiveFilters: boolean;
   selectedCategoryIds: string[];
@@ -27,6 +30,7 @@ export interface PartsActiveFilterChipsProps {
   clearPriceRange: () => void;
 }
 
+/** The active part filters as removable chips. */
 const PartsActiveFilterChips: React.FC<PartsActiveFilterChipsProps> = (
   props
 ) => {

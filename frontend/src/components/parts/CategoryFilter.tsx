@@ -7,6 +7,7 @@ interface CategoryFilterProps {
   onCategoryChange: (categoryId: number | null) => void;
 }
 
+/** Filters parts to one category. */
 const CategoryFilter: React.FC<CategoryFilterProps> = ({
   categories,
   selectedCategory,

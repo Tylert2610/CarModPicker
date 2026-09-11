@@ -14,6 +14,7 @@ interface ChangePasswordDialogProps {
   userId: string;
 }
 
+/** Changes the account password, taking the current one as proof. */
 const ChangePasswordDialog: React.FC<ChangePasswordDialogProps> = ({
   isOpen,
   onClose,
@@ -51,7 +52,6 @@ const ChangePasswordDialog: React.FC<ChangePasswordDialogProps> = ({
     e.preventDefault();
     setError(null);
 
-    // Validation
     if (!formData.currentPassword.trim()) {
       setError('Current password is required.');
       return;
@@ -72,7 +72,6 @@ const ChangePasswordDialog: React.FC<ChangePasswordDialogProps> = ({
       return;
     }
 
-    // If 2FA is enabled, require OTP
     if (user?.totp_enabled) {
       if (!formData.otp.trim() || formData.otp.length !== 6) {
         setError('2FA is enabled. Please enter a valid 6-digit OTP code.');
@@ -93,7 +92,6 @@ const ChangePasswordDialog: React.FC<ChangePasswordDialogProps> = ({
         password: formData.newPassword,
       };
 
-      // Include OTP if 2FA is enabled
       if (user?.totp_enabled) {
         updateData.otp = formData.otp;
       }
@@ -105,9 +103,6 @@ const ChangePasswordDialog: React.FC<ChangePasswordDialogProps> = ({
         onPasswordChanged();
       }
     } catch (err: unknown) {
-      // `getApiErrorMessage` already prefers the envelope's message for an
-      // ApiError and a plain Error's own message otherwise, so the branching
-      // this used to do by hand is the helper's job now.
       setError(getApiErrorMessage(err, 'Failed to change password'));
     } finally {
       setIsSubmitting(false);

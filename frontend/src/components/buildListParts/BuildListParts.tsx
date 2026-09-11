@@ -53,6 +53,7 @@ const fetchCarsRequestFn = () =>
 const fetchPhasesRequestFn = (buildListId: string) =>
   buildListsApi.getPhases(buildListId);
 
+/** The parts section of a build list, with view mode, add, edit, and delete. */
 const BuildListParts: React.FC<BuildListPartsProps> = ({
   buildListId,
   buildListCarId,
@@ -122,19 +123,16 @@ const BuildListParts: React.FC<BuildListPartsProps> = ({
     return map;
   }, [carsData]);
 
-  // Local state for optimistic updates - sync with API data
   const [localBuildListParts, setLocalBuildListParts] = useState<
     BuildListPartReadWithPart[] | null
   >(null);
 
-  // Sync local state with API data when it changes
   useEffect(() => {
     if (buildListParts) {
       setLocalBuildListParts(buildListParts);
     }
   }, [buildListParts]);
 
-  // Notify parent whenever the parts list changes (after fetches and optimistic updates)
   useEffect(() => {
     if (localBuildListParts && onPartsChange) {
       onPartsChange(localBuildListParts);
@@ -157,13 +155,11 @@ const BuildListParts: React.FC<BuildListPartsProps> = ({
     fetchPhases,
   ]);
 
-  // Helper function to check if user can edit a specific build list part
   const canEditBuildListPart = (buildListPart: BuildListPartReadWithPart) => {
     if (!currentUser) return false;
     return buildListPart.added_by === currentUser.id;
   };
 
-  // Helper function to check if user can delete a specific build list part
   const canDeleteBuildListPart = (buildListPart: BuildListPartReadWithPart) => {
     if (!currentUser) return false;
     return (
@@ -192,18 +188,13 @@ const BuildListParts: React.FC<BuildListPartsProps> = ({
         editingPart!.part_id,
         data
       );
-      // Refresh the build list parts
       await fetchBuildListParts(buildListId);
     } finally {
-      // No catch: the caller handles the failure. This block exists only to
-      // clear the updating flag on both paths, and a catch that rethrows
-      // unchanged does nothing a bare `finally` does not already do.
       setIsUpdating(false);
     }
   };
 
   const handleDelete = (buildListPartId: string) => {
-    // Find the build list part to get the part_id
     const buildListPart = buildListParts?.find(
       (part) => part.id === buildListPartId
     );
@@ -213,7 +204,6 @@ const BuildListParts: React.FC<BuildListPartsProps> = ({
       return;
     }
 
-    // Open confirmation dialog instead of directly deleting
     setDeleteError(null);
     setDeletingPartId(buildListPartId);
   };
@@ -221,7 +211,6 @@ const BuildListParts: React.FC<BuildListPartsProps> = ({
   const handleConfirmDelete = async () => {
     if (deletingPartId === null) return;
 
-    // Find the build list part to get the part_id
     const buildListPart = buildListParts?.find(
       (part) => part.id === deletingPartId
     );
@@ -334,7 +323,6 @@ const BuildListParts: React.FC<BuildListPartsProps> = ({
 
       const newPurchasedStatus = !buildListPart.purchased;
 
-      // Optimistic update: update local state immediately
       setLocalBuildListParts((prevParts) => {
         if (!prevParts) return prevParts;
         return prevParts.map((part) =>
@@ -350,10 +338,7 @@ const BuildListParts: React.FC<BuildListPartsProps> = ({
           buildListPart.part_id,
           { purchased: newPurchasedStatus }
         );
-        // Optionally sync with server, but don't refetch to avoid full re-render
-        // The optimistic update is already applied
       } catch {
-        // Revert optimistic update on error
         setLocalBuildListParts((prevParts) => {
           if (!prevParts) return prevParts;
           return prevParts.map((part) =>
@@ -367,7 +352,6 @@ const BuildListParts: React.FC<BuildListPartsProps> = ({
     [canManageParts, buildListId]
   );
 
-  // Wrapper to match the expected void return type
   const handleTogglePurchasedWrapper = useCallback(
     (part: BuildListPartReadWithPart) => {
       void handleTogglePurchased(part);
@@ -375,8 +359,6 @@ const BuildListParts: React.FC<BuildListPartsProps> = ({
     [handleTogglePurchased]
   );
 
-  // Reassign a part to a phase (null = Unassigned). Optimistic, same pattern
-  // as handleTogglePurchased: update local state, then PUT, revert on error.
   const handlePhaseChange = useCallback(
     async (
       buildListPart: BuildListPartReadWithPart,
@@ -412,7 +394,6 @@ const BuildListParts: React.FC<BuildListPartsProps> = ({
           { build_list_phase_id: phaseId }
         );
       } catch {
-        // Revert optimistic update on error
         setLocalBuildListParts((prevParts) => {
           if (!prevParts) return prevParts;
           return prevParts.map((part) =>
@@ -474,7 +455,6 @@ const BuildListParts: React.FC<BuildListPartsProps> = ({
       <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
         <div className="flex items-center gap-4 flex-wrap">
           <SectionHeader title={title} />
-          {/* View mode: By category | By phase */}
           <Tabs
             value={viewMode}
             onValueChange={(v) =>
@@ -684,7 +664,6 @@ const BuildListParts: React.FC<BuildListPartsProps> = ({
         canDelete={canManageParts}
         canMarkPurchased={canManageParts}
         emptyMessage={emptyMessage}
-        // Pass individual permission check functions
         canEditPart={canEditBuildListPart}
         canDeletePart={canDeleteBuildListPart}
         trailingTile={
@@ -708,7 +687,6 @@ const BuildListParts: React.FC<BuildListPartsProps> = ({
         />
       )}
 
-      {/* Delete Part Confirmation Dialog */}
       <ConfirmDialog
         open={deletingPartId !== null}
         onOpenChange={handleDeletePartOpenChange}

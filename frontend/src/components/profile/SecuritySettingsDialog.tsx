@@ -48,6 +48,7 @@ interface IconFieldProps {
   children: React.ReactNode;
 }
 
+/** A labelled form field with a leading icon and optional helper text. */
 function IconField({ id, label, helperText, icon, children }: IconFieldProps) {
   return (
     <div>
@@ -73,6 +74,9 @@ function IconField({ id, label, helperText, icon, children }: IconFieldProps) {
   );
 }
 
+/**
+ * The security dialog: password change, two-factor setup, and session controls.
+ */
 function SecuritySettingsDialog({
   isOpen,
   onClose,
@@ -83,13 +87,8 @@ function SecuritySettingsDialog({
 }: SecuritySettingsDialogProps) {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<TabType>('password');
-  // Both mechanisms carry passkeys and connected accounts, and the panels for
-  // each speak entirely different routes, so the tab picks a component rather
-  // than branching inside one. See `./IdentityPasskeySettings` and
-  // `./IdentityConnectedAccounts` for why they are separate files.
   const available = identityAvailability();
 
-  // Password change state
   const [passwordData, setPasswordData] = useState({
     currentPassword: '',
     newPassword: '',
@@ -100,7 +99,6 @@ function SecuritySettingsDialog({
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [passwordSuccess, setPasswordSuccess] = useState<string | null>(null);
 
-  // 2FA state
   const [setupData, setSetupData] = useState<TOTPSetupResponse | null>(null);
   const [otp, setOtp] = useState('');
   const [disablePassword, setDisablePassword] = useState('');
@@ -110,7 +108,6 @@ function SecuritySettingsDialog({
   const [twoFAError, setTwoFAError] = useState<string | null>(null);
   const [twoFASuccess, setTwoFASuccess] = useState<string | null>(null);
 
-  // Session expiry state
   const [sessionExpireMinutes, setSessionExpireMinutes] = useState<
     number | null
   >(() => user?.session_expire_minutes ?? null);
@@ -134,7 +131,6 @@ function SecuritySettingsDialog({
   }, [isOpen, user]);
 
   const handleClose = () => {
-    // Reset password form
     setPasswordData({
       currentPassword: '',
       newPassword: '',
@@ -144,7 +140,6 @@ function SecuritySettingsDialog({
     setPasswordError(null);
     setPasswordSuccess(null);
 
-    // Reset 2FA form
     setSetupData(null);
     setOtp('');
     setDisablePassword('');
@@ -180,13 +175,11 @@ function SecuritySettingsDialog({
     }
   };
 
-  // Password change handlers
   const handlePasswordChange = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setPasswordError(null);
     setPasswordSuccess(null);
 
-    // Validation
     if (!passwordData.currentPassword.trim()) {
       setPasswordError('Current password is required.');
       return;
@@ -207,7 +200,6 @@ function SecuritySettingsDialog({
       return;
     }
 
-    // If 2FA is enabled, require OTP
     if (user?.totp_enabled) {
       if (!passwordData.otp.trim() || passwordData.otp.length !== 6) {
         setPasswordError(
@@ -229,7 +221,6 @@ function SecuritySettingsDialog({
         password: passwordData.newPassword,
       };
 
-      // Include OTP if 2FA is enabled
       if (user?.totp_enabled) {
         updateData.otp = passwordData.otp;
       }
@@ -261,7 +252,6 @@ function SecuritySettingsDialog({
     }
   };
 
-  // 2FA handlers
   const handleSetup = async () => {
     setTwoFAError(null);
     setTwoFASuccess(null);
@@ -271,9 +261,8 @@ function SecuritySettingsDialog({
       if (result) {
         setSetupData(result);
       }
-    } catch {
-      // Error handled by useApiRequest
-    }
+      // eslint-disable-next-line no-empty
+    } catch {}
   };
 
   const handleVerify = async () => {
@@ -306,7 +295,6 @@ function SecuritySettingsDialog({
     setTwoFAError(null);
     setTwoFASuccess(null);
 
-    // Validation
     if (!disablePassword.trim()) {
       setTwoFAError('Password is required to disable 2FA.');
       return;
@@ -353,7 +341,6 @@ function SecuritySettingsDialog({
           <DialogTitle>Manage Security Settings</DialogTitle>
         </DialogHeader>
         <div className="space-y-6">
-          {/* Tabs */}
           <div className="flex border-b border-gray-700">
             <button
               type="button"
@@ -431,7 +418,6 @@ function SecuritySettingsDialog({
             </button>
           </div>
 
-          {/* Password Change Tab */}
           {activeTab === 'password' && (
             <form
               onSubmit={(e) => void handlePasswordChange(e)}
@@ -567,11 +553,6 @@ function SecuritySettingsDialog({
             </form>
           )}
 
-          {/* 2FA Tab. Two different flows rather than two renderings of one:
-              the identity service takes only a code to disable a factor, hands
-              back a provisioning URI for the client to draw, and issues
-              recovery codes that the legacy service has no concept of. See
-              IdentityTotpSettings. */}
           {activeTab === '2fa' && AUTH_MODE === 'identity' && (
             <IdentityTotpSettings
               enabled={user?.totp_enabled === true}
@@ -795,7 +776,6 @@ function SecuritySettingsDialog({
             </div>
           )}
 
-          {/* Session Tab */}
           {activeTab === 'session' && (
             <div className="space-y-6">
               {sessionSuccess && <ConfirmationAlert message={sessionSuccess} />}

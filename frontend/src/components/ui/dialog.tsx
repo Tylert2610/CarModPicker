@@ -4,11 +4,16 @@ import { X } from 'lucide-react';
 
 import { cn } from '../../lib/utils';
 
+/** The modal dialog root; controls open state. */
 export const Dialog = DialogPrimitive.Root;
+/** The element that opens its Dialog when activated. */
 export const DialogTrigger = DialogPrimitive.Trigger;
+/** Renders Dialog content outside the normal DOM flow. */
 export const DialogPortal = DialogPrimitive.Portal;
+/** The element that closes its Dialog when activated. */
 export const DialogClose = DialogPrimitive.Close;
 
+/** The dimmed backdrop behind an open Dialog. */
 export function DialogOverlay({
   className,
   ...props
@@ -24,6 +29,7 @@ export function DialogOverlay({
   );
 }
 
+/** The Dialog's panel, including its close button. */
 export function DialogContent({
   className,
   children,
@@ -49,6 +55,7 @@ export function DialogContent({
   );
 }
 
+/** The top section of a DialogContent, holding title and description. */
 export const DialogHeader = ({
   className,
   ...props
@@ -63,6 +70,7 @@ export const DialogHeader = ({
 );
 DialogHeader.displayName = 'DialogHeader';
 
+/** The bottom section of a DialogContent, usually holding actions. */
 export const DialogFooter = ({
   className,
   ...props
@@ -77,6 +85,7 @@ export const DialogFooter = ({
 );
 DialogFooter.displayName = 'DialogFooter';
 
+/** The accessible heading of a Dialog. */
 export function DialogTitle({
   className,
   ...props
@@ -92,6 +101,7 @@ export function DialogTitle({
   );
 }
 
+/** The accessible supporting text of a Dialog. */
 export function DialogDescription({
   className,
   ...props

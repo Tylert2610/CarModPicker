@@ -22,6 +22,7 @@ interface ImageWithPlaceholderProps {
 
 const DEFAULT_FALLBACK_TEXT = 'No image set';
 
+/** An image that falls back to placeholder text when absent or failing to load. */
 const ImageWithPlaceholder: React.FC<ImageWithPlaceholderProps> = ({
   srcUrl,
   altText,

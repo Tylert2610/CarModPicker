@@ -7,6 +7,7 @@ interface UserCardProps {
   user: PublicUserRead;
 }
 
+/** A user as a card with their avatar, linking to their profile. */
 const UserCard: React.FC<UserCardProps> = ({ user }) => {
   return (
     <Link to={`/user/${user.id}`} className="block hover:no-underline h-full">

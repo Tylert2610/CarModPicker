@@ -23,6 +23,7 @@ interface CarListProps {
   skip?: number;
 }
 
+/** Renders a collection of cars, with an empty state. */
 const CarList: React.FC<CarListProps> = ({
   searchQuery,
   make,
@@ -41,7 +42,6 @@ const CarList: React.FC<CarListProps> = ({
   );
 
   const fetchCarsRequestFn = useCallback(
-    // Payload unused; useApiRequest requires matching signature
     async (payload?: unknown) => {
       void payload;
       let response: Awaited<ReturnType<typeof carGenerationsApi.listCars>>;
@@ -51,7 +51,6 @@ const CarList: React.FC<CarListProps> = ({
           limit,
         });
       } else if (generationId) {
-        // In the new backend, a Car is a generation; get single car by id
         const single = await carGenerationsApi.getCar(generationId);
         return { ...single, data: [single.data] };
       } else if (make && year) {
