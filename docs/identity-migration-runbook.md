@@ -742,7 +742,9 @@ Plan: 0 to add, 1 to change, 0 to destroy.
 domain). No route resource moved, which is the gate mode property this runbook
 predicts.
 
-**The apply then failed, and enforcement is not on.** See the next section.
+**The apply then failed on 2026-09-11, and enforcement did not come on that day.** See the
+next section for the measurement, and "The fix, and enforcement on" below for how it was
+resolved the same day.
 
 ### The apply failed: the 95 keys do not fit in a Lambda environment
 
@@ -783,7 +785,7 @@ grows this map has the same failure mode.
 **The fix is not in this repository.** `IDENTITY_JWT_ROUTE_KEYS` is written by
 the `staging-access-gate` module in `terraform-aws-platform-modules`, so the
 route key list has to stop being an environment variable there before row 12 can
-finish. Options, in rough order of preference and all needing an owner decision:
+finish. Options, in rough order of preference, as they were assessed at the time:
 
 1. **Move the list out of the environment.** Ship it in the authorizer's
    deployment package, or read it from SSM Parameter Store or S3 at cold start.
@@ -801,19 +803,89 @@ finish. Options, in rough order of preference and all needing an owner decision:
 Option 3 is cheapest and is the one to resist: it would quietly enforce the two
 guard routes and break anonymous reads.
 
-Until that lands, leave `domain_jwt_enforced` set to `true` on the workspace only
-if you intend to retry the apply immediately; otherwise set it back to `false` so
-the next unrelated apply on this workspace does not fail on the same error. It
-was set back to `false` on 2026-09-11.
+Option 1 was taken. See the next section.
+
+### The fix, and enforcement on
+
+**Module 2.11.0** (`terraform-aws-platform-modules` PR 47) moves the route key
+list and the CloudFront signing public key PEM out of the authorizer's
+environment and into its deployment package. The module renders
+`identity_jwt_config.json` holding both, writes it into the archive next to
+`index.js` through an `archive_file` `source` block, and the handler reads it
+once at import time. Because the file is part of the archive its bytes are part
+of `output_base64sha256`, so a changed route key list still moves
+`source_code_hash` and still redeploys the function; nothing about how a route
+key list change reaches the function got weaker.
+
+Matching is unchanged and is still exact, never by prefix, which is what keeps
+`GET /api/reports/count` and `GET /api/bug-reports/count` anonymous. The module
+carries unit tests for that and a size test asserting the rendered environment
+stays under 4096 bytes for a 300 key list, so this failure mode cannot return
+unnoticed. The module's own Node suite had never run in CI; that PR also added
+the job that runs it.
+
+The module inputs this repository passes are unchanged, so the consumer side was
+a version constraint bump from `~> 2.9` to `~> 2.11`, PR 419.
+
+**What actually ran, 2026-09-11:**
+
+1. **The bump.** `run-muazjjURzAEo4afV`, the VCS run for PR 419, planned `0 to
+   add, 1 to change, 0 to destroy`, the single change being
+   `module.staging_access_gate[0].aws_lambda_function.authorizer`. Applied
+   cleanly. `bootstrap_image_tag` needed no refresh: it was still
+   `sha-aa91960d1876ba6a17d5d7873a9de0d5c789e9c9` and all nine
+   `carmodpicker-staging/<domain>` repositories still carried that tag.
+2. **Enforcement.** `domain_jwt_enforced` set back to `true`, run
+   `run-9jxg4F9xVAekhfjM` planned the same `0 to add, 1 to change, 0 to destroy`
+   on the same single resource, and **applied successfully**. This is the apply
+   that failed on the previous attempt.
+
+**The environment, measured on the deployed function:**
+
+| State | Bytes | Route keys enforced |
+| --- | --- | --- |
+| before, 15 identity keys | 1366 | 15 |
+| the 95 key attempt that failed | 4545 | would have been 95 |
+| after 2.11.0, before enforcement | 396 | 15 |
+| after 2.11.0, enforcement on | **396** | **95** |
+| the limit | 4096 | |
+
+The environment no longer moves with the route key list at all, which is the
+property worth keeping: `identity_jwt_config.json` in the deployed package is
+4272 bytes on its own, larger than the whole environment cap.
+
+**Enforcement verified through the staging gateway** (`api.staging.carmodpicker.com`,
+each request carrying the origin-verify header so it passes the gate, and no
+bearer token):
+
+| Request | Before enforcement | After enforcement |
+| --- | --- | --- |
+| `GET /api/build-lists/user/me` | 401 from the application | **403 `{"message":"Forbidden"}` from the authorizer** |
+| `GET /api/reports/count` (anonymous guard) | 200 | **200** |
+| `GET /api/bug-reports/count` (anonymous guard) | 200 | **200** |
+| `GET /api/build-lists/user/me` with a malformed bearer token | n/a | 403 |
+
+The 403 body is API Gateway's own authorizer denial rather than the
+application's error envelope, which is the distinction that matters: the request
+is refused before it reaches application code, where previously it reached the
+handler and the handler answered 401. The two guard routes answering 200 is the
+exact-match assertion holding in production traffic rather than only in a unit
+test.
+
+The deployed package was read back to confirm the set rather than inferring it
+from behaviour: `identity_jwt_config.json` carries 95 route keys, the 451 byte
+PEM, `GET /api/build-lists/user/me` present, and neither guard key present.
 
 ### Rollback
 
 Exact, in the order to undo it:
 
 1. **Enforcement.** Set `domain_jwt_enforced` to `false` on
-   `ws-dNLoiEHVxr2o81XM` and apply. The authorizer environment drops back to 15
-   keys, every route keeps its address, nobody is signed out. This alone reverses
-   the user visible effect.
+   `ws-dNLoiEHVxr2o81XM` and apply. The authorizer's packaged route key list
+   drops back to the 15 identity keys, every route keeps its address, nobody is
+   signed out. This alone reverses the user visible effect. Since 2.11.0 that is
+   a code change on the function rather than an environment change, so the plan
+   still shows one in-place update of the same resource.
 2. **Frontend.** `gh variable set AUTH_MODE --env staging --body bearer --repo
    WebbPulse/CarModPicker`, then rerun the Frontend Deploy on `staging`. An empty
    value works too, since `resolveAuthMode` treats empty as unset and falls

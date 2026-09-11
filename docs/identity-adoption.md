@@ -387,9 +387,9 @@ workspace variable once the frontend sends identity tokens.
 applying.** It is the same shape of change in reverse and equally cheap, because
 in gate mode no route resource moves in either direction.
 
-### Step 4 is blocked: 95 route keys do not fit in a Lambda environment
+### Step 4 was blocked, then fixed: 95 route keys do not fit in a Lambda environment
 
-Steps 1 to 3 are done in staging as of 2026-09-11. Step 4 planned correctly, 0 to
+Steps 1 to 3 were done in staging on 2026-09-11. Step 4 planned correctly, 0 to
 add and 1 to change, and then **failed at apply**:
 
 ```
@@ -404,22 +404,36 @@ on its own. The overage is 449 bytes, which is about a dozen domain keys, and
 dropping a key means not enforcing that route, so there is nothing to trim.
 
 `UpdateFunctionConfiguration` is atomic, so the authorizer kept its previous
-configuration and staging stayed healthy throughout. The estate is sitting at the
-end of step 3, which is a designed, safe resting point: the frontend sends
-identity tokens, the domain routes accept them, and nothing is enforced yet.
+configuration and staging stayed healthy throughout. The estate rested at the end
+of step 3, which is a designed, safe resting point: the frontend sends identity
+tokens, the domain routes accept them, and nothing is enforced yet.
 
 **The plan cannot catch this.** Terraform checks the shape of the environment
 map, not its serialized size, which only the Lambda API measures at apply. Treat
 a green plan on this resource as no evidence about size.
 
-**The fix belongs in `terraform-aws-platform-modules`**, since the
-`staging-access-gate` module is what writes the variable. The route key list has
-to stop being an environment variable, most plausibly by moving into the
-authorizer's deployment package or into SSM or S3 read at cold start. Compressing
-the value buys room without removing the ceiling, and enforcing by prefix instead
-of by key would break the two anonymous guard routes that exist precisely because
-prefix matching is unsafe here. This is an owner decision, and production will hit
-the same ceiling when it flags its own routes.
+**The fix belonged in `terraform-aws-platform-modules`**, since the
+`staging-access-gate` module is what writes the variable, and it shipped the same
+day as **2.11.0**. The route key list and the signing public key PEM now travel
+in the authorizer's deployment package, rendered as `identity_jwt_config.json`
+and read by the handler at import time. Compressing the value would have bought
+room without removing the ceiling, and enforcing by prefix instead of by key
+would have broken the two anonymous guard routes that exist precisely because
+prefix matching is unsafe here. The chosen fix removes the ceiling rather than
+raising it, so production will not hit it when it flags its own routes.
+
+The consumer change here was a version constraint bump, `~> 2.9` to `~> 2.11`
+(PR 419), because the module's inputs did not change.
+
+**Step 4 then applied, and enforcement has been on in staging since 2026-09-11.**
+The authorizer environment measures **396 bytes with all 95 keys enforced**,
+against 4545 bytes for the attempt that failed, because it no longer carries the
+list at all. Verified through the staging gateway with the origin-verify header
+and no bearer token: `GET /api/build-lists/user/me` is refused by the authorizer
+with 403 `{"message":"Forbidden"}` before reaching application code, while the
+two anonymous guard routes `GET /api/reports/count` and
+`GET /api/bug-reports/count` still answer 200. `docs/identity-migration-runbook.md`
+carries the full execution record.
 
 ## What is not here yet
 
@@ -477,7 +491,7 @@ unchanged per environment, so no passkey is re-enrolled and no link is re-made.
 | 10 | Chrome extension: auth option, handoff page, publish | 6 | landed |
 | 11 | Domains read authorizer claims; `sub` becomes the user id | 8, 9 | landed |
 | 12a | Terraform: 80 explicit domain route keys behind `domain_jwt_enforced`, default off | 11 | landed |
-| 12 | Cutover: flip `VITE_AUTH_MODE`, run migrations, verify, then `domain_jwt_enforced = true` | 7, 9, 10, 11, 12a | staging: frontend flipped and verified; enforcement blocked, see below |
+| 12 | Cutover: flip `VITE_AUTH_MODE`, run migrations, verify, then `domain_jwt_enforced = true` | 7, 9, 10, 11, 12a | staging: landed. Frontend flipped and verified; enforcement on since 2026-09-11 and verified at the gateway. The 4KB environment blocker is fixed upstream in `staging-access-gate` 2.11.0 |
 | 13 | Retire legacy: 24 routes, `hashed_password`, `totp_secret`, `SECRET_KEY` | 12, soak | |
 
 Row 6 ships dark behind a flag, which makes row 12 a variable flip rather than a
