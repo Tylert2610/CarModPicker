@@ -11,26 +11,30 @@
  * user signs in again. Passkeys, Google sign in and TOTP all hang off that
  * same mechanism.
  *
- * `identity` is the unified identity standard, which `@webbpulse/auth` 0.6.0
+ * `identity` is the unified identity standard, which `@webbpulse/auth` 0.8.0
  * implements as `AuthClient`: a short lived access token held in memory only,
  * an httpOnly refresh cookie the page cannot read, one shared in-flight
  * refresh, and a retry-once-on-401 pipeline turned on by handing the client to
  * `createApiClient` as `auth`.
  *
  * The switch is configuration rather than a branch waiting on a rewrite. The
- * `identity` path is written and typed against the real 0.6.0 API, so turning
- * it on is a deploy time decision and not a code change. What it is waiting on
- * is rows 4, 5 and 8 of the adoption plan: the Terraform module, the backend
- * hooks that mount M1 to M4 under `/api/auth`, and the migration of the
- * existing password hashes and TOTP seeds. Until those land, setting this to
- * `identity` would point the bundle at routes the backend does not serve.
+ * `identity` path is written and typed against the real 0.8.0 API, so turning
+ * it on is a deploy time decision and not a code change.
  *
- * **Passkeys and Google sign in are not in the identity path.** The server
- * side package has shipped M1 through M4 only, and its own router says
- * plainly that "Passkeys and OAuth are M5 and M6". `AuthClient` carries client
- * side methods for both, but there is nothing behind them until those
- * milestones ship, so identity mode hides that UI rather than rendering
- * buttons that 404. See `identityAvailability` below.
+ * **Passkeys and OAuth are in the identity path as of 0.8.0.** An earlier
+ * revision of this file hid both, because the server side package had shipped
+ * M1 to M4 only and its own router said "Passkeys and OAuth are M5 and M6".
+ * Both milestones have since landed: `@webbpulse/auth` 0.8.0 carries the
+ * passkey ceremonies and the OAuth link surface, and webbpulse-python 0.16.0
+ * serves `/api/auth/passkeys/*`, `/api/auth/login/passkey/*` and the OAuth
+ * routes including a `GET /api/auth/oauth/providers` discovery route.
+ *
+ * So neither capability is gated on the mode any more. What they are gated on
+ * is the *deployment*, which is a different question and not one a constant can
+ * answer: a backend can have passkey enrolment mounted with passwordless sign
+ * in switched off, and can have no OAuth provider configured at all. Those are
+ * asked at runtime by `./passkeyAvailability` and `./oauthProviders` rather
+ * than assumed here.
  *
  * Read through `@webbpulse/config`'s `ConfigReader` rather than
  * `import.meta.env` directly, so an unrecognised value is a named startup
@@ -77,17 +81,27 @@ export const resolveAuthMode = (env: Record<string, unknown>): AuthMode => {
 export const AUTH_MODE: AuthMode = resolveAuthMode(import.meta.env);
 
 /**
- * Which sign in affordances the current mode can actually serve.
+ * Which sign in affordances the current mode can serve at all.
  *
- * One place rather than an `AUTH_MODE === 'identity'` test at each of the six
- * call sites, so the day M5 and M6 land is one edit here rather than a hunt
- * through the login page, the profile dialogs and their tests.
+ * One place rather than an `AUTH_MODE === 'identity'` test at each call site.
  *
- * `password` and `totp` are true in both modes: the mechanisms differ, but the
- * user facing affordance exists either way. `passkeys` and `googleOauth` are
- * true only in bearer mode, and the components read them to hide themselves
- * rather than to render a disabled control, because a control that cannot work
- * in this deployment is not a temporary state the user can wait out.
+ * Every affordance except `recoveryCodes` is now true in both modes, because
+ * both mechanisms carry all of them: the wire protocols differ and the user
+ * facing affordance does not. `recoveryCodes` is the one real asymmetry, since
+ * only the identity service issues them and the legacy TOTP flow has none,
+ * which is why a cutover prompts every enrolled user to generate a set.
+ *
+ * **This says "the mode has this", not "this deployment has this."** Whether a
+ * given backend actually has passwordless passkey sign in switched on, or any
+ * OAuth provider configured, is a runtime question that a build time constant
+ * cannot answer. `./passkeyAvailability` and `./oauthProviders` ask it, and the
+ * components hide themselves on the answer rather than rendering a disabled
+ * control, because a control that cannot work in this deployment is not a
+ * temporary state the user can wait out.
+ *
+ * In bearer mode the two flags stay true and the legacy implementations behind
+ * them are exactly as they were: `@simplewebauthn/browser` against
+ * `/auth/webauthn/*`, and `@react-oauth/google`. Nothing about `main` changes.
  */
 export const identityAvailability = (
   mode: AuthMode = AUTH_MODE
@@ -100,20 +114,23 @@ export const identityAvailability = (
 } => ({
   password: true,
   totp: true,
-  // M5 and M6 in the server side package. See the module note.
-  passkeys: mode === 'bearer',
-  googleOauth: mode === 'bearer',
+  // Shipped in both mechanisms as of `@webbpulse/auth` 0.8.0 and
+  // webbpulse-python 0.16.0. See the module note.
+  passkeys: true,
+  googleOauth: true,
   // Only the identity service issues recovery codes; the legacy TOTP flow has
   // none, which is why a cutover prompts every enrolled user to generate a set.
   recoveryCodes: mode === 'identity',
 });
 
 /**
- * What the cutover still needs, in one place.
+ * How the cutover is performed, in one place.
  *
- * A deployment decision rather than code once rows 4, 5 and 8 land: setting
- * `AUTH_MODE=identity` on a GitHub Environment switches that environment over,
- * and setting it back to empty rolls the whole thing back with a redeploy.
+ * A deployment decision rather than a code change: setting the `AUTH_MODE`
+ * variable on a GitHub Environment to `identity` and redeploying switches that
+ * environment over, and clearing it back to empty rolls the whole thing back
+ * with another redeploy. Nothing about the bundle's source differs between the
+ * two, which is what makes the rollback a redeploy rather than a revert.
  */
 export const IDENTITY_CUTOVER = {
   /** The GitHub Environment variable that selects the mode at build time. */

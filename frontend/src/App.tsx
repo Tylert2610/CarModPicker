@@ -55,6 +55,9 @@ const VerifyEmailConfirm = lazy(
 const ExtensionAuth = lazy(
   () => import('./pages/authentication/ExtensionAuth.tsx')
 );
+const ExtensionHandoff = lazy(
+  () => import('./pages/authentication/ExtensionHandoff.tsx')
+);
 const Builder = lazy(() => import('./pages/builder/Builder.tsx'));
 const ViewCar = lazy(() => import('./pages/builder/ViewCar.tsx'));
 const ViewUser = lazy(() => import('./pages/ViewUser.tsx'));
@@ -109,6 +112,7 @@ const NO_AD_SPACE_PATHS = new Set([
   '/verify-email/confirm',
   '/reset-password',
   '/extension-auth',
+  '/auth/extension-handoff',
 ]);
 
 /** Paths that get spacers for consistent layout but never show ads. */
@@ -258,6 +262,13 @@ function App() {
                     element={<ForgotPasswordConfirm />}
                   />
                   <Route path="/extension-auth" element={<ExtensionAuth />} />
+                  {/* The identity-mode handoff, which the extension opens
+                      through `launchWebAuthFlow`. See the page's own note; the
+                      legacy `/extension-auth` above is untouched. */}
+                  <Route
+                    path="/auth/extension-handoff"
+                    element={<ExtensionHandoff />}
+                  />
                   <Route path="/car-generations/:carId" element={<ViewCar />} />
                   <Route
                     path="/build-lists/:buildListId"
