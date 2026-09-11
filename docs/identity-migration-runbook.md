@@ -622,15 +622,22 @@ jq -r 'if (.body | fromjson | has("access_token")) then "has_access: true" else 
   "$SCRATCH/login-out.json"
 ```
 
-**A `@staging.invalid` address makes some routes return 500, and it is not an
-auth failure.** `UserRead.email` is an `EmailStr`, and Pydantic refuses a
-reserved TLD on the way *out*, so any route that serialises a user object
-(`GET /api/users/me` among them) raises a `ValidationError` in
-`app/api/services/user_service.py` after authentication has already succeeded.
-Every one of the 58 pre-existing synthetic users has the same problem. Verify
-against a flagged route that returns no user object, such as
-`GET /api/build-lists/user/me`, and read a 500 here as a serialisation bug rather
-than evidence that the token was refused.
+**A `@staging.invalid` address used to make some routes return 500. That is
+fixed, and the note is kept because old runs show it.** `UserRead.email` and
+`PublicUserRead.email` were `EmailStr`, and Pydantic refuses a reserved TLD on
+the way *out*, so any route that serialises a user object (`GET /api/users/me`
+among them) raised a `ValidationError` in `app/api/services/user_service.py`
+after authentication had already succeeded. Every one of the 58 pre-existing
+synthetic users hit it, and it is what fired two of the eleven
+`carmodpicker-staging-application-errors` transitions on 2026-09-11.
+
+Both read models now take `email` as a plain `str`, so those routes return the
+stored address with a 200. `EmailStr` stays on `UserCreate`, `UserUpdate` and
+`AdminUserUpdate`, so the API still refuses a reserved TLD on input; only rows
+written around the API, as this runbook's step 2 does, carry one.
+`tests/api/endpoints/test_users.py::test_read_user_with_reserved_tld_email_returns_200`
+pins the behaviour. A 500 on a user-serialising route is now a real bug rather
+than an expected quirk of the synthetic account.
 
 Leave the account in place between rows. It is cheap, it is obviously synthetic,
 and recreating it is the only other way to run these checks.

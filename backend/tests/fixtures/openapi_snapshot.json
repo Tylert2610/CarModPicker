@@ -4077,7 +4077,6 @@
             "type": "boolean"
           },
           "email": {
-            "format": "email",
             "title": "Email",
             "type": "string"
           },
@@ -5049,7 +5048,6 @@
             "type": "boolean"
           },
           "email": {
-            "format": "email",
             "title": "Email",
             "type": "string"
           },
