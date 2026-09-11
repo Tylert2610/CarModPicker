@@ -91,18 +91,34 @@ rows 25 to 32 of the domain split. Concretely, promoting lands all of:
 > `attach_role_policies = true`.
 >
 > A speculative plan of that branch against the production workspace
-> `ws-oh1VvpTBPxmcrSYD` now reaches `planned_and_finished` and renders a diff.
-> **148 to add, 0 to change, 0 to destroy**, where the previous attempt reached
-> `errored` with `Invalid count argument` and no diff at all. The staging
-> workspace `ws-dNLoiEHVxr2o81XM` is zero-change against the same branch, which
-> is the other half of the check: the fix is a plan-time change and staging,
-> whose identity role already exists, must not move.
+> `ws-oh1VvpTBPxmcrSYD` (run `run-6gtpiUqZf6bxbfmF`) now reaches
+> `planned_and_finished` and renders a diff: **201 to add, 6 to change, 18 to
+> destroy**. The previous attempt reached `errored` with `Invalid count argument`
+> and no diff at all, so the gate this section names is met.
 >
-> The destroys row 32 brings are not in that count because they are not in this
-> module; see step 3 for the plan shape as a whole. The rest of this section is
-> kept as written because it explains why the fix takes the shape it does, and
-> because the same trap applies to any future module input that counts off a
-> consumer's computed value.
+> The three policies plan as `module.identity.aws_iam_role_policy.identity_signing[0]`,
+> `identity_tables[0]` and `identity_mfa[0]`, plain creates at a known index,
+> which is precisely what the unknown count made impossible.
+>
+> **Every hard stop in step 3 passes on that plan**, checked against the plan
+> JSON rather than by eye: zero DynamoDB table destroys, zero
+> `aws_apigatewayv2_authorizer` of any action, zero Route 53 record changes, and
+> zero destroys anywhere under `module.identity`. The 18 destroys are row 32's
+> monolith retirement and nothing else, itemised in step 3. The 6 changes are
+> five alarm and policy updates that follow from adding domains, plus the
+> `github_actions_role` policy.
+>
+> The staging workspace `ws-dNLoiEHVxr2o81XM` (run `run-xeNGeMRSE4xPkcji`) is
+> zero-change against the same branch, which is the other half of the check: the
+> fix is a plan-time change, and staging, whose identity role already exists and
+> whose id was therefore always known, must not move at all.
+>
+> Both runs were speculative configuration versions, which HCP refuses to apply
+> by construction, so neither could be confirmed against production.
+>
+> The rest of this section is kept as written because it explains why the fix
+> takes the shape it does, and because the same trap applies to any future module
+> input that counts off a consumer's computed value.
 
 This was the one real blocker and it needed a code change before the merge.
 
@@ -719,8 +735,10 @@ identity role is still to be created, and the run reached `errored` with
 `Invalid count argument` before showing any diff. `platform-modules` `v2.10.0`
 plus CarModPicker PR 415 moved those counts onto `attach_role_policies`, and a
 speculative plan against this workspace now reaches `planned_and_finished` with
-**148 to add, 0 to change, 0 to destroy** for the branch as it stood at the fix.
-Section 1 has the mechanism. If a run here still errors on a count, the module
+**201 to add, 6 to change, 18 to destroy** for the branch as it stood at the fix,
+and every hard stop in the table below passes on it. The 18 destroys are row 32's
+retirement, listed in this table's last two rows, and nothing else. Section 1 has
+the mechanism and the run ids. If a run here still errors on a count, the module
 pin in `terraform/identity.tf` is the first thing to read: it must be `~> 2.10`
 or later.
 
