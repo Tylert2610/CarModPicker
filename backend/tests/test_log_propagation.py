@@ -21,6 +21,7 @@ from __future__ import annotations
 import logging
 
 import pytest
+from fastapi import Request
 from fastapi.testclient import TestClient
 from webbpulse.log_context import (
     request_id_var,
@@ -81,10 +82,15 @@ def test_log_propagation_request_scope(
 
     # Override with a FastAPI-compatible signature so Depends() introspection works.
     async def logging_current_user(
+        request: Request,
         token: str = Depends(oauth2_scheme),
         repos: Repositories = Depends(get_repositories),
     ) -> User:
-        result = await get_current_user(token=token, repos=repos)
+        # `request` is threaded through since row 11: `get_current_user` reads
+        # the authorizer's claims off it when the bearer token is not a legacy
+        # session. This override is standing in for the real dependency, so it
+        # has to take the same arguments the real one does.
+        result = await get_current_user(request=request, token=token, repos=repos)
         test_logger = logging.getLogger("app.tests.log_propagation")
         test_logger.info("post-auth request scope log emit")
         emitted_request_ids.append(request_id_var.get())
