@@ -314,3 +314,130 @@ their only sign-in method while passwordless was on. Turning passkeys off takes
 their way in with it. This is why the flags go on in staging first and why
 `has_other_sign_in_method` counts the package rows: the predicate is what stops
 that user from having deleted their password in the first place.
+
+---
+
+# Row 11: the domains read the authorizer's claims
+
+Row 11 is not a data migration either. Nothing here moves a row, and the two
+scripts at the top of this file are still the only scripts that write. What
+changes is which credentials an authenticated route accepts: as of this row it
+accepts both the legacy HS256 session and an identity RS256 access token, and
+`sub` on the identity token is the CarModPicker user id.
+
+There is nothing to run and nothing to schedule. This section is the verification
+that the row did what it claims, and it is worth doing in staging before row 12
+flips `VITE_AUTH_MODE`, because row 12 assumes this row works.
+
+## Before you start
+
+Row 11 needs rows 8 and 9 applied, which they are in staging. Confirm the gate is
+in the mode that verifies rather than merely passing traffic through:
+
+`var.identity_jwt_mode` is not an output, so read it from the workspace rather
+than from `terraform output`. In the HCP Terraform UI it is a workspace variable
+on `CarModPicker-staging`; expect `gate`. The fifteen route keys it applies to
+are `local.identity_jwt_route_keys` in `terraform/apigateway.tf`.
+
+`off` means no route key verifies anything and every check below will read as a
+row 11 failure when it is really a row 8 configuration. Check this first.
+
+## 1. The legacy session still works
+
+This is the check that matters most, because row 11 is additive and a regression
+here is worse than the feature not landing. Nothing about this should have
+changed, which is the point.
+
+```bash
+API=https://api.staging.carmodpicker.com
+
+# A legacy sign in, exactly as the shipped frontend does it.
+LEGACY=$(curl -s -X POST "$API/api/auth/token" \
+  -H 'Content-Type: application/x-www-form-urlencoded' \
+  -d "username=$USERNAME&password=$PASSWORD" | jq -r .access_token)
+
+curl -s -o /dev/null -w '%{http_code}\n' "$API/api/users/me" \
+  -H "Authorization: Bearer $LEGACY"     # expect: 200
+```
+
+A 401 here means the dual mode change swallowed the legacy path and the row
+should be reverted rather than debugged in place. The legacy flow is what every
+signed in user is on until row 12.
+
+## 2. An identity access token resolves to the same user
+
+```bash
+# An identity sign in. Same user, different credential. Note that the package's
+# login takes `email` where the legacy `/api/auth/token` takes `username`.
+IDENTITY=$(curl -s -X POST "$API/api/auth/login" \
+  -H 'Content-Type: application/json' \
+  -d "{\"email\":\"$EMAIL\",\"password\":\"$PASSWORD\"}" | jq -r .access_token)
+
+curl -s "$API/api/users/me" -H "Authorization: Bearer $IDENTITY" | jq '{id, username}'
+```
+
+Compare the `id` against the one step 1 returned. They must be the same string.
+If they differ, the mapping assumption in this row is wrong and row 12 must not
+proceed: `sub` is supposed to be the user id itself.
+
+Decode the token to see the mapping directly, without verifying it, since all you
+want is the payload:
+
+```bash
+echo "$IDENTITY" | cut -d. -f2 | base64 -d 2>/dev/null | jq '{sub, iss, aud}'
+```
+
+`sub` is the uuid7 user id, `iss` is `https://api.staging.carmodpicker.com/api/auth`
+and `aud` is `carmodpicker-staging-api`.
+
+## 3. The claims actually come from the gateway on a flagged route
+
+Steps 1 and 2 both send an `Authorization` header, so they do not distinguish
+between the application reading the gateway's claims and the application
+verifying the token itself. On the identity function both work, which is exactly
+why the two need separating.
+
+The cheap way to tell them apart is to look at what the authorizer put in the
+context. On a flagged `/api/auth` route key in staging the gate's Lambda
+authorizer publishes `jwt.claims`, and the request reaching the function carries
+it in `x-amzn-request-context`:
+
+```bash
+aws logs tail /aws/lambda/carmodpicker-staging-identity --since 5m --follow
+```
+
+Then make one request from step 2 and watch. A request whose token failed
+verification never reaches the function at all: the gate returns 401 at the
+gateway, so no log line appears. That absence is the check. A 401 with a log line
+is the application refusing the claims, which is a different failure and points
+at the account checks rather than at the token.
+
+## 4. A refused token is refused the same way as no token
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' "$API/api/users/me"                      # expect: 401
+curl -s -o /dev/null -w '%{http_code}\n' "$API/api/users/me" \
+  -H "Authorization: Bearer not.a.token"                                          # expect: 401
+```
+
+Both are 401 and neither body says which of the several possible reasons applied.
+An expired token, a token for another audience, a `sub` naming a deleted user and
+no token at all are one answer to a caller by design.
+
+## What this row deliberately does not verify
+
+**That a `/api/v1` route accepts an identity token.** It does not, and that is
+expected. No `/api/v1` route key is flagged, so the gateway hands those functions
+no claims, and in process verification needs `IDENTITY_SIGNING_KEY_ARNS` plus a
+`kms:GetPublicKey` grant that only the identity function has. The adoption doc's
+row 11 section sets out the two ways row 12 can close that, and the choice
+between them is an owner decision rather than a defect in this row.
+
+## Rolling back row 11
+
+Revert the pull request. There is no state to unwind: no table changed, no
+variable changed, no Terraform changed. Every user signed in through the legacy
+session stays signed in, because that path is untouched by this row and by its
+revert. A user signed in through an identity token would need to sign in again,
+which is only possible for someone testing the new flow deliberately, since row
+12 has not flipped the frontend yet.

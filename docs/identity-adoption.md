@@ -170,6 +170,107 @@ source IP. Row 11 is where the domains start reading claims, and that is where
 the two context shapes, `authorizer.jwt.claims` in production and
 `authorizer.lambda["jwt.claims"]` in staging, get their one-line reader.
 
+## Row 11: the domains read the claims
+
+Row 11 is done. It is the row where an identity access token starts resolving to
+a CarModPicker user, and it is deliberately additive: the legacy HS256 session
+resolves exactly as it did before, and nothing about the shipped sign in flow
+changes. Row 12 is the cutover and row 13 is what retires the legacy path, so
+until then every authenticated route accepts either credential.
+
+### `sub` is the user id
+
+The mapping is the one row 9's hooks already established, and it is the identity
+rather than a link table. `CarModPickerIdentityHooks.load_user_by_id` takes the
+`sub` claim, parses it with `UUID(...)` and does one `GetItem` against the users
+table, so an identity user is the legacy user row under the id it always had.
+There is no second id space and no join, and row 9 created no new user rows for
+existing accounts.
+
+That is also what makes the two token kinds impossible to confuse. The legacy
+session's `sub` is a **username**; the identity token's `sub` is a **uuid7 user
+id**. `get_current_user` tries the legacy decode first, and only a token that
+fails it is offered to the identity resolver, so neither path can accidentally
+satisfy the other even though both arrive in the same `Authorization` header.
+
+### One reader, three shapes
+
+`backend/app/api/dependencies/identity_claims.py` is the reader, and it answers
+one question: which subject is this request for, if any. It handles the three
+ways the same token reaches this application.
+
+1. **Production, after the promotion.** API Gateway's own JWT authorizer verifies
+   the token and puts the claims at `requestContext.authorizer.jwt.claims` as a
+   flat string map.
+2. **Staging today.** The staging access gate's Lambda authorizer does the
+   verification on the flagged route keys and publishes one string key named
+   `jwt.claims` under `requestContext.authorizer.lambda`, because API Gateway
+   refuses a nested object there.
+3. **Neither.** A route key that is not flagged carries no claims at all, which
+   is not a failed authorization but a route that was never configured to carry
+   one.
+
+`webbpulse.identity.claims.read_authorizer_claims` is the package's reader and it
+handles shape 1 only: it raises `NoClaimsSection` on a context whose `authorizer`
+carries `lambda` rather than `jwt`, and says so in the message. So this module
+calls it first and falls back to the gate's shape, and runs both through the
+package's own `coerce_claims` so the two produce identical Python values rather
+than merely similar ones. The gate stringifies every claim value on purpose so
+that this is possible.
+
+Row 10's `app/composition/identity_extension.py` had a local version of this
+reader with a note that it might want generalising. This is that generalisation.
+
+### The scheme had to learn about claims
+
+`get_current_user` depends on `oauth2_scheme`, which was an
+`OAuth2PasswordBearer` with `auto_error=True`. That raises 401 from inside the
+dependency, before the route's resolver runs, whenever there is no
+`Authorization` header. On a flagged route key the credential is in the request
+context rather than in that header, so the one shape row 11 exists to serve was
+the one shape refused before it could reach the code serving it.
+
+`IdentityAwareOAuth2` is a three line subclass that declines to raise only when
+`identity_subject` has already found a verified subject on the request. A request
+carrying neither a header nor an authorizer still falls through to the parent
+class and gets the same `Not authenticated` body it always did. The widening is
+not something a caller can reach for: it needs an authorizer to have run and
+verified a token, and the `x-amzn-request-context` header is written by the
+Lambda Web Adapter from the invoke event, never from an inbound header.
+
+### The verification asymmetry, which is an owner decision for row 12
+
+On a flagged route key the token was already verified before this process was
+invoked, so the reader trusts the claims in the event. On an unflagged route key
+there is nothing in the event, and the only way to accept a token is to verify it
+in process. `verify_bearer_subject` does that, and **it can only work on the
+identity function.**
+
+`TokenService.verify_access_token` resolves a signing key's public JWK with
+`kms:GetPublicKey` against the ARNs in `IDENTITY_SIGNING_KEY_ARNS`.
+`terraform/lambda_domains.tf` sets the `IDENTITY_*` block on the `identity`
+function and on no other domain, and `terraform/identity.tf` attaches the signing
+policy to the identity role alone. So a `catalog` or `build-lists` function
+returns no subject from that path, and since every `/api/v1` route key is an `ANY`
+over a whole prefix and none of them is flagged, those domains accept an identity
+token only where the gateway hands them claims, which today is nowhere.
+
+This is stated rather than fixed because fixing it is a row 12 decision with two
+possible shapes, and they are not equivalent:
+
+- **Flag the domain route keys.** Then the gateway verifies, and nothing needs a
+  KMS grant. But every `/api/v1` key is an `ANY` over a prefix mixing public
+  reads with authenticated writes, so flagging one turns an anonymous read into a
+  401. That is a cutover, not a dual-mode step, and it needs the route keys split
+  before it is safe.
+- **Give every domain the signing key ARNs and a `kms:GetPublicKey` grant.** Then
+  in process verification works everywhere and the route keys stay as they are.
+  The cost is that nine functions get a KMS grant to serve a path that a flagged
+  route key would make unnecessary, and each pays a `kms:GetPublicKey` on a cold
+  start.
+
+Neither is needed for row 11 to be correct, and no Terraform changed in this row.
+
 ## What is not here yet
 
 ### Deliberately not in row 4
@@ -217,14 +318,14 @@ unchanged per environment, so no passkey is re-enrolled and no link is re-made.
 | 1 | Package M5: passkeys, stores, challenge table, ceremonies | — | in flight |
 | 2 | Package M6: OAuth, `oauth-states`, linking rules | — | in flight |
 | 3 | Package: per-user refresh TTL hook or settings field | owner decision | open |
-| **4** | **Terraform: `module.identity` 2.7, six tables, two KMS keys, env merge** | — | **this change** |
-| 5 | Backend M1 to M4: hooks, `composition/identity.py`, mount | 4 | next |
+| 4 | Terraform: `module.identity` 2.7, six tables, two KMS keys, env merge | — | landed |
+| 5 | Backend M1 to M4: hooks, `composition/identity.py`, mount | 4 | landed |
 | 6 | Frontend: `AuthClient`, delete `tokenStore`, verify and reset pages, behind `VITE_AUTH_MODE` | — | |
 | 7 | Credential migration script plus TOTP seed sealing script | 5 | |
-| **8** | **Terraform: `identity_jwt_mode`, fifteen explicit `/api/auth` route keys, gate enforcement in staging** | 4, 5 | **this change** |
-| 9 | Backend M5 and M6 adoption | 1, 2, 5 | |
-| 10 | Chrome extension: auth option, handoff page, publish | 6 | |
-| 11 | Domains read authorizer claims; `sub` becomes the user id | 8, 9 | |
+| 8 | Terraform: `identity_jwt_mode`, fifteen explicit `/api/auth` route keys, gate enforcement in staging | 4, 5 | landed |
+| 9 | Backend M5 and M6 adoption | 1, 2, 5 | landed |
+| 10 | Chrome extension: auth option, handoff page, publish | 6 | landed |
+| **11** | **Domains read authorizer claims; `sub` becomes the user id** | 8, 9 | **this change** |
 | 12 | Cutover: flip `VITE_AUTH_MODE`, run migrations, verify | 7, 9, 10, 11 | |
 | 13 | Retire legacy: 24 routes, `hashed_password`, `totp_secret`, `SECRET_KEY` | 12, soak | |
 
