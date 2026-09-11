@@ -25,7 +25,7 @@ in staging.
 `IDENTITY_ISSUER` unset the identity application is byte for byte the one row 4
 left behind, which is what keeps `tests/fixtures/route_contract.json`, the
 per-domain counts in `tests/entrypoints/test_route_split.py` and the OpenAPI
-snapshot valid without regenerating any of them. Set it, and nineteen routes
+snapshot valid without regenerating any of them. Set it, and twenty routes
 appear. Both halves are asserted, because a mount that fired unconditionally
 would break three pinned fixtures and a mount that never fired would look
 exactly like success from the outside.
@@ -83,9 +83,18 @@ AUDIENCE = "carmodpicker-staging-api"
 KEY_ARN = "arn:aws:kms:us-west-2:748861776298:key/11111111-2222-3333-4444-555555555555"
 DATA_KEY_ARN = "arn:aws:kms:us-west-2:748861776298:key/99999999-8888-7777-6666-555555555555"
 
-#: The nineteen routes this row mounts, spelled out rather than derived from the
-#: package. A list computed from the thing it checks cannot notice that the
-#: thing moved, and these paths are also API Gateway route keys in row 8.
+#: The twenty routes this file's environment mounts, spelled out rather than
+#: derived from the package. A list computed from the thing it checks cannot
+#: notice that the thing moved, and these paths are also API Gateway route keys
+#: in row 8.
+#:
+#: Nineteen of them are row 5's own M1 to M4. The twentieth is
+#: `GET /api/auth/oauth/providers`, which row 9's bump to 0.16.0 added and which
+#: mounts in **every** deployment, including this one, whose environment sets no
+#: OAuth client id at all. It is here rather than in `test_identity_row9.py`
+#: precisely because it is unconditional: this test pins the routes an identity
+#: function has with none of row 9's switches on, and that is now twenty rather
+#: than nineteen. The twelve routes those switches control are row 9's file.
 PACKAGE_PATHS = (
     # M1: discovery, JWKS and the package's own health document.
     ("GET", "/api/auth/.well-known/openid-configuration"),
@@ -111,6 +120,10 @@ PACKAGE_PATHS = (
     ("POST", "/api/auth/totp/disable"),
     ("POST", "/api/auth/recovery-codes"),
     ("POST", "/api/auth/step-up"),
+    # M6 discovery, new in 0.16.0 and unconditional. Not gated on a client id,
+    # a client secret or a store: it answers an empty list when OAuth is off,
+    # which is the point of it. See the note above PACKAGE_PATHS.
+    ("GET", "/api/auth/oauth/providers"),
 )
 
 #: The two `(method, path)` pairs that exist on both sides. The legacy handler
@@ -188,6 +201,22 @@ def identity_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("IDENTITY_SUPPORT_EMAIL", "support@carmodpicker.com")
     monkeypatch.setenv("IDENTITY_FRONTEND_BASE_URL", "https://staging.carmodpicker.com")
     monkeypatch.setenv("IDENTITY_EMAIL_FROM", "no-reply@staging.carmodpicker.com")
+
+    # Row 9's two passkey switches, set OFF here and set explicitly rather than
+    # left out. **The package's own default for both is `True`**, so leaving
+    # them unset would mount M5's seven routes in this file's environment and
+    # make this file's inventory quietly wrong. `terraform/variables.tf`
+    # defaults both to false for exactly the same reason, and
+    # `terraform/lambda_domains.tf` renders both on every identity function in
+    # every environment, so an unset flag is not a state a deployed function is
+    # ever in. `test_identity_row9.py` is what turns them on and pins what
+    # appears when they are.
+    #
+    # No OAuth client id is set, which is what keeps M6's five flow routes out
+    # of this inventory. `GET /api/auth/oauth/providers` is unconditional and is
+    # in PACKAGE_PATHS above.
+    monkeypatch.setenv("IDENTITY_PASSKEYS_ENABLED", "false")
+    monkeypatch.setenv("IDENTITY_PASSKEYS_PASSWORDLESS", "false")
 
     # The one `IDENTITY_*` name `Settings` itself declares, and the only thing
     # `build_domain_app` consults before deciding to mount. Set on the settings
@@ -773,12 +802,12 @@ def test_without_an_issuer_the_identity_app_is_exactly_what_row_four_left(
 
 
 def test_with_an_issuer_every_package_route_is_mounted(identity_app: Any) -> None:
-    """All nineteen, at their public paths.
+    """All twenty, at their public paths.
 
     Nineteen rather than fifteen because `IDENTITY_EMAIL_FROM` is set, which is
     what makes `build_email_sender` return a sender and the package mount M3's
     four email routes. The deployed function gets that variable from
-    `terraform/lambda_domains.tf`, so nineteen is the deployed number.
+    `terraform/lambda_domains.tf`, so twenty is the deployed number.
     """
     served = _pairs(identity_app)
 
@@ -877,12 +906,12 @@ def test_the_legacy_auth_surface_is_unchanged_by_the_mount(identity_app: Any, mo
 def test_the_mount_adds_exactly_the_package_routes_and_nothing_else(
     identity_app: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The difference between the two applications is the seventeen new pairs.
+    """The difference between the two applications is the eighteen new pairs.
 
-    Seventeen rather than nineteen because two of the nineteen already existed
-    on the legacy side. Pinning the difference rather than a total is what makes
-    this test survive row 8 adding a route to some other part of the domain,
-    while still failing if this row starts mounting something it did not before.
+    Eighteen rather than twenty because two of the twenty already existed on the
+    legacy side. Pinning the difference rather than a total is what makes this
+    test survive row 8 adding a route to some other part of the domain, while
+    still failing if this mount starts declaring something it did not before.
     """
     from app.core.config import settings as app_settings
 

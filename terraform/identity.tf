@@ -113,6 +113,49 @@ locals {
   # two applies against `signing_key_count` and `active_signing_key` rather
   # than an edit to a list in this repository.
   identity_signing_key_arns = module.identity.signing_key_arns
+
+  # M6's redirect URI allow list, as the JSON array IDENTITY_OAUTH_REDIRECT_URIS
+  # expects. A JSON array rather than a bare string because
+  # `IdentitySettings.oauth_redirect_uris` is a list field and the class
+  # deliberately refuses bare comma separated values for its lists: a stray
+  # comma in a URI must be an error rather than a silently split entry.
+  #
+  # Derived from `local.identity_issuer` rather than written out, so the one
+  # definition of the host and the path serves here too. The path the package
+  # mounts the callback on is `<prefix>/oauth/callback` and the prefix is the
+  # issuer's path, so this string is the URL the provider will actually be
+  # given, byte for byte.
+  #
+  # One entry, which is the ordinary case. The package treats an empty list as
+  # meaning exactly this default, and it is written out anyway because the check
+  # it feeds is exact string equality rather than a prefix match, and a reviewer
+  # asking "which callback URLs may a start request name" should be able to read
+  # the answer rather than infer it. A prefix check on
+  # `https://api.staging.carmodpicker.com` would also admit
+  # `https://api.staging.carmodpicker.com.attacker.test`, which is a domain an
+  # attacker can register today, and an unchecked redirect URI is a
+  # code exfiltration primitive rather than an ordinary open redirect.
+  #
+  # This exact string must also be registered with Google and with GitHub, which
+  # is the second and independent check on the same thing.
+  identity_oauth_redirect_uris = jsonencode(["${local.identity_issuer}/oauth/callback"])
+
+  # M5's WebAuthn origin allow list, on the same JSON array rule.
+  #
+  # The FRONTEND origin, not the API origin, and that is the whole point of the
+  # field rather than an accident of which local was nearest. WebAuthn binds an
+  # assertion to the origin of the page that created it, and the page is the
+  # SPA. Checking it server side is what makes a passkey phishing resistant: a
+  # look-alike site can copy every pixel and cannot produce an assertion
+  # carrying this origin.
+  #
+  # `local.frontend_url` is what the frontend is actually served from in each
+  # profile, custom domain or not, so a staging profile without a custom domain
+  # gets its CloudFront origin here rather than a domain that does not resolve.
+  # The apex only: `www.` is a redirect to it in every profile, so an assertion
+  # is never created on that host, and RP ID `carmodpicker.com` already covers
+  # both for the credential's own scope.
+  identity_webauthn_origins = jsonencode([local.frontend_url])
 }
 
 module "identity" {

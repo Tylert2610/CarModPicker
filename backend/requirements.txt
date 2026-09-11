@@ -36,12 +36,22 @@
 # already resolved below and stay pinned there, `PyJWT` now with its `crypto`
 # extra so the dependency is declared rather than inherited from `webauthn`.
 #
-# `oauth` is deliberately absent. It carries `httpx` for the provider token
-# exchange, and no OAuth route mounts: `app/composition/identity.py` supplies
-# neither an `oauth_states` nor an `oauth_links` store, because
-# `terraform/identity.tf` creates the six M1 to M4 tables and not the two OAuth
-# ones. Row 9 is what adds both the tables and this extra.
-webbpulse[fastapi,otel,dynamodb,aws-otel,security,identity]==0.14.0
+# `oauth` and `passkeys` are what row 9 adds, and the version bump to 0.16.0 is
+# what carries the routes behind them.
+#
+# `oauth` pulls `httpx`, which is the only outbound HTTP this application makes:
+# the provider token exchange and userinfo calls of the package's M6 flow.
+# `app/composition/identity.py` now supplies both an `oauth_states` and an
+# `oauth_links` store, and `terraform/identity.tf` created both tables in the
+# module's default map, so the five OAuth routes mount as soon as a provider
+# carries a client id.
+#
+# `passkeys` pulls `py_webauthn`, which the package imports lazily inside the
+# methods that need it, so it costs nothing on a cold start that never sees a
+# passkey. This product already depends on `webauthn` below for its own legacy
+# WebAuthn routes, so the extra declares a dependency that was already resolved
+# rather than adding one.
+webbpulse[fastapi,otel,dynamodb,aws-otel,security,identity,oauth,passkeys]==0.16.0
 
 # Core FastAPI and web framework dependencies
 annotated-types==0.8.0

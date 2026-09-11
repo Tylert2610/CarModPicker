@@ -1393,6 +1393,66 @@ locals {
         # written out so that a future reader sees a decision rather than a
         # default.
         IDENTITY_REGISTRATION_ENABLED = "true"
+
+        # ------------------------------------------------------------------
+        # Row 9: M5 passkeys and M6 OAuth.
+        #
+        # These six names are the entire switch for twelve routes. The
+        # composition root supplies all four stores unconditionally and reads
+        # nothing here by hand; `IdentitySettings` picks every name up under the
+        # `IDENTITY_` prefix, and the package's own mount conditions are what
+        # turn each family on. So a rollout is a variable on a workspace rather
+        # than a deploy, and there is no second condition in Python that could
+        # disagree with what is set here.
+        # ------------------------------------------------------------------
+
+        # M5's three, and the fourth is IDENTITY_RP_NAME above. IDENTITY_RP_ID
+        # is the module's and is merged below: it is the registrable domain,
+        # hashed into every credential by the authenticator and immutable for
+        # that credential's life, which is why it is not a thing this block gets
+        # to set.
+        #
+        # `tostring` because a Lambda environment map is map(string) and a bare
+        # bool is a type error at plan time. Pydantic parses "true" and "false"
+        # into the bool the settings field wants.
+        #
+        # Both default to false in variables.tf and the staging workspace sets
+        # both true, which is the two-workspace promotion shape this repository
+        # already uses everywhere. The package's own default for both is true,
+        # and departing from it is deliberate: a default that turns a sign-in
+        # method on in whichever environment applies next fails in the wrong
+        # direction.
+        #
+        # They are two switches and not one. With IDENTITY_PASSKEYS_ENABLED true
+        # and IDENTITY_PASSKEYS_PASSWORDLESS false, the five management routes
+        # mount and both /login/passkey routes refuse: a passkey is something a
+        # signed-in user can add and not a way into an account. Turning
+        # passwordless on is what makes it an entry point with no password
+        # involved, which is the stronger claim of the two and the reason it has
+        # its own variable.
+        IDENTITY_PASSKEYS_ENABLED      = tostring(var.passkeys_enabled)
+        IDENTITY_PASSKEYS_PASSWORDLESS = tostring(var.passkeys_passwordless)
+
+        # A JSON array, because `IdentitySettings.webauthn_origins` is a list
+        # field and the class refuses bare CSV for its lists. The frontend
+        # origin rather than the API origin; terraform/identity.tf has the
+        # reasoning.
+        IDENTITY_WEBAUTHN_ORIGINS = local.identity_webauthn_origins
+
+        # M6's three. The two client ids are not secrets and travel as ordinary
+        # environment variables; the two client secrets do not appear here at
+        # all and reach the function through the `carmodpicker-<env>/app` secret,
+        # which terraform/secretsmanager.tf writes them into.
+        #
+        # Empty is a working state and is how both ship until the OAuth
+        # applications are registered: with no client id the package declares no
+        # flow route for that provider, and GET /api/auth/oauth/providers, which
+        # mounts unconditionally in 0.16.0, answers with an empty list. That
+        # route is why the frontend needs no deploy when a provider is turned
+        # on: it asks rather than inferring the answer from a probe.
+        IDENTITY_OAUTH_REDIRECT_URIS = local.identity_oauth_redirect_uris
+        IDENTITY_GOOGLE_CLIENT_ID    = var.oauth_google_client_id
+        IDENTITY_GITHUB_CLIENT_ID    = var.oauth_github_client_id
         },
 
         # The module's own map, merged last so it wins over anything above it.
