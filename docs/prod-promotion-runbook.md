@@ -86,7 +86,7 @@ rows 25 to 32 of the domain split. Concretely, promoting lands all of:
 > **FIXED, 2026-09-10.** Option C below was taken.
 > [`terraform-aws-platform-modules` PR 46](https://github.com/WebbPulse/terraform-aws-platform-modules/pull/46)
 > added an `attach_role_policies` input to `modules/identity` and moved all three
-> counts onto it, released as **`v2.10.0`**. CarModPicker PR 415 bumped the pin in
+> counts onto it, released as **`v2.10.0`**. CarModPicker PR 416 bumped the pin in
 > `terraform/identity.tf` from `~> 2.7` to `~> 2.10` and passes
 > `attach_role_policies = true`.
 >
@@ -406,7 +406,7 @@ difference between the two runbooks.
 
 ### 7. The Chrome extension publishes on merge, and the locked decision says when
 
-> **FIXED, 2026-09-10, by CarModPicker PR 415.** The push trigger is now gated on
+> **FIXED, 2026-09-10, by CarModPicker PR 416.** The push trigger is now gated on
 > a variable that is deliberately unset, so **the merge no longer publishes**.
 >
 > `.github/workflows/chrome-extension-deploy.yml` gained a first job, `gate`,
@@ -733,7 +733,7 @@ curl -s -X PATCH -H "Authorization: Bearer $T" \
 `2.9` the identity role policies counted off a value that is unknown while the
 identity role is still to be created, and the run reached `errored` with
 `Invalid count argument` before showing any diff. `platform-modules` `v2.10.0`
-plus CarModPicker PR 415 moved those counts onto `attach_role_policies`, and a
+plus CarModPicker PR 416 moved those counts onto `attach_role_policies`, and a
 speculative plan against this workspace now reaches `planned_and_finished` with
 **201 to add, 6 to change, 18 to destroy** for the branch as it stood at the fix,
 and every hard stop in the table below passes on it. The 18 destroys are row 32's
