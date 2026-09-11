@@ -28,6 +28,7 @@ interface SearchableSelectProps {
   displayValue?: string | null;
 }
 
+/** Text input with a filtered dropdown, keyboard navigation and optional create. */
 const SearchableSelect: React.FC<SearchableSelectProps> = ({
   options,
   value,
@@ -52,10 +53,8 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
   const inputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Find selected option
   const selectedOption = options.find((opt) => opt.value === value) || null;
 
-  // Show "Create new" when no matches and user has typed something
   const shouldShowCreateNew =
     onCreateNew &&
     searchText.trim() &&
@@ -64,7 +63,6 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
     !displayValue;
   const totalOptions = filteredOptions.length + (shouldShowCreateNew ? 1 : 0);
 
-  // Default filter function
   const defaultFilterOptions = useCallback(
     (opts: SearchableSelectOption[], text: string): SearchableSelectOption[] => {
       if (!text.trim()) return opts;
@@ -74,7 +72,6 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
     []
   );
 
-  // Update filtered options when search text or options change
   useEffect(() => {
     const filterFn = customFilterOptions || defaultFilterOptions;
     const filter = async () => {
@@ -89,7 +86,6 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
     filter();
   }, [searchText, options, customFilterOptions, defaultFilterOptions]);
 
-  // Handle selection
   const handleSelect = useCallback(
     (selectedValue: string | null) => {
       onChange(selectedValue);
@@ -106,7 +102,6 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
     [onChange, options]
   );
 
-  // Update search text when value changes externally
   useEffect(() => {
     if (displayValue) {
       setSearchText(displayValue);
@@ -128,7 +123,6 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
     }
   }, [searchText, onCreateNew]);
 
-  // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (
@@ -153,7 +147,6 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
     };
   }, [selectedOption, displayValue]);
 
-  // Handle keyboard navigation
   useEffect(() => {
     if (!isOpen) return;
 
@@ -190,7 +183,6 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
     };
   }, [isOpen, filteredOptions, highlightedIndex, handleSelect, shouldShowCreateNew, searchText, handleCreateNew, totalOptions]);
 
-  // Scroll highlighted option into view
   useEffect(() => {
     if (
         highlightedIndex >= 0 &&

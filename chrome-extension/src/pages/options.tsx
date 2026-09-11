@@ -9,18 +9,14 @@ const API_URLS = {
 type ApiEnvironment = keyof typeof API_URLS;
 
 /**
- * Which sign in the extension uses.
- *
- * The web app switches on `VITE_AUTH_MODE`, a build time flag. The extension
- * ships one artifact to the store and has no build time env plumbing, so the
- * equivalent here is this runtime setting. It stays on `legacy` until row 12
- * of docs/identity-adoption.md cuts over, so an existing install is unchanged
- * until someone deliberately flips it.
+ * Which sign in the extension uses. A runtime setting rather than a build flag,
+ * because the extension ships one artifact to the store.
  */
 type AuthMode = "legacy" | "identity";
 
 const DEFAULT_AUTH_MODE: AuthMode = "legacy";
 
+/** Settings page for the API environment, sign in mode and ingestion key. */
 function Options() {
   const [environment, setEnvironment] = useState<ApiEnvironment>("production");
   const [openPartAfterCreation, setOpenPartAfterCreation] = useState(true);
@@ -33,7 +29,6 @@ function Options() {
   } | null>(null);
 
   useEffect(() => {
-    // Load saved settings
     chrome.storage.sync.get(
       ["apiUrl", "openPartAfterCreation", "openInNewTab", "authMode"],
       (result) => {
@@ -48,14 +43,10 @@ function Options() {
         if (result["openInNewTab"] !== undefined) {
           setOpenInNewTab(result["openInNewTab"] as boolean);
         }
-        // Anything other than the exact string falls back to legacy, so a
-        // stale or malformed value cannot switch the flow on by accident.
         setAuthMode(result["authMode"] === "identity" ? "identity" : "legacy");
       },
     );
 
-    // The API key lives in `local`, not `sync`: it is a shared secret and
-    // `sync` would replicate it to every Chrome profile the user signs into.
     chrome.storage.local.get(["apiKey"], (result) => {
       const stored = result["apiKey"];
       if (typeof stored === "string") {
@@ -64,6 +55,7 @@ function Options() {
     });
   }, []);
 
+  /** Map a stored API URL back to the environment it belongs to. */
   const getEnvironmentFromUrl = (apiUrl: string): ApiEnvironment => {
     if (apiUrl.includes("localhost") || apiUrl.includes("127.0.0.1")) {
       return "localhost";
@@ -74,6 +66,7 @@ function Options() {
     return "production";
   };
 
+  /** Persist the settings, keeping the API key on this device only. */
   const handleSave = async () => {
     if (!environment || !API_URLS[environment]) {
       setStatus({ message: "Invalid environment selected", type: "error" });

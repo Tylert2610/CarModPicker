@@ -1,6 +1,6 @@
 /**
- * Inline imageUrlUtils chunk into content.js so it has no top-level import.
- * Content scripts cannot be ES modules. Run after build (e.g. postbuild).
+ * Inline the imageUrlUtils chunk into content.js so it has no top-level import,
+ * because a content script cannot be an ES module. Runs after the build.
  */
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import { dirname, resolve } from "path";

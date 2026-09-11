@@ -29,6 +29,7 @@ interface RecordPriceDialogProps {
   }) => Promise<unknown>;
 }
 
+/** Shown when the product URL is already in the catalog: records a new price. */
 const RecordPriceDialog: React.FC<RecordPriceDialogProps> = ({
   existingPart,
   scrapedData,
@@ -43,7 +44,6 @@ const RecordPriceDialog: React.FC<RecordPriceDialogProps> = ({
   const [newImageUrls, setNewImageUrls] = useState<string[]>([]);
   const [selectedUrls, setSelectedUrls] = useState<string[]>([]);
 
-  // Scraped images not already on the part (by exact or canonical URL match)
   useEffect(() => {
     const scraped = scrapedData.image_urls ?? [];
     if (scraped.length === 0) {
@@ -83,6 +83,7 @@ const RecordPriceDialog: React.FC<RecordPriceDialogProps> = ({
       ? `$${(scrapedPriceCents / 100).toFixed(2)}`
       : "—";
 
+  /** Add the selected images, record the price, and open the part page. */
   const handleRecordPrice = async () => {
     if (!retailer || scrapedPriceCents == null || scrapedPriceCents < 0) {
       setError("Unable to record price: retailer or price not available");
@@ -93,7 +94,6 @@ const RecordPriceDialog: React.FC<RecordPriceDialogProps> = ({
     setIsLoading(true);
 
     try {
-      // Append selected scraped images as external URL references (no upload)
       const currentCount = existingPart.image_urls?.length ?? 0;
       const slotsLeft = Math.max(0, MAX_IMAGES_PER_GLOBAL_PART - currentCount);
 
@@ -105,7 +105,6 @@ const RecordPriceDialog: React.FC<RecordPriceDialogProps> = ({
           fileKeys: refsToAppend,
         })) as ApiResponse<unknown>;
         if (!appendRes.success) {
-          // Don't block price recording - user may lack edit permission
           console.warn("Append images failed:", appendRes.error);
         }
       }
@@ -252,7 +251,6 @@ const RecordPriceDialog: React.FC<RecordPriceDialogProps> = ({
             )}
           </div>
 
-          {/* New scraped images not yet on this part */}
           {newImageUrls.length > 0 && (
             <div className="space-y-3 p-4 rounded-xl bg-white/5 border border-white/10">
               <div>

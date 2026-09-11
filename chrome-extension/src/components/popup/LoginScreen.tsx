@@ -12,6 +12,7 @@ type UserResponse = ApiResponse<User>;
 
 const POLL_INTERVAL_MS = 1500;
 
+/** Signed out view: starts a web sign in and polls until it completes. */
 const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, sendMessage }) => {
   const [isWaiting, setIsWaiting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -41,17 +42,13 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, sendMessage }) => {
         }
 
         if (pendingResp.success && !pendingResp.data?.pending) {
-          // The pending auth session expired or was cleared without success.
           stopPolling();
           setIsWaiting(false);
         }
-      } catch {
-        // Transient errors are expected while the user is still signing in.
-      }
+      } catch {}
     }, POLL_INTERVAL_MS);
   }, [sendMessage, onLogin, stopPolling]);
 
-  // If the popup reopens during an in-flight handoff, resume polling.
   useEffect(() => {
     (async () => {
       try {
@@ -62,9 +59,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, sendMessage }) => {
           setIsWaiting(true);
           pollForLogin();
         }
-      } catch {
-        // Not fatal — user can still click Sign in.
-      }
+      } catch {}
     })();
     return () => stopPolling();
   }, [sendMessage, pollForLogin, stopPolling]);
@@ -93,9 +88,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, sendMessage }) => {
     stopPolling();
     try {
       await sendMessage({ action: "cancelWebAuth" });
-    } catch {
-      // Ignore
-    }
+    } catch {}
     setIsWaiting(false);
   };
 

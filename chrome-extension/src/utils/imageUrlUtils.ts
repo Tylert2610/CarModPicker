@@ -1,6 +1,6 @@
 /**
- * Normalize image URLs for deduplication across size variants.
- * Handles common CDN patterns: Shopify (width=, height=), imgix (w=, h=), etc.
+ * Normalize image URLs across CDN size variants (Shopify, imgix and similar) so
+ * the same image dedupes to one entry.
  */
 
 const SIZE_PARAMS = new Set([
@@ -20,10 +20,7 @@ const SIZE_PARAMS = new Set([
 
 const PREFERRED_WIDTH = 5760;
 
-/**
- * Normalize URL to canonical form for dedup (strips size params).
- * e.g. ...?v=123&width=416 and ...?v=123&width=3000 → same canonical
- */
+/** Strip size params so every variant of an image shares one canonical URL. */
 export function getCanonicalImageUrl(url: string): string {
   if (!url?.trim()) return "";
   try {
@@ -44,10 +41,7 @@ export function getCanonicalImageUrl(url: string): string {
   }
 }
 
-/**
- * Transform URL to request high resolution (adds/replaces width=).
- * Use when fetching to store best quality.
- */
+/** Request the highest resolution variant, for fetching an image to store. */
 export function getHighResImageUrl(url: string): string {
   if (!url?.trim()) return url;
   try {

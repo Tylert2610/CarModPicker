@@ -1,8 +1,6 @@
 @import 'tailwindcss';
 
-/* Modern Design System */
 :root {
-  /* Color Palette */
   --primary-50: #eff6ff;
   --primary-100: #dbeafe;
   --primary-200: #bfdbfe;
@@ -15,7 +13,6 @@
   --primary-900: #1e3a8a;
   --primary-950: #172554;
 
-  /* Neutral Colors */
   --neutral-50: #f8fafc;
   --neutral-100: #f1f5f9;
   --neutral-200: #e2e8f0;
@@ -28,19 +25,16 @@
   --neutral-900: #0f172a;
   --neutral-950: #020617;
 
-  /* Accent Colors */
   --accent-emerald: #10b981;
   --accent-amber: #f59e0b;
   --accent-rose: #f43f5e;
   --accent-purple: #8b5cf6;
 
-  /* Glassmorphism */
   --glass-bg: rgba(255, 255, 255, 0.08);
   --glass-border: rgba(255, 255, 255, 0.15);
   --glass-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
   --glass-backdrop: blur(20px);
 
-  /* Smooth Gradients */
   --gradient-primary: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   --gradient-secondary: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
   --gradient-dark: linear-gradient(
@@ -62,7 +56,6 @@
   );
 }
 
-/* Base Styles */
 * {
   box-sizing: border-box;
 }
@@ -86,7 +79,6 @@ body {
   padding: 0;
 }
 
-/* Enhanced Animations */
 @keyframes fadeInScale {
   from {
     opacity: 0;
@@ -201,7 +193,6 @@ body {
   }
 }
 
-/* Animation Classes */
 .animate-fadeInScale {
   animation: fadeInScale 0.4s cubic-bezier(0.4, 0, 0.2, 1) forwards;
 }
@@ -250,7 +241,6 @@ body {
   animation: borderGlow 2s ease-in-out infinite;
 }
 
-/* Enhanced Glassmorphism Components */
 .glass {
   background: var(--gradient-glass);
   backdrop-filter: var(--glass-backdrop);
@@ -332,7 +322,6 @@ body {
   box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
 }
 
-/* Modern Button Styles */
 .btn-primary {
   background: var(--gradient-primary);
   background-size: 200% 200%;
@@ -398,8 +387,6 @@ body {
   box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
 }
 
-
-/* Enhanced Input Styles */
 .input-modern {
   background: var(--gradient-glass);
   border: 1px solid var(--glass-border);
@@ -433,7 +420,6 @@ body {
   color: rgba(255, 255, 255, 0.3);
 }
 
-/* Enhanced Scrollbar Styling */
 ::-webkit-scrollbar {
   width: 10px;
 }
@@ -461,7 +447,6 @@ body {
   );
 }
 
-/* Enhanced Loading States */
 .skeleton {
   background: linear-gradient(
     90deg,
@@ -474,14 +459,12 @@ body {
   border-radius: 8px;
 }
 
-/* Hero Section Styles */
 .hero-gradient {
   background: var(--gradient-hero);
   background-size: 300% 300%;
   animation: gradientShift 6s ease infinite;
 }
 
-/* Enhanced Responsive Utilities */
 @media (max-width: 768px) {
   .glass {
     backdrop-filter: blur(15px);
@@ -503,14 +486,12 @@ body {
   }
 }
 
-/* Enhanced Focus States for Accessibility */
 *:focus-visible {
   outline: 2px solid var(--primary-500);
   outline-offset: 3px;
   border-radius: 4px;
 }
 
-/* Enhanced Selection Styling */
 ::selection {
   background: var(--primary-500);
   color: white;
@@ -521,7 +502,6 @@ body {
   color: white;
 }
 
-/* Utility Classes */
 .text-gradient {
   background: var(--gradient-primary);
   background-size: 200% 200%;
@@ -544,7 +524,6 @@ body {
   box-shadow: 0 0 30px rgba(59, 130, 246, 0.5);
 }
 
-/* Chrome Extension Specific */
 #root {
   width: 100%;
   min-height: 100%;
