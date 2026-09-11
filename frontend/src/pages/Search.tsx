@@ -13,7 +13,7 @@ import { SEARCH_INITIAL_LIMITS, SEARCH_RESULTS_LIMIT } from '../constants';
 import useApiRequest from '../hooks/UseApiRequest';
 import { useDocumentMeta } from '../hooks/useDocumentMeta';
 import { searchApi } from '../api/search';
-import type { BuildListRead, UserRead } from '../types/Api';
+import type { BuildListRead, PublicUserRead } from '../types/Api';
 
 const fetchSearchResultsRequestFn = (params: {
   q: string;
@@ -38,7 +38,7 @@ function Search() {
 
   // Track accumulated results and pagination state for each category
   const [buildLists, setBuildLists] = useState<BuildListRead[]>([]);
-  const [users, setUsers] = useState<UserRead[]>([]);
+  const [users, setUsers] = useState<PublicUserRead[]>([]);
   const [displayedCounts, setDisplayedCounts] = useState<{
     build_lists: number;
     users: number;
@@ -121,7 +121,7 @@ function Search() {
 
       // Check if we have more results already fetched that we haven't displayed
       const currentDisplayed = displayedCounts[category];
-      const allResults: BuildListRead[] | UserRead[] =
+      const allResults: BuildListRead[] | PublicUserRead[] =
         category === 'build_lists' ? buildLists : users;
 
       // If we have more results already fetched, just increase the displayed count

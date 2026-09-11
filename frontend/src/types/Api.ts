@@ -21,6 +21,32 @@ export interface UserRead {
   oauth_accounts?: OAuthAccountRead[];
 }
 
+/**
+ * What the public endpoints actually return: `/search` user results, and
+ * `GET /users/{id}` for anyone other than the user themselves or an admin.
+ *
+ * Deliberately has no `email`. The backend `PublicUserRead` dropped the field
+ * so an anonymous search could not read every matched user's address; typing
+ * these responses as `UserRead` is what hid that from the compiler.
+ */
+export interface PublicUserRead {
+  id: string;
+  username: string;
+  disabled: boolean;
+  image_urls?: string[] | null;
+  is_superuser: boolean;
+  is_admin: boolean;
+  is_service_account: boolean;
+  subscription_tier: string;
+  subscription_status: string;
+  subscription_expires_at?: string | null;
+  instagram_url?: string | null;
+  facebook_url?: string | null;
+  reddit_url?: string | null;
+  youtube_url?: string | null;
+  tiktok_url?: string | null;
+}
+
 export interface UserCreate {
   username: string;
   email: string;

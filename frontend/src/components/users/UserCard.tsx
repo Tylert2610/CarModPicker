@@ -1,10 +1,10 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import type { UserRead } from '../../types/Api';
+import type { PublicUserRead } from '../../types/Api';
 import { Card } from '../ui/card';
 
 interface UserCardProps {
-  user: UserRead;
+  user: PublicUserRead;
 }
 
 const UserCard: React.FC<UserCardProps> = ({ user }) => {
@@ -26,10 +26,7 @@ const UserCard: React.FC<UserCardProps> = ({ user }) => {
             </div>
           )}
           <div className="flex-grow">
-            <h3 className="text-lg font-semibold text-info mb-1">
-              {user.username}
-            </h3>
-            <p className="text-sm text-gray-400">{user.email}</p>
+            <h3 className="text-lg font-semibold text-info">{user.username}</h3>
           </div>
         </div>
       </Card>

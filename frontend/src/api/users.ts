@@ -3,6 +3,7 @@ import { apiClient } from './client';
 import type {
   AdminUserUpdate,
   PaginatedResponse,
+  PublicUserRead,
   UserCreate,
   UserRead,
   UserUpdate,
@@ -11,7 +12,10 @@ import type {
 export const usersApi = {
   getMe: () => apiClient.get<UserRead>('/users/me'),
   createUser: (data: UserCreate) => apiClient.post<UserRead>('/users/', data),
-  getUser: (userId: string) => apiClient.get<UserRead>(`/users/${userId}`),
+  // Backend returns Union[UserRead, PublicUserRead]: the full record for the
+  // user themselves or an admin, the public shape for everyone else.
+  getUser: (userId: string) =>
+    apiClient.get<UserRead | PublicUserRead>(`/users/${userId}`),
   updateUser: (userId: string, data: UserUpdate) =>
     apiClient.put<UserRead>(`/users/${userId}`, data),
   deleteUser: (userId: string) =>
@@ -32,7 +36,7 @@ export const usersApi = {
 
   // List and count endpoints
   listUsers: (params?: { skip?: number; limit?: number; search?: string }) =>
-    apiClient.get<UserRead[]>('/users/', { params }),
+    apiClient.get<Array<UserRead | PublicUserRead>>('/users/', { params }),
   countUsers: () => apiClient.get<{ count: number }>('/users/count'),
 
   // Admin endpoints

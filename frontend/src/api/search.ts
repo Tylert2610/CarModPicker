@@ -3,7 +3,7 @@
 // Co-located response types per D-04 (these are not pydantic-generated; they
 // describe the bespoke search-result envelope produced by the search router).
 import { apiClient } from './client';
-import type { BuildListRead, PartRead, UserRead } from '../types/Api';
+import type { BuildListRead, PartRead, PublicUserRead } from '../types/Api';
 
 export interface SearchCategoryResults<T> {
   data: T[];
@@ -15,7 +15,7 @@ export interface SearchCategoryResults<T> {
 
 export interface SearchResults {
   build_lists: SearchCategoryResults<BuildListRead>;
-  users: SearchCategoryResults<UserRead>;
+  users: SearchCategoryResults<PublicUserRead>;
   parts: SearchCategoryResults<PartRead>;
   query: string;
 }

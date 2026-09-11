@@ -126,8 +126,8 @@ class AdminUserUpdate(BaseModel):
         return s
 
 
-# Read models take `email` as a plain `str`, deliberately, while the write
-# models above keep `EmailStr`.
+# `UserRead` takes `email` as a plain `str`, deliberately, while the write
+# models above keep `EmailStr`. `PublicUserRead` does not carry `email` at all.
 #
 # A response model has to be able to serialise anything the write path
 # legitimately accepted, plus anything already sitting in the table. It cannot,
@@ -148,13 +148,21 @@ class AdminUserUpdate(BaseModel):
 # can see and correct a bad address, and an operator can read the row. Input
 # validation stays where it belongs, on `UserCreate`, `UserUpdate` and
 # `AdminUserUpdate`, so no new bad address can be written through the API.
+#
+# `PublicUserRead` drops `email` outright rather than relaxing it. The public
+# shape is what `/api/search` and an unauthenticated `GET /api/users/{id}`
+# return, so every address it carried was readable by anyone who could guess a
+# username fragment; the search page rendered them verbatim on each result card.
+# Nothing needs the field: the only reader was that card, and a signed-in user's
+# own address still comes from `UserRead` via `/api/users/me`. Removing it ends
+# the exposure and removes the last read path that could 500 on a stored
+# address, which relaxing the type alone would not have done.
 
 
 # Schema for public user data (excludes sensitive fields like email_verified and totp_enabled)
 class PublicUserRead(BaseModel):
     id: UUID
     username: str
-    email: str
     disabled: bool
     image_urls: Optional[List[str]] = None
     is_superuser: bool
