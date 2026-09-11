@@ -2,13 +2,6 @@ import { renderHook } from '@testing-library/react';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { useResponsiveColumns } from './useResponsiveColumns';
 
-// Phase 8 D-09 — useResponsiveColumns is a pure memo-heavy hook. It takes a
-// column set, per-column priority, per-column minWidth, and a containerWidth,
-// then drops columns highest-priority-first until the set fits. containerWidth
-// is the driver — the hook itself does not read matchMedia, but consumers
-// commonly feed it a matchMedia-derived width. We still install a matchMedia
-// stub for completeness / defensive coverage (Gotcha scaffold).
-
 beforeAll(() => {
   Object.defineProperty(window, 'matchMedia', {
     writable: true,
@@ -29,7 +22,7 @@ type Col = 'name' | 'category' | 'part_manufacturer' | 'price';
 
 const keys: Col[] = ['name', 'category', 'part_manufacturer', 'price'];
 const priority: Record<Col, number> = {
-  name: 1, // pinned (<=1 never drops)
+  name: 1,
   category: 3,
   part_manufacturer: 2,
   price: 4,
@@ -52,7 +45,7 @@ describe('useResponsiveColumns', () => {
   });
 
   it('returns every column when containerWidth is wide enough to fit the total', () => {
-    const wide = 200 + 120 + 150 + 100; // 570
+    const wide = 200 + 120 + 150 + 100;
     const { result } = renderHook(() =>
       useResponsiveColumns(keys, priority, minWidth, wide)
     );
@@ -62,8 +55,6 @@ describe('useResponsiveColumns', () => {
   });
 
   it('drops highest-priority-number columns first when width is constrained', () => {
-    // Width 400 < 570 → must drop priority 4 (price); still 470 > 400 → drop
-    // priority 3 (category); now 320 < 400 stop. Kept: name(1) + part_manufacturer(2).
     const { result } = renderHook(() =>
       useResponsiveColumns(keys, priority, minWidth, 400)
     );
@@ -76,8 +67,6 @@ describe('useResponsiveColumns', () => {
   });
 
   it('never drops pinned (priority<=1) columns even when width is tiny', () => {
-    // Width 50 is smaller than even the pinned name column (200). The hook
-    // breaks out of the drop loop once it hits priority <= 1, so name stays.
     const { result } = renderHook(() =>
       useResponsiveColumns(keys, priority, minWidth, 50)
     );

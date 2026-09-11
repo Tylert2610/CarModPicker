@@ -128,7 +128,6 @@ export async function fetchPasskeyCapabilities(
       headers: { accept: 'application/json' },
     });
   } catch {
-    // A network failure, or the request being blocked. Nothing was learned.
     return UNKNOWN;
   }
   if (response.status !== 200) return UNKNOWN;
@@ -168,15 +167,9 @@ export function passkeyCapabilities(
   return cachedAvailability(url, async () => {
     const capabilities = await fetchPasskeyCapabilities(url, fetchImpl);
     if (capabilities.passwordless === 'unknown') {
-      // Both fields are unknown together or neither is, so this one field
-      // stands for the pair. Nothing worth remembering, and re-asking on the
-      // next mount is cheap.
       return 'unknown';
     }
     answers.set(url, capabilities);
-    // The cached tri-state is `passwordless`, which is what the sign in gate
-    // reads. A deployment that answered at all is a fact that does not change
-    // under the page, so it is kept either way.
     return capabilities.passwordless;
   }).then(() => answers.get(url) ?? UNKNOWN);
 }

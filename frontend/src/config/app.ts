@@ -1,17 +1,3 @@
-// Startup configuration, validated through @webbpulse/config.
-//
-// `loadAppConfig` does all of it now: it selects the backend for a dev run,
-// appends the `/api` prefix the backend mounts every router under, rejects a
-// malformed or non-http URL, normalises the Vite mode to an environment name,
-// and reports every problem at once rather than failing later at the first
-// request against an `undefined` URL.
-//
-// The selection used to be local. `@webbpulse/config` 0.2.0 could not describe
-// this application's configuration, so a `resolveApiBaseUrl` here read
-// `VITE_BACKEND`, picked one of three URLs and glued `/api` on the end, which
-// put the one piece of URL selection outside the layer that exists to validate
-// it. 0.3.0 added `backendTargets` and `apiPathPrefix` for exactly this, so the
-// resolution is now two options rather than forty lines.
 import { loadAppConfig, type AppConfig } from '@webbpulse/config';
 
 /**

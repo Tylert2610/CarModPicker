@@ -2,10 +2,6 @@ import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { useCookieConsent } from './useCookieConsent';
 
-// Phase 8 D-09 — useCookieConsent is backed by localStorage + a CustomEvent
-// ('cookie-consent-change') that keeps multiple hook instances in sync. No
-// providers needed; jsdom supplies localStorage + window.
-
 const STORAGE_KEY = 'cookie_consent_v1';
 
 describe('useCookieConsent', () => {
@@ -78,8 +74,6 @@ describe('useCookieConsent', () => {
       a.current.accept();
     });
 
-    // a dispatched 'cookie-consent-change' synchronously in persist();
-    // b's listener reads fresh localStorage — so both instances agree.
     expect(a.current.consent).toBe('accepted');
     expect(b.current.consent).toBe('accepted');
   });

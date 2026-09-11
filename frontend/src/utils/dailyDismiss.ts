@@ -23,7 +23,7 @@ export function isDismissedToday(key: string): boolean {
 export function dismissForToday(key: string): void {
   try {
     localStorage.setItem(key, todayDateString());
-  } catch {
-    // localStorage may be unavailable (private mode, quota) — fail open.
+  } catch (error) {
+    void error;
   }
 }

@@ -1,4 +1,3 @@
-// Part Manufacturers domain API. Mirrors backend endpoints/part_manufacturers.py.
 import { apiClient } from './client';
 import type {
   PartManufacturerCreate,

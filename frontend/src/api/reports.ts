@@ -1,6 +1,3 @@
-// Reports domain API. Mirrors backend endpoints/reports.py (polymorphic).
-// Polymorphic `reportsApi` is the canonical surface; `partReportsApi` is a
-// thin entity-typed wrapper kept for existing callers.
 import { apiClient } from './client';
 import type {
   PaginatedResponse,
@@ -48,7 +45,6 @@ export const reportsApi = {
   countReports: () => apiClient.get<{ count: number }>('/reports/count'),
 };
 
-// Legacy part-scoped wrapper (callers should migrate to reportsApi).
 export const partReportsApi = {
   reportPart: (
     partId: string,

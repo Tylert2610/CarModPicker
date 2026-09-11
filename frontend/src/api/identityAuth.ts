@@ -86,9 +86,6 @@ export const signIn = async (
           },
         };
       }
-      // `user` is whatever `loadUser` produced, and no `loadUser` is
-      // configured, so it is null by construction. The caller fetches the
-      // user; see `identityClient`.
       return { status: 'authenticated', user: null };
     } catch (error) {
       return { status: 'failed', error: describeIdentityFailure(error) };
@@ -97,8 +94,6 @@ export const signIn = async (
 
   try {
     const response = await authApi.login({ username, password });
-    // Already `UserRead | LoginResponse`: `authApi.login` returns the 2FA
-    // challenge body untouched and unwraps `data.user` otherwise.
     const body = response.data;
     if ('requires_2fa' in body && body.requires_2fa === true) {
       return {
@@ -136,9 +131,6 @@ export const completeMfa = async (
         code,
       });
       if (outcome.mfaRequired) {
-        // A second challenge from the second leg means the ticket was spent
-        // and reissued, which the server does not do. Treated as a refusal
-        // rather than looping.
         return { status: 'failed', error: 'That code was not accepted.' };
       }
       return { status: 'authenticated', user: null };

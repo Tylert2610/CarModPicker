@@ -16,8 +16,8 @@ function read(): CookieConsent {
   try {
     const value = localStorage.getItem(STORAGE_KEY);
     if (value === 'accepted' || value === 'rejected') return value;
-  } catch {
-    // localStorage may be unavailable (privacy mode, etc.)
+  } catch (error) {
+    void error;
   }
   return null;
 }
@@ -42,8 +42,6 @@ function updateGtagConsent(granted: boolean) {
 export function useCookieConsent() {
   const [consent, setConsent] = useState<CookieConsent>(read);
 
-  // Replay the stored decision to gtag on mount so returning visitors don't
-  // sit on the default-denied signal for a second request cycle.
   useEffect(() => {
     const stored = read();
     if (stored === 'accepted') updateGtagConsent(true);
@@ -66,8 +64,8 @@ export function useCookieConsent() {
   const persist = (value: Exclude<CookieConsent, null>) => {
     try {
       localStorage.setItem(STORAGE_KEY, value);
-    } catch {
-      // ignore
+    } catch (error) {
+      void error;
     }
     setConsent(value);
     updateGtagConsent(value === 'accepted');
@@ -77,8 +75,8 @@ export function useCookieConsent() {
   const reset = () => {
     try {
       localStorage.removeItem(STORAGE_KEY);
-    } catch {
-      // ignore
+    } catch (error) {
+      void error;
     }
     setConsent(null);
     updateGtagConsent(false);

@@ -51,8 +51,6 @@ const RAW_PALETTE_RE =
   /(?:text|bg|border|ring|from|to|via)-(?:primary|neutral|emerald|indigo|amber|rose)-[0-9]/;
 const TEXT_ACCENT_RE = /text-accent-(?:emerald|amber|rose|purple)/;
 
-// Construct via concatenation so this file's source does not contain
-// the literal banned substrings — keeps per-PR rg gates 3/4 green.
 const GLASS_CLASS_RE = new RegExp('\\bgla' + 'ss-(?:card|button)?\\b');
 const GLASS_CLASSNAME_RE = new RegExp('className=.*\\bgla' + 'ss\\b');
 

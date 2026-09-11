@@ -1,5 +1,3 @@
-// Categories domain API. Mirrors backend endpoints/categories.py.
-// Read-only; categories are seeded from backend part_categories_data.
 import { apiClient } from './client';
 import type { CategoryResponse, PartRead } from '../types/Api';
 
@@ -15,7 +13,6 @@ export const categoriesApi = {
       params,
     }),
 
-  // Count endpoints
   getCategoryPartsCount: (categoryId: string) =>
     apiClient.get<{ count: number }>(`/categories/${categoryId}/parts-count`),
   countCategories: () => apiClient.get<{ count: number }>('/categories/count'),

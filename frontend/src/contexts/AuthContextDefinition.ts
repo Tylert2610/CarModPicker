@@ -1,4 +1,3 @@
-// filepath: src/contexts/AuthContextDefinition.ts
 import { createContext } from 'react';
 import type { UserRead } from '../types/Api';
 

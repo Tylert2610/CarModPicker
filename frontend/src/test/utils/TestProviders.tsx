@@ -23,7 +23,6 @@ export const TestProviders: React.FC<TestProvidersProps> = ({
   children,
   initialAuthState = defaultAuthState,
 }) => {
-  // Set up the mock useAuth hook to return the initial state
   mockUseAuth.mockReturnValue({
     isAuthenticated: initialAuthState.isAuthenticated,
     user: initialAuthState.user,

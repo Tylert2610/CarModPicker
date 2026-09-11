@@ -4,14 +4,6 @@ import { apiClient } from '../api/client';
 import { buildApiError, buildResponse } from '../test/apiResponse';
 import useApiRequest from './UseApiRequest';
 
-// Phase 8 D-09 — useApiRequest is the generic wrapper around apiClient that
-// most pages/hooks use for loading/error bookkeeping. We exercise loading,
-// success, and three shapes of error (an envelope message, an envelope
-// carrying per-field `details`, and a plain Error) plus setError/reset.
-//
-// apiClient is already mocked via setup.ts (D-18) — no per-file vi.mock
-// needed.
-
 describe('useApiRequest', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -78,9 +70,6 @@ describe('useApiRequest', () => {
   });
 
   it('shows the envelope message for a validation error', async () => {
-    // The per-field entries live in `details`; the hook surfaces one string, so
-    // it shows `message`. A caller that wants the fields reads
-    // `getApiValidationDetails` instead.
     const err = buildApiError(
       422,
       {
@@ -156,9 +145,6 @@ describe('useApiRequest', () => {
   });
 
   it('forwards apiClient.get rejection through requestFn into error state', async () => {
-    // Second use of vi.mocked(apiClient.*) — asserts the hook plays nicely with
-    // the global setup.ts D-18 mock so callers that wire a real apiClient verb
-    // into requestFn still see the rejection path.
     vi.mocked(apiClient.get).mockRejectedValueOnce(new Error('network down'));
     const requestFn = vi.fn(() => apiClient.get('/health'));
 

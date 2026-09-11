@@ -10,7 +10,6 @@ import { setupApiMocks } from '../mocks/api';
 import { mockAdminUser, mockSuperuserUser, mockUseAuth } from './test-mocks';
 import { AllTheProviders } from './TestWrapper';
 
-// Custom render function that includes providers
 interface CustomRenderOptions extends Omit<RenderOptions, 'wrapper'> {
   route?: string;
   initialAuthState?: {
@@ -20,12 +19,6 @@ interface CustomRenderOptions extends Omit<RenderOptions, 'wrapper'> {
   };
 }
 
-// setup.ts mocks `../api/client` for the whole suite, so every component
-// reaches the same mocked Axios instance whether it imports apiClient directly
-// or goes through a domain API module. Tests assert on
-// `vi.mocked(apiClient.post)` by importing it themselves.
-
-// Mock the useAuth hook
 vi.mock('../../hooks/useAuth', () => ({
   useAuth: () => mockUseAuth(),
 }));
@@ -33,10 +26,8 @@ vi.mock('../../hooks/useAuth', () => ({
 const customRender = (ui: ReactElement, options: CustomRenderOptions = {}) => {
   const { route = '/', initialAuthState, ...renderOptions } = options;
 
-  // Setup API mocks before rendering
   setupApiMocks();
 
-  // Set up route if provided
   if (route !== '/') {
     window.history.pushState({}, 'Test page', route);
   }
@@ -51,14 +42,11 @@ const customRender = (ui: ReactElement, options: CustomRenderOptions = {}) => {
   });
 };
 
-// Re-export everything
 // eslint-disable-next-line react-refresh/only-export-components
 export * from '@testing-library/react';
 
-// Override render method
 export { customRender as render };
 
-// Test data helpers
 export const createMockUser = (overrides = {}) => ({
   id: 1,
   username: 'testuser',
@@ -96,7 +84,7 @@ export const createMockPart = (overrides = {}) => ({
   id: 1,
   name: 'Test Part',
   description: 'Test part description',
-  best_price_cents: 10000, // $100.00
+  best_price_cents: 10000,
   image_urls: ['https://example.com/part.jpg'],
   category_id: 1,
   user_id: 1,
@@ -110,7 +98,6 @@ export const createMockPart = (overrides = {}) => ({
   ...overrides,
 });
 
-// Common test scenarios
 export const testScenarios = {
   authenticated: {
     initialAuthState: {
@@ -133,7 +120,6 @@ export const testScenarios = {
       isLoading: true,
     },
   },
-  // Phase 8 D-05: admin + superuser scenarios for admin-area page + hook tests.
   adminAuthenticated: {
     initialAuthState: {
       isAuthenticated: true,
@@ -150,7 +136,6 @@ export const testScenarios = {
   },
 };
 
-// Common assertions
 export const expectElementToBeInDocument = (element: HTMLElement) => {
   expect(element).toBeInTheDocument();
 };
@@ -178,7 +163,6 @@ export const expectElementToBeEnabled = (element: HTMLElement) => {
   expect(element).toBeEnabled();
 };
 
-// Form testing helpers
 export const fillFormField = (screen: Screen, label: string, value: string) => {
   const field = screen.getByLabelText(label);
   if (field instanceof HTMLInputElement) {
@@ -194,12 +178,10 @@ export const submitForm = (screen: Screen, submitButtonText = 'Submit') => {
   return submitButton;
 };
 
-// Navigation helpers
 export const navigateTo = (route: string) => {
   window.history.pushState({}, 'Test page', route);
 };
 
-// Mock function helpers
 export const createMockFunction = () => {
   return vi.fn();
 };

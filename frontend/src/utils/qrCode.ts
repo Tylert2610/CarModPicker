@@ -60,16 +60,16 @@ const MAX_VERSION = 10;
  */
 const VERSION_SPECS_M: readonly (readonly [number, number, number, number])[] =
   [
-    [16, 10, 1, 0], // version 1
-    [28, 16, 1, 0], // version 2
-    [44, 26, 1, 0], // version 3
-    [64, 18, 2, 0], // version 4
-    [86, 24, 2, 0], // version 5
-    [108, 16, 4, 0], // version 6
-    [124, 18, 4, 0], // version 7
-    [154, 22, 2, 2], // version 8
-    [182, 22, 3, 2], // version 9
-    [216, 26, 4, 1], // version 10
+    [16, 10, 1, 0],
+    [28, 16, 1, 0],
+    [44, 26, 1, 0],
+    [64, 18, 2, 0],
+    [86, 24, 2, 0],
+    [108, 16, 4, 0],
+    [124, 18, 4, 0],
+    [154, 22, 2, 2],
+    [182, 22, 3, 2],
+    [216, 26, 4, 1],
   ];
 
 /**
@@ -98,13 +98,6 @@ export interface QrMatrix {
   modules: boolean[][];
 }
 
-// ---- GF(256) arithmetic ------------------------------------------------------
-//
-// Reed-Solomon over the field the standard fixes: the primitive polynomial
-// 0x11d with generator 2. Log and antilog tables are built once at module load
-// because they are 256 entries and the alternative is a multiply loop per
-// codeword.
-
 const GF_EXP = new Uint8Array(512);
 const GF_LOG = new Uint8Array(256);
 
@@ -118,8 +111,6 @@ const GF_LOG = new Uint8Array(256);
       x ^= 0x11d;
     }
   }
-  // The upper half repeats the lower, so a product of two logs can be read at
-  // `a + b` without a modulo.
   for (let i = 255; i < 512; i += 1) {
     GF_EXP[i] = GF_EXP[i - 255] as number;
   }
@@ -165,8 +156,6 @@ function errorCorrectionCodewords(data: number[], count: number): number[] {
   return remainder;
 }
 
-// ---- bit stream --------------------------------------------------------------
-
 /** Accumulates bits and hands back whole codewords. */
 class BitBuffer {
   private readonly bits: number[] = [];
@@ -208,7 +197,6 @@ function chooseVersion(byteLength: number): number {
       number,
       number,
     ];
-    // 4 bits of mode indicator, then the character count, then the data.
     const countBits = version <= 9 ? 8 : 16;
     const needed = 4 + countBits + byteLength * 8;
     if (needed <= spec[0] * 8) {
@@ -240,19 +228,15 @@ function buildCodewords(data: Uint8Array, version: number): number[] {
   const group1Size = Math.floor(totalData / totalBlocks);
 
   const buffer = new BitBuffer();
-  buffer.put(0b0100, 4); // byte mode
+  buffer.put(0b0100, 4);
   buffer.put(data.length, version <= 9 ? 8 : 16);
   for (const byte of data) {
     buffer.put(byte, 8);
   }
-  // The terminator is up to four zero bits, and fewer when the stream is
-  // already near capacity.
   const remaining = totalData * 8 - buffer.length;
   buffer.put(0, Math.min(4, Math.max(0, remaining)));
 
   const codewords = buffer.toCodewords();
-  // The standard's alternating pad bytes, which give the symbol a mixed
-  // pattern rather than a run of zeros.
   const padBytes = [0xec, 0x11];
   let padIndex = 0;
   while (codewords.length < totalData) {
@@ -288,8 +272,6 @@ function buildCodewords(data: Uint8Array, version: number): number[] {
   return result;
 }
 
-// ---- symbol layout -----------------------------------------------------------
-
 /**
  * Which modules are function patterns rather than data.
  *
@@ -311,8 +293,6 @@ function placeFinderPattern(
   row: number,
   col: number
 ): void {
-  // The 7x7 pattern plus the one module separator around it, which is why the
-  // loop runs from -1 to 7.
   for (let r = -1; r <= 7; r += 1) {
     for (let c = -1; c <= 7; c += 1) {
       const rr = row + r;
@@ -338,7 +318,6 @@ function placeAlignmentPatterns(
   const size = modules.length;
   for (const row of centres) {
     for (const col of centres) {
-      // The three positions that would overlap a finder pattern are skipped.
       const nearFinder =
         (row <= 8 && col <= 8) ||
         (row <= 8 && col >= size - 9) ||
@@ -383,8 +362,6 @@ function reserveFormatAreas(modules: boolean[][], reserved: Reserved): void {
     (reserved[8] as boolean[])[size - 1 - i] = true;
     (reserved[size - 1 - i] as boolean[])[8] = true;
   }
-  // The module at (4 * version + 9, 8) is always dark. Expressed off the size
-  // rather than the version because the size is what is in hand here.
   (modules[size - 8] as boolean[])[8] = true;
   (reserved[size - 8] as boolean[])[8] = true;
 }
@@ -417,8 +394,6 @@ function placeData(
           continue;
         }
         const byte = codewords[bitIndex >>> 3];
-        // Past the end of the data is a light module, which is what the
-        // standard's remainder bits are.
         const bit =
           byte === undefined ? 0 : (byte >>> (7 - (bitIndex & 7))) & 1;
         bitIndex += 1;
@@ -459,7 +434,6 @@ function maskAt(pattern: number, row: number, col: number): boolean {
  * all-light format area, which a reader could not distinguish from no symbol.
  */
 function formatBits(mask: number): number {
-  // Level M is 0b00 in the two bit level field.
   const data = (0b00 << 3) | mask;
   let value = data << 10;
   for (let i = 4; i >= 0; i -= 1) {
@@ -475,8 +449,6 @@ function placeFormatInformation(modules: boolean[][], mask: number): void {
   const bits = formatBits(mask);
   for (let i = 0; i < 15; i += 1) {
     const dark = ((bits >>> i) & 1) === 1;
-    // The first copy runs down the left of the top right finder and along the
-    // top of the bottom left one.
     if (i < 6) {
       (modules[i] as boolean[])[8] = dark;
     } else if (i < 8) {
@@ -484,8 +456,6 @@ function placeFormatInformation(modules: boolean[][], mask: number): void {
     } else {
       (modules[size - 15 + i] as boolean[])[8] = dark;
     }
-    // The second copy is the mirror of the first, so that a symbol with one
-    // damaged corner still reads its format.
     if (i < 8) {
       (modules[8] as boolean[])[size - 1 - i] = dark;
     } else if (i < 9) {
@@ -531,8 +501,6 @@ function placeVersionInformation(
     const col = size - 11 + (i % 3);
     (modules[row] as boolean[])[col] = dark;
     (reserved[row] as boolean[])[col] = true;
-    // The second copy is the transpose, so a symbol read from either side
-    // recovers the version.
     (modules[col] as boolean[])[row] = dark;
     (reserved[col] as boolean[])[row] = true;
   }
@@ -543,7 +511,6 @@ function penaltyScore(modules: boolean[][]): number {
   const size = modules.length;
   let score = 0;
 
-  // Rule 1: runs of five or more same coloured modules in a row or column.
   for (let i = 0; i < size; i += 1) {
     for (const readRow of [true, false]) {
       let run = 1;
@@ -569,7 +536,6 @@ function penaltyScore(modules: boolean[][]): number {
     }
   }
 
-  // Rule 2: every 2x2 block of one colour.
   for (let r = 0; r < size - 1; r += 1) {
     for (let c = 0; c < size - 1; c += 1) {
       const value = (modules[r] as boolean[])[c] as boolean;
@@ -583,9 +549,6 @@ function penaltyScore(modules: boolean[][]): number {
     }
   }
 
-  // Rule 3: the 1:1:3:1:1 finder-like sequence with four light modules on
-  // either side, in either orientation. This is the rule that matters most,
-  // because it is a reader mistaking data for a finder pattern.
   const pattern = [true, false, true, true, true, false, true];
   const quiet = [false, false, false, false];
   const matchesAt = (line: boolean[], start: number, seq: boolean[]): boolean =>
@@ -608,7 +571,6 @@ function penaltyScore(modules: boolean[][]): number {
     }
   }
 
-  // Rule 4: how far the proportion of dark modules is from half.
   let dark = 0;
   for (const row of modules) {
     for (const value of row) {
@@ -649,8 +611,6 @@ export function encodeQrCode(text: string): QrMatrix {
     placeAlignmentPatterns(modules, reserved, version);
     placeTimingPatterns(modules, reserved);
     reserveFormatAreas(modules, reserved);
-    // Before the data, because it both writes modules and reserves them, and
-    // `placeData` fills everything the reserved map leaves free.
     placeVersionInformation(modules, reserved, version);
     placeData(modules, reserved, codewords, mask);
     placeFormatInformation(modules, mask);

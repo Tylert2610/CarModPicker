@@ -25,7 +25,6 @@ function useApiRequest<TData, TPayload = unknown>(
       setIsLoading(true);
       setErrorState(null);
       try {
-        // Use empty object as default payload if none provided
         const actualPayload = (payload ?? {}) as TPayload;
         const response = await requestFn(actualPayload);
         setData(response.data);

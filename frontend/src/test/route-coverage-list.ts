@@ -19,7 +19,6 @@ export interface CoverageRoute {
 }
 
 export const ALL_ROUTES: ReadonlyArray<CoverageRoute> = [
-  // ── public ── 21 entries: 20 real paths + 1 nonexistent to exercise `*` 404
   { path: '/', group: 'public' },
   { path: '/about', group: 'public' },
   { path: '/privacy-policy', group: 'public' },
@@ -46,25 +45,19 @@ export const ALL_ROUTES: ReadonlyArray<CoverageRoute> = [
   { path: '/parts/some-part/edit', group: 'public' },
   { path: '/parts/some-part', group: 'public' },
   { path: '/parts', group: 'public' },
-  // Dev-only kitchen-sink route (S08/T05). Mounted only when
-  // import.meta.env.DEV is true; vitest sets DEV=true so the route exists
-  // during this test and the public boundary must catch its forced throw.
   { path: '/_kitchen-sink', group: 'public' },
   { path: '/nonexistent-route-for-404-test', group: 'public' },
 
-  // ── authentication ── 3 entries (GuestRoute — only reachable when NOT authenticated)
   { path: '/login', group: 'authentication' },
   { path: '/register', group: 'authentication' },
   { path: '/forgot-password', group: 'authentication' },
 
-  // ── builder ── 5 entries (ProtectedRoute + EmailVerifiedRoute — only reachable when AUTHENTICATED + email-verified)
   { path: '/profile', group: 'builder' },
   { path: '/builder', group: 'builder' },
   { path: '/my-parts', group: 'builder' },
   { path: '/checkout', group: 'builder' },
   { path: '/verify-email', group: 'builder' },
 
-  // ── admin ── 9 entries (no auth guard around admin routes in App.tsx)
   { path: '/admin', group: 'admin' },
   { path: '/admin/reports', group: 'admin' },
   { path: '/admin/bug-reports', group: 'admin' },

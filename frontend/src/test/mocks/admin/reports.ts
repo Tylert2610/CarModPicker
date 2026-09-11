@@ -1,7 +1,3 @@
-// Phase 8 D-06: Report fixture factories for admin (Reports / Moderation) tests.
-//
-// Factory pattern per research §Pitfall 6 — every call returns a fresh object
-// so parallel Vitest workers do not leak fixture state across files.
 import type {
   PaginatedResponse,
   ReportRead,

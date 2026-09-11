@@ -152,9 +152,6 @@ export function oauthProviders(
   return cachedAvailability(url, async () => {
     const providers = await fetchProviders(url, fetchImpl);
     if (providers.length === 0) {
-      // Nothing to show, and nothing worth remembering: a backend that answered
-      // an empty set and one that could not be reached are indistinguishable
-      // here, and re-asking on the next mount is cheap.
       return 'unknown';
     }
     lists.set(url, providers);

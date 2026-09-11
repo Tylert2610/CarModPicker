@@ -85,17 +85,16 @@ export class TokenStore {
   set(token: string): void {
     try {
       this.storage.setItem(this.key, token);
-    } catch {
-      // A browser that refuses the write leaves the session in memory only.
-      // Failing the login over it would be worse than a shorter session.
+    } catch (error) {
+      void error;
     }
   }
 
   clear(): void {
     try {
       this.storage.removeItem(this.key);
-    } catch {
-      // Nothing useful to do; the token was already unreachable.
+    } catch (error) {
+      void error;
     }
   }
 }

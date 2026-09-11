@@ -1,6 +1,3 @@
-// Build Lists domain API. Mirrors backend endpoints/build_lists.py.
-// Build-list-scoped vote/report wrappers (legacy) live in their respective
-// `votes.ts` / `reports.ts` modules, not here.
 import { apiClient } from './client';
 import type {
   BuildListCreate,
@@ -24,7 +21,6 @@ export const buildListsApi = {
   deleteBuildList: (buildListId: string) =>
     apiClient.delete<BuildListRead>(`/build-lists/${buildListId}`),
 
-  // List and filter endpoints
   listBuildLists: (params?: {
     skip?: number;
     limit?: number;
@@ -61,16 +57,13 @@ export const buildListsApi = {
   ) =>
     apiClient.get<BuildListRead[]>(`/build-lists/user/${userId}`, { params }),
 
-  // Count endpoint
   countBuildLists: () => apiClient.get<{ count: number }>('/build-lists/count'),
 
-  // Copy build list
   copyBuildList: (buildListId: string, newName?: string) =>
     apiClient.post<BuildListRead>(`/build-lists/${buildListId}/copy`, {
       new_name: newName || null,
     }),
 
-  // Phases (priority groups) for a build list
   getPhases: (buildListId: string) =>
     apiClient.get<BuildListPhaseRead[]>(`/build-lists/${buildListId}/phases`),
   createPhase: (buildListId: string, data: BuildListPhaseCreate) =>
@@ -79,7 +72,6 @@ export const buildListsApi = {
       data
     ),
 
-  // Labor estimates (non-part costs like paint, install, fabrication)
   getLaborEstimates: (buildListId: string) =>
     apiClient.get<BuildListLaborEstimateRead[]>(
       `/build-lists/${buildListId}/labor-estimates`
@@ -93,7 +85,6 @@ export const buildListsApi = {
       data
     ),
 
-  // Image management (build list owner or admin)
   appendBuildListImages: (buildListId: string, fileKeys: string[]) =>
     apiClient.post<BuildListRead>(`/build-lists/${buildListId}/append-images`, {
       file_keys: fileKeys,

@@ -47,14 +47,6 @@ import { ALL_ROUTES, type RouteGroup } from './test/route-coverage-list';
  * Documented in SUMMARY.md under "Auth-redirect mitigation".
  */
 
-// jsdom does not implement ResizeObserver, but App.tsx renders <AdBanner /> on
-// non-promo paths and AdBanner uses ResizeObserver. Without this polyfill the
-// observer construction throws OUTSIDE the per-route boundary (it's a sibling
-// of <Routes>, under the app-root <ErrorBoundary>) and the test would never
-// see the inner RouteGroupBoundary fallback. Stub is a no-op; AdBanner just
-// needs `new ResizeObserver(...)` to not throw — it never observes anything
-// meaningful in jsdom. Constructor accepts (and ignores) the callback so the
-// stub matches the lib.dom ResizeObserver constructor signature.
 class ResizeObserverStub {
   constructor(_cb: ResizeObserverCallback) {
     void _cb;
@@ -64,23 +56,16 @@ class ResizeObserverStub {
   disconnect(): void {}
 }
 if (typeof globalThis.ResizeObserver === 'undefined') {
-  // Cast through unknown because globalThis lacks ResizeObserver in this jsdom
-  // build; the stub only needs the structural surface that AdBanner uses.
   (
     globalThis as unknown as { ResizeObserver: typeof ResizeObserverStub }
   ).ResizeObserver = ResizeObserverStub;
 }
 
-// Hoisted shared state — the vi.mock factories below are hoisted too, and only
-// references declared via vi.hoisted are visible inside them.
 const { throwState, authState } = vi.hoisted(() => ({
   throwState: { shouldThrow: true },
   authState: { isAuthenticated: false, emailVerified: true },
 }));
 
-// Replace lazyWithReload globally so every `lazy(() => import('./pages/...'))`
-// call-site in App.tsx returns the same throwing stub (avoids 40 separate
-// per-page vi.mock blocks).
 vi.mock('./utils/lazyWithReload', () => {
   const ThrowingStub: ComponentType<unknown> = () => {
     if (throwState.shouldThrow) {
@@ -93,9 +78,6 @@ vi.mock('./utils/lazyWithReload', () => {
   };
 });
 
-// App.tsx + Header call useAuth(); App.tsx calls useAppSettings() via
-// useIsPremium*. Mock both so the tree renders under jsdom. authState is
-// mutated per-group in the describe.each setup below.
 vi.mock('./hooks/useAuth', () => ({
   useAuth: () => ({
     isAuthenticated: authState.isAuthenticated,
@@ -128,17 +110,7 @@ vi.mock('./hooks/useAppSettings', () => ({
   }),
 }));
 
-// Import App AFTER vi.mock declarations (vitest hoists vi.mock automatically,
-// but ordering here is intentional for reader clarity).
 import App from './App';
-
-// ALL_ROUTES + RouteGroup are imported from ./test/route-coverage-list so that
-// frontend/e2e/polish-coverage.spec.ts (M003/S05/T06) can consume the same
-// list under the e2e/Playwright tsconfig (which excludes other src/* files).
-// Source-of-truth count:
-//   `grep -cE 'path="' frontend/src/App.tsx` returns 39 (2026-05-16).
-// PR-review rule: any new <Route> in App.tsx requires a matching entry there,
-// otherwise the drift guard below fails CI.
 
 /**
  * Select the auth state that lets a given group's routes actually mount
@@ -151,15 +123,12 @@ function authForGroup(group: RouteGroup): {
 } {
   switch (group) {
     case 'authentication':
-      // GuestRoute redirects away when authenticated → must be unauthenticated.
       return { isAuthenticated: false, emailVerified: true };
     case 'builder':
-      // ProtectedRoute + EmailVerifiedRoute require authenticated + verified.
       return { isAuthenticated: true, emailVerified: true };
     case 'admin':
     case 'public':
     default:
-      // No auth guards → state does not matter; keep unauthenticated.
       return { isAuthenticated: false, emailVerified: true };
   }
 }
@@ -169,8 +138,6 @@ describe('App route coverage (FE-03 drift guard, D-10, D-24)', () => {
   let warnSpy: MockInstance<typeof console.warn>;
 
   beforeEach(() => {
-    // React logs forced throws via console.error; silence them so test output
-    // stays clean while errors are still raised + caught by the boundaries.
     errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     throwState.shouldThrow = true;
@@ -182,12 +149,6 @@ describe('App route coverage (FE-03 drift guard, D-10, D-24)', () => {
   });
 
   it('ALL_ROUTES enumerates at least the current Route count (drift guard)', () => {
-    // If App.tsx adds routes, this floor must be bumped AND the new route
-    // entered into ALL_ROUTES with its correct group. Backend analog:
-    //   backend/tests/test_admin_auth_coverage.py
-    //     ::test_admin_route_count_at_or_above_expected
-    //
-    // Count source: `grep -cE 'path="' frontend/src/App.tsx` returns 39.
     expect(ALL_ROUTES.length).toBeGreaterThanOrEqual(38);
   });
 
@@ -195,16 +156,10 @@ describe('App route coverage (FE-03 drift guard, D-10, D-24)', () => {
     'path=$path group=$group',
     ({ path, group }: { path: string; group: RouteGroup }) => {
       it(`forces child throw; route-group boundary renders fallback with data-route-group="${group}"`, () => {
-        // Select the auth state required for this group's routes to actually
-        // render (instead of being redirected by auth guards before the
-        // throwing stub mounts).
         const { isAuthenticated, emailVerified } = authForGroup(group);
         authState.isAuthenticated = isAuthenticated;
         authState.emailVerified = emailVerified;
 
-        // throwState.shouldThrow === true (set in beforeEach) → mocked
-        // lazyWithReload stub throws on mount → nearest RouteGroupBoundary
-        // catches → fallback UI renders with data-route-group attribute.
         const { container } = render(
           (
             <MemoryRouter initialEntries={[path]}>

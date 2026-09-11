@@ -125,7 +125,7 @@ export interface UserUpdate {
   password?: string | null;
   image_urls?: string[] | null;
   current_password?: string | null;
-  otp?: string | null; // Required if 2FA is enabled and changing password
+  otp?: string | null;
   instagram_url?: string | null;
   facebook_url?: string | null;
   reddit_url?: string | null;
@@ -166,11 +166,10 @@ export interface CarGenerationRead {
   car_model_display_name?: string | null;
   generation_name: string;
   display_name?: string | null;
-  // Server-computed fall-throughs. Guaranteed non-null; prefer these for rendering.
   display_label: string;
   car_model_display_label: string;
   start_year: number;
-  end_year?: number | null; // null for current/ongoing generations
+  end_year?: number | null;
   description?: string | null;
   image_urls?: string[] | null;
 }
@@ -189,7 +188,7 @@ export interface CarGenerationUpdate {
 export interface BuildListCreate {
   name: string;
   description?: string | null;
-  car_id: string; // Required - build lists must be associated with a car
+  car_id: string;
   image_urls?: string[] | null;
   /** Donor car purchase price in cents. Folded into total build cost. */
   base_price_cents?: number;
@@ -230,7 +229,6 @@ export interface BuildListUpdate {
   base_price_cents?: number | null;
 }
 
-// Build Log interfaces
 export interface BuildLogPostCreate {
   content: string;
 }
@@ -269,35 +267,34 @@ export interface BuildLogReadPaginated {
   pagination: PaginationInfo;
 }
 
-// Updated Part interfaces to match new backend schema
 export interface PartCreate {
   name: string;
   description?: string | null;
   image_urls?: string[] | null;
   product_url?: string | null;
   category_id: string;
-  car_ids?: string[] | null; // Car IDs this part fits; ignored when is_universal
-  is_universal?: boolean; // When true, part fits all cars
-  part_manufacturer_id: string; // Required part_manufacturer association
+  car_ids?: string[] | null;
+  is_universal?: boolean;
+  part_manufacturer_id: string;
   part_number?: string | null;
   retailer_id?: string | null;
-  price_cents?: number | null; // Price for this retailer (creates/updates listing)
+  price_cents?: number | null;
 }
 
 export interface PartRead {
   id: string;
   name: string;
   description?: string | null;
-  best_price_cents?: number | null; // Lowest current price from any retailer listing
+  best_price_cents?: number | null;
   image_urls?: string[] | null;
   category_id: string;
   user_id: string;
-  car_ids: string[]; // Car IDs this part is associated with
-  is_universal: boolean; // When true, part fits all cars
-  part_manufacturer_id?: string | null; // Optional part_manufacturer association
+  car_ids: string[];
+  is_universal: boolean;
+  part_manufacturer_id?: string | null;
   part_manufacturer?: string | null;
   part_number?: string | null;
-  canonical_part_id?: string | null; // Set when this part is a duplicate; clients redirect to the canonical
+  canonical_part_id?: string | null;
   edit_count: number;
   created_at: string;
   updated_at: string;
@@ -411,13 +408,12 @@ export interface PartUpdate {
   description?: string | null;
   image_urls?: string[] | null;
   category_id?: string | null;
-  car_ids?: string[] | null; // Car IDs this part fits; ignored when is_universal
+  car_ids?: string[] | null;
   is_universal?: boolean | null;
-  part_manufacturer_id: string; // Required part_manufacturer association
+  part_manufacturer_id: string;
   part_number?: string | null;
 }
 
-// New interfaces for categories
 export interface CategoryResponse {
   id: string;
   name: string;
@@ -448,7 +444,6 @@ export interface CategoryUpdate {
   sort_order?: number | null;
 }
 
-// PartManufacturer interfaces
 export interface PartManufacturerResponse {
   id: string;
   name: string;
@@ -470,7 +465,6 @@ export interface PartManufacturerUpdate {
   is_active?: boolean | null;
 }
 
-// Unified voting system interfaces
 export interface VoteCreate {
   vote_type: 'upvote' | 'downvote';
   entity_type: 'car_generation' | 'build_list' | 'part';
@@ -533,7 +527,6 @@ export interface FlaggedEntitySummary {
   flagged_at: string;
 }
 
-// Unified reporting system interfaces
 export interface ReportCreate {
   reason:
     'inappropriate_content' | 'spam' | 'inaccurate' | 'duplicate' | 'other';
@@ -567,7 +560,6 @@ export interface ReportUpdate {
   admin_notes?: string | null;
 }
 
-// Bug Report interfaces
 export interface BugReportCreate {
   title: string;
   description: string;
@@ -611,7 +603,6 @@ export interface BugReportUpdate {
   assigned_to?: string | null;
 }
 
-// Build list phase (priority group) per build list
 export interface BuildListPhaseRead {
   id: string;
   build_list_id: string;
@@ -629,7 +620,6 @@ export interface BuildListPhaseUpdate {
   sort_order?: number | null;
 }
 
-// Build list labor estimate (standalone non-part cost line item)
 export interface BuildListLaborEstimateRead {
   id: string;
   build_list_id: string;
@@ -656,7 +646,6 @@ export interface BuildListLaborEstimateUpdate {
   sort_order?: number | null;
 }
 
-// Build list part relationship
 export interface BuildListPartCreate {
   part_id?: string | null;
   quantity?: number;
@@ -688,7 +677,6 @@ export interface BuildListPartUpdate {
   build_list_phase_id?: string | null;
 }
 
-// Auth interfaces
 export interface NewPassword {
   password: string;
 }
@@ -710,7 +698,6 @@ export interface BodyResetPassword {
   email: string;
 }
 
-// 2FA types
 export interface TOTPSetupResponse {
   secret: string;
   qr_code_data: string;

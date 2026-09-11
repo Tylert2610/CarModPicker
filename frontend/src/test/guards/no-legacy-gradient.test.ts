@@ -3,11 +3,6 @@ import { globSync } from 'glob';
 import { describe, expect, it } from 'vitest';
 import { resolve } from 'path';
 
-// Construct the forbidden Tailwind v3 gradient prefix at runtime so this guard
-// file itself does not contain that literal token. Plan 06-01 acceptance
-// criterion requires the literal-grep across frontend/src to return zero hits
-// (Rule 1 auto-fix: reconcile plan PART-A body with §verify literal-grep
-// contract). The substring is reassembled below from its hyphenated parts.
 const LEGACY_GRADIENT_PREFIX = ['bg', 'gradient', 'to'].join('-') + '-';
 const LEGACY_GRADIENT_RE = new RegExp(LEGACY_GRADIENT_PREFIX);
 

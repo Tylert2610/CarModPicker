@@ -1,8 +1,3 @@
-// Phase 8 Wave 1 API-module test pattern (PATTERNS.md §7).
-// `vi.mocked(apiClient.method)` and `expect(apiClient.method).toHaveBeenCalledWith(...)`
-// both reference methods as unbound values; the eslint rule `@typescript-eslint/unbound-method`
-// is a false positive here because vitest's mock runtime invokes them via the same
-// `mockApiClient` object identity (see frontend/src/test/setup.ts dual-mock block).
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiClient } from './client';
@@ -241,7 +236,6 @@ describe('partsApi', () => {
       { params: expect.objectContaining({ window: '90d' }) }
     );
     expect(result.data).toEqual(summary);
-    // Object response (not an array) — confirms the new shape is wired.
     expect(Array.isArray(result.data)).toBe(false);
   });
 

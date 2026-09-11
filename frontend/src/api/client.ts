@@ -1,47 +1,3 @@
-// The shared API transport, adapted to the response shape this application
-// already reads.
-//
-// The transport is `@webbpulse/api-client`, which replaced a hand-rolled
-// equivalent that used to live in this file: an axios instance with a request
-// interceptor that attached the bearer token, a response interceptor that
-// stored a rotated token from the `x-new-access-token` header, a
-// `paramsSerializer` that repeated array keys, and three `localStorage`
-// helpers.
-//
-// This file now builds one of two clients, selected by `./authMode`.
-//
-// In `bearer` mode, which is what every environment still runs, it is exactly
-// what it was: the token comes from `localStorage` through `./tokenStore` and
-// goes out as an `Authorization` header, and a rotated token arriving in
-// `x-new-access-token` is written back. `@webbpulse/auth` 0.4.0 removed
-// `TokenStore` outright, which is why that store is local again rather than
-// imported.
-//
-// In `identity` mode the client is handed an `AuthClient` as `auth` instead.
-// That one object holds the access token in memory, refreshes it from an
-// httpOnly cookie, collapses concurrent refreshes into one, and replays a
-// request that came back 401. `./tokenStore` is then unreachable: the three
-// helpers below become a read-through and two no-ops, because writing an access
-// token anywhere a script can read it back is the one thing section 7.1 of the
-// identity standard forbids.
-//
-// What did NOT change is the contract this file exports. Ninety modules under
-// `src/api/`, `src/hooks/` and `src/pages/` read `response.data` off an axios
-// style response and catch a rejected promise on a non 2xx, and the test suite
-// mocks this module with objects of the same shape. So `apiClient` below keeps
-// the `{ data }` envelope and the `{ params }` / `{ headers }` request options,
-// and the adapter that maps between the two is the small block at the bottom.
-// Rewriting 257 call sites to unwrap a different envelope would be a much
-// larger change with no behavioural gain, and the brief for this migration is
-// to adapt at the service boundary instead.
-//
-// `createEnvelopeClient` from the shared package is deliberately not used here.
-// It converts a rejection into `{ data: T | null, error }`, which is what
-// Portfolio's call sites expect. CarModPicker's are the opposite: they `await`
-// into a `try` block, catch the rejection, and read a `data` the types say is
-// never null. Wrapping the client in the envelope would make every one of those
-// call sites silently succeed with `data === null` on a failed request. So this
-// file keeps the throwing client and only reshapes the success value.
 import {
   ApiError,
   createApiClient,
@@ -118,25 +74,8 @@ const identityAuth = AUTH_MODE === 'identity' ? getIdentityClient() : null;
 
 const sharedClient = createApiClient({
   baseUrl: appConfig.apiBaseUrl,
-  // Send cookies on cross-subdomain calls to the API host. Staging sits behind
-  // the access gate, whose CloudFront signed cookies are set on the staging
-  // apex, so a request from www.staging to api.staging only carries them when
-  // the browser is told to include credentials. Both backends run CORS with
-  // allow_credentials and an explicit origin list, so this is safe in every
-  // environment; auth itself still rides on the Bearer token below.
-  //
-  // This is the shared client's default, stated explicitly because it is load
-  // bearing here rather than incidental. In identity mode it is load bearing
-  // twice over: the refresh cookie is httpOnly and only travels on a
-  // credentialed request.
   credentials: 'include',
   timeoutMs: 30000,
-  // Exactly one of these two branches is live in a given bundle. In identity
-  // mode `auth` supplies the token and owns refreshing it; in bearer mode
-  // `getAuthToken` reads `localStorage` and `onTokenRefresh` writes back the
-  // rotated token the API sends in `x-new-access-token`, for example after a
-  // username change. Handing the client both would let a stale stored token
-  // shadow the in-memory one.
   ...(identityAuth !== null
     ? { auth: identityAuth }
     : { getAuthToken: getStoredToken, onTokenRefresh: setStoredToken }),
@@ -223,7 +162,6 @@ const toRequestOptions = (
     const contentType =
       key.toLowerCase() === 'content-type' ? value.toLowerCase() : undefined;
     if (contentType?.includes('multipart/form-data') === true) {
-      // Dropped on purpose: the browser must supply the boundary.
       continue;
     }
     if (contentType?.includes('application/x-www-form-urlencoded') === true) {
@@ -237,11 +175,6 @@ const toRequestOptions = (
         for (const [field, fieldValue] of Object.entries(
           encodedBody as Record<string, unknown>
         )) {
-          // Only primitives are encodable. A nested object has no
-          // form-urlencoded representation and would be appended as the
-          // literal string "[object Object]", which the backend would accept
-          // and then fail to parse. Skipping it surfaces the missing field at
-          // the API instead of sending a corrupt value.
           if (
             typeof fieldValue === 'string' ||
             typeof fieldValue === 'number' ||
@@ -252,8 +185,6 @@ const toRequestOptions = (
         }
         encodedBody = search;
       }
-      // `URLSearchParams` already carries this content type, so the header is
-      // not forwarded either way.
       continue;
     }
     headers[key] = value;

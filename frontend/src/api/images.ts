@@ -1,7 +1,3 @@
-// Images domain API. Mirrors backend endpoints/images.py.
-//
-// Co-located response types per D-04. The admin bucket-summary types are
-// authoritative here and `admin.ts` imports them from this module.
 import { apiClient } from './client';
 
 export interface ImageUploadResponse {

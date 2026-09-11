@@ -1,5 +1,3 @@
-// Utility / health API. No backend domain mirror — these are top-level
-// liveness / root probes.
 import { apiClient } from './client';
 
 export const utilityApi = {

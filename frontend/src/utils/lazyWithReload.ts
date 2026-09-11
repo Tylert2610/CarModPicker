@@ -19,11 +19,6 @@ function isChunkLoadError(error: unknown): boolean {
  * forces a one-time hard reload to fetch the fresh asset manifest. A
  * sessionStorage flag prevents an infinite reload loop if the failure is real.
  */
-// Generic bound: `ComponentType<Record<string, unknown>>` (D-06 Option B).
-// `ComponentType<unknown>` was tried first (Option A) but fails inference for
-// route-component `FC<{}>` exports because `unknown` is not assignable to `{}`.
-// `Record<string, unknown>` accepts both no-prop route components and any
-// object-prop component while still removing `any` from the public API.
 export function lazyWithReload<
   T extends ComponentType<Record<string, unknown>>,
 >(factory: () => Promise<{ default: T }>) {

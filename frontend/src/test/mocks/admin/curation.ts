@@ -1,8 +1,3 @@
-// Phase 8 D-06: canonical-link-group / curation fixture factories for
-// admin canonical-part curation tab tests.
-//
-// Factory pattern per research §Pitfall 6 — every call returns a fresh object
-// so parallel Vitest workers do not leak fixture state across files.
 import type {
   CanonicalLinkGroupMember,
   CanonicalLinkGroupResponse,

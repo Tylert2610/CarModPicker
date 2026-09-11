@@ -1,9 +1,3 @@
-// Phase 8 Wave 1 API-module test pattern (PATTERNS.md §7).
-// `vi.mocked(apiClient.method)` + `expect(apiClient.method).toHaveBeenCalledWith(...)`
-// reference methods as unbound values; `@typescript-eslint/unbound-method` is a
-// false positive here because vitest invokes them via the same `mockApiClient`
-// object identity (see frontend/src/test/setup.ts dual-mock block).
-
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiClient } from './client';
 import { buildListPartsApi } from './build_list_parts';

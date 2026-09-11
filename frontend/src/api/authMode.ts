@@ -116,12 +116,8 @@ export const identityAvailability = (
 } => ({
   password: true,
   totp: true,
-  // Shipped in both mechanisms as of `@webbpulse/auth` 0.8.0 and
-  // webbpulse-python 0.16.0. See the module note.
   passkeys: true,
   googleOauth: true,
-  // Only the identity service issues recovery codes; the legacy TOTP flow has
-  // none, which is why a cutover prompts every enrolled user to generate a set.
   recoveryCodes: mode === 'identity',
 });
 

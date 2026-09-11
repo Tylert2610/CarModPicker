@@ -1,7 +1,3 @@
-// App Settings domain API. Mirrors backend endpoints/app_settings.py.
-//
-// Co-located response types per D-04 (these are not pydantic-generated and
-// only consumed via this domain module).
 import { apiClient } from './client';
 
 export interface AppSettings {

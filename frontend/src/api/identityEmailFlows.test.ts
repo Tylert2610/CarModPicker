@@ -1,14 +1,3 @@
-// The two "mail me a link" routes, across both mechanisms.
-//
-// These two are worth their own file because they are the pair most easily got
-// wrong at cutover, and the failure is invisible until a user clicks a link.
-// Whichever service sends the mail also builds the URL inside it and is the
-// only one that can confirm the token it carries. Request from one mechanism,
-// land the user on the other's confirm page, and the link fails every time
-// while both halves look correct in isolation.
-//
-// So the assertion that matters is not the return value but *which* mechanism
-// was asked. Each case pins the call itself.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 type Stub = Record<string, ReturnType<typeof vi.fn>>;
@@ -58,15 +47,10 @@ describe('requestPasswordReset', () => {
       message: 'If that address has an account, a link is on its way.',
     });
     expect(request).toHaveBeenCalledWith({ email: 'user@example.com' });
-    // The legacy route must not also have run: two mails, one of which has a
-    // link that cannot be confirmed.
     expect(post).not.toHaveBeenCalled();
   });
 
   it("renders the server's own sentence rather than a local one", async () => {
-    // Section 5.4 fixes this wording on the server precisely so that one
-    // carefully phrased line is what users see. A local fallback that quietly
-    // won would be a regression no type checks.
     const request = vi.fn().mockResolvedValue({
       ok: true,
       detail: 'If that address has an account, a link is on its way.',
@@ -87,7 +71,6 @@ describe('requestPasswordReset', () => {
     });
     const outcome = await requestPasswordReset('user@example.com');
     expect(outcome.ok).toBe(true);
-    // Still says nothing about whether the account exists.
     expect(outcome.message).toMatch(/if an account with that email exists/i);
   });
 

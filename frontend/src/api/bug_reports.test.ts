@@ -1,10 +1,3 @@
-// Phase 8 Wave 1 API-module test pattern (PATTERNS.md §7).
-// `vi.mocked(apiClient.method)` and `expect(apiClient.method).toHaveBeenCalledWith(...)`
-// both reference methods as unbound values; the eslint rule `@typescript-eslint/unbound-method`
-// is a false positive here because vitest's mock runtime invokes them via the same
-// `mockApiClient` object identity (see frontend/src/test/setup.ts dual-mock block).
-// `expect.objectContaining(...)` returns `any`, which trips no-unsafe-assignment when
-// passed as a property value — also a false positive in this matcher pattern.
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiClient } from './client';
@@ -17,9 +10,6 @@ import type {
   PaginatedResponse,
 } from '../types/Api';
 
-// Reusable BugReportRead fixture — matches backend response shape.
-// bug_reports.ts uses pure JSON (no FormData); the FormData path
-// lives in pages/BugReport.tsx, not in this API module.
 const makeBugReport = (
   overrides: Partial<BugReportRead> = {}
 ): BugReportRead => ({
@@ -85,7 +75,6 @@ describe('bugReportsApi', () => {
     await bugReportsApi.createBugReport(body);
 
     expect(apiClient.post).toHaveBeenCalledWith('/bug-reports/', body);
-    // Assert the body is plain JSON, not FormData.
     const postCalls = vi.mocked(apiClient.post).mock.calls;
     expect(postCalls.length).toBeGreaterThan(0);
     const firstCall = postCalls[0];

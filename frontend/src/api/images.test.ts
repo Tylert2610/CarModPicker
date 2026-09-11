@@ -1,12 +1,3 @@
-// Phase 8 plan 08-02: imageApi coverage tests.
-//
-// Covers every method on `imageApi` (7 total) including the FormData-based
-// `uploadImage` path (POST /images/upload?entity_type=X&entity_id=Y with
-// a multipart/form-data header). See PATTERNS.md §7 for the canonical Wave 1
-// scaffold.
-//
-// apiClient is auto-mocked by setup.ts (Phase 8 D-18). Narrow the HTTP verbs
-// at module scope via MockedFunction cast.
 import {
   beforeEach,
   describe,
@@ -47,12 +38,10 @@ describe('imageApi — uploadImage (FormData)', () => {
       { headers: { 'Content-Type': 'multipart/form-data' } }
     );
 
-    // Inspect FormData contents — confirms file is appended under key 'file'.
     const fd = postMock.mock.calls[0]?.[1] as FormData;
     expect(fd).toBeInstanceOf(FormData);
     expect(fd.get('file')).toBe(file);
 
-    // Method unwraps to response.data directly (not the full AxiosResponse).
     expect(result.file_key).toBe('uploads/part/test.jpg');
   });
 

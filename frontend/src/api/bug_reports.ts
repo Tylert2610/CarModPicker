@@ -1,4 +1,3 @@
-// Bug Reports domain API. Mirrors backend endpoints/bug_reports.py.
 import { apiClient } from './client';
 import type {
   BugReportCreate,

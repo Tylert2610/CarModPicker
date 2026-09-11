@@ -1,5 +1,3 @@
-// Build List Parts domain API. Mirrors backend endpoints/build_list_parts.py.
-// Relationships between global parts and build lists.
 import { apiClient } from './client';
 import type {
   BuildListPartCreate,
@@ -10,7 +8,6 @@ import type {
 } from '../types/Api';
 
 export const buildListPartsApi = {
-  // Create a new global part and add it to a build list as a build list part
   createPartAndAddToBuildList: (
     buildListId: string,
     partData: PartCreate,
@@ -35,7 +32,6 @@ export const buildListPartsApi = {
         build_list_phase_id: buildListPartData.build_list_phase_id ?? undefined,
       }
     ),
-  // Add an existing global part to a build list as a build list part
   addPartToBuildList: (
     buildListId: string,
     partId: string,
@@ -48,7 +44,6 @@ export const buildListPartsApi = {
         build_list_phase_id: data.build_list_phase_id ?? undefined,
       }
     ),
-  // Update a build list part (notes, etc.) by build list and global part IDs
   updateBuildListPart: (
     buildListId: string,
     partId: string,
@@ -58,7 +53,6 @@ export const buildListPartsApi = {
       `/build-list-parts/${buildListId}/parts/${partId}`,
       data
     ),
-  // Update a build list part by its own ID
   updateBuildListPartById: (
     buildListPartId: string,
     data: BuildListPartUpdate
@@ -67,28 +61,22 @@ export const buildListPartsApi = {
       `/build-list-parts/${buildListPartId}`,
       data
     ),
-  // Remove a build list part from a build list (doesn't delete the global part)
   removeBuildListPart: (buildListId: string, partId: string) =>
     apiClient.delete<BuildListPartRead>(
       `/build-list-parts/${buildListId}/parts/${partId}`
     ),
-  // Delete a build list part by its own ID
   deleteBuildListPartById: (buildListPartId: string) =>
     apiClient.delete<BuildListPartRead>(`/build-list-parts/${buildListPartId}`),
-  // Get all build list parts in a build list (basic info)
   getBuildListPartsBasic: (buildListId: string) =>
     apiClient.get<BuildListPartRead[]>(`/build-list-parts/${buildListId}`),
-  // Get all build list parts in a build list (with global part details)
   getBuildListParts: (buildListId: string) =>
     apiClient.get<BuildListPartReadWithPart[]>(
       `/build-list-parts/${buildListId}/parts`
     ),
-  // Count build lists containing a specific global part
   countBuildListsContainingPart: (partId: string) =>
     apiClient.get<{ count: number }>(
       `/build-list-parts/parts/${partId}/build-lists/count`
     ),
-  // Count all build list parts
   countBuildListParts: () =>
     apiClient.get<{ count: number }>('/build-list-parts/count'),
 };

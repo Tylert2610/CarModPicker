@@ -1,8 +1,3 @@
-// Phase 8 D-06: BackgroundJob fixture factories for admin (CrawlerAdmin) tests.
-//
-// Factory pattern (not mutable singletons) per research §Pitfall 6 — Vitest
-// parallelizes per-file, so a shared mutable list would leak between workers.
-// Every call returns a fresh object.
 import type { BackgroundJob, BackgroundJobList } from '../../../api/admin';
 
 export const makeJob = (

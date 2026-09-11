@@ -1,5 +1,3 @@
-// Car Generations domain API. Mirrors backend endpoints/car_generations.py.
-// Read-only; cars are seeded from backend car_generations_data.
 import { apiClient } from './client';
 import type { CarGenerationRead } from '../types/Api';
 
@@ -32,7 +30,6 @@ export const carGenerationsApi = {
     apiClient.get<CarGenerationRead[]>('/car-generations/by-ids', {
       params: { ids },
     }),
-  // Stats and count endpoints
   getCarMakeStats: () =>
     apiClient.get<Record<string, number>>('/car-generations/stats/car-makes'),
   countCars: () => apiClient.get<{ count: number }>('/car-generations/count'),

@@ -1,7 +1,3 @@
-// Search domain API. Mirrors backend endpoints/search.py.
-//
-// Co-located response types per D-04 (these are not pydantic-generated; they
-// describe the bespoke search-result envelope produced by the search router).
 import { apiClient } from './client';
 import type { BuildListRead, PartRead, PublicUserRead } from '../types/Api';
 

@@ -55,8 +55,6 @@ export const identityOriginFrom = (apiBaseUrl: string): string => {
   try {
     return new URL(apiBaseUrl).origin;
   } catch {
-    // A root-relative base means the API shares the page's origin, so the
-    // identity routes do too and an empty base is exactly right.
     if (apiBaseUrl.startsWith('/')) return '';
     return apiBaseUrl;
   }
@@ -127,32 +125,14 @@ export const getIdentityClient = (): AuthClient<unknown> | null => {
   if (built) return client;
   built = true;
   if (AUTH_MODE !== 'identity') return null;
-  // The origin, not `appConfig.apiBaseUrl`. See `identityOriginFrom`.
-  //
-  // An empty origin means the API shares the page's origin, which is the dev
-  // and same-host case. `createAuthClient` rejects an empty `baseUrl` outright
-  // ("requires either baseUrl or an existing client"), so the page's own origin
-  // is named explicitly rather than left implicit. That resolves to exactly the
-  // same requests, and keeps the one code path that would otherwise throw at
-  // first use in a dev bundle from ever being reached.
   const origin = identityOriginFrom(appConfig.apiBaseUrl);
   client = createAuthClient({
     baseUrl: origin === '' ? globalThis.location.origin : origin,
     clientOptions: {
-      // The refresh token is an httpOnly cookie the page cannot read, so the
-      // refresh call only works if the browser is told to send it. This is
-      // load bearing rather than incidental.
       credentials: 'include',
       timeoutMs: 30000,
     },
-    // Null in every real bundle, which leaves the package on its
-    // `navigator.credentials` default. See `setWebAuthnAdapterForTests`.
     ...(webAuthnAdapter === null ? {} : { webAuthn: webAuthnAdapter }),
-    // Deliberately no `loadUser`. `AuthClient` would call it after every
-    // successful login and refresh, and this application already has one place
-    // that fetches the user, `AuthContext.checkAuthStatus`, which reads roughly
-    // twenty `UserRead` fields that no token claim carries. Two fetchers for
-    // one thing is how the two copies drift.
   });
   return client;
 };

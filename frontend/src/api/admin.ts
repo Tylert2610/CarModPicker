@@ -1,13 +1,6 @@
-// Admin domain API. Mirrors backend endpoints/admin/*.
-//
-// All admin-specific response types are co-located here per D-04. Re-imports
-// `BucketEntityTypeCountResponse` from `./images` to avoid duplicating the
-// images-bucket type that's already authoritative there.
 import { apiClient } from './client';
 import type { BucketEntityTypeCountResponse } from './images';
 
-// Re-export the cross-domain images bucket type so admin call sites can pull
-// it from this module alongside the admin-specific types.
 export type { BucketEntityTypeCountResponse };
 
 export interface MigrationResult {
@@ -266,12 +259,6 @@ export interface CrawlerReconcileAllResponse {
   results: CrawlerReconcileResult[];
 }
 
-// Extraction-health (admin only) — mirrors backend Pydantic models in
-// `backend/app/api/endpoints/admin/extraction_health.py`. Per MEM046/D009 the
-// failure-rate signal is sourced from `crawled_pages.parse_status` over a
-// 7-day rolling window (NOT CloudWatch EMF). Per MEM037 the canonical adapter
-// count is 108 (T0:83 / T1:15 / T2:10).
-
 /** Per-tier coverage block: parts with any specs + per-field presence ratios. */
 export interface CoverageTierBlock {
   parts_with_specs: number;
@@ -327,7 +314,6 @@ export const adminApi = {
   initPartCategories: () =>
     apiClient.post<InitDataResult>('/admin/db-ops/init/part-categories'),
 
-  // Crawlers
   getCrawlers: () =>
     apiClient.get<{
       adapters: string[];
@@ -402,7 +388,6 @@ export const adminApi = {
   getCrawlBucketSummary: () =>
     apiClient.get<CrawlBucketSummaryResponse>('/admin/stats/crawl-bucket'),
 
-  // Background jobs
   listJobs: (params?: {
     status?: string;
     job_type?: string;
@@ -416,7 +401,6 @@ export const adminApi = {
   cancelJob: (jobId: string) =>
     apiClient.post<BackgroundJob>(`/admin/jobs/${jobId}/cancel`),
 
-  // Crawler schedules (user-defined, N-to-N with adapters, reconciled to EventBridge)
   listCrawlerSchedules: () =>
     apiClient.get<CrawlerScheduleList>('/admin/crawler-schedules/'),
   createCrawlerSchedule: (body: CrawlerScheduleCreate) =>
@@ -433,7 +417,6 @@ export const adminApi = {
       '/admin/crawler-schedules/reconcile'
     ),
 
-  // Per-adapter retailer tuning (used by every schedule the adapter is in)
   listCrawlerAdapterConfigs: () =>
     apiClient.get<CrawlerAdapterConfigList>('/admin/crawler-adapter-configs/'),
   updateCrawlerAdapterConfig: (
@@ -445,7 +428,6 @@ export const adminApi = {
       body
     ),
 
-  // Canonical-part curation (admin-only)
   getPartLinkGroup: (partId: string) =>
     apiClient.get<CanonicalLinkGroupResponse>(
       `/admin/parts/${partId}/link-group`

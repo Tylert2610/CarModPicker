@@ -15,19 +15,10 @@ import type { UserRead } from '../types/Api';
 import { mockUser } from '../test/mocks/api';
 import { testScenarios } from '../test/utils/test-utils';
 
-// Phase 8 D-09 — useIsPremium composes useAuth + useAppSettings, so the
-// renderHook wrapper stacks both context providers. Tests exercise each
-// subscription_tier branch AND the premium_disabled admin kill-switch branch.
-// .ts (not .tsx) — wrapper is built via React.createElement.
-
 function authValue(
   scenario: (typeof testScenarios)[keyof typeof testScenarios],
   userOverride?: UserRead | null
 ): AuthContextType {
-  // Do NOT pull `user` from scenario.initialAuthState — createMockUser() in
-  // test-utils.tsx returns a legacy shape that does not satisfy UserRead.
-  // All callers of authValue pass a UserRead explicitly (or omit for the
-  // unauthenticated case where `user` is null).
   const base = scenario.initialAuthState;
   return {
     isAuthenticated: base.isAuthenticated,

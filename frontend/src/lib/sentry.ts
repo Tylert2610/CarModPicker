@@ -34,13 +34,8 @@ const AUTH_PATHS = [
 ];
 
 export function initSentry(): void {
-  // Gate 1: never initialize in local dev (noise + wrong env tag).
   if (import.meta.env.MODE === 'development') return;
 
-  // Gate 2: no DSN → no-op (T-02-TEST-POLLUTION: vitest sets MODE=test but
-  // leaves VITE_SENTRY_DSN unset, so tests hit this return path).
-  // Bracket access required for custom env vars (noPropertyAccessFromIndexSignature);
-  // cast to string because Vite env index-signature values are typed as `any`.
   const dsn = import.meta.env['VITE_SENTRY_DSN'] as string | undefined;
   if (!dsn) return;
 
@@ -48,20 +43,18 @@ export function initSentry(): void {
 
   Sentry.init({
     dsn,
-    environment: import.meta.env.MODE, // "staging" | "production"
+    environment: import.meta.env.MODE,
     release,
-    sendDefaultPii: false, // D-36 + Landmine 11 (v10 strict IP exclusion)
-    tracesSampleRate: 0.05, // D-38
-    replaysSessionSampleRate: 0, // D-32 — zero ambient replay
-    replaysOnErrorSampleRate: 1.0, // D-32 — 100% on error
+    sendDefaultPii: false,
+    tracesSampleRate: 0.05,
+    replaysSessionSampleRate: 0,
+    replaysOnErrorSampleRate: 1.0,
     integrations: [
       Sentry.browserTracingIntegration(),
       Sentry.replayIntegration({
-        maskAllText: true, // D-36
-        maskAllInputs: true, // D-36
+        maskAllText: true,
+        maskAllInputs: true,
         blockAllMedia: true,
-        // D-37: returning false here drops the replay; the error event itself
-        // still reports (Landmine 14).
         beforeErrorSampling: () => {
           const path = window.location.pathname;
           return !AUTH_PATHS.some((p) => path.startsWith(p));

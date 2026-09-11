@@ -8,9 +8,6 @@ import type {
   PriceHistorySummary,
 } from '../types/Api';
 
-// apiClient is mocked globally via setup.ts (D-18) — extend per-test with
-// vi.mocked(apiClient.post).mockResolvedValueOnce(...) / mockRejectedValueOnce.
-
 function makeSummary(
   overrides: Partial<PriceHistorySummary> = {}
 ): PriceHistorySummary {
@@ -44,7 +41,6 @@ describe('usePartPriceSummaries', () => {
 
   it('short-circuits when partIds is empty (no fetch fired)', async () => {
     const { result } = renderHook(() => usePartPriceSummaries([]));
-    // Give the effect a microtask to run.
     await waitFor(() => {
       expect(result.current.isLoading).toBe(false);
     });
@@ -110,9 +106,8 @@ describe('usePartPriceSummaries', () => {
       expect(vi.mocked(apiClient.post)).toHaveBeenCalledTimes(1);
     });
 
-    // Rerender with a NEW array reference but same membership → still one call.
     rerender({ ids: ['a', 'b'] });
-    rerender({ ids: ['b', 'a'] }); // sort-stable key — still same key
+    rerender({ ids: ['b', 'a'] });
     await act(async () => {
       await Promise.resolve();
     });

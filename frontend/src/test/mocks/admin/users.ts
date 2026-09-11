@@ -1,11 +1,3 @@
-// Phase 8 D-06: admin-user view factories for Admin Users tab tests.
-//
-// Factory pattern per research §Pitfall 6 — every call returns a fresh object
-// so parallel Vitest workers do not leak fixture state across files.
-//
-// The admin Users tab consumes `UserRead` shaped records; there is no separate
-// backend "AdminUserView" type today. If the backend later introduces one,
-// swap the import here — the call sites use `makeAdminUserView()` only.
 import type { UserRead } from '../../../types/Api';
 
 export const makeAdminUserView = (

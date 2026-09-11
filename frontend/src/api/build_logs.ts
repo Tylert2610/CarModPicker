@@ -1,4 +1,3 @@
-// Build Logs domain API. Mirrors backend endpoints/build_logs.py.
 import { apiClient } from './client';
 import type {
   BuildLogPostCreate,

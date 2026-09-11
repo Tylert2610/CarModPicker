@@ -1,16 +1,3 @@
-// Tests for searchApi (frontend/src/api/search.ts).
-// Plan 08-06 (Wave 1, Utility cluster).
-//
-// Canonical scaffold: PATTERNS.md §7. apiClient is auto-mocked by
-// frontend/src/test/setup.ts (D-18), so no per-file vi.mock is required.
-//
-// Narrow the mocked HTTP-verb references at module scope via a cast to
-// `MockedFunction<typeof apiClient.<verb>>`. setup.ts installs a vi.fn()
-// for every verb, so this cast is accurate. Accessing each verb once here
-// avoids tripping two strict-lint rules at every call site:
-//   - @typescript-eslint/unbound-method (method reference of a class)
-//   - @typescript-eslint/no-unsafe-call (vi.mocked(apiClient) returns an
-//     `error`-typed object for AxiosInstance)
 import {
   beforeEach,
   describe,
@@ -22,10 +9,6 @@ import {
 import { apiClient } from './client';
 import { searchApi, type SearchResults } from './search';
 import { mockBuildList, mockPart, mockUser } from '../test/mocks/api';
-
-// setup.ts (D-18) installs `vi.fn()` for every HTTP verb; the cast below
-// reflects the mocked reality. The original AxiosInstance method IS unbound
-// in general, but here apiClient IS the mock object, so the cast is safe.
 
 const getMock = apiClient.get as MockedFunction<typeof apiClient.get>;
 

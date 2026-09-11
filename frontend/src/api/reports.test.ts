@@ -1,10 +1,3 @@
-// Phase 8 Wave 1 API-module test pattern (PATTERNS.md §7).
-// `vi.mocked(apiClient.method)` and `expect(apiClient.method).toHaveBeenCalledWith(...)`
-// both reference methods as unbound values; the eslint rule `@typescript-eslint/unbound-method`
-// is a false positive here because vitest's mock runtime invokes them via the same
-// `mockApiClient` object identity (see frontend/src/test/setup.ts dual-mock block).
-// `expect.objectContaining(...)` returns `any`, which trips no-unsafe-assignment when
-// passed as a property value — also a false positive in this matcher pattern.
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiClient } from './client';
@@ -18,7 +11,6 @@ import type {
   ReportWithDetails,
 } from '../types/Api';
 
-// Reusable ReportRead fixture.
 const makeReportRead = (overrides: Partial<ReportRead> = {}): ReportRead => ({
   id: '77777777-7777-7777-8777-777777777777',
   user_id: '11111111-1111-7111-8111-111111111111',
@@ -63,8 +55,6 @@ describe('reportsApi (polymorphic)', () => {
     vi.clearAllMocks();
   });
 
-  // --- reportEntity — polymorphic dispatch ---
-
   it('reportEntity POSTs to /reports/part/:id for entity_type=part', async () => {
     const body: ReportCreate = {
       reason: 'spam',
@@ -100,8 +90,6 @@ describe('reportsApi (polymorphic)', () => {
       body
     );
   });
-
-  // --- getReports / getReportsWithDetails ---
 
   it('getReports GETs /reports/admin/list with no params', async () => {
     vi.mocked(apiClient.get).mockResolvedValueOnce({ data: [] });
@@ -184,8 +172,6 @@ describe('reportsApi (polymorphic)', () => {
     );
   });
 
-  // --- getMyReports (user-facing) ---
-
   it('getMyReports GETs /reports/my-reports with params', async () => {
     vi.mocked(apiClient.get).mockResolvedValueOnce({ data: [] });
 
@@ -200,8 +186,6 @@ describe('reportsApi (polymorphic)', () => {
     });
   });
 
-  // --- getReport ---
-
   it('getReport GETs /reports/:id', async () => {
     vi.mocked(apiClient.get).mockResolvedValueOnce({
       data: makeReportWithDetails(),
@@ -213,8 +197,6 @@ describe('reportsApi (polymorphic)', () => {
     expect(apiClient.get).toHaveBeenCalledWith(`/reports/${report.id}`);
     expect(result.data).toMatchObject({ id: report.id });
   });
-
-  // --- updateReport ---
 
   it('updateReport PUTs body to /reports/:id', async () => {
     const report = makeReportRead();
@@ -231,8 +213,6 @@ describe('reportsApi (polymorphic)', () => {
     expect(apiClient.put).toHaveBeenCalledWith(`/reports/${report.id}`, body);
   });
 
-  // --- deleteReport ---
-
   it('deleteReport DELETEs /reports/:id', async () => {
     const report = makeReportRead();
     vi.mocked(apiClient.delete).mockResolvedValueOnce({
@@ -243,8 +223,6 @@ describe('reportsApi (polymorphic)', () => {
 
     expect(apiClient.delete).toHaveBeenCalledWith(`/reports/${report.id}`);
   });
-
-  // --- countReports ---
 
   it('countReports GETs /reports/count', async () => {
     vi.mocked(apiClient.get).mockResolvedValueOnce({ data: { count: 9 } });

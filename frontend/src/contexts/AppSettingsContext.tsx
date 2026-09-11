@@ -17,8 +17,6 @@ export const AppSettingsProvider: React.FC<{ children: ReactNode }> = ({
       const response = await appSettingsApi.get();
       setSettings(response.data);
     } catch {
-      // If the public settings endpoint is unreachable, default to "ads enabled" —
-      // i.e. leave settings null so isPremium() is the only gate. Don't surface errors.
       setSettings(null);
     } finally {
       setIsLoading(false);

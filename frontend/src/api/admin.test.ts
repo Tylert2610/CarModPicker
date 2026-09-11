@@ -1,23 +1,3 @@
-// Phase 8 plan 08-07: adminApi coverage tests.
-//
-// admin.ts is 421 lines — the single largest API module. Per RESEARCH.md §2 it
-// gets its own plan so the PR stays reviewable. Tests cover every method on
-// `adminApi` (~32 methods across 10 sub-surfaces).
-//
-// setup.ts installs a shared `mockApiClient` for `../api/client`, so importing
-// `apiClient` from `./client` gives us the mocked surface automatically — no
-// per-file vi.mock needed. Fixture factories come from
-// `src/test/mocks/admin/*.ts`.
-//
-// Lint note: `@typescript-eslint/unbound-method` (enabled by the recommended-
-// type-checked preset + Phase 6 D-05 removing the test-file override) fires on
-// both `expect(apiClient.post)` and `vi.mocked(apiClient.post)` because
-// `apiClient.post` appears as a detached method reference in the argument
-// position — the rule fires before control reaches the runtime unbound call.
-// This is the canonical vitest pattern for API-module tests (we MUST reference
-// the method to set up mocks and assert call shape), so we disable the rule
-// file-wide here. Matches the pattern every Wave 1 API test file will adopt.
-
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiClient } from './client';
 import { adminApi, type ExtractionHealthResponse } from './admin';

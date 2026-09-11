@@ -1,17 +1,3 @@
-// Phase 8 plan 08-09 (D-10) — provider test for AppSettingsContext.
-//
-// Covers the provider-internal state transitions:
-//   - initial mount fetch via appSettingsApi.get() resolves → settings populated
-//   - fetch-failure path → settings remain null, isLoading flips to idle
-//   - setSettings direct update → consumer re-renders with new value
-//   - refresh() re-fetches settings (second apiClient call)
-//
-// The provider does NOT call useNavigate, so no MemoryRouter wrap is needed.
-//
-// The provider reads settings through `appSettingsApi` from
-// `../api/app_settings`, so this file mocks that module directly and swaps its
-// two methods for hoisted spies.
-
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -21,8 +7,6 @@ const { mockGet, mockUpdate } = vi.hoisted(() => ({
   mockUpdate: vi.fn(),
 }));
 
-// Replace appSettingsApi's two methods with hoisted spies so the provider's
-// fetch and refresh paths are observable, keeping the module's other exports.
 vi.mock('../api/app_settings', async () => {
   const actual = await vi.importActual<typeof import('../api/app_settings')>(
     '../api/app_settings'
@@ -136,8 +120,6 @@ describe('AppSettingsContext provider', () => {
     expect(screen.getByTestId('updated-at').textContent).toBe(
       disabledSettings.updated_at
     );
-    // setSettings is a direct state mutation — the provider does NOT issue a
-    // second GET.
     expect(mockGet).toHaveBeenCalledTimes(1);
   });
 

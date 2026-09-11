@@ -1,11 +1,3 @@
-// Votes domain API. Mirrors backend endpoints/votes.py (polymorphic).
-// Both mutating calls resolve to VoteMutationResult: the vote plus the entity's
-// tallies as of that write. Callers should render those counts rather than
-// re-reading the summary, which is what split plan row 24 made eventually
-// consistent for parts.
-// The polymorphic `votesApi` is the canonical surface; `partVotesApi` /
-// `buildListVotesApi` are thin entity-typed wrappers kept for existing
-// callers.
 import { apiClient } from './client';
 import type {
   FlaggedEntitySummary,
@@ -43,7 +35,6 @@ export const votesApi = {
   countVotes: () => apiClient.get<{ count: number }>('/votes/count'),
 };
 
-// Legacy entity-scoped wrappers (callers should migrate to votesApi).
 export const partVotesApi = {
   voteOnPart: (partId: string, data: { vote_type: 'upvote' | 'downvote' }) =>
     votesApi.voteOnEntity('part', partId, {

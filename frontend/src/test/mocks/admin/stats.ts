@@ -1,7 +1,3 @@
-// Phase 8 D-06: admin stats fixture factories for Stats / Dashboard tab tests.
-//
-// Factory pattern per research §Pitfall 6 — every call returns a fresh object
-// so parallel Vitest workers do not leak fixture state across files.
 import type {
   AdminTableCountsResponse,
   CrawlBucketSummaryResponse,

@@ -52,8 +52,6 @@ export type OAuthCallbackHandler = (
  */
 export function useOAuthCallback(onCallback: OAuthCallbackHandler): void {
   const handled = useRef(false);
-  // Held in a ref so a caller that passes an inline arrow does not re-run the
-  // effect on every render, without asking every call site for a `useCallback`.
   const handler = useRef(onCallback);
   handler.current = onCallback;
 
@@ -64,10 +62,6 @@ export function useOAuthCallback(onCallback: OAuthCallbackHandler): void {
     const href = globalThis.location.href;
     const result = readOAuthCallback(href);
     if (result === null) return;
-    // Cleared before the handler runs, so a handler that navigates cannot
-    // carry the spent marker to the next page. `replaceState` rather than
-    // `pushState` so the back button skips the callback rather than replaying
-    // it against parameters that are already spent.
     globalThis.history.replaceState(null, '', stripOAuthParams(href));
     void handler.current(result);
   }, []);

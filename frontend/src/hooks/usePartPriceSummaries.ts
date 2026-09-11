@@ -23,9 +23,6 @@ export function usePartPriceSummaries(
   partIds: string[],
   window: PriceHistoryBatchRequest['window'] = '90d'
 ): UsePartPriceSummariesResult {
-  // Sorted-stable ID join — used both as memo dep and dedupe key. Computing
-  // a primitive string lets the effect's deps array be primitive-only, which
-  // sidesteps the new-array-each-render re-render loop.
   const sortedKey = useMemo(
     () => (partIds.length === 0 ? '' : [...partIds].sort().join(',')),
     [partIds]
@@ -43,13 +40,10 @@ export function usePartPriceSummaries(
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Debounce: skip when nothing has changed since the last effect run.
     if (lastKeyRef.current === stableKey) return;
     lastKeyRef.current = stableKey;
 
     if (stableKey === '') {
-      // Empty-IDs short-circuit. Use the stable EMPTY_SUMMARIES singleton so
-      // consumers don't see a new object reference each render.
       setSummaries(EMPTY_SUMMARIES);
       setIsLoading(false);
       setError(null);

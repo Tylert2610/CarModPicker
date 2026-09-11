@@ -1,18 +1,3 @@
-// Coverage for the real `client.ts`, the adapter between this application's
-// call sites and `@webbpulse/api-client`.
-//
-// CRITICAL: setup.ts globally mocks `../api/client` so every other test file
-// gets a stubbed apiClient. This file must exercise the REAL module, so each
-// test calls `vi.doUnmock('./client')` + `vi.resetModules()` and then imports
-// dynamically.
-//
-// These tests used to reach into axios internals (`defaults.paramsSerializer`,
-// `interceptors.request.handlers[0].fulfilled`) to drive behaviour directly.
-// The shared client has no such surface, and it does not need one: every
-// behaviour below is observable on the `fetch` call the client makes, which is
-// a stronger assertion than calling an interceptor by hand ever was. The
-// env-driven base URL cases moved to `src/config/app.test.ts` along with the
-// resolution logic itself.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /** The Request the client handed to fetch, for asserting on. */
@@ -32,10 +17,6 @@ function stubFetch(response?: Response): Captured[] {
   const calls: Captured[] = [];
   vi.stubGlobal(
     'fetch',
-    // The client always calls fetch with a string URL. Typing the parameter as
-    // one rather than the full `RequestInfo | URL` keeps the capture honest: a
-    // `Request` object has no meaningful string form, so `String()` on the
-    // wider type would quietly produce "[object Object]".
     vi.fn((input: string, init?: RequestInit) => {
       calls.push({ url: input, init: init ?? {} });
       return Promise.resolve(
@@ -76,8 +57,6 @@ describe('client.ts — token helpers', () => {
   it('setStoredToken writes to localStorage under the access_token key', async () => {
     const { setStoredToken } = await import('./client');
     setStoredToken('abc-123');
-    // The key is asserted literally: changing it signs every existing user out
-    // on the deploy that changed it.
     expect(localStorage.getItem('access_token')).toBe('abc-123');
   });
 
@@ -102,10 +81,6 @@ describe('client.ts — token helpers', () => {
 });
 
 describe('client.ts — credentials', () => {
-  // Staging sits behind the access gate. Its CloudFront signed cookies are set
-  // on the staging apex, so a call from www.staging to api.staging only carries
-  // them when the client asks for credentials. Without this the gated staging
-  // API answers 401.
   it('sends credentials so cross-subdomain cookies reach the API host', async () => {
     const calls = stubFetch();
     const { apiClient } = await import('./client');
@@ -116,8 +91,6 @@ describe('client.ts — credentials', () => {
 
 describe('client.ts — query parameters', () => {
   it('expands array values as repeated keys (ids=1&ids=2&ids=3)', async () => {
-    // The backend reads `ids` and `category_ids` as repeated keys. Bracket or
-    // comma serialization would arrive as one unparseable value.
     const calls = stubFetch();
     const { apiClient } = await import('./client');
     await apiClient.get('/parts', { params: { ids: [1, 2, 3] } });
@@ -160,8 +133,6 @@ describe('client.ts — query parameters', () => {
   it('URL-encodes special characters in scalar values', async () => {
     const calls = stubFetch();
     const { apiClient } = await import('./client');
-    // Percent encoding throughout, including the space: the shared client uses
-    // encodeURIComponent rather than form encoding, so a space is %20 and not +.
     await apiClient.get('/search', { params: { q: 'a b&c=d' } });
     expect(only(calls).url).toContain('q=a%20b%26c%3Dd');
   });
@@ -188,8 +159,6 @@ describe('client.ts — authorization header', () => {
 
 describe('client.ts — token rotation', () => {
   it('stores an x-new-access-token header into localStorage', async () => {
-    // The API issues a replacement token mid-session, for example after a
-    // username change. Storing it is what keeps that from signing the user out.
     stubFetch(
       new Response(JSON.stringify({ ok: true }), {
         status: 200,
@@ -241,8 +210,6 @@ describe('client.ts — error contract', () => {
     expect(error.body).toEqual(envelope);
   });
 
-  // A 401 is reported to the caller, not acted on here. Redirecting from the
-  // transport would fight the router; AuthContext owns that decision.
   it('does not redirect on a 401', async () => {
     const { location } = window;
     stubFetch(new Response('{}', { status: 401 }));
@@ -264,9 +231,6 @@ describe('client.ts — request bodies', () => {
   });
 
   it('encodes a plain object as form-urlencoded when the caller asks for it', async () => {
-    // The login endpoint is an OAuth2 password form. Axios inferred the
-    // encoding from this header; the shared client infers it from the body
-    // type, so the adapter converts the body rather than forwarding the header.
     const calls = stubFetch();
     const { apiClient } = await import('./client');
     await apiClient.post(
@@ -276,9 +240,6 @@ describe('client.ts — request bodies', () => {
     );
 
     const { init } = only(calls);
-    // No explicit header: a URLSearchParams body makes fetch set
-    // `application/x-www-form-urlencoded;charset=UTF-8` itself, the same way it
-    // supplies a boundary for FormData.
     expect(init.body).toBeInstanceOf(URLSearchParams);
     expect(headerValue(init, 'content-type')).toBeNull();
     expect((init.body as URLSearchParams).toString()).toBe(
@@ -287,10 +248,6 @@ describe('client.ts — request bodies', () => {
   });
 
   it('passes FormData through without a Content-Type so the browser sets the boundary', async () => {
-    // Image upload. A multipart request needs a boundary parameter in its
-    // Content-Type, and only the runtime that serializes the body knows it.
-    // Forwarding a bare `multipart/form-data` header would produce a request
-    // the backend cannot parse, so the adapter drops it.
     const calls = stubFetch();
     const { apiClient } = await import('./client');
     const form = new FormData();

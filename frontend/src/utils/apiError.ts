@@ -45,11 +45,6 @@ import {
 export const getApiErrorMessage = (err: unknown, fallback: string): string => {
   if (err instanceof ApiError) {
     if (!isWebbPulseErrorBody(err.body)) return fallback;
-    // The blank check is on the body, not on what `getWebbPulseError` returns.
-    // `isWebbPulseErrorBody` admits a whitespace-only `message`, and for that
-    // one the accessor substitutes the same "Request failed with status N."
-    // line it uses for a non-envelope body, so checking its output would never
-    // see the blank and the generic line would reach the user.
     if (err.body.message.trim() === '') return fallback;
     return getWebbPulseError(err).message;
   }
