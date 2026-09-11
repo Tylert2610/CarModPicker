@@ -1,3 +1,7 @@
+/**
+ * Guard: every route in App.tsx has an entry in the shared route list.
+ */
+
 import { render } from '@testing-library/react';
 import type { ComponentType, ReactNode } from 'react';
 import { MemoryRouter } from 'react-router-dom';

@@ -1,6 +1,11 @@
+/**
+ * Car generation lookup and search, the vehicle taxonomy build lists hang from.
+ */
+
 import { apiClient } from './client';
 import type { CarGenerationRead } from '../types/Api';
 
+/** Car generation lookup, search, and make or model browsing. */
 export const carGenerationsApi = {
   getCar: (carId: string) =>
     apiClient.get<CarGenerationRead>(`/car-generations/${carId}`),

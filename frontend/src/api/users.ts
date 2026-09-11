@@ -1,3 +1,7 @@
+/**
+ * User profiles, account settings, and subscription state.
+ */
+
 import { apiClient } from './client';
 import type {
   AdminUserUpdate,
@@ -8,6 +12,7 @@ import type {
   UserUpdate,
 } from '../types/Api';
 
+/** User profile, settings, and subscription endpoints. */
 export const usersApi = {
   getMe: () => apiClient.get<UserRead>('/users/me'),
   createUser: (data: UserCreate) => apiClient.post<UserRead>('/users/', data),

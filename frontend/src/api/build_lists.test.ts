@@ -1,4 +1,8 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
+/**
+ * Tests for buildListsApi.
+ */
+
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiClient } from './client';
 import { buildListsApi } from './build_lists';

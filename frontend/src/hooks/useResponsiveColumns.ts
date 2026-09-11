@@ -1,3 +1,7 @@
+/**
+ * Picks a grid column count from the measured container width.
+ */
+
 import { useMemo, useRef } from 'react';
 
 /**

@@ -1,5 +1,10 @@
+/**
+ * Admin user management fixtures.
+ */
+
 import type { UserRead } from '../../../types/Api';
 
+/** Builds a user fixture as the admin console sees it. */
 export const makeAdminUserView = (
   overrides: Partial<UserRead> = {}
 ): UserRead => ({
@@ -18,5 +23,6 @@ export const makeAdminUserView = (
   ...overrides,
 });
 
+/** Builds a list of admin user fixtures. */
 export const makeUserList = (items?: UserRead[]): UserRead[] =>
   items ?? [makeAdminUserView()];

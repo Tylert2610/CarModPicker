@@ -1,3 +1,8 @@
+/**
+ * Batch loads price history summaries for a set of parts, keyed on the sorted
+ * ids so an unchanged set does not refetch.
+ */
+
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { partsApi } from '../api/parts';
 import type {
@@ -19,6 +24,7 @@ function errorMessage(err: unknown): string {
 
 const EMPTY_SUMMARIES: Record<string, PriceHistorySummary> = Object.freeze({});
 
+/** Batch loads price summaries for the given parts over a time window. */
 export function usePartPriceSummaries(
   partIds: string[],
   window: PriceHistoryBatchRequest['window'] = '90d'

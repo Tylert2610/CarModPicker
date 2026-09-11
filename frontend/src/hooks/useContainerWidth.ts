@@ -1,3 +1,8 @@
+/**
+ * Tracks an element's rendered width so layout can respond to its container
+ * rather than to the viewport.
+ */
+
 import { useCallback, useRef, useState, type RefCallback } from 'react';
 
 /**

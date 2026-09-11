@@ -1,3 +1,7 @@
+/**
+ * Loads the category and manufacturer options that back the parts filter UI.
+ */
+
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { LARGE_FETCH_LIMIT } from '../constants';
@@ -16,6 +20,7 @@ import useApiRequest from './UseApiRequest';
 
 const PARTS_PER_PAGE = 100;
 
+/** Scoping and URL sync options for the parts filter hook. */
 export interface UsePartsFiltersOptions {
   /** When set, list and filter-options are scoped to this user (e.g. My Parts). */
   user_id?: string;
@@ -23,6 +28,7 @@ export interface UsePartsFiltersOptions {
   syncToUrl?: boolean;
 }
 
+/** Filter state, the derived query params, and the setters that change them. */
 export interface UsePartsFiltersReturn {
   params: {
     skip: number;
@@ -94,6 +100,7 @@ export interface UsePartsFiltersReturn {
   isInitializedFromUrl: boolean;
 }
 
+/** Holds parts list filter state and derives the api query params from it. */
 export function usePartsFilters(
   options: UsePartsFiltersOptions = {}
 ): UsePartsFiltersReturn {
@@ -705,4 +712,5 @@ export function usePartsFilters(
   };
 }
 
+/** Page size for parts lists, shared so paging math agrees across callers. */
 export const GLOBAL_PARTS_PARTS_PER_PAGE = PARTS_PER_PAGE;

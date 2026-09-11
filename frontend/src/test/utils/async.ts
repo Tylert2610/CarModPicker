@@ -1,10 +1,10 @@
-import { act } from '@testing-library/react';
-import { vi } from 'vitest';
-
 /**
  * Fake-timer helpers for the admin polling tests, which drive `setInterval`
  * only.
  */
+
+import { act } from '@testing-library/react';
+import { vi } from 'vitest';
 
 /**
  * Enters fake-timer mode, pairing with `stopFakeTimers()`. Fakes only timers
@@ -14,6 +14,7 @@ export function startFakeTimers(): void {
   vi.useFakeTimers({ toFake: ['setInterval', 'setTimeout', 'Date'] });
 }
 
+/** Restores real timers, pairing with startFakeTimers(). */
 export function stopFakeTimers(): void {
   vi.useRealTimers();
 }

@@ -1,4 +1,8 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
+/**
+ * Tests for reportsApi and the per entity report helpers.
+ */
+
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiClient } from './client';
 import { partReportsApi, reportsApi } from './reports';

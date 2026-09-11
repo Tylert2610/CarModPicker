@@ -1,8 +1,13 @@
+/**
+ * Reads and persists the visitor's cookie consent choice.
+ */
+
 import { useEffect, useState } from 'react';
 
 const STORAGE_KEY = 'cookie_consent_v1';
 const CHANGE_EVENT = 'cookie-consent-change';
 
+/** The visitor's consent choice, or null before they have chosen. */
 export type CookieConsent = 'accepted' | 'rejected' | null;
 
 declare global {
@@ -39,6 +44,7 @@ function updateGtagConsent(granted: boolean) {
   });
 }
 
+/** Tracks the consent choice, syncing it across tabs and into Google Consent Mode. */
 export function useCookieConsent() {
   const [consent, setConsent] = useState<CookieConsent>(read);
 

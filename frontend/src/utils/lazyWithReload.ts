@@ -1,3 +1,8 @@
+/**
+ * Lazy import wrapper that recovers from a stale chunk after a deploy by
+ * reloading once.
+ */
+
 import { type ComponentType, lazy } from 'react';
 
 const RELOAD_KEY = 'cmp_chunk_reload_attempted';

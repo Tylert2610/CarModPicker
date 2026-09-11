@@ -1,3 +1,7 @@
+/**
+ * Tests for QR code encoding.
+ */
+
 import { describe, expect, it } from 'vitest';
 import { encodeQrCode, qrCodeSvgPath } from './qrCode';
 

@@ -1,3 +1,7 @@
+/**
+ * Display formatting and normalization for car generation records.
+ */
+
 import type { CarGenerationRead } from '../types/Api';
 
 /**
@@ -11,6 +15,7 @@ export function formatCarYearRange(
   return `${startYear}–${endYear}`;
 }
 
+/** Fills absent name and label fields so callers can render without null checks. */
 export function normalizeCarRead(
   car: CarGenerationRead | null | undefined
 ): CarGenerationRead | null {
@@ -70,6 +75,7 @@ function generationContainsModel(generation: string, model: string): boolean {
   return new RegExp(`(?:^|\\W)${escaped}(?:$|\\W)`, 'i').test(generation);
 }
 
+/** Normalizes every car in a list, dropping entries that are null. */
 export function normalizeCarReadList(
   cars: CarGenerationRead[] | null | undefined
 ): CarGenerationRead[] {

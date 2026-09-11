@@ -1,3 +1,7 @@
+/**
+ * Sample entities and api mock wiring shared by the component tests.
+ */
+
 import { vi } from 'vitest';
 import type {
   BuildListRead,
@@ -8,6 +12,7 @@ import type {
   VoteSummary,
 } from '../../types/Api';
 
+/** Baseline user fixture the other fixtures and tests build on. */
 export const mockUser: UserRead = {
   id: '11111111-1111-7111-8111-111111111111',
   username: 'testuser',
@@ -23,6 +28,7 @@ export const mockUser: UserRead = {
   totp_enabled: false,
 };
 
+/** Baseline car generation fixture. */
 export const mockCar: CarGenerationRead = {
   id: '22222222-2222-7222-8222-222222222222',
   car_make_name: 'Toyota',
@@ -36,6 +42,7 @@ export const mockCar: CarGenerationRead = {
   image_urls: ['https://example.com/car.jpg'],
 };
 
+/** Baseline build list fixture. */
 export const mockBuildList: BuildListRead = {
   id: '33333333-3333-7333-8333-333333333333',
   name: 'Test Build',
@@ -48,6 +55,7 @@ export const mockBuildList: BuildListRead = {
   updated_at: '2024-01-01T00:00:00Z',
 };
 
+/** Baseline part fixture. */
 export const mockPart: PartRead = {
   id: '44444444-4444-7444-8444-444444444444',
   name: 'Test Part',
@@ -65,6 +73,7 @@ export const mockPart: PartRead = {
   updated_at: '2024-01-01T00:00:00Z',
 };
 
+/** Baseline category fixture. */
 export const mockCategory: CategoryResponse = {
   id: '55555555-5555-7555-8555-555555555555',
   name: 'engine',
@@ -77,6 +86,7 @@ export const mockCategory: CategoryResponse = {
   updated_at: '2024-01-01T00:00:00Z',
 };
 
+/** Baseline vote summary fixture. */
 export const mockVoteSummary: VoteSummary = {
   entity_id: '44444444-4444-7444-8444-444444444444',
   entity_type: 'part',
@@ -87,6 +97,7 @@ export const mockVoteSummary: VoteSummary = {
   user_vote: 'upvote',
 };
 
+/** Canned responses keyed by path, with a 404 fallback. */
 export const mockApiResponses = {
   '/auth/login': { data: { access_token: 'mock-token', token_type: 'bearer' } },
   '/auth/logout': { data: { message: 'Logged out successfully' } },
@@ -107,6 +118,7 @@ export const mockApiResponses = {
   default: { data: null, status: 404 },
 };
 
+/** Vitest mock standing in for the real api client. */
 export const mockApiClient = {
   get: vi.fn(),
   post: vi.fn(),
@@ -115,6 +127,7 @@ export const mockApiClient = {
   patch: vi.fn(),
 };
 
+/** Resets the api mocks and wires them to the canned responses. */
 export const setupApiMocks = () => {
   vi.clearAllMocks();
 

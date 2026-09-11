@@ -1,3 +1,7 @@
+/**
+ * Playwright configuration for the end to end suite under e2e/.
+ */
+
 import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({

@@ -1,3 +1,7 @@
+/**
+ * Runtime app configuration read from the Vite environment.
+ */
+
 import { loadAppConfig, type AppConfig } from '@webbpulse/config';
 
 /**

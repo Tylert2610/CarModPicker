@@ -1,3 +1,7 @@
+/**
+ * Tests for buildLogsApi.
+ */
+
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiClient } from './client';
 import { buildLogsApi } from './build_logs';

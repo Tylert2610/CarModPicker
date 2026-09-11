@@ -1,3 +1,8 @@
+/**
+ * Voting and flagging across car generations, build lists, and parts. One module
+ * because every entity type shares the same vote endpoints.
+ */
+
 import { apiClient } from './client';
 import type {
   FlaggedEntitySummary,
@@ -6,6 +11,7 @@ import type {
   VoteSummary,
 } from '../types/Api';
 
+/** Voting and flagging across every votable entity type. */
 export const votesApi = {
   voteOnEntity: (
     entityType: 'car_generation' | 'build_list' | 'part',
@@ -35,6 +41,7 @@ export const votesApi = {
   countVotes: () => apiClient.get<{ count: number }>('/votes/count'),
 };
 
+/** Vote endpoints scoped to parts. */
 export const partVotesApi = {
   voteOnPart: (partId: string, data: { vote_type: 'upvote' | 'downvote' }) =>
     votesApi.voteOnEntity('part', partId, {
@@ -48,6 +55,7 @@ export const partVotesApi = {
     votesApi.getFlaggedEntities('part', params?.limit),
 };
 
+/** Vote endpoints scoped to build lists. */
 export const buildListVotesApi = {
   voteOnBuildList: (
     buildListId: string,

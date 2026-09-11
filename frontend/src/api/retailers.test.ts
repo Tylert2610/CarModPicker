@@ -1,3 +1,7 @@
+/**
+ * Tests for retailersApi.
+ */
+
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiClient } from './client';
 import { retailersApi } from './retailers';

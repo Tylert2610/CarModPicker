@@ -1,3 +1,7 @@
+/**
+ * Tests for useAppSettings.
+ */
+
 import { createElement, type ReactNode } from 'react';
 import { renderHook } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';

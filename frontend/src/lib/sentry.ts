@@ -1,3 +1,7 @@
+/**
+ * Sentry initialization and the helpers that report errors from the app.
+ */
+
 import * as Sentry from '@sentry/react';
 
 /**
@@ -18,6 +22,7 @@ const AUTH_PATHS = [
   '/2fa',
 ];
 
+/** Starts Sentry when a DSN is configured, and does nothing when it is not. */
 export function initSentry(): void {
   if (import.meta.env.MODE === 'development') return;
 

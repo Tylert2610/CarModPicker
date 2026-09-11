@@ -1,3 +1,7 @@
+/**
+ * Guard: nothing imports the retired common and buttons primitives.
+ */
+
 import { readFileSync } from 'fs';
 import { globSync } from 'glob';
 import { describe, expect, it } from 'vitest';

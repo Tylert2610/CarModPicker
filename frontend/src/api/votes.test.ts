@@ -1,3 +1,7 @@
+/**
+ * Tests for votesApi and the per entity vote helpers.
+ */
+
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiClient } from './client';
 import { buildListVotesApi, partVotesApi, votesApi } from './votes';

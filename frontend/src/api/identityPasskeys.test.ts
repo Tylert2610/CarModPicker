@@ -1,3 +1,7 @@
+/**
+ * Tests for identity mode passkey enrolment and sign in.
+ */
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 type Stub = Record<string, ReturnType<typeof vi.fn>>;

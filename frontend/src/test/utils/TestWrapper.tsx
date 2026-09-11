@@ -1,3 +1,7 @@
+/**
+ * Wrapper component that applies the test providers to a rendered tree.
+ */
+
 import React from 'react';
 import { TestProviders } from './TestProviders';
 import type { UserRead } from '../../types/Api';

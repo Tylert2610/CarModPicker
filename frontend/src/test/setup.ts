@@ -1,3 +1,8 @@
+/**
+ * Global vitest setup. Registers jest-dom matchers and stubs the api client so a
+ * test that forgets to mock it cannot reach the network.
+ */
+
 import '@testing-library/jest-dom';
 import { ApiError } from '@webbpulse/api-client';
 import { vi, beforeAll, afterAll } from 'vitest';

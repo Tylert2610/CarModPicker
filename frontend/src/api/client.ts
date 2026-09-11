@@ -1,3 +1,8 @@
+/**
+ * Shared HTTP client for the CarModPicker API. Resolves the access token from
+ * whichever auth mode is active, so callers never branch on mode themselves.
+ */
+
 import {
   ApiError,
   createApiClient,

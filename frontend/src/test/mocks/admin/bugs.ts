@@ -1,9 +1,14 @@
+/**
+ * Bug report fixtures for the admin tests.
+ */
+
 import type {
   BugReportRead,
   BugReportWithDetails,
   PaginatedResponse,
 } from '../../../types/Api';
 
+/** Builds a bug report fixture, overriding any field. */
 export const makeBugReport = (
   overrides: Partial<BugReportRead> = {}
 ): BugReportRead => ({
@@ -27,6 +32,7 @@ export const makeBugReport = (
   ...overrides,
 });
 
+/** Builds a bug report fixture carrying reporter details. */
 export const makeBugReportWithDetails = (
   overrides: Partial<BugReportWithDetails> = {}
 ): BugReportWithDetails => ({
@@ -36,9 +42,11 @@ export const makeBugReportWithDetails = (
   ...overrides,
 });
 
+/** Builds a list of bug report fixtures. */
 export const makeBugReportList = (items?: BugReportRead[]): BugReportRead[] =>
   items ?? [makeBugReport()];
 
+/** Builds a list of detailed bug report fixtures. */
 export const makeBugReportWithDetailsList = (
   items?: BugReportWithDetails[]
 ): PaginatedResponse<BugReportWithDetails> => {

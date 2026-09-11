@@ -1,3 +1,7 @@
+/**
+ * Shared request and response types for the CarModPicker API.
+ */
+
 export interface UserRead {
   id: string;
   username: string;
@@ -43,12 +47,14 @@ export interface PublicUserRead {
   tiktok_url?: string | null;
 }
 
+/** Registration payload for a new account. */
 export interface UserCreate {
   username: string;
   email: string;
   password: string;
 }
 
+/** A third party account linked to a user. */
 export interface OAuthAccountRead {
   id: string;
   provider: string;
@@ -56,32 +62,38 @@ export interface OAuthAccountRead {
   created_at: string;
 }
 
+/** Google credential submitted to start sign in. */
 export interface GoogleSignInRequest {
   id_token: string;
   nonce: string;
 }
 
+/** Confirms linking a Google identity to an existing account. */
 export interface GoogleLinkRequest {
   link_token: string;
   password: string;
   otp?: string;
 }
 
+/** Completes account creation from a Google identity. */
 export interface GoogleSignupRequest {
   signup_token: string;
   username: string;
 }
 
+/** Second factor code submitted to finish an OAuth sign in. */
 export interface OAuthTwoFactorRequest {
   otp_token: string;
   otp: string;
 }
 
+/** Connects a Google account to the signed in user. */
 export interface GoogleConnectRequest {
   id_token: string;
   nonce: string;
 }
 
+/** Google sign in matched an existing email and needs the user to confirm linking. */
 export interface GoogleSignInLinkRequired {
   requires_link: true;
   link_token: string;
@@ -90,6 +102,7 @@ export interface GoogleSignInLinkRequired {
   has_totp: boolean;
 }
 
+/** Google sign in found no account, so signup must be completed first. */
 export interface GoogleSignInSignupRequired {
   requires_signup: true;
   signup_token: string;
@@ -97,23 +110,27 @@ export interface GoogleSignInSignupRequired {
   suggested_username: string;
 }
 
+/** Google sign in succeeded and returned a session. */
 export interface GoogleSignInTokenResponse {
   access_token: string;
   token_type: string;
   user: UserRead;
 }
 
+/** OAuth sign in still needs a second factor before a session is issued. */
 export interface OAuthTwoFactorRequired {
   requires_2fa: true;
   otp_token: string;
 }
 
+/** Every outcome of a Google sign in, discriminated by its required flag. */
 export type GoogleSignInResponse =
   | GoogleSignInTokenResponse
   | GoogleSignInLinkRequired
   | GoogleSignInSignupRequired
   | OAuthTwoFactorRequired;
 
+/** Self service profile and credential changes. */
 export interface UserUpdate {
   username?: string | null;
   email?: string | null;
@@ -130,6 +147,7 @@ export interface UserUpdate {
   session_expire_minutes?: number | null;
 }
 
+/** Account changes only an admin may make. */
 export interface AdminUserUpdate {
   username?: string | null;
   email?: string | null;
@@ -144,6 +162,7 @@ export interface AdminUserUpdate {
   subscription_expires_at?: string | null;
 }
 
+/** New car generation submission. */
 export interface CarGenerationCreate {
   car_make_name: string;
   car_model_name: string;
@@ -155,6 +174,7 @@ export interface CarGenerationCreate {
   image_urls?: string[] | null;
 }
 
+/** A car generation as returned by the API. */
 export interface CarGenerationRead {
   id: string;
   car_make_name: string;
@@ -170,6 +190,7 @@ export interface CarGenerationRead {
   image_urls?: string[] | null;
 }
 
+/** Editable fields on a car generation. */
 export interface CarGenerationUpdate {
   car_make_name?: string | null;
   car_model_name?: string | null;
@@ -181,6 +202,7 @@ export interface CarGenerationUpdate {
   image_urls?: string[] | null;
 }
 
+/** New build list submission. */
 export interface BuildListCreate {
   name: string;
   description?: string | null;
@@ -190,6 +212,7 @@ export interface BuildListCreate {
   base_price_cents?: number;
 }
 
+/** A build list as returned by the API. */
 export interface BuildListRead {
   id: string;
   name: string;
@@ -203,6 +226,7 @@ export interface BuildListRead {
   updated_at: string;
 }
 
+/** A build list plus vote tallies and rolled up part and labor costs. */
 export interface BuildListReadWithVotes extends BuildListRead {
   upvotes: number;
   downvotes: number;
@@ -216,6 +240,7 @@ export interface BuildListReadWithVotes extends BuildListRead {
   total_labor_cost_cents?: number | null;
 }
 
+/** Editable fields on a build list. */
 export interface BuildListUpdate {
   name?: string | null;
   description?: string | null;
@@ -225,14 +250,17 @@ export interface BuildListUpdate {
   base_price_cents?: number | null;
 }
 
+/** New post within a build log. */
 export interface BuildLogPostCreate {
   content: string;
 }
 
+/** Editable fields on a build log post. */
 export interface BuildLogPostUpdate {
   content?: string | null;
 }
 
+/** A build log post with its author details. */
 export interface BuildLogPostRead {
   id: string;
   build_log_id: string;
@@ -244,6 +272,7 @@ export interface BuildLogPostRead {
   author_image_url?: string | null;
 }
 
+/** A build log with all of its posts inlined. */
 export interface BuildLogRead {
   id: string;
   build_list_id: string;
@@ -253,6 +282,7 @@ export interface BuildLogRead {
   posts: BuildLogPostRead[];
 }
 
+/** A build log whose posts arrive in pages rather than inlined. */
 export interface BuildLogReadPaginated {
   id: string;
   build_list_id: string;
@@ -263,6 +293,7 @@ export interface BuildLogReadPaginated {
   pagination: PaginationInfo;
 }
 
+/** New part submission. */
 export interface PartCreate {
   name: string;
   description?: string | null;
@@ -277,6 +308,7 @@ export interface PartCreate {
   price_cents?: number | null;
 }
 
+/** A part as returned by the API. */
 export interface PartRead {
   id: string;
   name: string;
@@ -296,6 +328,7 @@ export interface PartRead {
   updated_at: string;
 }
 
+/** A part plus its vote tallies. */
 export interface PartReadWithVotes extends PartRead {
   upvotes: number;
   downvotes: number;
@@ -337,8 +370,10 @@ export interface PartPriceHistoryReadWithRetailer {
   retailer_name: string;
 }
 
+/** Direction of a part's recent price movement. */
 export type PriceTrend = 'up' | 'down' | 'flat';
 
+/** Observed price range, latest price, and trend over a window. */
 export interface PriceHistorySummary {
   min_cents: number | null;
   max_cents: number | null;
@@ -348,6 +383,7 @@ export interface PriceHistorySummary {
   observation_count: number;
 }
 
+/** Price observations for one part at one retailer. */
 export interface RetailerPriceBreakdown {
   retailer_id: string;
   retailer_name: string;
@@ -358,6 +394,7 @@ export interface RetailerPriceBreakdown {
   observation_count: number;
 }
 
+/** Full price history for one part: summary, per retailer breakdown, and observations. */
 export interface PriceHistorySinglePartResponse {
   summary: PriceHistorySummary;
   retailers: RetailerPriceBreakdown[];
@@ -371,13 +408,16 @@ export interface PriceHistorySinglePartResponse {
   window: string;
 }
 
+/** One part's entry in a batch price history response. */
 export type PriceHistoryBatchSummaryItem = PriceHistorySummary;
 
+/** Requests price summaries for several parts over one window. */
 export interface PriceHistoryBatchRequest {
   part_ids: string[];
   window?: '7d' | '30d' | '90d' | '180d' | '1y' | 'all';
 }
 
+/** Price summaries keyed by part id, with counts so callers can spot misses. */
 export interface PriceHistoryBatchResponse {
   summaries: Record<string, PriceHistoryBatchSummaryItem>;
   window: string;
@@ -385,6 +425,7 @@ export interface PriceHistoryBatchResponse {
   found_count: number;
 }
 
+/** Page position and totals accompanying a paginated response. */
 export interface PaginationInfo {
   current_page: number;
   total_pages: number;
@@ -394,11 +435,13 @@ export interface PaginationInfo {
   has_previous: boolean;
 }
 
+/** A page of results together with its pagination metadata. */
 export interface PaginatedResponse<T> {
   data: T[];
   pagination: PaginationInfo;
 }
 
+/** Editable fields on a part. */
 export interface PartUpdate {
   name?: string | null;
   description?: string | null;
@@ -410,6 +453,7 @@ export interface PartUpdate {
   part_number?: string | null;
 }
 
+/** A part category as returned by the API. */
 export interface CategoryResponse {
   id: string;
   name: string;
@@ -422,6 +466,7 @@ export interface CategoryResponse {
   updated_at: string;
 }
 
+/** New part category submission. */
 export interface CategoryCreate {
   name: string;
   display_name: string;
@@ -431,6 +476,7 @@ export interface CategoryCreate {
   sort_order?: number;
 }
 
+/** Editable fields on a part category. */
 export interface CategoryUpdate {
   name?: string | null;
   display_name?: string | null;
@@ -440,6 +486,7 @@ export interface CategoryUpdate {
   sort_order?: number | null;
 }
 
+/** A part manufacturer as returned by the API. */
 export interface PartManufacturerResponse {
   id: string;
   name: string;
@@ -449,24 +496,28 @@ export interface PartManufacturerResponse {
   updated_at: string;
 }
 
+/** New part manufacturer submission. */
 export interface PartManufacturerCreate {
   name: string;
   description?: string | null;
   is_active?: boolean;
 }
 
+/** Editable fields on a part manufacturer. */
 export interface PartManufacturerUpdate {
   name?: string | null;
   description?: string | null;
   is_active?: boolean | null;
 }
 
+/** An upvote or downvote cast on an entity. */
 export interface VoteCreate {
   vote_type: 'upvote' | 'downvote';
   entity_type: 'car_generation' | 'build_list' | 'part';
   entity_id: string;
 }
 
+/** A single stored vote. */
 export interface VoteRead {
   id: string;
   user_id: string;
@@ -491,6 +542,7 @@ export interface VoteMutationResult {
   vote_score: number;
 }
 
+/** Vote tallies for one entity, including the caller's own vote. */
 export interface VoteSummary {
   entity_id: string;
   entity_type: string;
@@ -501,6 +553,7 @@ export interface VoteSummary {
   user_vote?: 'upvote' | 'downvote' | null;
 }
 
+/** An entity surfaced for moderation by downvotes or reports. */
 export interface FlaggedEntitySummary {
   entity_id: string;
   entity_type: string;
@@ -517,12 +570,14 @@ export interface FlaggedEntitySummary {
   flagged_at: string;
 }
 
+/** New content report submission. */
 export interface ReportCreate {
   reason:
     'inappropriate_content' | 'spam' | 'inaccurate' | 'duplicate' | 'other';
   description?: string | null;
 }
 
+/** A content report as returned by the API. */
 export interface ReportRead {
   id: string;
   user_id: string;
@@ -538,6 +593,7 @@ export interface ReportRead {
   updated_at: string;
 }
 
+/** A content report plus the reporter and reported entity details. */
 export interface ReportWithDetails extends ReportRead {
   reporter_username: string;
   entity_name: string;
@@ -545,11 +601,13 @@ export interface ReportWithDetails extends ReportRead {
   reviewer_username?: string | null;
 }
 
+/** Moderation changes to a content report. */
 export interface ReportUpdate {
   status: 'pending' | 'reviewed' | 'resolved' | 'dismissed';
   admin_notes?: string | null;
 }
 
+/** New bug report submission. */
 export interface BugReportCreate {
   title: string;
   description: string;
@@ -561,6 +619,7 @@ export interface BugReportCreate {
   screenshot_url?: string | null;
 }
 
+/** A bug report as returned by the API. */
 export interface BugReportRead {
   id: string;
   user_id?: string | null;
@@ -581,11 +640,13 @@ export interface BugReportRead {
   updated_at: string;
 }
 
+/** A bug report plus its reporter details. */
 export interface BugReportWithDetails extends BugReportRead {
   reporter_username?: string | null;
   assignee_username?: string | null;
 }
 
+/** Triage changes to a bug report. */
 export interface BugReportUpdate {
   status?: 'pending' | 'in_progress' | 'resolved' | 'dismissed' | null;
   priority?: 'low' | 'medium' | 'high' | 'critical' | null;
@@ -593,6 +654,7 @@ export interface BugReportUpdate {
   assigned_to?: string | null;
 }
 
+/** A phase grouping parts within a build list. */
 export interface BuildListPhaseRead {
   id: string;
   build_list_id: string;
@@ -600,16 +662,19 @@ export interface BuildListPhaseRead {
   sort_order: number;
 }
 
+/** New build list phase submission. */
 export interface BuildListPhaseCreate {
   name: string;
   sort_order?: number;
 }
 
+/** Editable fields on a build list phase. */
 export interface BuildListPhaseUpdate {
   name?: string | null;
   sort_order?: number | null;
 }
 
+/** A labor estimate attached to a build list. */
 export interface BuildListLaborEstimateRead {
   id: string;
   build_list_id: string;
@@ -620,6 +685,7 @@ export interface BuildListLaborEstimateRead {
   sort_order: number;
 }
 
+/** New labor estimate submission. */
 export interface BuildListLaborEstimateCreate {
   name: string;
   cost_cents?: number;
@@ -628,6 +694,7 @@ export interface BuildListLaborEstimateCreate {
   sort_order?: number;
 }
 
+/** Editable fields on a labor estimate. */
 export interface BuildListLaborEstimateUpdate {
   name?: string | null;
   cost_cents?: number | null;
@@ -636,6 +703,7 @@ export interface BuildListLaborEstimateUpdate {
   sort_order?: number | null;
 }
 
+/** Attaches a part to a build list. */
 export interface BuildListPartCreate {
   part_id?: string | null;
   quantity?: number;
@@ -643,6 +711,7 @@ export interface BuildListPartCreate {
   build_list_phase_id?: string | null;
 }
 
+/** A part's membership in a build list. */
 export interface BuildListPartRead {
   id: string;
   build_list_id: string;
@@ -655,11 +724,13 @@ export interface BuildListPartRead {
   build_list_phase_id?: string | null;
 }
 
+/** A build list entry with the full part record inlined. */
 export interface BuildListPartReadWithPart extends BuildListPartRead {
   phase_name?: string | null;
   part: PartRead;
 }
 
+/** Editable fields on a build list entry, such as quantity or phase. */
 export interface BuildListPartUpdate {
   quantity?: number | null;
   notes?: string | null;
@@ -667,10 +738,12 @@ export interface BuildListPartUpdate {
   build_list_phase_id?: string | null;
 }
 
+/** A replacement password. */
 export interface NewPassword {
   password: string;
 }
 
+/** Form encoded credentials for the token endpoint. */
 export interface BodyLoginForAccessToken {
   grant_type?: 'password' | null;
   username: string;
@@ -680,40 +753,48 @@ export interface BodyLoginForAccessToken {
   client_secret?: string | null;
 }
 
+/** Requests a verification email for an address. */
 export interface BodyVerifyEmail {
   email: string;
 }
 
+/** Requests a password reset email for an address. */
 export interface BodyResetPassword {
   email: string;
 }
 
+/** Secret and provisioning URI for enrolling an authenticator. */
 export interface TOTPSetupResponse {
   secret: string;
   qr_code_data: string;
   manual_entry_key: string;
 }
 
+/** Code submitted to confirm authenticator enrollment. */
 export interface TOTPVerifyRequest {
   otp: string;
 }
 
+/** Result of confirming authenticator enrollment. */
 export interface TOTPVerifyResponse {
   success: boolean;
   message: string;
 }
 
+/** Code submitted to finish a login that requires a second factor. */
 export interface TOTPLoginRequest {
   username: string;
   password: string;
   otp: string;
 }
 
+/** Credentials required to turn off the second factor. */
 export interface TOTPDisableRequest {
   password: string;
   otp: string;
 }
 
+/** Login outcome: a session, or a signal that a second factor is required. */
 export interface LoginResponse {
   access_token?: string;
   token_type?: string;

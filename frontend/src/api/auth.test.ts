@@ -1,3 +1,7 @@
+/**
+ * Tests for authApi.
+ */
+
 import {
   beforeEach,
   describe,

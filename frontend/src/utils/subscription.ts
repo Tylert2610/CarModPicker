@@ -1,3 +1,7 @@
+/**
+ * Subscription state helpers shared by premium gates.
+ */
+
 import type { UserRead } from '../types/Api';
 
 /**

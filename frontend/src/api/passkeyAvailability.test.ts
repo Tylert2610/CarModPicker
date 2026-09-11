@@ -1,3 +1,7 @@
+/**
+ * Tests for passkey capability detection.
+ */
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   PASSKEY_AVAILABILITY_PATH,

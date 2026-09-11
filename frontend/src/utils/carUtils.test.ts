@@ -1,3 +1,7 @@
+/**
+ * Tests for the car display and normalization helpers.
+ */
+
 import { describe, expect, it } from 'vitest';
 import { carFullDisplayName } from './carUtils';
 import type { CarGenerationRead } from '../types/Api';

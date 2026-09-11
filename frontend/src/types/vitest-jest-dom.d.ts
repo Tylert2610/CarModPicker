@@ -1,3 +1,7 @@
+/**
+ * Type augmentation that adds the jest-dom matchers to vitest expectations.
+ */
+
 import type { TestingLibraryMatchers } from '@testing-library/jest-dom/matchers';
 
 declare module 'vitest' {

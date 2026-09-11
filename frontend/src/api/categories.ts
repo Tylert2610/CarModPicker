@@ -1,6 +1,11 @@
+/**
+ * Part category lookup and the parts listed under each category.
+ */
+
 import { apiClient } from './client';
 import type { CategoryResponse, PartRead } from '../types/Api';
 
+/** Part category lookup and the parts under each category. */
 export const categoriesApi = {
   getCategories: () => apiClient.get<CategoryResponse[]>('/categories/'),
   getCategory: (categoryId: string) =>

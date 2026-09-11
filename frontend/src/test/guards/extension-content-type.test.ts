@@ -1,3 +1,7 @@
+/**
+ * Guard: the Chrome extension must send a Content-Type FastAPI accepts.
+ */
+
 import { readFileSync } from 'fs';
 import { globSync } from 'glob';
 import { describe, expect, it } from 'vitest';

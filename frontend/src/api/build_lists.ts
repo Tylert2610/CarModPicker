@@ -1,3 +1,7 @@
+/**
+ * Build lists: the user-owned collections of parts that anchor most of the app.
+ */
+
 import { apiClient } from './client';
 import type {
   BuildListCreate,
@@ -11,6 +15,7 @@ import type {
   PaginatedResponse,
 } from '../types/Api';
 
+/** Build list lookup, creation, and editing. */
 export const buildListsApi = {
   createBuildList: (data: BuildListCreate) =>
     apiClient.post<BuildListRead>('/build-lists/', data),

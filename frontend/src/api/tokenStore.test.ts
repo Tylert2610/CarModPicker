@@ -1,3 +1,7 @@
+/**
+ * Tests for the token stores backing the api client.
+ */
+
 import { describe, expect, it, vi } from 'vitest';
 import {
   MemoryTokenStorage,

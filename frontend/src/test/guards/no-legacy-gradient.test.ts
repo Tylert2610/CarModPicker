@@ -1,3 +1,7 @@
+/**
+ * Guard: no Tailwind v3 gradient class names remain in source.
+ */
+
 import { readFileSync } from 'fs';
 import { globSync } from 'glob';
 import { describe, expect, it } from 'vitest';

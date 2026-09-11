@@ -1,3 +1,7 @@
+/**
+ * Tests for utilityApi.
+ */
+
 import {
   beforeEach,
   describe,

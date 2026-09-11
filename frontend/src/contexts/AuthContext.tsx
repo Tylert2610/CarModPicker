@@ -1,3 +1,8 @@
+/**
+ * Provider that establishes and tracks the session, in bearer or identity mode,
+ * and exposes the current user to the tree.
+ */
+
 import * as Sentry from '@sentry/react';
 import type { ReactNode } from 'react';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
@@ -12,6 +17,7 @@ import { restoreSession, signOut } from '../api/identityAuth';
 import type { UserRead } from '../types/Api';
 import { AuthContext } from './AuthContextDefinition';
 
+/** Establishes the session at mount and exposes the current user to the tree. */
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({
   children,
 }) => {

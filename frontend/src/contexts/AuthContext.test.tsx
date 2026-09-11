@@ -1,3 +1,7 @@
+/**
+ * Tests for AuthContext provider.
+ */
+
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { MemoryRouter } from 'react-router-dom';

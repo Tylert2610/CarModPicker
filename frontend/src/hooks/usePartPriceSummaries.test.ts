@@ -1,3 +1,7 @@
+/**
+ * Tests for usePartPriceSummaries.
+ */
+
 import { renderHook, waitFor, act } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildResponse } from '../test/apiResponse';

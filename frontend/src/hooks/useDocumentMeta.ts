@@ -1,3 +1,8 @@
+/**
+ * Sets document title and meta tags for the active route and restores them on
+ * unmount.
+ */
+
 import { useEffect } from 'react';
 
 interface DocumentMeta {

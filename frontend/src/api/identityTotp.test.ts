@@ -1,3 +1,7 @@
+/**
+ * Tests for identity mode TOTP enrolment and verification.
+ */
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 type Stub = Record<string, ReturnType<typeof vi.fn>>;

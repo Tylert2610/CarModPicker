@@ -1,3 +1,8 @@
+/**
+ * ESLint configuration for the frontend, extending the shared WebbPulse react
+ * config.
+ */
+
 import reactHooks from 'eslint-plugin-react-hooks';
 import reactRefresh from 'eslint-plugin-react-refresh';
 import reactX from 'eslint-plugin-react-x';

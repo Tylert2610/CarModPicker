@@ -1,3 +1,7 @@
+/**
+ * Tests for Sentry initialization and its environment gate.
+ */
+
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**

@@ -1,3 +1,8 @@
+/**
+ * Custom render helpers that mount a component with routing, auth, and api mocks
+ * already in place.
+ */
+
 import {
   render,
   type RenderOptions,
@@ -47,6 +52,7 @@ export * from '@testing-library/react';
 
 export { customRender as render };
 
+/** Builds a user fixture, overriding any field. */
 export const createMockUser = (overrides = {}) => ({
   id: 1,
   username: 'testuser',
@@ -59,6 +65,7 @@ export const createMockUser = (overrides = {}) => ({
   ...overrides,
 });
 
+/** Builds a car generation fixture, overriding any field. */
 export const createMockCar = (overrides = {}) => ({
   id: 1,
   car_make_name: 'Toyota',
@@ -71,6 +78,7 @@ export const createMockCar = (overrides = {}) => ({
   ...overrides,
 });
 
+/** Builds a build list fixture, overriding any field. */
 export const createMockBuildList = (overrides = {}) => ({
   id: 1,
   name: 'Test Build',
@@ -80,6 +88,7 @@ export const createMockBuildList = (overrides = {}) => ({
   ...overrides,
 });
 
+/** Builds a part fixture, overriding any field. */
 export const createMockPart = (overrides = {}) => ({
   id: 1,
   name: 'Test Part',
@@ -98,6 +107,7 @@ export const createMockPart = (overrides = {}) => ({
   ...overrides,
 });
 
+/** Ready made auth states covering the signed out, signed in, and admin cases. */
 export const testScenarios = {
   authenticated: {
     initialAuthState: {
@@ -136,14 +146,17 @@ export const testScenarios = {
   },
 };
 
+/** Asserts the element is present. */
 export const expectElementToBeInDocument = (element: HTMLElement) => {
   expect(element).toBeInTheDocument();
 };
 
+/** Asserts the element carries the given text. */
 export const expectElementToHaveText = (element: HTMLElement, text: string) => {
   expect(element).toHaveTextContent(text);
 };
 
+/** Asserts the element carries every given class. */
 export const expectElementToHaveClass = (
   element: HTMLElement,
   className: string
@@ -151,18 +164,22 @@ export const expectElementToHaveClass = (
   expect(element).toHaveClass(className);
 };
 
+/** Asserts the element is visible. */
 export const expectElementToBeVisible = (element: HTMLElement) => {
   expect(element).toBeVisible();
 };
 
+/** Asserts the element is disabled. */
 export const expectElementToBeDisabled = (element: HTMLElement) => {
   expect(element).toBeDisabled();
 };
 
+/** Asserts the element is enabled. */
 export const expectElementToBeEnabled = (element: HTMLElement) => {
   expect(element).toBeEnabled();
 };
 
+/** Types a value into a labelled field. */
 export const fillFormField = (screen: Screen, label: string, value: string) => {
   const field = screen.getByLabelText(label);
   if (field instanceof HTMLInputElement) {
@@ -172,26 +189,31 @@ export const fillFormField = (screen: Screen, label: string, value: string) => {
   return field;
 };
 
+/** Submits the form by clicking its submit control. */
 export const submitForm = (screen: Screen, submitButtonText = 'Submit') => {
   const submitButton = screen.getByRole('button', { name: submitButtonText });
   submitButton.click();
   return submitButton;
 };
 
+/** Drives the router to a path from within a test. */
 export const navigateTo = (route: string) => {
   window.history.pushState({}, 'Test page', route);
 };
 
+/** Returns a bare vitest mock function. */
 export const createMockFunction = () => {
   return vi.fn();
 };
 
+/** Returns a promise resolving to the given value. */
 export const createMockPromise = (value: unknown, delay = 0) => {
   return new Promise((resolve) => {
     setTimeout(() => resolve(value), delay);
   });
 };
 
+/** Returns a promise rejecting with the given error. */
 export const createMockRejectedPromise = (error: Error, delay = 0) => {
   return new Promise((_, reject) => {
     setTimeout(() => reject(error), delay);

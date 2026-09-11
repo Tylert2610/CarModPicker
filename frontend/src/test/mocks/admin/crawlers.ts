@@ -1,3 +1,7 @@
+/**
+ * Crawler adapter and run fixtures for the admin tests.
+ */
+
 import type {
   CrawlerAdapterConfig,
   CrawlerAdapterConfigList,
@@ -11,6 +15,7 @@ export interface CrawlerAdapterCatalog {
   adapter_info: { name: string; tier: 'http' | 'tls' | 'browser' }[];
 }
 
+/** Builds a crawler adapter config fixture, overriding any field. */
 export const makeCrawlerAdapter = (
   overrides: Partial<CrawlerAdapterConfig> = {}
 ): CrawlerAdapterConfig => ({
@@ -25,12 +30,14 @@ export const makeCrawlerAdapter = (
   ...overrides,
 });
 
+/** Builds an adapter config list response. */
 export const makeAdapterList = (
   items?: CrawlerAdapterConfig[]
 ): CrawlerAdapterConfigList => ({
   items: items ?? [makeCrawlerAdapter()],
 });
 
+/** Builds the catalog of adapters available to a run. */
 export const makeAdapterCatalog = (
   overrides: Partial<CrawlerAdapterCatalog> = {}
 ): CrawlerAdapterCatalog => ({
@@ -39,6 +46,7 @@ export const makeAdapterCatalog = (
   ...overrides,
 });
 
+/** Builds a crawler schedule fixture, overriding any field. */
 export const makeSchedule = (
   overrides: Partial<CrawlerSchedule> = {}
 ): CrawlerSchedule => ({
@@ -55,6 +63,7 @@ export const makeSchedule = (
   ...overrides,
 });
 
+/** Builds a schedule list response with its presets. */
 export const makeScheduleList = (
   items?: CrawlerSchedule[]
 ): CrawlerScheduleList => ({

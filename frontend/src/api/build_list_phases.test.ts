@@ -1,3 +1,7 @@
+/**
+ * Tests for buildListPhasesApi.
+ */
+
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiClient } from './client';
 import { buildListPhasesApi } from './build_list_phases';

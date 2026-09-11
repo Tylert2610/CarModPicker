@@ -1,3 +1,7 @@
+/**
+ * Tests for api error message extraction.
+ */
+
 import { describe, expect, it } from 'vitest';
 import { ApiError } from '@webbpulse/api-client';
 import { buildApiError } from '../test/apiResponse';

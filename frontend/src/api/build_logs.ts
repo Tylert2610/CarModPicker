@@ -1,3 +1,7 @@
+/**
+ * Build log entries, the dated progress notes attached to a build list.
+ */
+
 import { apiClient } from './client';
 import type {
   BuildLogPostCreate,
@@ -6,6 +10,7 @@ import type {
   BuildLogReadPaginated,
 } from '../types/Api';
 
+/** Build log and build log post endpoints. */
 export const buildLogsApi = {
   getBuildLogByBuildList: (
     buildListId: string,

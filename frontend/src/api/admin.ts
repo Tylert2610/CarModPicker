@@ -1,8 +1,15 @@
+/**
+ * Admin-only endpoints: migrations, background jobs, crawler adapters, curation,
+ * and moderation queues. Separated from the user-facing api so admin surface
+ * changes never widen the bundle every visitor loads.
+ */
+
 import { apiClient } from './client';
 import type { BucketEntityTypeCountResponse } from './images';
 
 export type { BucketEntityTypeCountResponse };
 
+/** Outcome of running database migrations, including captured output. */
 export interface MigrationResult {
   success: boolean;
   output: string;
@@ -10,16 +17,19 @@ export interface MigrationResult {
   current_revision: string | null;
 }
 
+/** The migration revision the database is currently at. */
 export interface CurrentRevisionResult {
   current_revision: string;
   output: string;
 }
 
+/** Outcome of seeding initial reference data. */
 export interface InitDataResult {
   success: boolean;
   message: string;
 }
 
+/** Counts removed when purging crawler created parts. */
 export interface DeleteCrawlerPartsResult {
   deleted_count: number;
   service_account_count: number;
@@ -41,6 +51,7 @@ export interface BackgroundJob {
   created_by_user_id: string | null;
 }
 
+/** A page of background job records. */
 export interface BackgroundJobList {
   items: BackgroundJob[];
   total: number;
@@ -48,11 +59,13 @@ export interface BackgroundJobList {
   offset: number;
 }
 
+/** How much one adapter has parsed during the current run. */
 export interface CrawlerAdapterProgress {
   parsed_this_run: number;
   last_parsed_at: string | null;
 }
 
+/** Live progress of a crawler job, broken down by adapter. */
 export interface CrawlerJobProgress {
   job_id: string;
   status: string;
@@ -70,6 +83,7 @@ export interface CrawlerRunResponse {
   message: string;
 }
 
+/** Parameters for starting a crawler run. */
 export interface CrawlerRunRequest {
   adapters: string[];
   crawler_user_id?: string;
@@ -90,6 +104,7 @@ export interface RescrapeArchivesRequest {
   default_category_id: string;
 }
 
+/** Acknowledgement that an archive rescrape was queued. */
 export interface RescrapeArchivesQueuedResponse {
   status: string;
   job_id: string;
@@ -145,6 +160,7 @@ export interface CanonicalLinkGroupMember {
   created_at: string;
 }
 
+/** A canonical part and every part linked to it. */
 export interface CanonicalLinkGroupResponse {
   canonical_id: string;
   members: CanonicalLinkGroupMember[];
@@ -161,6 +177,7 @@ export interface UrlLookupMatch {
   retailer_id: string | null;
 }
 
+/** Parts found for a product URL, after normalization. */
 export interface UrlLookupResponse {
   normalized_url: string;
   /**
@@ -200,10 +217,12 @@ export interface CrawlerAdapterConfig {
   updated_at: string;
 }
 
+/** Every per adapter crawler configuration. */
 export interface CrawlerAdapterConfigList {
   items: CrawlerAdapterConfig[];
 }
 
+/** Editable fields on a crawler adapter configuration. */
 export interface CrawlerAdapterConfigUpdate {
   delay_sec?: number;
   per_run_limit?: number | null;
@@ -227,11 +246,13 @@ export interface CrawlerSchedule {
   adapters: { adapter_name: string }[];
 }
 
+/** Crawler schedules plus the named presets available to them. */
 export interface CrawlerScheduleList {
   items: CrawlerSchedule[];
   presets: Record<string, string>;
 }
 
+/** New crawler schedule submission. */
 export interface CrawlerScheduleCreate {
   name: string;
   description?: string | null;
@@ -241,6 +262,7 @@ export interface CrawlerScheduleCreate {
   adapters: string[];
 }
 
+/** Editable fields on a crawler schedule. */
 export interface CrawlerScheduleUpdate {
   description?: string | null;
   enabled?: boolean;
@@ -249,12 +271,14 @@ export interface CrawlerScheduleUpdate {
   adapters?: string[];
 }
 
+/** Whether one schedule reconciled against the scheduler. */
 export interface CrawlerReconcileResult {
   schedule_name: string;
   ok: boolean;
   error: string | null;
 }
 
+/** Reconcile outcome for every crawler schedule. */
 export interface CrawlerReconcileAllResponse {
   results: CrawlerReconcileResult[];
 }
@@ -304,6 +328,7 @@ export interface ExtractionHealthResponse {
   window: WindowMeta;
 }
 
+/** Admin endpoint calls, grouped so admin surface stays in one module. */
 export const adminApi = {
   runMigrations: () =>
     apiClient.post<MigrationResult>('/admin/db-ops/migrations/run'),

@@ -1,3 +1,7 @@
+/**
+ * Curation queue fixtures for the admin tests.
+ */
+
 import type {
   CanonicalLinkGroupMember,
   CanonicalLinkGroupResponse,
@@ -6,6 +10,7 @@ import type {
   UrlLookupResponse,
 } from '../../../api/admin';
 
+/** Builds a curation queue candidate fixture. */
 export const makeCurationCandidate = (
   overrides: Partial<CanonicalLinkGroupMember> = {}
 ): CanonicalLinkGroupMember => ({
@@ -21,6 +26,7 @@ export const makeCurationCandidate = (
   ...overrides,
 });
 
+/** Builds a curation queue response. */
 export const makeCurationQueue = (
   items?: CanonicalLinkGroupMember[]
 ): CanonicalLinkGroupResponse => {
@@ -31,6 +37,7 @@ export const makeCurationQueue = (
   };
 };
 
+/** Builds a URL lookup response fixture. */
 export const makeUrlLookup = (
   overrides: Partial<UrlLookupResponse> = {}
 ): UrlLookupResponse => ({
@@ -39,6 +46,7 @@ export const makeUrlLookup = (
   ...overrides,
 });
 
+/** Builds one entry of a canonical rescan diff. */
 export const makeRescanDiffEntry = (
   overrides: Partial<RescanDiffEntry> = {}
 ): RescanDiffEntry => ({
@@ -49,6 +57,7 @@ export const makeRescanDiffEntry = (
   ...overrides,
 });
 
+/** Builds a full rescan summary fixture. */
 export const makeRescanResponse = (
   overrides: Partial<RescanResponse> = {}
 ): RescanResponse => ({

@@ -1,5 +1,10 @@
+/**
+ * Background job fixtures for the admin tests.
+ */
+
 import type { BackgroundJob, BackgroundJobList } from '../../../api/admin';
 
+/** Builds a background job fixture, overriding any field. */
 export const makeJob = (
   overrides: Partial<BackgroundJob> = {}
 ): BackgroundJob => ({
@@ -18,6 +23,7 @@ export const makeJob = (
   ...overrides,
 });
 
+/** Builds a paged background job list response. */
 export const makeJobsList = (
   opts: { running?: boolean; items?: BackgroundJob[] } = {}
 ): BackgroundJobList => {

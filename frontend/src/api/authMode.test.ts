@@ -1,3 +1,7 @@
+/**
+ * Tests for auth mode resolution.
+ */
+
 import { describe, expect, it } from 'vitest';
 import {
   AUTH_MODES,

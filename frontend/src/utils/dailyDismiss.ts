@@ -12,6 +12,7 @@ function todayDateString(): string {
   return `${y}-${m}-${d}`;
 }
 
+/** Whether the promo under this key was already dismissed today. */
 export function isDismissedToday(key: string): boolean {
   try {
     return localStorage.getItem(key) === todayDateString();
@@ -20,6 +21,7 @@ export function isDismissedToday(key: string): boolean {
   }
 }
 
+/** Marks the promo under this key dismissed until local midnight. */
 export function dismissForToday(key: string): void {
   try {
     localStorage.setItem(key, todayDateString());

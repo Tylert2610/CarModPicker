@@ -1,3 +1,7 @@
+/**
+ * Tests for useContainerWidth.
+ */
+
 import { act, renderHook } from '@testing-library/react';
 import {
   afterEach,

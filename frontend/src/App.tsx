@@ -1,3 +1,8 @@
+/**
+ * Route table and page shell: header, footer, ad slots, and the banners that sit
+ * around every route.
+ */
+
 import { Suspense, useEffect } from 'react';
 import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom';
 

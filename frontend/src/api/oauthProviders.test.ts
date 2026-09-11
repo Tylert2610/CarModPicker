@@ -1,3 +1,7 @@
+/**
+ * Tests for OAuth provider discovery and caching.
+ */
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   OAUTH_PROVIDERS_PATH,

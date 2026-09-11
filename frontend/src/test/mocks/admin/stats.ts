@@ -1,8 +1,13 @@
+/**
+ * Admin dashboard statistics fixtures.
+ */
+
 import type {
   AdminTableCountsResponse,
   CrawlBucketSummaryResponse,
 } from '../../../api/admin';
 
+/** Builds an admin table counts fixture. */
 export const makeSystemStats = (
   overrides: Partial<AdminTableCountsResponse> = {}
 ): AdminTableCountsResponse => ({
@@ -24,6 +29,7 @@ export const makeSystemStats = (
   ...overrides,
 });
 
+/** Builds a crawl bucket summary fixture. */
 export const makeCrawlBucketSummary = (
   overrides: Partial<CrawlBucketSummaryResponse> = {}
 ): CrawlBucketSummaryResponse => ({

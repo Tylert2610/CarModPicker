@@ -1,3 +1,7 @@
+/**
+ * Tests for identity client construction and origin resolution.
+ */
+
 import { describe, expect, it, vi, afterEach } from 'vitest';
 import { identityOriginFrom, getIdentityClient } from './identityClient';
 

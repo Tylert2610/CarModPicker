@@ -1,3 +1,7 @@
+/**
+ * Parts attached to a build list, including ordering and phase assignment.
+ */
+
 import { apiClient } from './client';
 import type {
   BuildListPartCreate,
@@ -7,6 +11,7 @@ import type {
   PartCreate,
 } from '../types/Api';
 
+/** Manages the parts attached to a build list. */
 export const buildListPartsApi = {
   createPartAndAddToBuildList: (
     buildListId: string,

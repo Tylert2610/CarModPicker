@@ -1,3 +1,7 @@
+/**
+ * Tests for imageApi and its presigned upload flow.
+ */
+
 import {
   beforeEach,
   describe,

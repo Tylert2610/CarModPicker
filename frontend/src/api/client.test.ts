@@ -1,3 +1,7 @@
+/**
+ * Tests for the shared api client and its token helpers.
+ */
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /** The Request the client handed to fetch, for asserting on. */

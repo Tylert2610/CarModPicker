@@ -5,11 +5,13 @@
 
 export type RouteGroup = 'admin' | 'authentication' | 'builder' | 'public';
 
+/** One route and the group it belongs to. */
 export interface CoverageRoute {
   path: string;
   group: RouteGroup;
 }
 
+/** Every route in the app, kept in step with the App.tsx route table. */
 export const ALL_ROUTES: ReadonlyArray<CoverageRoute> = [
   { path: '/', group: 'public' },
   { path: '/about', group: 'public' },

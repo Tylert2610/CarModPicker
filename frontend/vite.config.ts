@@ -1,3 +1,8 @@
+/**
+ * Vite build configuration, including the Sentry source map upload that runs
+ * only on CI builds that carry a token.
+ */
+
 import { sentryVitePlugin } from '@sentry/vite-plugin';
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react-swc';

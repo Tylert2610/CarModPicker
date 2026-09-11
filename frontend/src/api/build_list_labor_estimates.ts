@@ -1,9 +1,15 @@
+/**
+ * Labor estimate rows on a build list. Estimates are created through the phase
+ * endpoints, so only update and delete live here.
+ */
+
 import { apiClient } from './client';
 import type {
   BuildListLaborEstimateRead,
   BuildListLaborEstimateUpdate,
 } from '../types/Api';
 
+/** Update and delete for build list labor estimates. */
 export const buildListLaborEstimatesApi = {
   updateLaborEstimate: (
     laborEstimateId: string,

@@ -1,3 +1,7 @@
+/**
+ * Tests for the runtime app configuration.
+ */
+
 import { describe, expect, it } from 'vitest';
 import { loadCarModPickerConfig } from './app';
 

@@ -1,3 +1,7 @@
+/**
+ * Vitest configuration for the frontend unit and component tests.
+ */
+
 import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react-swc';
 

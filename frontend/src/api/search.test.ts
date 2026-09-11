@@ -1,3 +1,7 @@
+/**
+ * Tests for searchApi.
+ */
+
 import {
   beforeEach,
   describe,

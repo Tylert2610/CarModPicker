@@ -1,3 +1,7 @@
+/**
+ * Tests for identity mode sign in and session restore.
+ */
+
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { ApiError } from '@webbpulse/api-client';
 import { apiClient } from './client';

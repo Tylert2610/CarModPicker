@@ -1,3 +1,7 @@
+/**
+ * Guard: browser source reads import.meta.env, never process.env.
+ */
+
 import { readFileSync } from 'fs';
 import { globSync } from 'glob';
 import { describe, expect, it } from 'vitest';

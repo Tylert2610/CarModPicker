@@ -1,3 +1,9 @@
+/**
+ * Bearer-mode auth: password login, TOTP, WebAuthn, and Google OAuth. Each call
+ * that returns a token stores it, so callers receive a plain user and never
+ * handle the token themselves.
+ */
+
 import {
   apiClient,
   setStoredToken,
@@ -25,11 +31,13 @@ import type {
   UserRead,
 } from '../types/Api';
 
+/** WebAuthn ceremony options plus the token that ties them to a verify call. */
 export interface WebAuthnOptionsResponse {
   options: Record<string, unknown>;
   challenge_token: string;
 }
 
+/** A registered passkey as shown in account settings. */
 export interface WebAuthnCredentialSummary {
   id: string;
   nickname: string;
@@ -41,6 +49,7 @@ export interface WebAuthnCredentialSummary {
   last_used_at?: string | null;
 }
 
+/** Bearer mode auth calls. Token bearing responses store the token before returning. */
 export const authApi = {
   login: async (
     data: BodyLoginForAccessToken

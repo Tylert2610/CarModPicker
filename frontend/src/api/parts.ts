@@ -1,3 +1,7 @@
+/**
+ * Parts catalog: lookup, search, filtering, and the price summaries shown on a part.
+ */
+
 import { apiClient } from './client';
 import type {
   PaginatedResponse,
@@ -11,6 +15,7 @@ import type {
   PriceHistorySinglePartResponse,
 } from '../types/Api';
 
+/** Part lookup, search, filtering, and price history. */
 export const partsApi = {
   getParts: (params?: {
     skip?: number;

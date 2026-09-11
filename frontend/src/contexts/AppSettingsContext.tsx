@@ -1,3 +1,8 @@
+/**
+ * Provider that loads global app settings once at mount and exposes a refresh.
+ * A failed load leaves settings null so callers fall back to defaults.
+ */
+
 import type { ReactNode } from 'react';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 
@@ -5,6 +10,7 @@ import type { AppSettings } from '../api/app_settings';
 import { appSettingsApi } from '../api/app_settings';
 import { AppSettingsContext } from './AppSettingsContextDefinition';
 
+/** Loads global app settings once at mount and keeps them refreshable. */
 export const AppSettingsProvider: React.FC<{ children: ReactNode }> = ({
   children,
 }) => {

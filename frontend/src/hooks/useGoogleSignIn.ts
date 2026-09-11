@@ -1,3 +1,8 @@
+/**
+ * Drives Google sign in and the follow up states it can require: linking an
+ * existing account, completing signup, or a second factor.
+ */
+
 import { useCallback, useMemo, useState } from 'react';
 import { GOOGLE_CLIENT_ID } from '../config/google';
 import { authApi } from '../api/auth';
@@ -10,6 +15,7 @@ import type {
 } from '../types/Api';
 import { getApiErrorMessage } from '../utils/apiError';
 
+/** Whether a Google client id is present, so callers can hide the button. */
 export const isGoogleConfigured = (): boolean => Boolean(GOOGLE_CLIENT_ID);
 
 const makeNonce = (): string => {
@@ -30,6 +36,7 @@ interface UseGoogleSignInOptions {
   onError: (message: string) => void;
 }
 
+/** Runs Google sign in and surfaces whichever follow up step it requires. */
 export const useGoogleSignIn = ({
   onLoggedIn,
   onError,

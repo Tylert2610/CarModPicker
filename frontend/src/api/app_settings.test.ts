@@ -1,3 +1,7 @@
+/**
+ * Tests for appSettingsApi.
+ */
+
 import {
   beforeEach,
   describe,
