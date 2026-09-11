@@ -16,7 +16,7 @@ const navigate = vi.fn();
 const authLogin = vi.fn();
 const checkAuthStatus = vi.fn().mockResolvedValue(undefined);
 
-/** Whatever the passkey availability probe should answer for one test. */
+/** Whatever the passkey availability route should answer for one test. */
 let passkeyAnswer: 'available' | 'unavailable' | 'unknown' = 'unavailable';
 /** Whatever the discovery route should answer for one test. */
 let providerList: { id: string; displayName: string }[] = [];
@@ -166,7 +166,7 @@ afterEach(() => {
 });
 
 describe('the passkey button', () => {
-  it('is absent while the probe is in flight and when it says unavailable', async () => {
+  it('is absent while the read is in flight and when it says unavailable', async () => {
     await renderLogin();
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /sign in$/i })).toBeTruthy();
@@ -182,7 +182,7 @@ describe('the passkey button', () => {
     });
   });
 
-  it('stays hidden when the probe learned nothing', async () => {
+  it('stays hidden when the read learned nothing', async () => {
     // `unknown` is not `unavailable`, but it is not a reason to offer a
     // control whose failure the user could not act on either.
     passkeyAnswer = 'unknown';

@@ -28,6 +28,8 @@
  * passkey ceremonies and the OAuth link surface, and webbpulse-python 0.16.0
  * serves `/api/auth/passkeys/*`, `/api/auth/login/passkey/*` and the OAuth
  * routes including a `GET /api/auth/oauth/providers` discovery route.
+ * webbpulse-python 0.17.0 adds the matching one for passkeys,
+ * `GET /api/auth/passkeys/availability`.
  *
  * So neither capability is gated on the mode any more. What they are gated on
  * is the *deployment*, which is a different question and not one a constant can

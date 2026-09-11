@@ -67,8 +67,8 @@ export const identityOriginFrom = (apiBaseUrl: string): string => {
  *
  * The capability gates in `./oauthProviders` and `./passkeyAvailability` make
  * their own `fetch` calls rather than going through `AuthClient`, because both
- * ask a question before there is a session and neither wants the retry-on-401
- * pipeline. They still have to reach the same origin the client would, so the
+ * read a discovery route before there is a session and neither wants the
+ * retry-on-401 pipeline. They still have to reach the same origin the client would, so the
  * origin derivation lives here rather than being repeated twice.
  *
  * `path` is already absolute from the identity root (`/api/auth/...`), matching
