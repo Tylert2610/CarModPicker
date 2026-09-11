@@ -19,8 +19,13 @@ import GoogleAuthFlow from '../../components/authentication/GoogleAuthFlow';
 import { Input } from '../../components/ui/input';
 import { useAuth } from '../../hooks/useAuth';
 import { isGoogleConfigured } from '../../hooks/useGoogleSignIn';
-import { identityAvailability } from '../../api/authMode';
+import { AUTH_MODE, identityAvailability } from '../../api/authMode';
 import { authApi } from '../../api/auth';
+import OAuthProviderButtons from '../../components/authentication/OAuthProviderButtons';
+import PasskeySignInButton from '../../components/authentication/PasskeySignInButton';
+import { useOAuthCallback } from '../../hooks/useOAuthCallback';
+import { describeOAuthCallbackError } from '../../api/identityOAuth';
+import type { PasskeySignInResult } from '../../api/identityPasskeys';
 import { getApiErrorMessage } from '../../utils/apiError';
 import type { UserRead } from '../../types/Api';
 import {
@@ -58,12 +63,18 @@ function Login() {
   const [searchParams] = useSearchParams();
   const returnTo = safeReturnTo(searchParams.get('returnTo'));
   const { login: authLogin, checkAuthStatus } = useAuth();
-  // Passkeys and Google sign in are M5 and M6 in the identity service and are
-  // not shipped, so identity mode hides both rather than rendering a button
-  // that 404s. In bearer mode both are exactly as they were.
+  // Both mechanisms carry passkeys and OAuth, and they carry them differently:
+  // the legacy ones speak CarModPicker's own routes through
+  // `@simplewebauthn/browser` and `@react-oauth/google`, the identity ones go
+  // through the package. `available` says the mode has the affordance at all;
+  // the identity components ask the deployment whether it is actually on and
+  // render nothing when it is not.
   const available = identityAvailability();
-  const passkeySupported = browserSupportsWebAuthn() && available.passkeys;
-  const googleAvailable = isGoogleConfigured() && available.googleOauth;
+  const identityMode = AUTH_MODE === 'identity';
+  const passkeySupported =
+    !identityMode && browserSupportsWebAuthn() && available.passkeys;
+  const googleAvailable =
+    !identityMode && isGoogleConfigured() && available.googleOauth;
   const requires2FA = challenge !== null;
   // Only the identity service issues recovery codes, and one is not six digits,
   // so the field stops being numeric when they are accepted.
@@ -88,6 +99,51 @@ function Login() {
       await checkAuthStatus();
     }
     void navigate(returnTo);
+  };
+
+  /**
+   * Acts on an OAuth callback this page was reached from.
+   *
+   * Four markers, three of which are already modelled by the password flow's
+   * own states: a completed sign in finishes exactly like a password one, an
+   * MFA ticket becomes the same challenge the second leg reads, and a refusal
+   * becomes the same banner. `linked` cannot reach the login page (it is a
+   * callback for a signed in user), so it is folded into the sign in case.
+   */
+  useOAuthCallback(async (result) => {
+    if (result.kind === 'signed-in' || result.kind === 'linked') {
+      await finishLogin(null);
+      return;
+    }
+    if (result.kind === 'mfa-required') {
+      setChallenge({
+        kind: 'identity-ticket',
+        ticket: result.ticket,
+        factors: [],
+      });
+      return;
+    }
+    setApiError(
+      describeOAuthCallbackError(result, 'That sign in could not be completed.')
+    );
+  });
+
+  /** Finishes a passwordless sign in, or shows why it did not finish. */
+  const handlePasskeyResult = async (result: PasskeySignInResult) => {
+    if (result.status === 'authenticated') {
+      await finishLogin(null);
+      return;
+    }
+    if (result.status === 'mfa-required') {
+      setChallenge({
+        kind: 'identity-ticket',
+        ticket: result.ticket,
+        factors: result.factors,
+      });
+      setApiError(null);
+      return;
+    }
+    if (result.status === 'failed') setApiError(result.error);
   };
 
   const handlePasskeyLogin = async () => {
@@ -358,6 +414,27 @@ function Login() {
             >
               {isLoading ? 'Signing in...' : 'Sign in'}
             </Button>
+
+            {!requires2FA && identityMode && (
+              <>
+                <div className="flex items-center gap-3 my-2">
+                  <div className="h-px flex-1 bg-muted"></div>
+                  <span className="text-xs text-muted-foreground uppercase tracking-wider">
+                    or
+                  </span>
+                  <div className="h-px flex-1 bg-muted"></div>
+                </div>
+                <PasskeySignInButton
+                  username={username}
+                  onResult={(result) => void handlePasskeyResult(result)}
+                  disabled={isLoading}
+                />
+                <OAuthProviderButtons
+                  returnTo={returnTo}
+                  disabled={isLoading}
+                />
+              </>
+            )}
 
             {!requires2FA && (passkeySupported || googleAvailable) && (
               <>

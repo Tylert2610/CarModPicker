@@ -73,13 +73,17 @@ describe('identityAvailability', () => {
     expect(available.googleOauth).toBe(true);
   });
 
-  it('withholds passkeys and Google in identity mode', () => {
-    // M5 and M6 in the server side package, so the routes do not exist. The
-    // UI hides rather than disables, because a control that cannot work in this
-    // deployment is not a state the user can wait out.
+  it('offers passkeys and OAuth in identity mode too', () => {
+    // Both shipped: `@webbpulse/auth` 0.8.0 carries the passkey ceremonies and
+    // the OAuth link surface, and webbpulse-python 0.16.0 serves the routes.
+    // An earlier revision asserted false here, back when the server side
+    // package had only M1 to M4.
+    //
+    // Whether a *deployment* has either switched on is a different question,
+    // asked at runtime by `./passkeyAvailability` and `./oauthProviders`.
     const available = identityAvailability('identity');
-    expect(available.passkeys).toBe(false);
-    expect(available.googleOauth).toBe(false);
+    expect(available.passkeys).toBe(true);
+    expect(available.googleOauth).toBe(true);
   });
 
   it('offers password and TOTP in both modes', () => {

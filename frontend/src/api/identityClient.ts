@@ -16,7 +16,11 @@
  * `createApiClient` as `auth`, which is what `./client` does. This module only
  * builds the thing and hands it out.
  */
-import { createAuthClient, type AuthClient } from '@webbpulse/auth';
+import {
+  createAuthClient,
+  type AuthClient,
+  type WebAuthnAdapter,
+} from '@webbpulse/auth';
 import { AUTH_MODE } from './authMode';
 import { appConfig } from '../config/app';
 
@@ -59,6 +63,23 @@ export const identityOriginFrom = (apiBaseUrl: string): string => {
 };
 
 /**
+ * An absolute URL for one identity route.
+ *
+ * The capability gates in `./oauthProviders` and `./passkeyAvailability` make
+ * their own `fetch` calls rather than going through `AuthClient`, because both
+ * ask a question before there is a session and neither wants the retry-on-401
+ * pipeline. They still have to reach the same origin the client would, so the
+ * origin derivation lives here rather than being repeated twice.
+ *
+ * `path` is already absolute from the identity root (`/api/auth/...`), matching
+ * the package's own defaults, so this only prefixes the origin.
+ */
+export const identityUrl = (path: string): string => {
+  const origin = identityOriginFrom(appConfig.apiBaseUrl);
+  return origin === '' ? path : `${origin}${path}`;
+};
+
+/**
  * The one instance, or null in bearer mode.
  *
  * Built on first request rather than at module load so that importing this
@@ -66,6 +87,33 @@ export const identityOriginFrom = (apiBaseUrl: string): string => {
  */
 let client: AuthClient<unknown> | null = null;
 let built = false;
+
+/**
+ * The WebAuthn surface the passkey ceremonies run against, when one is set.
+ *
+ * `AuthClient` takes the adapter as a **constructor** option and defaults it to
+ * `navigator.credentials`, so there is no per-call seam and this is the only
+ * place a test can get one in. A jsdom run has no authenticator and cannot
+ * produce a real credential, so `src/api/identityPasskeys.test.ts` sets a stub
+ * here before the client is built and clears it after.
+ *
+ * Null in every real bundle, which leaves the package on its own default and
+ * means production behaviour does not depend on this existing.
+ */
+let webAuthnAdapter: WebAuthnAdapter | null = null;
+
+/**
+ * Installs a WebAuthn stub for the passkey tests. Tests only.
+ *
+ * Must be called before the first `getIdentityClient()`, since the adapter is
+ * fixed at construction. `resetIdentityClientForTests` clears it along with the
+ * instance, so one test's stub cannot leak into the next.
+ */
+export const setWebAuthnAdapterForTests = (
+  adapter: WebAuthnAdapter | null
+): void => {
+  webAuthnAdapter = adapter;
+};
 
 /**
  * The identity client, or null when this bundle runs the legacy bearer flow.
@@ -97,6 +145,9 @@ export const getIdentityClient = (): AuthClient<unknown> | null => {
       credentials: 'include',
       timeoutMs: 30000,
     },
+    // Null in every real bundle, which leaves the package on its
+    // `navigator.credentials` default. See `setWebAuthnAdapterForTests`.
+    ...(webAuthnAdapter === null ? {} : { webAuthn: webAuthnAdapter }),
     // Deliberately no `loadUser`. `AuthClient` would call it after every
     // successful login and refresh, and this application already has one place
     // that fetches the user, `AuthContext.checkAuthStatus`, which reads roughly
@@ -117,4 +168,5 @@ export const resetIdentityClientForTests = (): void => {
   client?.dispose();
   client = null;
   built = false;
+  webAuthnAdapter = null;
 };

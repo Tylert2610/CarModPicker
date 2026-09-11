@@ -13,6 +13,8 @@ import { Button } from '../ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/dialog';
 import { Input } from '../ui/input';
 import ConnectedAccountsSettings from './ConnectedAccountsSettings';
+import IdentityConnectedAccounts from './IdentityConnectedAccounts';
+import IdentityPasskeySettings from './IdentityPasskeySettings';
 import PasskeySettings from './PasskeySettings';
 import { getApiErrorMessage } from '../../utils/apiError';
 
@@ -81,10 +83,10 @@ function SecuritySettingsDialog({
 }: SecuritySettingsDialogProps) {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<TabType>('password');
-  // Passkeys and connected accounts are M5 and M6 in the identity service and
-  // are not shipped. In identity mode both tabs are hidden rather than shown
-  // empty or disabled, because neither is a temporary state a user can wait
-  // out in this deployment. Both are untouched in bearer mode.
+  // Both mechanisms carry passkeys and connected accounts, and the panels for
+  // each speak entirely different routes, so the tab picks a component rather
+  // than branching inside one. See `./IdentityPasskeySettings` and
+  // `./IdentityConnectedAccounts` for why they are separate files.
   const available = identityAvailability();
 
   // Password change state
@@ -851,12 +853,20 @@ function SecuritySettingsDialog({
               </Button>
             </div>
           )}
-          {available.passkeys && activeTab === 'passkeys' && (
-            <PasskeySettings />
-          )}
-          {available.googleOauth && activeTab === 'connected' && (
-            <ConnectedAccountsSettings />
-          )}
+          {available.passkeys &&
+            activeTab === 'passkeys' &&
+            (AUTH_MODE === 'identity' ? (
+              <IdentityPasskeySettings />
+            ) : (
+              <PasskeySettings />
+            ))}
+          {available.googleOauth &&
+            activeTab === 'connected' &&
+            (AUTH_MODE === 'identity' ? (
+              <IdentityConnectedAccounts />
+            ) : (
+              <ConnectedAccountsSettings />
+            ))}
         </div>
       </DialogContent>
     </Dialog>
