@@ -1,0 +1,315 @@
+# The single pull request gate for this repository.
+#
+# This replaces `backend-ci.yml`, `frontend-ci.yml` and `chrome-extension-ci.yml`,
+# which were three workflows with three separate `paths:` filters. The filters
+# were the reason to merge them. A workflow that never triggers reports no
+# checks at all rather than reporting passing ones, so a branch ruleset naming a
+# check from a path filtered workflow blocks every pull request that does not
+# touch that path: the required check simply never arrives and the pull request
+# waits forever. The usual workaround is a second "skipped" workflow declaring
+# the same job names on the inverse paths filter, which is two files to keep in
+# sync per component.
+#
+# This file takes the other route. It triggers on every pull request with no
+# workflow level paths filter, so it always runs and always reports, and the
+# path decision moves inside to the `changes` job. A component whose files were
+# not touched has its jobs skipped by an `if:`, and the gate at the bottom
+# treats a skipped job as a pass. The ruleset therefore names exactly one check,
+# `all-checks-passed`, and that check arrives on every pull request.
+#
+# ## Why the gate is a job in this repository
+#
+# A job inside a called reusable workflow reports its check name as
+# `<caller job> / <job name>`, not the bare name the reusable workflow gave it.
+# `python-ci.yml` has its own `all-checks-passed` job, but from here it surfaces
+# as `backend / all-checks-passed`, and that composed name is not something a
+# ruleset can require stably: it changes if this file renames the calling job.
+# The matrix jobs are worse, because `Tests (catalog)` carries a domain name
+# that changes whenever a domain is added or removed, and a required context
+# that no longer exists blocks every pull request until someone edits the
+# ruleset by hand. So the gate is declared here, in this repository, with a
+# fixed name, and it depends on everything else.
+#
+# ## Why the CodeArtifact role comes from a repository variable
+#
+# `requirements.txt` starts with `webbpulse`, published only to CodeArtifact
+# (domain `webbpulse`, repository `python`, in the Artifacts account) and never
+# to PyPI, so the backend cannot resolve its dependencies without a token.
+# `AWS_DEPLOY_ROLE_ARN` lives on the `staging` and `production` Environments,
+# whose deployment branch policies admit only those branches, so a
+# `pull_request` job cannot read it. `CI_AWS_ROLE_ARN` is repository scoped for
+# that reason, and it must name `carmodpicker-staging-github-actions-ci`, the
+# read only CodeArtifact role in `terraform/iam_github_actions.tf`, never the
+# deploy role, which also holds `lambda:UpdateFunctionCode` and `ecr:PutImage`.
+#
+# It is one variable rather than a branch conditional on purpose: this workflow
+# runs only on `pull_request`, every run resolves the same read only package,
+# and the CodeArtifact domain lives in the Artifacts account rather than in
+# either deploy account, so there is nothing for a conditional to pick between.
+name: CI
+
+on:
+  pull_request:
+    branches: [main, staging]
+
+# Dropped to none by declaring the block at all, so anything a job needs beyond
+# reading the repository has to be restated on that job.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # The path filter that used to live on three `on:` blocks. Running it as a
+  # job rather than as a workflow trigger is what lets the gate below see a
+  # deliberate skip instead of seeing nothing at all.
+  changes:
+    name: Detect changed components
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+      chrome-extension: ${{ steps.filter.outputs.chrome-extension }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
+        id: filter
+        with:
+          # Each component claims this file as well as its own tree. A change
+          # to the pipeline itself has to be proven against every component it
+          # runs, otherwise a broken edit here lands on a pull request that
+          # touched only one directory and is not discovered until a later
+          # change happens to trigger the job it broke.
+          filters: |
+            backend:
+              - 'backend/**'
+              - '.github/workflows/ci.yml'
+            frontend:
+              - 'frontend/**'
+              - '.github/workflows/ci.yml'
+            chrome-extension:
+              - 'chrome-extension/**'
+              - '.github/workflows/ci.yml'
+
+  # Lint, type check, security and a pytest job per domain. The domains are
+  # declared in `[tool.webbpulse.ci.domains]` in `backend/pyproject.toml`, which
+  # the reusable workflow reads to build its matrix; see the long comment on
+  # that table for how a test file is assigned to a domain and why anything
+  # cross cutting is deliberately left unclaimed.
+  backend:
+    name: Backend
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    permissions:
+      contents: read
+      # What lets the called jobs mint the OIDC token they trade for the
+      # CodeArtifact role. Reusable workflows cannot widen this themselves.
+      id-token: write
+    uses: WebbPulse/.github/.github/workflows/python-ci.yml@v2
+    with:
+      python-version: "3.13"
+      working-directory: backend
+      # Reproduces what the old `backend-ci.yml` installed, exactly. The four
+      # tools after the requirements file are CI only and deliberately absent
+      # from `requirements.txt`, which is also what the Lambda images install.
+      install-command: >-
+        python -m pip install --upgrade pip &&
+        pip install -r requirements.txt &&
+        pip install pytest-cov pytest-xdist pyright bandit pip-audit
+      # Empty skips both ruff steps, and it has to be empty. This repository
+      # formats with black and sorts with isort, and its tree has never been
+      # through `ruff format`, so running ruff here would fail on essentially
+      # every file for style the project has not adopted. Converging on ruff is
+      # a real change with a real diff; it is not this pull request.
+      ruff-target: ""
+      # Run in this order and each on its own line, so a failure names the tool
+      # rather than reporting one opaque non-zero exit for the pair. `--config
+      # pyproject.toml` is explicit because black's discovery walks upward from
+      # the target and this repository has a second `pyproject.toml` above.
+      lint-commands: |
+        black --config pyproject.toml --check --diff .
+        isort . --check-only --diff
+      typecheck-command: pyright
+      # `-r app -ll` scans the application recursively and reports low severity
+      # and above. Known false positives (B404, B603, B607) are suppressed in
+      # `.bandit`, and individual instances carry `# nosec`.
+      #
+      # pip-audit ignores CVE-2024-23342 in ecdsa: it is not reachable here,
+      # because tokens are signed with HS256 rather than with any ECDSA
+      # algorithm. `webbpulse` resolves through the CodeArtifact index the
+      # reusable workflow configures and is audited like any other dependency.
+      security-commands: |
+        bandit -r app -ll
+        pip-audit -r requirements.txt --ignore-vuln CVE-2024-23342
+      # `--dist=loadfile` used to live in `pytest.ini` addopts and is passed
+      # here instead, because the workflow supplies `-n` itself and the two
+      # belong together. It keeps every test in a file on one worker, which
+      # five module scoped fixtures in this suite depend on, including the
+      # fresh interpreter isolation checks in `tests/entrypoints`. See the
+      # comment in `backend/pytest.ini` for the rest.
+      pytest-args: "--dist=loadfile"
+      pytest-workers: auto
+      coverage-source: app
+      # Placeholder values, not secrets. The settings module reads all six at
+      # import time, so the suite cannot be collected without them, and none of
+      # them authenticates against anything: SECRET_KEY signs tokens that exist
+      # only inside a test process. Real values come from the
+      # `carmodpicker-<env>/app` secret at runtime and are never in CI.
+      test-env-json: |
+        {
+          "SECRET_KEY": "test-secret-key-for-ci",
+          "ACCESS_TOKEN_EXPIRE_MINUTES": "30",
+          "ALLOWED_ORIGINS": "http://localhost:3000,http://localhost:4000",
+          "DEBUG": "true",
+          "API_STR": "/api",
+          "EMAIL_FROM": "test@example.com"
+        }
+      codeartifact-domain: webbpulse
+      codeartifact-repository: python
+      aws-region: us-west-2
+    secrets:
+      role-to-assume: ${{ vars.CI_AWS_ROLE_ARN }}
+      codeartifact-domain-owner: ${{ vars.CODEARTIFACT_DOMAIN_OWNER }}
+
+  # Install, format check, lint, test with coverage, and build. The reusable
+  # workflow owns the CodeArtifact login the @webbpulse/* packages need, which
+  # is why this job assumes a role and `frontend-audit-and-imports` below does
+  # not.
+  #
+  # `typecheck-command` is empty on purpose: `npm run build` runs `tsc -b`
+  # before vite, so a type error already fails the build step, and passing both
+  # would type check the project twice per run.
+  frontend:
+    name: Frontend
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
+    permissions:
+      contents: read
+      id-token: write
+    uses: WebbPulse/.github/.github/workflows/typescript-ci.yml@v2
+    with:
+      node-version: "22"
+      working-directory: frontend
+      lint-command: npm run lint
+      format-check-command: npm run format:check
+      typecheck-command: ""
+      test-command: npm run test:run -- --coverage
+      build-command: npm run build
+      codeartifact-domain: webbpulse
+      codeartifact-repository: npm
+      aws-region: us-west-2
+    secrets:
+      role-to-assume: ${{ vars.CI_AWS_ROLE_ARN }}
+      codeartifact-domain-owner: ${{ vars.CODEARTIFACT_DOMAIN_OWNER }}
+
+  # The two checks the reusable workflow has no input for. Kept rather than
+  # dropped: the audit gate and the circular import gate both predate the shared
+  # workflow and neither has an equivalent there.
+  #
+  # Neither needs node_modules from the private registry. `npm audit` reads the
+  # lockfile and madge parses TypeScript source, so this job skips the
+  # CodeArtifact login entirely, installs nothing, and needs no AWS role.
+  frontend-audit-and-imports:
+    name: Frontend audit and imports
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+
+      - name: Audit dependencies for vulnerabilities
+        working-directory: frontend
+        run: npm audit --audit-level=moderate
+
+      - name: Check circular imports
+        working-directory: frontend
+        run: npx --yes madge --circular --extensions ts,tsx src/
+
+  chrome-extension:
+    name: Chrome extension
+    needs: changes
+    if: needs.changes.outputs.chrome-extension == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: chrome-extension/package-lock.json
+
+      - name: Install dependencies
+        working-directory: chrome-extension
+        run: npm ci
+
+      - name: Type check
+        working-directory: chrome-extension
+        run: npm run type-check
+
+      - name: Audit dependencies for vulnerabilities
+        working-directory: chrome-extension
+        run: npm audit --audit-level=moderate
+
+      - name: Build extension
+        working-directory: chrome-extension
+        run: npm run build
+
+      - name: Verify manifest.json is present in dist
+        working-directory: chrome-extension
+        run: test -f dist/manifest.json
+
+      - name: Upload built extension as artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: chrome-extension-dist-${{ github.sha }}
+          path: chrome-extension/dist/
+          retention-days: 14
+
+  # The one name the branch ruleset requires, and the only one it should.
+  #
+  # `skipped` counts as success, and that is the entire point rather than an
+  # oversight. A pull request touching only `frontend/` skips every backend job,
+  # and a gate that demanded success from all of them would never pass. Failure
+  # and cancellation both fail the gate; cancellation matters because a
+  # cancelled job has proven nothing, and letting it through would mean a run
+  # cancelled mid flight could satisfy the ruleset.
+  #
+  # `if: always()` is what makes the job run at all when something upstream
+  # failed. Without it the gate would itself be skipped by a failed dependency,
+  # and a skipped required check is not a failing one.
+  all-checks-passed:
+    name: all-checks-passed
+    runs-on: ubuntu-latest
+    needs:
+      - changes
+      - backend
+      - frontend
+      - frontend-audit-and-imports
+      - chrome-extension
+    if: always()
+    steps:
+      - name: Fail unless every upstream job succeeded or was skipped
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          echo "$RESULTS"
+          if echo "$RESULTS" | grep -Eq '"result": *"(failure|cancelled)"'; then
+            echo "::error::at least one upstream job failed or was cancelled"
+            exit 1
+          fi
+          echo "Every upstream job succeeded or was skipped."

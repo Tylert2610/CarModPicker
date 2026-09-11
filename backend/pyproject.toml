@@ -72,3 +72,160 @@ exclude_dirs = [
 # B404: subprocess import - We use subprocess safely for migrations (marked with # nosec)
 # B603: subprocess call - We use hardcoded commands, not user input (marked with # nosec)
 skips = ["B404", "B603", "B607"]
+
+# --- Per domain test sharding ------------------------------------------------
+# Read by WebbPulse/.github's reusable `python-ci.yml`, which turns this table
+# into one pytest job per domain plus a `shared` job carrying everything no
+# domain claims. Before this table existed the whole suite ran in a single job
+# and pytest was the long pole of backend CI at roughly six and a half minutes;
+# the fan out makes wall clock time track the largest domain instead of the sum
+# of all of them.
+#
+# The names are the nine in `app/composition/domains.py` and they are the nine
+# on purpose. That module is the source of truth for which endpoint modules a
+# domain owns, so a test file is claimed by the domain whose `_<domain>_routers`
+# function imports the endpoint module under test. `_catalog_routers` imports
+# `parts`, `categories`, `part_manufacturers` and `retailers`, so the four
+# endpoint test files with those names are catalog's, and nothing else decides
+# it. When a router moves between domains here, the claim moves with it.
+#
+# **Unclaimed is the safe direction and it is used deliberately.** The shared
+# job is computed as a deselection rather than as a list: it runs `tests` with
+# one `--ignore` per claimed path, so a file nobody claimed still runs, just in
+# the slower job. Forgetting a file therefore costs time and never coverage.
+# That asymmetry is why everything cross cutting stays out of the table rather
+# than being assigned to whichever domain looks closest:
+#
+#   - `tests/db/**` covers the repository layer that every domain shares, and
+#     several of its files touch three or four domains' tables in one module.
+#   - `tests/entrypoints/**` asserts properties *across* the domains, including
+#     the isolation test that proves importing one domain imports no other. It
+#     is meaningless scoped to a single domain.
+#   - `tests/api/endpoints/test_delete_cascades.py` and
+#     `test_tombstone_aware_reads.py` each span four or five domains by design,
+#     because the cascades they cover are the seams between domains.
+#   - The three `test_*_auth_coverage.py` sweeps enumerate the whole OpenAPI
+#     schema, so they fail the moment they are given a partial application.
+#   - `tests/core/**`, `tests/middleware/**`, `tests/scripts/**`,
+#     `tests/consumers/**` and the loose files at `tests/` are configuration,
+#     inference and regression guards that are owned by no single domain.
+#
+# A software engineer adding a test file has to do nothing: it lands in shared
+# and CI stays correct. Claiming it is an optimisation, made when the file
+# belongs to exactly one domain and the whole file belongs to it.
+#
+# Two names need quoting. `build-lists` and `build-logs` carry hyphens because
+# that is what the ECR repository, the Lambda function and the log group carry,
+# and a bare hyphenated key is not valid TOML.
+#
+# Paths are relative to this directory, which is what the reusable workflow
+# passes as its `working-directory`. A value may name a directory or a single
+# test file, and no path may be claimed twice.
+[tool.webbpulse.ci]
+test-root = "tests"
+
+[tool.webbpulse.ci.domains]
+# `_identity_routers` owns the four `/api/auth` modules. `tests/auth` is the
+# characterization suite for those flows and `tests/dependencies` is the token
+# decoding that sits directly behind them. The four `test_identity_row*.py`
+# files are the identity package adoption rows, which are identity and nothing
+# else. `test_auth_auth_coverage.py` is deliberately absent: it sweeps the whole
+# schema, so it belongs in shared.
+identity = [
+    "tests/auth",
+    "tests/dependencies",
+    "tests/api/endpoints/test_auth.py",
+    "tests/api/endpoints/test_webauthn.py",
+    "tests/api/endpoints/test_google_oauth.py",
+    "tests/utils/test_google_oauth_nonce.py",
+    "tests/test_identity_row5.py",
+    "tests/test_identity_row9.py",
+    "tests/test_identity_row10.py",
+    "tests/test_identity_row11.py",
+    "tests/test_jwt_algorithm_regression.py",
+]
+
+# `_users_routers` owns `users` and `app_settings`. `test_users_admin.py` is the
+# admin facing half of the same `/api/users` router rather than an `/api/admin`
+# route, so it is users' rather than admin's.
+users = [
+    "tests/api/endpoints/test_users.py",
+    "tests/api/endpoints/test_users_admin.py",
+    "tests/api/endpoints/test_app_settings.py",
+    "tests/services/test_user_service.py",
+]
+
+# `_catalog_routers` owns `parts`, `categories`, `part_manufacturers` and
+# `retailers`. The inference and extraction modules under `app/core` exist to
+# serve part and category creation and are exercised by nothing else, so they
+# are claimed here rather than left to shared.
+catalog = [
+    "tests/api/endpoints/test_parts.py",
+    "tests/api/endpoints/test_parts_price_history.py",
+    "tests/api/endpoints/test_categories.py",
+    "tests/api/endpoints/test_categories_admin.py",
+    "tests/api/endpoints/test_part_manufacturers.py",
+    "tests/api/endpoints/test_retailers.py",
+    "tests/services/test_part_linker_styling_drift.py",
+    "tests/services/test_part_price_aggregation_service.py",
+    "tests/test_part_listing_service_canonical.py",
+    "tests/test_car_inference.py",
+    "tests/test_car_inference_ambiguity.py",
+    "tests/test_category_inference.py",
+    "tests/test_engine_platforms.py",
+    "tests/test_extract_fitment_candidates.py",
+    "tests/test_extract_year_ranges.py",
+]
+
+# `_vehicles_routers` owns `car_generations` and `search`. The generation loader
+# and the display name sync are the data behind that router.
+vehicles = [
+    "tests/api/endpoints/test_car_generations.py",
+    "tests/api/endpoints/test_search.py",
+    "tests/services/test_car_generation_service.py",
+    "tests/test_car_generations_loader.py",
+    "tests/test_init_cars_display_name.py",
+]
+
+# `_build_lists_routers` owns the four build list modules.
+"build-lists" = [
+    "tests/api/endpoints/test_build_lists.py",
+    "tests/api/endpoints/test_build_list_parts.py",
+    "tests/api/endpoints/test_build_list_labor_estimates.py",
+    "tests/services/test_build_list_service.py",
+]
+
+# `_build_logs_routers` owns `build_logs` alone. The orphan guard is a build log
+# invariant.
+"build-logs" = [
+    "tests/api/endpoints/test_build_logs.py",
+    "tests/test_build_log_orphan_guard.py",
+]
+
+# `_moderation_routers` owns `votes`, `reports` and `bug_reports`.
+moderation = [
+    "tests/api/endpoints/test_votes.py",
+    "tests/api/endpoints/test_reports.py",
+    "tests/api/endpoints/test_bug_reports.py",
+    "tests/services/test_vote_service.py",
+    "tests/services/test_report_service.py",
+    "tests/services/test_bug_report_service.py",
+]
+
+# `_media_routers` owns `images`. The storage service and the image helpers are
+# the S3 layer behind that one router and reach nothing else.
+media = [
+    "tests/api/endpoints/test_images.py",
+    "tests/services/test_storage_service_lazy_init.py",
+    "tests/utils/test_image_utils.py",
+]
+
+# `_admin_routers` owns `part_price_alerts`, `crawled_pages` and the two
+# `admin` modules. `test_admin_auth_coverage.py` is deliberately absent: like
+# the other two sweeps it enumerates the whole schema.
+admin = [
+    "tests/api/endpoints/test_admin.py",
+    "tests/api/endpoints/test_crawled_pages.py",
+    "tests/api/endpoints/test_part_price_alerts.py",
+    "tests/services/test_part_price_alert_evaluation.py",
+]
