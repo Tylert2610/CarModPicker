@@ -114,6 +114,31 @@ const fixHtmlPlugin = () => {
         writeFileSync(popupHtmlPath, html, "utf-8");
       }
 
+      // Rename auth-callback.entry.html → auth-callback.html in dist. The
+      // manifest and `chrome.runtime.getURL` both name the plain form.
+      const authCallbackEntryPath = resolve(
+        __dirname,
+        "dist",
+        "auth-callback.entry.html"
+      );
+      const authCallbackHtmlPath = resolve(
+        __dirname,
+        "dist",
+        "auth-callback.html"
+      );
+      if (existsSync(authCallbackEntryPath)) {
+        let html = readFileSync(authCallbackEntryPath, "utf-8");
+        html = html.replace(/\s+crossorigin="[^"]*"/g, "");
+        html = html.replace(/\s+crossorigin/g, "");
+        writeFileSync(authCallbackHtmlPath, html, "utf-8");
+        unlinkSync(authCallbackEntryPath);
+      } else if (existsSync(authCallbackHtmlPath)) {
+        let html = readFileSync(authCallbackHtmlPath, "utf-8");
+        html = html.replace(/\s+crossorigin="[^"]*"/g, "");
+        html = html.replace(/\s+crossorigin/g, "");
+        writeFileSync(authCallbackHtmlPath, html, "utf-8");
+      }
+
       // Rename options.entry.html → options.html in dist
       const optionsEntryPath = resolve(__dirname, "dist", "options.entry.html");
       const optionsHtmlPath = resolve(__dirname, "dist", "options.html");
@@ -193,6 +218,9 @@ export default defineConfig({
       input: {
         popup: resolve(__dirname, "popup.entry.html"),
         options: resolve(__dirname, "options.entry.html"),
+        // The identity sign in redirect target. A page inside the extension,
+        // because row 6's handoff page only redirects to `chrome-extension:`.
+        "auth-callback": resolve(__dirname, "auth-callback.entry.html"),
         background: resolve(__dirname, "src/background.ts"),
         content: resolve(__dirname, "src/content.ts"),
       },
@@ -202,8 +230,12 @@ export default defineConfig({
           if (chunkInfo.name === "background" || chunkInfo.name === "content") {
             return "[name].js";
           }
-          // Popup and options as single files in root
-          if (chunkInfo.name === "popup" || chunkInfo.name === "options") {
+          // Popup, options and the auth callback as single files in root
+          if (
+            chunkInfo.name === "popup" ||
+            chunkInfo.name === "options" ||
+            chunkInfo.name === "auth-callback"
+          ) {
             return "[name].js";
           }
           return "assets/[name]-[hash].js";
@@ -232,7 +264,11 @@ export default defineConfig({
                 .pop()
                 ?.replace(".entry.html", "")
                 .replace(".html", "") || "";
-            if (entryName === "popup" || entryName === "options") {
+            if (
+              entryName === "popup" ||
+              entryName === "options" ||
+              entryName === "auth-callback"
+            ) {
               return undefined; // Bundle everything into the entry file
             }
           }

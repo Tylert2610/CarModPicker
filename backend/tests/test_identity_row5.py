@@ -906,14 +906,25 @@ def test_the_legacy_auth_surface_is_unchanged_by_the_mount(identity_app: Any, mo
 def test_the_mount_adds_exactly_the_package_routes_and_nothing_else(
     identity_app: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The difference between the two applications is the eighteen new pairs.
+    """The difference between the two applications is the eighteen new pairs,
+    plus row 10's two.
 
     Eighteen rather than twenty because two of the twenty already existed on the
     legacy side. Pinning the difference rather than a total is what makes this
     test survive row 8 adding a route to some other part of the domain, while
     still failing if this mount starts declaring something it did not before.
+
+    Row 10 is a deliberate instance of exactly that: the same
+    `if domain.name == "identity"` block in `app/composition/wiring.py` now also
+    mounts `app/composition/identity_extension.py`, which declares two routes
+    that are CarModPicker's own rather than the package's. They are named here
+    rather than folded into `PACKAGE_PATHS` because that tuple is the inventory
+    of what `webbpulse.identity` serves, and these two are not in it: no version
+    of the package declares them. `tests/test_identity_row10.py` owns them.
     """
     from app.core.config import settings as app_settings
+
+    from .test_identity_row10 import EXTENSION_PATHS
 
     with_package = _pairs(identity_app)
 
@@ -922,7 +933,7 @@ def test_the_mount_adds_exactly_the_package_routes_and_nothing_else(
 
     added = with_package - _pairs(build_app())
 
-    assert added == set(PACKAGE_PATHS) - set(COLLISIONS)
+    assert added == (set(PACKAGE_PATHS) - set(COLLISIONS)) | set(EXTENSION_PATHS)
 
 
 # ---------------------------------------------------------------------------
