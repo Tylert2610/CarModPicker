@@ -23,7 +23,7 @@ router = APIRouter()
 
 
 @router.get(
-    "/",
+    "",
     response_model=AppSettingsRead,
     responses=standard_responses(success_description="Current global app settings"),
 )
@@ -33,7 +33,7 @@ async def get_app_settings(repos: Repositories = Depends(get_repositories)) -> A
 
 
 @router.put(
-    "/",
+    "",
     response_model=AppSettingsRead,
     responses=standard_responses(
         success_description="App settings updated",

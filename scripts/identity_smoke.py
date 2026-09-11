@@ -315,16 +315,13 @@ def probes_for(user_id: str) -> list[Probe]:
             needs=["build_list_id"],
             body={"vote_type": "up"},
         ),
-        # media. The presigned URL is a write in every sense that matters: it is
-        # authenticated, it is scoped to the caller's subject and it mints a
-        # credential against the bucket.
         Probe(
             "media",
             "GET",
-            "/api/images/presigned-url?file_name=row13.png" "&content_type=image/png",
-            ok=(200,),
+            f"/api/images/by-source-url?source_url=https://example.invalid/{UNMATCHABLE}.png",
+            ok=(404,),
             kind="write",
-            note="mints a scoped upload credential, no object is written",
+            note="404 expected, the flagged media route resolved the caller",
         ),
         Probe(
             "media",

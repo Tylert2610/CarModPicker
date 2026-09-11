@@ -41,7 +41,7 @@ PUBLIC_ROUTES: set[tuple[str, str]] = {
     ("GET", "/api/users/count"),
     ("GET", "/api/users/{user_id}"),
     # Car catalog (read-only, public reference data)
-    ("GET", "/api/car-generations/"),
+    ("GET", "/api/car-generations"),
     ("GET", "/api/car-generations/by-ids"),
     ("GET", "/api/car-generations/count"),
     ("GET", "/api/car-generations/search"),
@@ -52,7 +52,7 @@ PUBLIC_ROUTES: set[tuple[str, str]] = {
     ("GET", "/api/car-generations/car-makes/{car_make_name}/car-models/{car_model_name}"),
     ("GET", "/api/car-generations/car-models/count"),
     # Build list public browsing
-    ("GET", "/api/build-lists/"),
+    ("GET", "/api/build-lists"),
     ("GET", "/api/build-lists/count"),
     ("GET", "/api/build-lists/with-votes"),
     ("GET", "/api/build-lists/car/{car_id}"),
@@ -71,7 +71,7 @@ PUBLIC_ROUTES: set[tuple[str, str]] = {
     ("GET", "/api/build-list-phases/count"),
     ("GET", "/api/build-list-labor-estimates/count"),
     # Parts catalog (read-only, including listings/price history)
-    ("GET", "/api/parts/"),
+    ("GET", "/api/parts"),
     ("GET", "/api/parts/check-url"),
     ("GET", "/api/parts/count"),
     ("GET", "/api/parts/filter-options"),
@@ -98,7 +98,7 @@ PUBLIC_ROUTES: set[tuple[str, str]] = {
     ("GET", "/api/categories/{category_id}/parts"),
     ("GET", "/api/categories/{category_id}/parts-count"),
     # Part manufacturers (catalog reference data)
-    ("GET", "/api/part-manufacturers/"),
+    ("GET", "/api/part-manufacturers"),
     ("GET", "/api/part-manufacturers/count"),
     ("GET", "/api/part-manufacturers/counts/by-source"),
     ("GET", "/api/part-manufacturers/search"),
@@ -106,7 +106,7 @@ PUBLIC_ROUTES: set[tuple[str, str]] = {
     ("GET", "/api/part-manufacturers/{part_manufacturer_id}/parts"),
     ("GET", "/api/part-manufacturers/{part_manufacturer_id}/parts-count"),
     # Retailers (catalog reference data)
-    ("GET", "/api/retailers/"),
+    ("GET", "/api/retailers"),
     ("GET", "/api/retailers/count"),
     ("GET", "/api/retailers/{retailer_id}"),
     # Vote/report/bug-report public surfaces
@@ -122,7 +122,7 @@ PUBLIC_ROUTES: set[tuple[str, str]] = {
     # Images: presigned URL accepts optional auth (public file_keys for shared content)
     ("GET", "/api/images/presigned-url"),
     # App settings public read (feature flags etc.)
-    ("GET", "/api/app-settings/"),
+    ("GET", "/api/app-settings"),
 }
 
 

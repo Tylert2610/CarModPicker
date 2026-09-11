@@ -66,7 +66,7 @@ class BaseDynamoEndpointRouter(Generic[TModel, CreateSchema, ReadSchema, UpdateS
         if "create" not in self.disabled and create_schema is not None:
 
             @self.router.post(
-                "/",
+                "",
                 response_model=read_schema,
                 responses={
                     400: {"description": "Bad request"},
@@ -111,7 +111,7 @@ class BaseDynamoEndpointRouter(Generic[TModel, CreateSchema, ReadSchema, UpdateS
         if "list" not in self.disabled:
 
             @self.router.get(
-                "/",
+                "",
                 response_model=CursorPage[read_schema],  # type: ignore[valid-type]
                 responses={200: {"description": f"{entity_name.title()} page retrieved successfully"}},
             )
