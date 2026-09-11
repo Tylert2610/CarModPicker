@@ -1,9 +1,5 @@
 import { test, expect, type Route, type Request } from '@playwright/test';
 
-// ---------------------------------------------------------------------------
-// Mock fixtures
-// ---------------------------------------------------------------------------
-
 const MULTI_PART_ID = '11111111-1111-1111-1111-111111111111';
 const SINGLE_PART_ID = '22222222-2222-2222-2222-222222222222';
 const ZERO_PART_ID = '33333333-3333-3333-3333-333333333333';
@@ -11,13 +7,13 @@ const ZERO_PART_ID = '33333333-3333-3333-3333-333333333333';
 const FIXED_NOW_ISO = '2026-04-25T12:00:00.000Z';
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 const FRESH_LISTING_OBSERVED_AT = new Date(
-  Date.parse(FIXED_NOW_ISO) - 5 * ONE_DAY_MS,
+  Date.parse(FIXED_NOW_ISO) - 5 * ONE_DAY_MS
 ).toISOString();
 const STALE_LISTING_OBSERVED_AT = new Date(
-  Date.parse(FIXED_NOW_ISO) - 90 * ONE_DAY_MS,
+  Date.parse(FIXED_NOW_ISO) - 90 * ONE_DAY_MS
 ).toISOString();
 const STALE_LISTING_LOCAL_DATE = new Date(
-  STALE_LISTING_OBSERVED_AT,
+  STALE_LISTING_OBSERVED_AT
 ).toLocaleDateString();
 
 const MOCK_CATEGORY_ID = 'cat-1';
@@ -85,7 +81,9 @@ interface MockPart {
   user_vote: null;
 }
 
-function makeMockPart(overrides: Partial<MockPart> & Pick<MockPart, 'id' | 'name'>): MockPart {
+function makeMockPart(
+  overrides: Partial<MockPart> & Pick<MockPart, 'id' | 'name'>
+): MockPart {
   return {
     description: 'Mocked part for e2e price-history spec.',
     best_price_cents: 12999,
@@ -183,15 +181,59 @@ const MOCK_BATCH_RESPONSE = {
   found_count: 3,
 };
 
-// PartPriceHistoryReadWithRetailer[] — used by the SparklineCell lazy fetch
-// AND by the legacy detail-page chart (when ?legacy=true).
+/**
+ * PartPriceHistoryReadWithRetailer fixtures, served to the SparklineCell lazy
+ * fetch and to the legacy detail-page chart.
+ */
 const MOCK_PRICE_HISTORY_ARRAY = [
-  { id: 'h1', part_listing_id: 'l1', price_cents: 14999, observed_at: '2026-02-01T00:00:00.000Z', retailer_id: 'r1', retailer_name: 'RetailerOne' },
-  { id: 'h2', part_listing_id: 'l1', price_cents: 13999, observed_at: '2026-02-15T00:00:00.000Z', retailer_id: 'r1', retailer_name: 'RetailerOne' },
-  { id: 'h3', part_listing_id: 'l1', price_cents: 13499, observed_at: '2026-03-01T00:00:00.000Z', retailer_id: 'r1', retailer_name: 'RetailerOne' },
-  { id: 'h4', part_listing_id: 'l2', price_cents: 12999, observed_at: '2026-03-15T00:00:00.000Z', retailer_id: 'r2', retailer_name: 'RetailerTwo' },
-  { id: 'h5', part_listing_id: 'l2', price_cents: 12499, observed_at: '2026-04-01T00:00:00.000Z', retailer_id: 'r2', retailer_name: 'RetailerTwo' },
-  { id: 'h6', part_listing_id: 'l1', price_cents: 11999, observed_at: '2026-04-20T00:00:00.000Z', retailer_id: 'r1', retailer_name: 'RetailerOne' },
+  {
+    id: 'h1',
+    part_listing_id: 'l1',
+    price_cents: 14999,
+    observed_at: '2026-02-01T00:00:00.000Z',
+    retailer_id: 'r1',
+    retailer_name: 'RetailerOne',
+  },
+  {
+    id: 'h2',
+    part_listing_id: 'l1',
+    price_cents: 13999,
+    observed_at: '2026-02-15T00:00:00.000Z',
+    retailer_id: 'r1',
+    retailer_name: 'RetailerOne',
+  },
+  {
+    id: 'h3',
+    part_listing_id: 'l1',
+    price_cents: 13499,
+    observed_at: '2026-03-01T00:00:00.000Z',
+    retailer_id: 'r1',
+    retailer_name: 'RetailerOne',
+  },
+  {
+    id: 'h4',
+    part_listing_id: 'l2',
+    price_cents: 12999,
+    observed_at: '2026-03-15T00:00:00.000Z',
+    retailer_id: 'r2',
+    retailer_name: 'RetailerTwo',
+  },
+  {
+    id: 'h5',
+    part_listing_id: 'l2',
+    price_cents: 12499,
+    observed_at: '2026-04-01T00:00:00.000Z',
+    retailer_id: 'r2',
+    retailer_name: 'RetailerTwo',
+  },
+  {
+    id: 'h6',
+    part_listing_id: 'l1',
+    price_cents: 11999,
+    observed_at: '2026-04-20T00:00:00.000Z',
+    retailer_id: 'r1',
+    retailer_name: 'RetailerOne',
+  },
 ];
 
 const MOCK_SINGLE_SUMMARY = {
@@ -271,10 +313,9 @@ const MOCK_VOTE_SUMMARY_DEFAULT = {
   user_vote: null,
 };
 
-// ---------------------------------------------------------------------------
-// API mock router
-// ---------------------------------------------------------------------------
-
+/**
+ * Fulfil a mocked route with a JSON body.
+ */
 function jsonResponse(route: Route, body: unknown, status = 200) {
   return route.fulfill({
     status,
@@ -287,170 +328,157 @@ interface NetworkCounters {
   batchPriceHistoryPostCount: number;
 }
 
+/**
+ * Serve the catalog and part detail API contract from fixtures as an anonymous
+ * viewer, counting batch price-history POSTs in `counters` and 404ing the rest.
+ *
+ * The route matcher excludes Vite source modules at `/src/api/*.ts`, which
+ * would otherwise be served as JSON and crash the bundle load.
+ */
 async function mockApi(
   page: import('@playwright/test').Page,
-  counters: NetworkCounters,
+  counters: NetworkCounters
 ): Promise<void> {
-  // IMPORTANT: match only the API origin path (e.g.
-  // `http://localhost:4000/api/...`) — not Vite's dev source modules at
-  // `/src/api/*.ts`, which would otherwise be intercepted and served as
-  // JSON, crashing the bundle load.
-  await page.route(/\/api\/(?!.*\.ts)/, async (route: Route, request: Request) => {
-    const url = new URL(request.url());
-    // Strip protocol+host and the leading "/api" segment so the matcher below
-    // sees a clean "/parts/with-votes"-style path.
-    const path = url.pathname.replace(/^\/api/, '');
-    const method = request.method();
+  await page.route(
+    /\/api\/(?!.*\.ts)/,
+    async (route: Route, request: Request) => {
+      const url = new URL(request.url());
+      const path = url.pathname.replace(/^\/api/, '');
+      const method = request.method();
 
-    // ---------- Auth + global settings ----------
-    if (path === '/users/me' && method === 'GET') {
-      // Anonymous viewer: 401 (matches FastAPI behavior; useAuth treats this as logged-out).
-      return jsonResponse(route, { detail: 'Not authenticated' }, 401);
-    }
-    if (path === '/app-settings/' && method === 'GET') {
-      return jsonResponse(route, {
-        premium_disabled: true,
-        updated_at: FIXED_NOW_ISO,
-      });
-    }
-
-    // ---------- Categories / part-manufacturers / car generations ----------
-    if (path === '/categories/' && method === 'GET') {
-      return jsonResponse(route, [MOCK_CATEGORY]);
-    }
-    if (path.startsWith('/categories/') && method === 'GET') {
-      return jsonResponse(route, MOCK_CATEGORY);
-    }
-    if (path === '/part-manufacturers/' && method === 'GET') {
-      return jsonResponse(route, [MOCK_PART_MANUFACTURER]);
-    }
-    if (path.startsWith('/part-manufacturers/') && method === 'GET') {
-      return jsonResponse(route, MOCK_PART_MANUFACTURER);
-    }
-    if (path === '/car-generations/by-ids' && method === 'GET') {
-      return jsonResponse(route, []);
-    }
-    if (path === '/car-generations/stats/car-makes' && method === 'GET') {
-      return jsonResponse(route, {});
-    }
-    if (path.startsWith('/car-generations/') && method === 'GET') {
-      return jsonResponse(route, []);
-    }
-
-    // ---------- Parts: catalog + filter options ----------
-    if (path === '/parts/with-votes' && method === 'GET') {
-      return jsonResponse(route, MOCK_PAGINATED_PARTS);
-    }
-    if (path === '/parts/filter-options' && method === 'GET') {
-      return jsonResponse(route, {
-        category_ids: [MOCK_CATEGORY_ID],
-        part_manufacturer_ids: [MOCK_PART_MANUFACTURER_ID],
-        car_ids: [],
-        make_names: [],
-      });
-    }
-
-    // ---------- Parts: batch price history (POST) ----------
-    if (path === '/parts/price-history' && method === 'POST') {
-      counters.batchPriceHistoryPostCount += 1;
-      return jsonResponse(route, MOCK_BATCH_RESPONSE);
-    }
-
-    // ---------- Parts: single-part price history (legacy vs summary) ----------
-    const priceHistoryMatch = path.match(/^\/parts\/([^/]+)\/price-history$/);
-    if (priceHistoryMatch && method === 'GET') {
-      const partId = priceHistoryMatch[1];
-      const isLegacy = url.searchParams.get('legacy') === 'true';
-      if (isLegacy) {
-        // Array shape consumed by PriceHistoryLineChart on /parts/:id.
-        return jsonResponse(
-          route,
-          partId === MULTI_PART_ID ? MOCK_PRICE_HISTORY_ARRAY : [],
-        );
+      if (path === '/users/me' && method === 'GET') {
+        return jsonResponse(route, { detail: 'Not authenticated' }, 401);
       }
-      // Object shape (PriceHistorySinglePartResponse) — used by both the
-      // detail-page Price summary block AND the SparklineCell lazy fetch.
-      if (partId === MULTI_PART_ID) {
-        return jsonResponse(route, MOCK_SINGLE_SUMMARY);
+      if (path === '/app-settings/' && method === 'GET') {
+        return jsonResponse(route, {
+          premium_disabled: true,
+          updated_at: FIXED_NOW_ISO,
+        });
       }
-      return jsonResponse(route, {
-        summary: {
-          min_cents: null,
-          max_cents: null,
-          last_cents: null,
-          last_observed_at: null,
-          trend: 'flat',
-          observation_count: 0,
-        },
-        retailers: [],
-        history: [],
-        window: '90d',
-      });
-    }
 
-    // ---------- Parts: per-part listings ----------
-    const listingsMatch = path.match(/^\/parts\/([^/]+)\/listings$/);
-    if (listingsMatch && method === 'GET') {
-      const partId = listingsMatch[1];
-      if (partId === MULTI_PART_ID) {
-        return jsonResponse(route, MOCK_LISTINGS_MULTI);
+      if (path === '/categories/' && method === 'GET') {
+        return jsonResponse(route, [MOCK_CATEGORY]);
       }
-      return jsonResponse(route, []);
-    }
-
-    // ---------- Parts: single part read ----------
-    const partMatch = path.match(/^\/parts\/([^/]+)$/);
-    if (partMatch && method === 'GET') {
-      const partId = partMatch[1];
-      const part = MOCK_PARTS[partId];
-      if (!part) {
-        return jsonResponse(route, { detail: 'Not found' }, 404);
+      if (path.startsWith('/categories/') && method === 'GET') {
+        return jsonResponse(route, MOCK_CATEGORY);
       }
-      return jsonResponse(route, part);
-    }
+      if (path === '/part-manufacturers/' && method === 'GET') {
+        return jsonResponse(route, [MOCK_PART_MANUFACTURER]);
+      }
+      if (path.startsWith('/part-manufacturers/') && method === 'GET') {
+        return jsonResponse(route, MOCK_PART_MANUFACTURER);
+      }
+      if (path === '/car-generations/by-ids' && method === 'GET') {
+        return jsonResponse(route, []);
+      }
+      if (path === '/car-generations/stats/car-makes' && method === 'GET') {
+        return jsonResponse(route, {});
+      }
+      if (path.startsWith('/car-generations/') && method === 'GET') {
+        return jsonResponse(route, []);
+      }
 
-    // ---------- Votes ----------
-    const voteSummaryMatch = path.match(
-      /^\/votes\/([^/]+)\/([^/]+)\/summary$/,
-    );
-    if (voteSummaryMatch && method === 'GET') {
-      const [, entityType, entityId] = voteSummaryMatch;
-      return jsonResponse(route, {
-        ...MOCK_VOTE_SUMMARY_DEFAULT,
-        entity_id: entityId,
-        entity_type: entityType,
-      });
-    }
+      if (path === '/parts/with-votes' && method === 'GET') {
+        return jsonResponse(route, MOCK_PAGINATED_PARTS);
+      }
+      if (path === '/parts/filter-options' && method === 'GET') {
+        return jsonResponse(route, {
+          category_ids: [MOCK_CATEGORY_ID],
+          part_manufacturer_ids: [MOCK_PART_MANUFACTURER_ID],
+          car_ids: [],
+          make_names: [],
+        });
+      }
 
-    // ---------- Users (creator info on detail page) ----------
-    const userMatch = path.match(/^\/users\/([^/]+)$/);
-    if (userMatch && method === 'GET') {
-      return jsonResponse(route, MOCK_SERVICE_USER);
-    }
+      if (path === '/parts/price-history' && method === 'POST') {
+        counters.batchPriceHistoryPostCount += 1;
+        return jsonResponse(route, MOCK_BATCH_RESPONSE);
+      }
 
-    // Default: 404 — surface unexpected calls so the test (and pageerror
-    // listener) flag any drift from the mock contract.
-    return jsonResponse(route, { detail: `Mock miss: ${method} ${path}` }, 404);
-  });
+      const priceHistoryMatch = path.match(/^\/parts\/([^/]+)\/price-history$/);
+      if (priceHistoryMatch && method === 'GET') {
+        const partId = priceHistoryMatch[1];
+        const isLegacy = url.searchParams.get('legacy') === 'true';
+        if (isLegacy) {
+          return jsonResponse(
+            route,
+            partId === MULTI_PART_ID ? MOCK_PRICE_HISTORY_ARRAY : []
+          );
+        }
+        if (partId === MULTI_PART_ID) {
+          return jsonResponse(route, MOCK_SINGLE_SUMMARY);
+        }
+        return jsonResponse(route, {
+          summary: {
+            min_cents: null,
+            max_cents: null,
+            last_cents: null,
+            last_observed_at: null,
+            trend: 'flat',
+            observation_count: 0,
+          },
+          retailers: [],
+          history: [],
+          window: '90d',
+        });
+      }
+
+      const listingsMatch = path.match(/^\/parts\/([^/]+)\/listings$/);
+      if (listingsMatch && method === 'GET') {
+        const partId = listingsMatch[1];
+        if (partId === MULTI_PART_ID) {
+          return jsonResponse(route, MOCK_LISTINGS_MULTI);
+        }
+        return jsonResponse(route, []);
+      }
+
+      const partMatch = path.match(/^\/parts\/([^/]+)$/);
+      if (partMatch && method === 'GET') {
+        const partId = partMatch[1];
+        const part = MOCK_PARTS[partId];
+        if (!part) {
+          return jsonResponse(route, { detail: 'Not found' }, 404);
+        }
+        return jsonResponse(route, part);
+      }
+
+      const voteSummaryMatch = path.match(
+        /^\/votes\/([^/]+)\/([^/]+)\/summary$/
+      );
+      if (voteSummaryMatch && method === 'GET') {
+        const [, entityType, entityId] = voteSummaryMatch;
+        return jsonResponse(route, {
+          ...MOCK_VOTE_SUMMARY_DEFAULT,
+          entity_id: entityId,
+          entity_type: entityType,
+        });
+      }
+
+      const userMatch = path.match(/^\/users\/([^/]+)$/);
+      if (userMatch && method === 'GET') {
+        return jsonResponse(route, MOCK_SERVICE_USER);
+      }
+
+      return jsonResponse(
+        route,
+        { detail: `Mock miss: ${method} ${path}` },
+        404
+      );
+    }
+  );
 }
 
-// ---------------------------------------------------------------------------
-// Deterministic page setup helpers
-// ---------------------------------------------------------------------------
-
+/**
+ * Install the API mocks and pin the clock so the 60 day stale-caveat threshold
+ * resolves the same way on every run.
+ */
 async function setupPage(
-  page: import('@playwright/test').Page,
+  page: import('@playwright/test').Page
 ): Promise<NetworkCounters> {
-  // Pin Date.now() so the 60-day stale-caveat threshold is deterministic
-  // across CI runs. Only `Date.now()` is overridden — `new Date(iso)` still
-  // works as expected, and React/Playwright internals that rely on the Date
-  // constructor are unaffected. ViewPart.tsx is the only consumer that uses
-  // Date.now() to compute "is this listing stale?".
   await page.addInitScript((nowIso: string) => {
     const fixed = new Date(nowIso).getTime();
     const realNow = Date.now.bind(Date);
     Date.now = () => fixed;
-    // Keep a back-door so we can verify in-page if we ever need to.
     (globalThis as unknown as Record<string, unknown>).__REAL_DATE_NOW__ =
       realNow;
   }, FIXED_NOW_ISO);
@@ -465,24 +493,20 @@ async function setupPage(
   return counters;
 }
 
+/**
+ * Wait for the network, fonts, and a short settle window before snapshotting.
+ */
 async function waitForPageReady(
-  page: import('@playwright/test').Page,
+  page: import('@playwright/test').Page
 ): Promise<void> {
   await page.waitForLoadState('networkidle');
   await page.evaluate(() => document.fonts.ready);
   await page.waitForTimeout(300);
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
 test('/parts catalog renders sparklines + delta lines', async ({ page }) => {
   const counters = await setupPage(page);
 
-  // Count POST /parts/price-history requests across the whole page lifecycle.
-  // The route handler increments on every batch hit; this listener is a
-  // belt-and-braces witness in case the mock router is bypassed.
   let observedBatchPosts = 0;
   page.on('request', (req: Request) => {
     if (req.method() === 'POST' && req.url().includes('/parts/price-history')) {
@@ -493,14 +517,6 @@ test('/parts catalog renders sparklines + delta lines', async ({ page }) => {
   await page.goto('/parts');
   await waitForPageReady(page);
 
-  // Multi-observation row must render the sparkline and the delta line
-  // (the "→" range token, since the T01 implementation chose the bare
-  // "$<min> → $<max>" fallback — duration is unknowable from the summary).
-  // SparklineCell uses IntersectionObserver (rootMargin '100px') to lazy-load
-  // multi-observation history; scroll the price cell into view explicitly so
-  // the observer fires deterministically across all 3 viewport projects (the
-  // tablet/mobile table can scroll horizontally, pushing the price cell off
-  // the initial viewport).
   const multiSparkContainer = page
     .locator(`[data-part-id="${MULTI_PART_ID}"]`)
     .first();
@@ -510,20 +526,12 @@ test('/parts catalog renders sparklines + delta lines', async ({ page }) => {
   await expect(multiSparkline).toBeVisible({ timeout: 10_000 });
   await expect(page.getByText('$120 → $150').first()).toBeVisible();
 
-  // Zero-observation row must render NEITHER a sparkline nor a delta line.
-  // SparklineCell returns null for observation_count=0 so no
-  // data-part-id span exists for the zero part. PriceDeltaLine likewise
-  // returns null. Locate the row instead by the part name.
   const zeroRow = page.getByRole('link', {
     name: MOCK_PARTS[ZERO_PART_ID].name,
   });
   await expect(zeroRow.first()).toBeVisible();
-  await expect(
-    page.locator(`[data-part-id="${ZERO_PART_ID}"]`),
-  ).toHaveCount(0);
+  await expect(page.locator(`[data-part-id="${ZERO_PART_ID}"]`)).toHaveCount(0);
 
-  // Network contract: exactly ONE batch POST per displayed catalog page.
-  // Both the route counter and the request listener should agree.
   expect(counters.batchPriceHistoryPostCount).toBe(1);
   expect(observedBatchPosts).toBe(1);
 
@@ -538,20 +546,13 @@ test('/parts/:id detail renders retailer breakdown + stale caveat', async ({
   await page.goto(`/parts/${MULTI_PART_ID}`);
   await waitForPageReady(page);
 
-  // The collapsed "Price by retailer" block (heading) must be present.
   await expect(
-    page.getByRole('heading', { name: 'Price by retailer' }),
+    page.getByRole('heading', { name: 'Price by retailer' })
   ).toBeVisible();
 
-  // Stale caveat text — appears next to the retailer whose last_observed_at
-  // is 90 days ago. The exact local-formatted date is computed from
-  // STALE_LISTING_OBSERVED_AT to stay deterministic.
   const staleCaveat = `(as of ${STALE_LISTING_LOCAL_DATE})`;
   await expect(page.getByText(staleCaveat).first()).toBeVisible();
 
-  // Fresh retailer must NOT carry a stale caveat — count occurrences.
-  // STALE caveat appears exactly once across the page (single source of
-  // truth — the legacy listings-block caveat was removed in S03/T03).
   await expect(page.getByText(staleCaveat)).toHaveCount(1);
 
   await expect(page).toHaveScreenshot({ fullPage: true });
@@ -565,17 +566,11 @@ test('/parts/:id with zero observations hides Price summary block', async ({
   await page.goto(`/parts/${ZERO_PART_ID}`);
   await waitForPageReady(page);
 
-  // The "Price by retailer" heading still renders (it's a section header),
-  // but the collapsed body — the retailer-row list and the one-line summary
-  // header — must NOT render when there are zero observations AND zero
-  // listings. The empty-state copy renders instead.
+  await expect(page.locator('[data-testid="retailer-row"]')).toHaveCount(0);
   await expect(
-    page.locator('[data-testid="retailer-row"]'),
+    page.locator('[data-testid="price-summary-header"]')
   ).toHaveCount(0);
   await expect(
-    page.locator('[data-testid="price-summary-header"]'),
-  ).toHaveCount(0);
-  await expect(
-    page.getByText('No retailer pricing observed yet.'),
+    page.getByText('No retailer pricing observed yet.')
   ).toBeVisible();
 });

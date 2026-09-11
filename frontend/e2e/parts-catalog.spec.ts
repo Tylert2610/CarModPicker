@@ -1,36 +1,5 @@
 import { test, expect, type Route, type Request } from '@playwright/test';
 
-// ---------------------------------------------------------------------------
-// Mock fixtures (M002/S10/T04)
-// ---------------------------------------------------------------------------
-//
-// Slice this spec covers (S10): /parts (Parts Catalog) reskinned onto the
-// S08 design system. Asserts:
-//   1. Visual regression at mobile / tablet / desktop (R014/R015) — including
-//      the S06 sparkline + delta integration on the multi-observation row
-//      and exactly ONE batch POST per page (S06 invariant).
-//   2. AddToBuildList dialog opens, focus moves into it, Escape closes it
-//      (R020 / Radix focus management).
-//   3. Tab traversal lands visible focus on the search input (R020).
-//
-// Conventions inherited from frontend/e2e/price-history.spec.ts (S06/T04)
-// and frontend/e2e/build-list.spec.ts (S09/T04):
-//   - MEM082: page.route() URL matcher MUST be `/\/api\/(?!.*\.ts)/` so it
-//     does not swallow Vite's source modules at /src/api/*.ts.
-//   - MEM098: pre-accept the cookie-consent banner via addInitScript so the
-//     mobile (375px) viewport doesn't have the bottom banner overlay
-//     intercept clicks.
-//   - MEM108: pre-dismiss the chrome-extension promo (its 2s detect-then-show
-//     timer can race the snapshot otherwise).
-//   - MEM066/MEM068: every Playwright project uses Desktop Chrome (already
-//     enforced in playwright.config.ts) so chromium-only baselines are stable.
-//   - MEM079: SparklineCell IO observer fires deterministically only after
-//     scrollIntoViewIfNeeded() — tablet/mobile horizontally scroll the
-//     responsive table and push the price column past the viewport.
-//   - MEM105: gate per-project tests via `testInfo.project.name`, not env.
-//   - Pin Date.now() to FIXED_NOW_ISO for deterministic rendering.
-//   - page.on('pageerror') re-throws runtime React errors as hard failures.
-
 const MULTI_PART_ID = '11111111-1111-1111-1111-111111111111';
 const SINGLE_PART_ID = '22222222-2222-2222-2222-222222222222';
 const ZERO_PART_ID = '33333333-3333-3333-3333-333333333333';
@@ -38,7 +7,7 @@ const ZERO_PART_ID = '33333333-3333-3333-3333-333333333333';
 const FIXED_NOW_ISO = '2026-04-25T12:00:00.000Z';
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 const FRESH_LISTING_OBSERVED_AT = new Date(
-  Date.parse(FIXED_NOW_ISO) - 5 * ONE_DAY_MS,
+  Date.parse(FIXED_NOW_ISO) - 5 * ONE_DAY_MS
 ).toISOString();
 
 const MOCK_CATEGORY_ID = 'cat-1';
@@ -118,8 +87,11 @@ interface MockPart {
   user_vote: null;
 }
 
+/**
+ * Build a catalog part fixture from the shared defaults plus `overrides`.
+ */
 function makeMockPart(
-  overrides: Partial<MockPart> & Pick<MockPart, 'id' | 'name'>,
+  overrides: Partial<MockPart> & Pick<MockPart, 'id' | 'name'>
 ): MockPart {
   return {
     description: 'Mocked part for e2e parts-catalog spec.',
@@ -218,15 +190,56 @@ const MOCK_BATCH_RESPONSE = {
   found_count: 3,
 };
 
-// PartPriceHistoryReadWithRetailer[] — used by the SparklineCell lazy fetch
-// for the multi-observation row scrolled into view.
+/** PartPriceHistoryReadWithRetailer fixtures for the SparklineCell lazy fetch. */
 const MOCK_PRICE_HISTORY_ARRAY = [
-  { id: 'h1', part_listing_id: 'l1', price_cents: 14999, observed_at: '2026-02-01T00:00:00.000Z', retailer_id: 'r1', retailer_name: 'RetailerOne' },
-  { id: 'h2', part_listing_id: 'l1', price_cents: 13999, observed_at: '2026-02-15T00:00:00.000Z', retailer_id: 'r1', retailer_name: 'RetailerOne' },
-  { id: 'h3', part_listing_id: 'l1', price_cents: 13499, observed_at: '2026-03-01T00:00:00.000Z', retailer_id: 'r1', retailer_name: 'RetailerOne' },
-  { id: 'h4', part_listing_id: 'l2', price_cents: 12999, observed_at: '2026-03-15T00:00:00.000Z', retailer_id: 'r2', retailer_name: 'RetailerTwo' },
-  { id: 'h5', part_listing_id: 'l2', price_cents: 12499, observed_at: '2026-04-01T00:00:00.000Z', retailer_id: 'r2', retailer_name: 'RetailerTwo' },
-  { id: 'h6', part_listing_id: 'l1', price_cents: 11999, observed_at: '2026-04-20T00:00:00.000Z', retailer_id: 'r1', retailer_name: 'RetailerOne' },
+  {
+    id: 'h1',
+    part_listing_id: 'l1',
+    price_cents: 14999,
+    observed_at: '2026-02-01T00:00:00.000Z',
+    retailer_id: 'r1',
+    retailer_name: 'RetailerOne',
+  },
+  {
+    id: 'h2',
+    part_listing_id: 'l1',
+    price_cents: 13999,
+    observed_at: '2026-02-15T00:00:00.000Z',
+    retailer_id: 'r1',
+    retailer_name: 'RetailerOne',
+  },
+  {
+    id: 'h3',
+    part_listing_id: 'l1',
+    price_cents: 13499,
+    observed_at: '2026-03-01T00:00:00.000Z',
+    retailer_id: 'r1',
+    retailer_name: 'RetailerOne',
+  },
+  {
+    id: 'h4',
+    part_listing_id: 'l2',
+    price_cents: 12999,
+    observed_at: '2026-03-15T00:00:00.000Z',
+    retailer_id: 'r2',
+    retailer_name: 'RetailerTwo',
+  },
+  {
+    id: 'h5',
+    part_listing_id: 'l2',
+    price_cents: 12499,
+    observed_at: '2026-04-01T00:00:00.000Z',
+    retailer_id: 'r2',
+    retailer_name: 'RetailerTwo',
+  },
+  {
+    id: 'h6',
+    part_listing_id: 'l1',
+    price_cents: 11999,
+    observed_at: '2026-04-20T00:00:00.000Z',
+    retailer_id: 'r1',
+    retailer_name: 'RetailerOne',
+  },
 ];
 
 const MOCK_SINGLE_SUMMARY = {
@@ -246,6 +259,12 @@ const MOCK_SINGLE_SUMMARY = {
   window: '90d',
 };
 
+/**
+ * Viewport wide enough that the responsive parts table keeps its lowest
+ * priority `actions` column, which carries the AddToBuildList trigger.
+ */
+const VIEWPORT_WIDE_ENOUGH_FOR_ACTIONS_COLUMN = { width: 2400, height: 900 };
+
 const MOCK_VOTE_SUMMARY_DEFAULT = {
   entity_id: '',
   entity_type: 'part',
@@ -256,10 +275,9 @@ const MOCK_VOTE_SUMMARY_DEFAULT = {
   user_vote: null,
 };
 
-// ---------------------------------------------------------------------------
-// API mock router
-// ---------------------------------------------------------------------------
-
+/**
+ * Fulfil a mocked route with a JSON body.
+ */
 function jsonResponse(route: Route, body: unknown, status = 200) {
   return route.fulfill({
     status,
@@ -272,128 +290,128 @@ interface NetworkCounters {
   batchPriceHistoryPostCount: number;
 }
 
+/**
+ * Serve the parts catalog's API contract from fixtures as an authenticated
+ * viewer, counting batch price-history POSTs in `counters` and 404ing the rest.
+ *
+ * The route matcher excludes Vite source modules at `/src/api/*.ts`.
+ */
 async function mockApi(
   page: import('@playwright/test').Page,
-  counters: NetworkCounters,
+  counters: NetworkCounters
 ): Promise<void> {
-  await page.route(/\/api\/(?!.*\.ts)/, async (route: Route, request: Request) => {
-    const url = new URL(request.url());
-    const path = url.pathname.replace(/^\/api/, '');
-    const method = request.method();
+  await page.route(
+    /\/api\/(?!.*\.ts)/,
+    async (route: Route, request: Request) => {
+      const url = new URL(request.url());
+      const path = url.pathname.replace(/^\/api/, '');
+      const method = request.method();
 
-    // ---------- Auth + global settings ----------
-    if (path === '/users/me' && method === 'GET') {
-      // Authenticated viewer — diverges from price-history.spec.ts's anonymous
-      // mock so the "My Parts" link renders and AddToBuildList trigger flips
-      // canManage=true on the row actions.
-      return jsonResponse(route, MOCK_USER);
-    }
-    if (path === '/app-settings/' && method === 'GET') {
-      return jsonResponse(route, {
-        premium_disabled: true,
-        updated_at: FIXED_NOW_ISO,
-      });
-    }
-
-    // ---------- Categories / part-manufacturers / car generations ----------
-    if (path === '/categories/' && method === 'GET') {
-      return jsonResponse(route, [MOCK_CATEGORY]);
-    }
-    if (path.startsWith('/categories/') && method === 'GET') {
-      return jsonResponse(route, MOCK_CATEGORY);
-    }
-    if (path === '/part-manufacturers/' && method === 'GET') {
-      return jsonResponse(route, [MOCK_PART_MANUFACTURER]);
-    }
-    if (path.startsWith('/part-manufacturers/') && method === 'GET') {
-      return jsonResponse(route, MOCK_PART_MANUFACTURER);
-    }
-    if (path === '/car-generations/by-ids' && method === 'GET') {
-      return jsonResponse(route, []);
-    }
-    if (path === '/car-generations/stats/car-makes' && method === 'GET') {
-      return jsonResponse(route, {});
-    }
-    if (path.startsWith('/car-generations/') && method === 'GET') {
-      return jsonResponse(route, []);
-    }
-
-    // ---------- Parts: catalog + filter options ----------
-    if (path === '/parts/with-votes' && method === 'GET') {
-      return jsonResponse(route, MOCK_PAGINATED_PARTS);
-    }
-    if (path === '/parts/filter-options' && method === 'GET') {
-      return jsonResponse(route, {
-        category_ids: [MOCK_CATEGORY_ID],
-        part_manufacturer_ids: [MOCK_PART_MANUFACTURER_ID],
-        car_ids: [],
-        make_names: [],
-      });
-    }
-
-    // ---------- Parts: batch price history (POST) ----------
-    if (path === '/parts/price-history' && method === 'POST') {
-      counters.batchPriceHistoryPostCount += 1;
-      return jsonResponse(route, MOCK_BATCH_RESPONSE);
-    }
-
-    // ---------- Parts: single-part price history (SparklineCell lazy fetch) ----------
-    const priceHistoryMatch = path.match(/^\/parts\/([^/]+)\/price-history$/);
-    if (priceHistoryMatch && method === 'GET') {
-      const partId = priceHistoryMatch[1];
-      if (partId === MULTI_PART_ID) {
-        return jsonResponse(route, MOCK_SINGLE_SUMMARY);
+      if (path === '/users/me' && method === 'GET') {
+        return jsonResponse(route, MOCK_USER);
       }
-      return jsonResponse(route, {
-        summary: {
-          min_cents: null,
-          max_cents: null,
-          last_cents: null,
-          last_observed_at: null,
-          trend: 'flat',
-          observation_count: 0,
-        },
-        retailers: [],
-        history: [],
-        window: '90d',
-      });
-    }
+      if (path === '/app-settings/' && method === 'GET') {
+        return jsonResponse(route, {
+          premium_disabled: true,
+          updated_at: FIXED_NOW_ISO,
+        });
+      }
 
-    // ---------- Build lists by user (drives AddToBuildList dialog) ----------
-    // The dialog calls buildListsApi.getBuildListsByUser(user.id), which hits
-    // GET /build-lists/user/{userId} (not ?user_id=). Match that exact path.
-    const buildListsByUserMatch = path.match(/^\/build-lists\/user\/([^/]+)$/);
-    if (buildListsByUserMatch && method === 'GET') {
-      return jsonResponse(route, [MOCK_BUILD_LIST]);
-    }
+      if (path === '/categories/' && method === 'GET') {
+        return jsonResponse(route, [MOCK_CATEGORY]);
+      }
+      if (path.startsWith('/categories/') && method === 'GET') {
+        return jsonResponse(route, MOCK_CATEGORY);
+      }
+      if (path === '/part-manufacturers/' && method === 'GET') {
+        return jsonResponse(route, [MOCK_PART_MANUFACTURER]);
+      }
+      if (path.startsWith('/part-manufacturers/') && method === 'GET') {
+        return jsonResponse(route, MOCK_PART_MANUFACTURER);
+      }
+      if (path === '/car-generations/by-ids' && method === 'GET') {
+        return jsonResponse(route, []);
+      }
+      if (path === '/car-generations/stats/car-makes' && method === 'GET') {
+        return jsonResponse(route, {});
+      }
+      if (path.startsWith('/car-generations/') && method === 'GET') {
+        return jsonResponse(route, []);
+      }
 
-    // ---------- Votes ----------
-    const voteSummaryMatch = path.match(
-      /^\/votes\/([^/]+)\/([^/]+)\/summary$/,
-    );
-    if (voteSummaryMatch && method === 'GET') {
-      const [, entityType, entityId] = voteSummaryMatch;
-      return jsonResponse(route, {
-        ...MOCK_VOTE_SUMMARY_DEFAULT,
-        entity_id: entityId,
-        entity_type: entityType,
-      });
-    }
+      if (path === '/parts/with-votes' && method === 'GET') {
+        return jsonResponse(route, MOCK_PAGINATED_PARTS);
+      }
+      if (path === '/parts/filter-options' && method === 'GET') {
+        return jsonResponse(route, {
+          category_ids: [MOCK_CATEGORY_ID],
+          part_manufacturer_ids: [MOCK_PART_MANUFACTURER_ID],
+          car_ids: [],
+          make_names: [],
+        });
+      }
 
-    // Default: 404 — surface unexpected calls so the test (via the
-    // pageerror listener / network-default-404) flags drift from the contract.
-    return jsonResponse(route, { detail: `Mock miss: ${method} ${path}` }, 404);
-  });
+      if (path === '/parts/price-history' && method === 'POST') {
+        counters.batchPriceHistoryPostCount += 1;
+        return jsonResponse(route, MOCK_BATCH_RESPONSE);
+      }
+
+      const priceHistoryMatch = path.match(/^\/parts\/([^/]+)\/price-history$/);
+      if (priceHistoryMatch && method === 'GET') {
+        const partId = priceHistoryMatch[1];
+        if (partId === MULTI_PART_ID) {
+          return jsonResponse(route, MOCK_SINGLE_SUMMARY);
+        }
+        return jsonResponse(route, {
+          summary: {
+            min_cents: null,
+            max_cents: null,
+            last_cents: null,
+            last_observed_at: null,
+            trend: 'flat',
+            observation_count: 0,
+          },
+          retailers: [],
+          history: [],
+          window: '90d',
+        });
+      }
+
+      const buildListsByUserMatch = path.match(
+        /^\/build-lists\/user\/([^/]+)$/
+      );
+      if (buildListsByUserMatch && method === 'GET') {
+        return jsonResponse(route, [MOCK_BUILD_LIST]);
+      }
+
+      const voteSummaryMatch = path.match(
+        /^\/votes\/([^/]+)\/([^/]+)\/summary$/
+      );
+      if (voteSummaryMatch && method === 'GET') {
+        const [, entityType, entityId] = voteSummaryMatch;
+        return jsonResponse(route, {
+          ...MOCK_VOTE_SUMMARY_DEFAULT,
+          entity_id: entityId,
+          entity_type: entityType,
+        });
+      }
+
+      return jsonResponse(
+        route,
+        { detail: `Mock miss: ${method} ${path}` },
+        404
+      );
+    }
+  );
 }
 
-// ---------------------------------------------------------------------------
-// Deterministic page setup helpers
-// ---------------------------------------------------------------------------
-
+/**
+ * Install the API mocks, pin the clock, and suppress the consent and promo
+ * overlays so snapshots are deterministic on every viewport.
+ */
 async function setupPage(
-  page: import('@playwright/test').Page,
+  page: import('@playwright/test').Page
 ): Promise<NetworkCounters> {
-  // Pin Date.now() so any rendering that depends on "now" is deterministic.
   await page.addInitScript((nowIso: string) => {
     const fixed = new Date(nowIso).getTime();
     const realNow = Date.now.bind(Date);
@@ -402,8 +420,6 @@ async function setupPage(
       realNow;
   }, FIXED_NOW_ISO);
 
-  // MEM098: pre-accept cookie-consent + MEM108: pre-dismiss the chrome-extension
-  // promo for today so its 2s detect-then-show timer can't race the snapshot.
   await page.addInitScript(() => {
     try {
       localStorage.setItem('cookie_consent_v1', 'accepted');
@@ -413,10 +429,10 @@ async function setupPage(
       const d = String(today.getDate()).padStart(2, '0');
       localStorage.setItem(
         'chrome_extension_promo_last_dismissed',
-        `${y}-${m}-${d}`,
+        `${y}-${m}-${d}`
       );
     } catch {
-      // localStorage unavailable (private mode); banner stays.
+      return;
     }
   });
 
@@ -430,23 +446,20 @@ async function setupPage(
   return counters;
 }
 
+/**
+ * Wait for the network, fonts, and a short settle window before snapshotting.
+ */
 async function waitForPageReady(
-  page: import('@playwright/test').Page,
+  page: import('@playwright/test').Page
 ): Promise<void> {
   await page.waitForLoadState('networkidle');
   await page.evaluate(() => document.fonts.ready);
   await page.waitForTimeout(300);
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
 test('parts catalog visual regression', async ({ page }) => {
   const counters = await setupPage(page);
 
-  // Belt-and-braces witness: count POST /parts/price-history independently
-  // of the route counter, so a mock-bypass would still fail the assertion.
   let observedBatchPosts = 0;
   page.on('request', (req: Request) => {
     if (req.method() === 'POST' && req.url().includes('/parts/price-history')) {
@@ -457,11 +470,6 @@ test('parts catalog visual regression', async ({ page }) => {
   await page.goto('/parts');
   await waitForPageReady(page);
 
-  // Multi-observation row sparkline: SparklineCell is IO-gated (rootMargin
-  // '100px'). On tablet/mobile the responsive table can scroll horizontally
-  // so the price column may be off-viewport — scroll the container into view
-  // first (MEM079) so the observer fires deterministically across all 3
-  // viewport projects.
   const multiSparkContainer = page
     .locator(`[data-part-id="${MULTI_PART_ID}"]`)
     .first();
@@ -470,8 +478,6 @@ test('parts catalog visual regression', async ({ page }) => {
   const multiSparkline = multiSparkContainer.locator('[role="img"]').first();
   await expect(multiSparkline).toBeVisible({ timeout: 10_000 });
 
-  // S06 invariant: ONE batch POST per displayed catalog page. Both the route
-  // counter and the request listener should agree.
   expect(counters.batchPriceHistoryPostCount).toBe(1);
   expect(observedBatchPosts).toBe(1);
 
@@ -483,24 +489,15 @@ test('add-to-build-list dialog opens, focus moves into it, Escape closes it', as
 }, testInfo) => {
   test.skip(
     testInfo.project.name !== 'desktop',
-    'Dialog keyboard interaction is asserted once on desktop',
+    'Dialog keyboard interaction is asserted once on desktop'
   );
 
-  // The responsive parts table drops the `actions` column (priority 7) at the
-  // default 1280px desktop viewport once the sidebar + Tailwind container
-  // caps are subtracted — the trigger button is not rendered there. Widen to
-  // 2400px so all columns (including actions) fit and the AddToBuildList
-  // trigger is in the DOM. Viewport-specific layout is asserted by the
-  // visual-regression test, which keeps the configured per-project viewport.
-  await page.setViewportSize({ width: 2400, height: 900 });
+  await page.setViewportSize(VIEWPORT_WIDE_ENOUGH_FOR_ACTIONS_COLUMN);
   await setupPage(page);
 
   await page.goto('/parts');
   await waitForPageReady(page);
 
-  // useContainerWidth is a ResizeObserver-driven hook — give it a tick to
-  // settle after the post-load layout pass before asserting the action
-  // column dropped back in.
   const trigger = page
     .getByTestId('parts-catalog-add-to-build-list-trigger')
     .first();
@@ -510,11 +507,9 @@ test('add-to-build-list dialog opens, focus moves into it, Escape closes it', as
   const dialog = page.getByTestId('parts-catalog-add-to-build-list-dialog');
   await expect(dialog).toBeVisible();
 
-  // Radix moves focus into the dialog on open. Assert the focused element is
-  // a descendant of the dialog content surface.
   const focusInsideDialog = await page.evaluate(() => {
     const dialogEl = document.querySelector(
-      '[data-testid="parts-catalog-add-to-build-list-dialog"]',
+      '[data-testid="parts-catalog-add-to-build-list-dialog"]'
     );
     const focused = document.activeElement;
     return !!(dialogEl && focused && dialogEl.contains(focused));
@@ -530,7 +525,7 @@ test('tab traversal lands visible focus on search input', async ({
 }, testInfo) => {
   test.skip(
     testInfo.project.name !== 'desktop',
-    'Tab order is asserted once on desktop',
+    'Tab order is asserted once on desktop'
   );
 
   await setupPage(page);
@@ -538,15 +533,9 @@ test('tab traversal lands visible focus on search input', async ({
   await page.goto('/parts');
   await waitForPageReady(page);
 
-  // Wait for the search input to be ready so the page is interactive before
-  // we start traversing focus.
   const searchInput = page.getByTestId('parts-catalog-search');
   await expect(searchInput).toBeVisible();
 
-  // Move focus to the page body so Tab progresses from the start of the
-  // document, then Tab forward until the active element is the search input.
-  // The header/nav contributes a known number of focusable nodes (skip-link,
-  // logo, nav links, "My Parts" outlined link) — bail out as soon as we land.
   await page.evaluate(() => {
     document.body.focus();
     if (document.activeElement !== document.body) {
@@ -561,7 +550,7 @@ test('tab traversal lands visible focus on search input', async ({
     const isSearch = await page.evaluate(
       () =>
         (document.activeElement as HTMLElement | null)?.dataset.testid ===
-        'parts-catalog-search',
+        'parts-catalog-search'
     );
     if (isSearch) {
       foundOnTab = i;
@@ -571,12 +560,9 @@ test('tab traversal lands visible focus on search input', async ({
 
   expect(
     foundOnTab,
-    'Tab traversal never reached the parts-catalog search input within 30 presses',
+    'Tab traversal never reached the parts-catalog search input within 30 presses'
   ).toBeGreaterThan(0);
 
-  // R020: the focused control must have a visible focus ring. ui/Input uses
-  // Tailwind's focus-visible:ring-* utilities — assert the computed outline
-  // or box-shadow is non-empty when focus-visible matches.
   const hasFocusRing = await searchInput.evaluate((el) => {
     if (!el.matches(':focus-visible')) return false;
     const styles = window.getComputedStyle(el);
