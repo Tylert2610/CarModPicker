@@ -51,7 +51,14 @@
 # passkey. This product already depends on `webauthn` below for its own legacy
 # WebAuthn routes, so the extra declares a dependency that was already resolved
 # rather than adding one.
-webbpulse[fastapi,otel,dynamodb,aws-otel,security,identity,oauth,passkeys]==0.16.0
+#
+# 0.17.0 adds one route and nothing else: `GET /api/auth/passkeys/availability`,
+# anonymous, unconditional, answering `{"enabled": bool, "passwordless": bool}`
+# from the two `IDENTITY_PASSKEYS_*` settings. It is the passkey counterpart of
+# 0.16.0's `oauth/providers` and mounts in every deployment including this one
+# with both flags off, where it answers false to both. No new dependency and no
+# new extra, so the pin moves and the resolved set below does not.
+webbpulse[fastapi,otel,dynamodb,aws-otel,security,identity,oauth,passkeys]==0.17.0
 
 # Core FastAPI and web framework dependencies
 annotated-types==0.8.0

@@ -1,9 +1,11 @@
 """Row 9: the package's M5 passkeys and M6 OAuth, and the switches that gate them.
 
 Row 5 mounted M1 to M4 and `tests/test_identity_row5.py` pins what an identity
-function serves with none of this row's switches on: twenty routes, including
-`GET /api/auth/oauth/providers`, which 0.16.0 mounts unconditionally. This file
-owns the twelve that the switches control, and the switches themselves.
+function serves with none of this row's switches on: twenty-one routes,
+including the two unconditional discovery routes,
+`GET /api/auth/oauth/providers` from 0.16.0 and
+`GET /api/auth/passkeys/availability` from 0.17.0. This file owns the twelve
+that the switches control, and the switches themselves.
 
 ## What is actually being tested, which is a configuration contract
 
@@ -105,6 +107,8 @@ private_key = _private_key
 #: `GET /api/auth/oauth/providers` is deliberately NOT here. It mounts in every
 #: deployment including one with no OAuth at all, so it belongs to row 5's
 #: inventory of what an unswitched function serves, and that is where it is.
+#: `GET /api/auth/passkeys/availability`, 0.17.0's passkey counterpart, is out
+#: of this file for the same reason and sits in the same place.
 OAUTH_FLOW_PATHS = (
     ("GET", "/api/auth/oauth/{provider}/start"),
     ("GET", "/api/auth/oauth/callback"),
@@ -266,6 +270,15 @@ def test_the_passkey_routes_are_absent_with_the_flag_off(oauth_app: Any) -> None
 
     for method, path in PASSKEY_MANAGEMENT_PATHS + PASSKEY_LOGIN_PATHS:
         assert (method, path) not in pairs, f"{method} {path} mounted with the flag off"
+
+    # And the eighth passkey route is still there, because it is the one that is
+    # not gated. 0.17.0's `GET /api/auth/passkeys/availability` mounts with the
+    # flag off precisely so that a frontend can read `enabled: false` instead of
+    # inferring it from a 404. Asserted here rather than only in row 5's file
+    # because this is the environment where the seven are genuinely absent, so
+    # it is where a future release that folded the eighth in with them would
+    # show up.
+    assert ("GET", "/api/auth/passkeys/availability") in pairs
 
 
 def test_passwordless_off_keeps_the_five_management_routes(
