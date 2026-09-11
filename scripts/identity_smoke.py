@@ -281,16 +281,25 @@ def probes_for(user_id: str) -> list[Probe]:
         # vehicles.
         Probe("vehicles", "GET", "/api/car-generations/count", ok=(200,)),
         Probe("vehicles", "GET", "/api/search?q=row13", ok=(200,), kind="read"),
+        Probe(
+            "vehicles",
+            "GET",
+            "/api/car-generations?limit=1",
+            ok=(200,),
+            kind="read",
+            note="supplies the car_id the build-lists create requires",
+        ),
         # build-lists. The create is the run's fixture for build-logs and
         # moderation, so it runs before them and its id feeds both.
         Probe("build-lists", "GET", "/api/build-lists/user/me", ok=(200,)),
         Probe(
             "build-lists",
             "POST",
-            "/api/build-lists/",
+            "/api/build-lists",
             ok=(200, 201),
             kind="write",
-            body={"name": "row13 smoke", "description": "temporary"},
+            needs=["car_id"],
+            body={"name": "row13 smoke", "description": "temporary", "car_id": "{car_id}"},
             note="creates the fixture the next two domains use",
         ),
         # build-logs.
@@ -313,7 +322,7 @@ def probes_for(user_id: str) -> list[Probe]:
             ok=(200, 201),
             kind="write",
             needs=["build_list_id"],
-            body={"vote_type": "up"},
+            body={"vote_type": "upvote"},
         ),
         Probe(
             "media",
@@ -352,6 +361,19 @@ def probes_for(user_id: str) -> list[Probe]:
     ]
 
 
+def resolve_body(body: dict[str, Any] | None, context: dict[str, str]) -> dict[str, Any] | None:
+    """Substitute `{name}` placeholders in a probe body with ids earlier probes captured."""
+    if not body:
+        return body
+    resolved: dict[str, Any] = {}
+    for key, value in body.items():
+        if isinstance(value, str):
+            for name, captured in context.items():
+                value = value.replace("{" + name + "}", captured)
+        resolved[key] = value
+    return resolved
+
+
 def run_domain_probes(
     client: Client, token: str, user_id: str, results: list[Result]
 ) -> dict[str, str]:
@@ -375,7 +397,7 @@ def run_domain_probes(
         for name, value in context.items():
             path = path.replace("{" + name + "}", value)
 
-        status, text = client.call(probe.method, path, token=token, body=probe.body)
+        status, text = client.call(probe.method, path, token=token, body=resolve_body(probe.body, context))
         verdict = "PASS" if status in probe.ok else "FAIL"
         note = probe.note
         if status == 401:
@@ -386,6 +408,15 @@ def run_domain_probes(
             note = f"{note + '; ' if note else ''}body: {text[:120]}"
 
         results.append(Result(probe.domain, probe.method, probe.path, status, verdict, note))
+
+        if probe.path.startswith("/api/car-generations?") and status == 200:
+            try:
+                listing = json.loads(text)
+            except ValueError:
+                listing = {}
+            items = listing.get("items") if isinstance(listing, dict) else None
+            if items and isinstance(items[0], dict) and items[0].get("id") is not None:
+                context["car_id"] = str(items[0]["id"])
 
         # Capture the build list id so the two domains that hang off it can run.
         if probe.domain == "build-lists" and probe.method == "POST" and status in (200, 201):
