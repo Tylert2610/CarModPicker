@@ -9,8 +9,8 @@
  * and they fail in different places:
  *
  *   1. the browser has to support WebAuthn at all (`passkeysSupported`)
- *   2. the deployment has to have passwordless sign in switched on, which is
- *      only observable by asking (`passkeyLoginAvailability`)
+ *   2. the deployment has to have passwordless sign in switched on, which the
+ *      discovery route states as a field (`passkeyLoginAvailability`)
  *   3. the user has to actually have a passkey, which nothing can know before
  *      the ceremony runs
  *
@@ -19,7 +19,7 @@
  * and the browser tells them there is nothing to use, which is the browser's
  * job and not this component's.
  *
- * Nothing is rendered while the probe is in flight. A button that appears and
+ * Nothing is rendered while the route is in flight. A button that appears and
  * then vanishes is worse than one that appears a beat late, and the password
  * form above it is usable the whole time.
  *
@@ -40,7 +40,7 @@ import { FaKey } from 'react-icons/fa';
 import { Button } from '../ui/button';
 import { identityUrl } from '../../api/identityClient';
 import {
-  PASSKEY_LOGIN_OPTIONS_PATH,
+  PASSKEY_AVAILABILITY_PATH,
   passkeyLoginAvailability,
 } from '../../api/passkeyAvailability';
 import {
@@ -77,10 +77,10 @@ function PasskeySignInButton({
       return;
     }
     let live = true;
-    void passkeyLoginAvailability(identityUrl(PASSKEY_LOGIN_OPTIONS_PATH)).then(
+    void passkeyLoginAvailability(identityUrl(PASSKEY_AVAILABILITY_PATH)).then(
       (answer) => {
         if (!live) return;
-        // `unknown` hides the button too: a probe that learned nothing should
+        // `unknown` hides the button too: a read that learned nothing should
         // not produce an affordance whose failure the user cannot act on.
         setAvailable(answer === 'available');
       }
