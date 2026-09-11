@@ -27,7 +27,7 @@ import { ConfirmationAlert, ErrorAlert } from '../../components/ui/alert';
 import Spinner from '../../components/ui/spinner';
 import useApiRequest from '../../hooks/UseApiRequest';
 import { useAuth } from '../../hooks/useAuth';
-import { apiClient } from '../../api/client';
+import { requestVerificationEmail } from '../../api/identityAuth';
 import VerifyEmailToken from './VerifyEmailToken';
 
 function VerifyEmail() {
@@ -36,8 +36,16 @@ function VerifyEmail() {
   const { user, isLoading: authIsLoading } = useAuth(); // Get user from auth context
   const linkToken = searchParams.get(LINK_TOKEN_PARAM);
 
-  const verifyEmailRequestFn = (payload: { email: string }) =>
-    apiClient.post<Record<string, never>>('/auth/verify-email', payload);
+  // Through `requestVerificationEmail` rather than the legacy route directly,
+  // so the mail comes from whichever service also serves the confirm link it
+  // carries. The token in that link is only valid against its own issuer.
+  // Wrapped into the `{ data }` envelope `useApiRequest` unwraps. See the same
+  // wrapper in `ForgotPassword` for why a refusal is thrown.
+  const verifyEmailRequestFn = async (payload: { email: string }) => {
+    const outcome = await requestVerificationEmail(payload.email);
+    if (!outcome.ok) throw new Error(outcome.message);
+    return { data: outcome };
+  };
 
   const {
     error: apiError,

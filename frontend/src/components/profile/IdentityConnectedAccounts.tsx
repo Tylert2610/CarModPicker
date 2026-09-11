@@ -51,7 +51,7 @@ import { getIdentityClient } from '../../api/identityClient';
 
 /** A date for display, falling back to the raw value rather than throwing. */
 const formatDate = (value: string | undefined): string => {
-  if (!value) return '—';
+  if (!value) return 'Unknown';
   try {
     return new Date(value).toLocaleDateString();
   } catch {

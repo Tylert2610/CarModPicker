@@ -240,3 +240,40 @@ export const requestVerificationEmail = async (
   await apiClient.post('/auth/verify-email', { email });
   return { ok: true, message: 'Verification email sent.' };
 };
+
+/**
+ * Requests a password reset email.
+ *
+ * The mailed link is the reason this has to follow the mode rather than stay on
+ * the legacy route. Whichever service sends the mail also builds the URL in it
+ * and is the only one that can confirm the token it carries: the legacy mail
+ * points at `/auth/reset-password/confirm` and the identity mail points at
+ * `RESET_PASSWORD_PATH`, which `ResetPassword` serves. Sending the request to
+ * one service and landing the user on the other's confirm page is a link that
+ * always fails, so the two halves are kept on the same mechanism here.
+ *
+ * Both answer identically whether or not the address has an account, which is
+ * deliberate on both sides and is why the caller gets no way to tell.
+ */
+export const requestPasswordReset = async (
+  email: string
+): Promise<{ ok: boolean; message: string }> => {
+  const identity = getIdentityClient();
+  if (identity !== null) {
+    const outcome = await identity.requestPasswordReset({ email });
+    return outcome.ok
+      ? {
+          ok: true,
+          message:
+            outcome.detail ??
+            'If an account with that email exists, a password reset link has been sent.',
+        }
+      : { ok: false, message: outcome.message };
+  }
+  await authApi.resetPassword({ email });
+  return {
+    ok: true,
+    message:
+      'If an account with that email exists, a password reset link has been sent.',
+  };
+};
