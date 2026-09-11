@@ -1,21 +1,5 @@
-# QUAL-04 / D-18 path A (Phase 6): the CI invocation `bandit -r app -ll`
-# intentionally fails on MEDIUM and HIGH. backend/tests/test_bandit_high_gate.py
-# pins this behavior against regression. Empirical verification 2026-04-23:
-# `-ll` exits 1 on B602 HIGH fixture. Do NOT weaken this flag without also
-# updating the regression test.
-
 [bandit]
-# Bandit configuration for CarModPicker backend
-# This file configures Bandit security scanner settings
-# Bandit auto-detects this file when using -r flag
 
-# Exclude directories from scanning (comma-separated)
 exclude = .venv,venv,__pycache__,.pytest_cache,.mypy_cache
 
-# Skip certain test IDs that are false positives in our use case
-# B404: subprocess import - used for trusted internal helpers (marked with # nosec)
-# B603: subprocess call - We use hardcoded commands, not user input (marked with # nosec)
-# B607: partial path - pip-installed executables (marked with # nosec)
-# Note: Individual instances are suppressed with # nosec comments in code
-# This global skip is a backup in case we add more subprocess usage
 skips = B404,B603,B607

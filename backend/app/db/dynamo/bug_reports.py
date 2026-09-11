@@ -1,8 +1,7 @@
-"""Bug reports on DynamoDB.
+"""Bug reports on DynamoDB, submitted by any user and triaged by admins.
 
-Bug reports are submitted by signed-in or anonymous users and triaged by
-admins. The status GSI serves the admin queue; the user GSI serves
-"my reports" and account purges.
+The status GSI serves the admin queue; the user GSI serves "my reports"
+and account purges.
 """
 
 from datetime import datetime
@@ -41,14 +40,19 @@ class BugReport(TimestampedDynamoModel):
 
 
 def _newest_first(reports: list[BugReport]) -> list[BugReport]:
+    """Sort reports newest first, breaking ties on id so the order is stable."""
     return sorted(reports, key=lambda report: (report.created_at, str(report.id)), reverse=True)
 
 
 class BugReportRepository(DynamoRepository[BugReport]):
+    """Bug reports, queryable by submitting user and by triage status."""
+
     def __init__(self) -> None:
+        """Bind to the bug reports table."""
         super().__init__(BugReport, BUG_REPORTS)
 
     def list_by_user(self, user_id: UUID) -> list[BugReport]:
+        """This user's reports, newest first."""
         return self.query_all(USER_INDEX, user_id, scan_forward=False)
 
     def list_filtered(self, *, status: str | None = None, priority: str | None = None) -> list[BugReport]:
@@ -64,9 +68,11 @@ class BugReportRepository(DynamoRepository[BugReport]):
         return _newest_first(reports)
 
     def count(self) -> int:
+        """How many bug reports exist."""
         return len(self.scan_all())
 
     def delete_for_user(self, user_id: UUID) -> int:
+        """Delete every report this user submitted, returning how many were removed."""
         keys = [str(report.id) for report in self.list_by_user(user_id)]
         if keys:
             self.batch_delete(keys)

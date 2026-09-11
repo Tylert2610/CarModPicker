@@ -1,29 +1,7 @@
-"""
-Initialize car generations in the database on application startup.
+"""Seed car makes, models and generations from the source data on startup.
 
-Source code (car_generations_data.py) is the source of truth for CarMake, CarModel,
-and CarGeneration. Existing rows are updated to match seed data; new rows are created
-when missing. Rows that have drifted out of source are left in place (FK refs may still
-point at them — deleting is a manual operation).
-
-Lookup keys are stable **slugs**, not display-level names:
-- CarModel: (car_make_id, slug)
-- CarGeneration: (car_model_id, slug)
-
-Slugs default to slugify(name) / slugify(generation_name). To rename a name in seed
-without creating a duplicate row, pin the `slug` field in the source dict to the original
-slugified form; the existing row will be found and its `name` (or `generation_name`)
-updated in place.
-
-Synced fields — overwritten on every startup from source. Manual DB edits to these fields
-will be clobbered on next boot:
-- CarMake: name (by current lookup; lookup key)
-- CarModel: name, display_name
-- CarGeneration: generation_name, start_year, end_year, description, display_name
-
-Not synced — safe for admin curation:
-- CarGeneration.image_urls
-- created_at / updated_at / id
+Rows are created when missing and synced when present, and rows absent from source
+are left alone. Lookup is by stable slug, so pinning `slug` renames rather than duplicates.
 """
 
 import logging
@@ -36,21 +14,24 @@ from app.db.dynamo.users import UniqueAttributeTaken
 
 logger = logging.getLogger(__name__)
 
-# Fields synced when updating an existing CarGeneration (id, created_at, updated_at, image_urls stay as-is).
-# The flattener always emits display_name; None clears a stale DB value.
-# Slug is the lookup key, not a synced field — it's set on create and treated as immutable.
 _CAR_GENERATION_SYNC_FIELDS = ("generation_name", "start_year", "end_year", "description", "display_name")
 
 
 def _str_or_none(value: object) -> str | None:
+    """`value` when it is a string, otherwise `None`."""
     return value if isinstance(value, str) else None
 
 
 def _int_or_none(value: object) -> int | None:
+    """`value` as an int when it is a non-empty int or string, otherwise `None`."""
     return int(value) if isinstance(value, (int, str)) and str(value).strip() else None
 
 
 def _get_or_create_make(repos: Repositories, name: str, cache: dict[str, CarMake]) -> CarMake:
+    """The make with this name, created if missing, memoised in `cache`.
+
+    A concurrent create is tolerated by re-reading after a uniqueness failure.
+    """
     cached = cache.get(name.lower())
     if cached is not None:
         return cached
@@ -67,15 +48,10 @@ def _get_or_create_make(repos: Repositories, name: str, cache: dict[str, CarMake
 
 
 def init_car_generations() -> None:
-    """
-    Initialize car generations in the database from car_generations_data (source of truth).
+    """Create or sync every make, model and generation from the source data.
 
-    For each generation in source:
-    - Ensure CarMake exists (by name), CarModel exists (car_make_id + slug), and
-      CarGeneration exists (car_model_id + slug).
-    - On an existing CarModel, sync name and display_name.
-    - On an existing CarGeneration, sync the fields in _CAR_GENERATION_SYNC_FIELDS.
-    - Otherwise create the row with slug derived from the name (or pinned via source).
+    Image URLs and timestamps are never synced, so they stay safe for curation;
+    every other seeded field is overwritten from source on each run.
     """
     repos = get_repositories()
 

@@ -1,3 +1,5 @@
+"""Build lists and their parts, phases and labor estimates on DynamoDB."""
+
 from typing import Any, Iterable, TypeVar
 from uuid import UUID
 
@@ -17,13 +19,14 @@ TModel = TypeVar("TModel", bound=DynamoModel)
 
 
 class BuildList(TimestampedDynamoModel):
+    """A user's build for one car, with its parts, phases and labor estimates."""
+
     id: UUID = Field(default_factory=uuid7)  # pyright: ignore[reportIncompatibleVariableOverride]
     name: str
     description: str | None = None
     image_urls: list[str] | None = None
     car_id: UUID | None = None
     user_id: UUID
-    # Purchase price of the donor car, in cents. Folded into total build cost.
     base_price_cents: int = 0
 
 
@@ -63,13 +66,10 @@ class BuildListLaborEstimate(TimestampedDynamoModel):
 
 
 class BuildListChildRepository(DynamoRepository[TModel]):
-    """
-    Shared behaviour for the tables hanging off a build list.
+    """Shared behaviour for the tables hanging off a build list.
 
-    Every child table is indexed by ``build_list_id``, so listing and the
-    cascade on build-list delete are the same shape for all of them.
-    Subclasses set ``child_index`` to their own GSI, which differ only in
-    the range key they sort on.
+    Every child table is indexed by ``build_list_id``; subclasses set
+    ``child_index`` to their own GSI, which differ only in the range key.
     """
 
     child_index: str
@@ -82,6 +82,7 @@ class BuildListChildRepository(DynamoRepository[TModel]):
         cursor: str | None = None,
         scan_forward: bool = True,
     ) -> Page[TModel]:
+        """One page of this build list's children."""
         return self.query(
             self.child_index,
             build_list_id,
@@ -91,14 +92,19 @@ class BuildListChildRepository(DynamoRepository[TModel]):
         )
 
     def all_for_build_list(self, build_list_id: UUID) -> list[TModel]:
+        """Every child of this build list."""
         return self.query_all(self.child_index, build_list_id)
 
     def delete_actions_for_build_list(self, build_list_id: UUID) -> list[dict[str, Any]]:
+        """Transaction actions deleting every child of this build list."""
         return [self.delete_action(str(item.id)) for item in self.all_for_build_list(build_list_id)]
 
 
 class BuildListRepository(DynamoRepository[BuildList]):
+    """Build lists, queryable by owning user and by car."""
+
     def __init__(self) -> None:
+        """Bind to the build lists table."""
         super().__init__(BuildList, BUILD_LISTS)
 
     def list_by_user(
@@ -120,25 +126,32 @@ class BuildListRepository(DynamoRepository[BuildList]):
         cursor: str | None = None,
         scan_forward: bool = False,
     ) -> Page[BuildList]:
+        """Build lists for a car, newest first by default."""
         return self.query("car_id-created_at-index", car_id, limit=limit, cursor=cursor, scan_forward=scan_forward)
 
     def get_many(self, ids: Iterable[UUID]) -> dict[UUID, BuildList]:
+        """The build lists for these ids, keyed by id, skipping missing ones."""
         keys = [str(item_id) for item_id in ids]
         if not keys:
             return {}
         return {item.id: item for item in self.batch_get(keys)}
 
     def count(self) -> int:
+        """How many build lists exist."""
         return len(self.scan_all())
 
 
 class BuildListPartRepository(BuildListChildRepository[BuildListPart]):
+    """Parts attached to build lists, ordered by when they were added."""
+
     child_index = "build_list_id-added_at-index"
 
     def __init__(self) -> None:
+        """Bind to the build list parts table."""
         super().__init__(BuildListPart, BUILD_LIST_PARTS)
 
     def list_for_part(self, part_id: UUID, *, limit: int = 100, cursor: str | None = None) -> Page[BuildListPart]:
+        """One page of the build list entries referencing this catalogue part."""
         return self.query("part_id-index", part_id, limit=limit, cursor=cursor)
 
     def clear_phase(self, phase_id: UUID, build_list_id: UUID) -> list[dict[str, Any]]:
@@ -156,23 +169,31 @@ class BuildListPartRepository(BuildListChildRepository[BuildListPart]):
 
 
 class BuildListPhaseRepository(BuildListChildRepository[BuildListPhase]):
+    """Phases grouping the parts of a build list."""
+
     child_index = "build_list_id-sort_order-index"
 
     def __init__(self) -> None:
+        """Bind to the build list phases table."""
         super().__init__(BuildListPhase, BUILD_LIST_PHASES)
 
     def ordered_for_build_list(self, build_list_id: UUID) -> list[BuildListPhase]:
+        """This build list's phases in display order, ties broken on id."""
         phases = self.all_for_build_list(build_list_id)
         return sorted(phases, key=lambda phase: (phase.sort_order, str(phase.id)))
 
 
 class BuildListLaborEstimateRepository(BuildListChildRepository[BuildListLaborEstimate]):
+    """Labor and other non-part cost lines on a build list."""
+
     child_index = "build_list_id-sort_order-index"
 
     def __init__(self) -> None:
+        """Bind to the build list labor estimates table."""
         super().__init__(BuildListLaborEstimate, BUILD_LIST_LABOR_ESTIMATES)
 
     def ordered_for_build_list(self, build_list_id: UUID) -> list[BuildListLaborEstimate]:
+        """This build list's labor estimates in display order, ties broken on id."""
         estimates = self.all_for_build_list(build_list_id)
         return sorted(estimates, key=lambda estimate: (estimate.sort_order, str(estimate.id)))
 
@@ -194,14 +215,10 @@ def delete_build_list_cascade(
     labor_estimates: BuildListLaborEstimateRepository,
     extra_actions: Iterable[dict[str, Any]] = (),
 ) -> None:
-    """
-    Delete a build list and everything hanging off it.
+    """Delete a build list and every child row hanging off it.
 
-    DynamoDB has no ``ON DELETE CASCADE``, so the children the SQL schema
-    removed automatically have to be collected and deleted explicitly. A
-    transaction caps at 100 actions; a build list large enough to exceed that
-    falls back to deleting children in batches before removing the parent,
-    which is not atomic but is the only option at that size.
+    DynamoDB has no cascade, and a transaction caps at 100 actions, so lists
+    larger than that delete children in batches first and are not atomic.
     """
     actions: list[dict[str, Any]] = [
         *parts.delete_actions_for_build_list(build_list_id),

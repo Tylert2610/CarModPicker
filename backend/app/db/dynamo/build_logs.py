@@ -1,3 +1,5 @@
+"""Build log threads and their posts on DynamoDB."""
+
 from typing import Any
 from uuid import UUID
 
@@ -27,7 +29,10 @@ class BuildLogPost(TimestampedDynamoModel):
 
 
 class BuildLogRepository(DynamoRepository[BuildLog]):
+    """Build log threads, one per build list."""
+
     def __init__(self) -> None:
+        """Bind to the build logs table."""
         super().__init__(BuildLog, BUILD_LOGS)
 
     def for_build_list(self, build_list_id: UUID) -> BuildLog | None:
@@ -36,14 +41,19 @@ class BuildLogRepository(DynamoRepository[BuildLog]):
         return page.items[0] if page.items else None
 
     def all_for_build_list(self, build_list_id: UUID) -> list[BuildLog]:
+        """Every log thread on a build list, including any the invariant should forbid."""
         return self.query_all("build_list_id-index", build_list_id)
 
     def count(self) -> int:
+        """How many build log threads exist."""
         return len(self.scan_all())
 
 
 class BuildLogPostRepository(DynamoRepository[BuildLogPost]):
+    """Posts within build log threads."""
+
     def __init__(self) -> None:
+        """Bind to the build log posts table."""
         super().__init__(BuildLogPost, BUILD_LOG_POSTS)
 
     def list_for_build_log(
@@ -60,12 +70,15 @@ class BuildLogPostRepository(DynamoRepository[BuildLogPost]):
         )
 
     def all_for_build_log(self, build_log_id: UUID) -> list[BuildLogPost]:
+        """Every post in a thread, oldest first."""
         return self.query_all("build_log_id-created_at-index", build_log_id)
 
     def list_by_user(self, user_id: UUID) -> list[BuildLogPost]:
+        """Every post this user wrote, across all threads."""
         return self.query_all("user_id-created_at-index", user_id)
 
     def count(self) -> int:
+        """How many build log posts exist."""
         return len(self.scan_all())
 
 

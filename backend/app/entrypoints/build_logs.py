@@ -1,30 +1,7 @@
-"""The build-logs domain's entrypoint.
+"""The build-logs domain's entrypoint, run as `python -m app.entrypoints.build_logs`.
 
-Forum-style build log threads and their posts: 5 routes under `/api/build-logs`.
-
-Four of them verify a token, so the domain needs `SECRET_KEY`.
-
-Run by the image as `python -m app.entrypoints.build_logs`. `handler` is the
-Lambda entry point and is still Mangum, which is what `app/lambda_handler.py`
-uses today; the Lambda Web Adapter switch is a later PR in the plan and changing
-the adapter here would make this slice about two things at once.
-
-`build_app` is importable on its own and reads no AWS, which is what lets the
-tests build this application with no credentials and no network. Only `main`
-configures logging and tracing, because those are process-wide effects a test
-importing the module must not inherit.
-
-Logging and tracing come from the shared `webbpulse` package, and tracing is
-live: Terraform sets `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` on this function and
-grants `xray:PutSpans`, so `main` builds a real tracer provider and spans are
-exported to the X-Ray OTLP endpoint. Sampling is tail based, so errors are kept
-whatever `WEBBPULSE_OTEL_SAMPLE_RATIO` says. `configure_tracing` still returns
-early when the variable is unset, which is what keeps a test or a local run
-free of an exporter.
-
-Sentry is not initialised here. Row 16 of the split plan replaced it with
-OpenTelemetry in the domain functions. The monolith still serving production
-keeps Sentry until row 31 retires it.
+Forum-style build log threads and their posts: 5 routes under
+`/api/build-logs`. Needs `SECRET_KEY`.
 """
 
 from typing import TYPE_CHECKING
@@ -39,7 +16,7 @@ from app.composition.wiring import (
     configure_tracing,
 )
 
-if TYPE_CHECKING:  # pragma: no cover - typing only
+if TYPE_CHECKING:  # pragma: no cover
     from fastapi import FastAPI
 
 DOMAIN = DOMAINS["build-logs"]
@@ -51,44 +28,22 @@ def build_app() -> "FastAPI":
 
 
 def main() -> None:
-    """Process-wide setup, then serve. Not run by importing this module."""
+    """Configure logging and tracing process-wide, then serve the application.
+
+    Tracing is configured before the app is built so the server span middleware
+    can still be injected into an unbuilt middleware stack.
+    """
     from webbpulse.lambda_entry import run_uvicorn
 
-    # Logging first: `configure_tracing` logs its own warnings, and they are
-    # worth having in the shared JSON format rather than in whatever the root
-    # logger defaulted to.
     configure_logging(service=DOMAIN.service_name)
-    # Tracing before the application is built, because the provider has to exist
-    # by the time `build_domain_app` decides whether to instrument. Terraform
-    # sets OTEL_EXPORTER_OTLP_TRACES_ENDPOINT on this function, so this is a
-    # real provider here and still a no-op in a test or a local run, where the
-    # variable is unset.
     configure_tracing(DOMAIN)
     check_signing_key([DOMAIN])
-    # Built here rather than reusing the module-level `app`, and that is the
-    # whole reason this line exists. The module-level `app` below is
-    # constructed at import, which is before `configure_tracing` has run, so
-    # `build_domain_app` saw tracing off and attached no instrumentation to it.
-    # Rebuilding after the provider exists is what gets the server span
-    # middleware installed; `instrument_app` can only inject it while the
-    # middleware stack is still unbuilt, so an already-serving application
-    # cannot be instrumented after the fact. Sentry used to be initialised
-    # here and is gone: this function reports through OpenTelemetry now, and
-    # only the monolith's composition root still calls `init_sentry`.
-    #
-    # `run_uvicorn` binds AWS_LWA_PORT, then PORT, then 8080, which is the
-    # Web Adapter's own precedence. Binding a port the adapter is not polling
-    # presents as the readiness check never passing, with no application logs
-    # at all, so the precedence is worth taking from the package rather than
-    # reimplementing against settings.PORT.
+    # No init_sentry here: these functions report through OpenTelemetry.
     run_uvicorn(build_app())
 
 
 app = build_app()
 
-# Mangum, matching `app/lambda_handler.py`. `lifespan="off"` for the same reason
-# it is off there: Lambda gives no shutdown hook, and the startup work this
-# domain does, if any, is idempotent and better driven by the seed job.
 handler = Mangum(app, lifespan="off")
 
 

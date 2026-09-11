@@ -1,38 +1,7 @@
-"""CarModPicker's settings, on top of the shared package's base.
+"""CarModPicker's settings, layered on `webbpulse.config.BaseServiceSettings`.
 
-`BaseServiceSettings` from `webbpulse.config` carries the six fields every
-WebbPulse service has: `environment`, `service_name`, `log_level`,
-`app_secrets_arn` and the two CORS fields. Everything below them is
-CarModPicker's own, and the ~200 `settings.SCREAMING_CASE` call sites across the
-application are untouched by the change.
-
-## What the base does and does not take over
-
-The base supplies the field set and the CSV-or-JSON parsing for list valued
-environment variables. It deliberately does **not** take over secret
-resolution here. `BaseServiceSettings.load_secrets` fetches the whole blob and
-returns it; CarModPicker's `_resolve_secret` resolves one named field at a time,
-consulting the live `os.environ` first, and is what PR 7 built so that a
-read-only domain never needs `secretsmanager:GetSecretValue`. Those semantics
-are not the base's, so `_resolve_secret`, `require_secrets` and the
-`app.core.secrets` cache stay exactly as PR 7 left them.
-
-## Two model_config keys are overridden on purpose
-
-`case_sensitive=True` and `populate_by_name=True` are CarModPicker's, not the
-base's. The base sets `case_sensitive=False`, which would make `SECRET_KEY` and
-`secret_key` the same variable; here `SECRET_KEY` is an alias onto
-`SECRET_KEY_SETTING` and a case-insensitive match would let the alias and the
-shadow field collide. Overriding the key rather than renaming the fields is what
-keeps this change about composition rather than about renaming.
-
-The base's lower case `environment` and `log_level` are mirrored from
-CarModPicker's own `APP_ENVIRONMENT` and log level after validation, so a caller
-reaching for either spelling sees the same value. `environment` needs the care:
-the base types it as a Literal of local/test/staging/production while
-`APP_ENVIRONMENT` has always been free text defaulting to "development", so the
-mapping is explicit and an unrecognised value lands on "local" rather than
-failing validation and taking down a cold start over a typo.
+`case_sensitive` is overridden because `SECRET_KEY` aliases the `SECRET_KEY_SETTING`
+field and would otherwise collide with it. `_resolve_secret` resolves one at a time.
 """
 
 import os
@@ -45,23 +14,16 @@ from webbpulse.config import BaseServiceSettings
 
 from app.core.secrets import fetch_app_secrets
 
-# Settings whose value may come from the single JSON secret named by
-# APP_SECRETS_ARN. Its keys are these names exactly, so there is no mapping to
-# keep in step. Each is stored in a shadow field and exposed as a property that
-# resolves on first read, so importing this module performs no network call and
-# a process that never reads a secret never needs secretsmanager:GetSecretValue.
 SECRET_FIELDS = ("SECRET_KEY", "SENTRY_DSN", "EXTENSION_API_KEY")
 
 
 class Settings(BaseServiceSettings):
-    # API settings
+    """Every setting CarModPicker reads, from the environment or a `.env` file."""
+
     API_STR: str = "/api"
     PROJECT_NAME: str = "CarModPicker"
     DEBUG: bool = False
 
-    # JWT Auth. Resolved lazily through the SECRET_KEY property below; an
-    # environment variable still wins, which keeps local development and the
-    # test suite free of AWS.
     SECRET_KEY_SETTING: str = Field(
         default="",
         alias="SECRET_KEY",
@@ -69,10 +31,6 @@ class Settings(BaseServiceSettings):
     )
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
 
-    # Shared API key for non-interactive writers of the batch price-history
-    # route (the Chrome extension and ingestion/admin jobs). Resolved lazily
-    # through the EXTENSION_API_KEY property below, exactly like SECRET_KEY.
-    # Empty = no key is accepted and only an admin bearer token gets in.
     EXTENSION_API_KEY_SETTING: str = Field(
         default="",
         alias="EXTENSION_API_KEY",
@@ -81,19 +39,14 @@ class Settings(BaseServiceSettings):
             "Empty disables API-key auth, leaving admin tokens as the only way in."
         ),
     )
-    # Bounds for user-configurable session length (minutes). User preference is clamped to this range.
     ACCESS_TOKEN_EXPIRE_MINUTES_MIN: int = 15
-    ACCESS_TOKEN_EXPIRE_MINUTES_MAX: int = 10080  # 7 days
+    ACCESS_TOKEN_EXPIRE_MINUTES_MAX: int = 10080
 
-    # JWT algorithm — PyJWT swap (AUTH-04 D-03). HS256 preserved per D-46.
     JWT_ALGORITHM: str = Field(
         default="HS256",
         description="Algorithm used to sign + verify JWTs. Must match on encode and decode.",
     )
 
-    # Google OAuth — frontend uses this client id to mint ID tokens; backend uses it as the
-    # `audience` when verifying. The client id itself is not a secret (it's embedded in the
-    # frontend bundle anyway), so it lives in source. Override via env if/when rotated.
     GOOGLE_CLIENT_ID: str = Field(
         default="1073035138993-bvba9dfi4pdr354p3d550bi95die8e83.apps.googleusercontent.com",
         description="Google OAuth 2.0 client id. Used as the audience when verifying ID tokens.",
@@ -101,6 +54,7 @@ class Settings(BaseServiceSettings):
 
     @property
     def google_oauth_enabled(self) -> bool:
+        """Whether a Google OAuth client id is configured."""
         return bool(self.GOOGLE_CLIENT_ID)
 
     FRONTEND_URL: str = Field(
@@ -113,13 +67,9 @@ class Settings(BaseServiceSettings):
         description="Public origin of this backend API. Empty = per-environment default derived from APP_ENVIRONMENT.",
     )
 
-    # WebAuthn / passkeys — RP ID and origins are derived from FRONTEND_URL when
-    # it is set, otherwise from APP_ENVIRONMENT.
-    # RP ID is the registrable domain users see; origins are the frontend URLs
-    # that will call navigator.credentials.*. Passkeys registered on one
-    # environment cannot be used on another (different RP IDs).
     @property
     def webauthn_rp_id(self) -> str:
+        """The WebAuthn relying party id: the SPA's hostname."""
         hostname = urlparse(self.FRONTEND_URL).hostname if self.FRONTEND_URL else None
         if hostname:
             return hostname
@@ -131,10 +81,12 @@ class Settings(BaseServiceSettings):
 
     @property
     def webauthn_rp_name(self) -> str:
+        """The WebAuthn relying party display name shown in the authenticator prompt."""
         return self.PROJECT_NAME
 
     @property
     def webauthn_origins_list(self) -> list[str]:
+        """The origins WebAuthn assertions may come from, apex and www included."""
         if self.FRONTEND_URL:
             parsed = urlparse(self.frontend_base_url)
             origin = f"{parsed.scheme}://{parsed.netloc}"
@@ -155,11 +107,11 @@ class Settings(BaseServiceSettings):
 
     @property
     def frontend_base_url(self) -> str:
-        """Public origin of the user-facing SPA, used to build absolute URLs
-        (e.g. sitemap <loc> entries, email links). The backend and frontend
-        live on separate domains, so this comes from FRONTEND_URL when set and
-        otherwise from APP_ENVIRONMENT rather than the request host. No
-        trailing slash."""
+        """Public origin of the SPA, for absolute links in sitemaps and email.
+
+        From `FRONTEND_URL`, else derived from `APP_ENVIRONMENT` rather than the request
+        host, since backend and frontend sit on separate domains. No trailing slash.
+        """
         if self.FRONTEND_URL:
             return self.FRONTEND_URL.strip().rstrip("/")
         if not self.is_production:
@@ -170,15 +122,11 @@ class Settings(BaseServiceSettings):
 
     @property
     def api_base_url(self) -> str:
-        """Public origin of this backend API, used to build absolute URLs that
-        point back at the API itself (email verification links, price alert
-        unsubscribe links, sitemap index child entries).
+        """Public origin of this API, for links that point back at it.
 
-        The backend and frontend live on separate domains, so this is the API
-        host rather than `frontend_base_url`, and it comes from API_URL when set
-        and otherwise from APP_ENVIRONMENT rather than the request host. Deriving
-        it from the environment is what keeps staging from mailing production
-        links. No trailing slash."""
+        From `API_URL`, else derived from `APP_ENVIRONMENT` so staging never mails
+        production links. No trailing slash.
+        """
         if self.API_URL:
             return self.API_URL.strip().rstrip("/")
         if not self.is_production:
@@ -189,36 +137,26 @@ class Settings(BaseServiceSettings):
 
     @model_validator(mode="after")
     def validate_and_normalize_settings(self) -> "Settings":
-        """Normalize storage variable names.
+        """Normalise the aliased storage and region variable names after validation.
 
-        Deliberately does not look at SECRET_KEY. Reading it here would resolve
-        the secret at construction time and put a Secrets Manager call back on
-        the import path, which is exactly what this module no longer does. The
-        production check moved to require_secrets(), called at the point of use.
+        Deliberately never reads `SECRET_KEY`: doing so would put a Secrets Manager call
+        on the import path. `require_secrets` checks it at the point of use instead.
         """
-        # Normalize storage settings to handle both variable naming conventions
-        # Handle bucket name
         if not self.USER_IMAGES_BUCKET and self.S3_BUCKET_NAME:
             object.__setattr__(self, "USER_IMAGES_BUCKET", self.S3_BUCKET_NAME)
 
-        # Handle region
         if not self.AWS_REGION or self.AWS_REGION == "auto":
             if self.AWS_DEFAULT_REGION:
                 object.__setattr__(self, "AWS_REGION", self.AWS_DEFAULT_REGION)
             else:
                 object.__setattr__(self, "AWS_REGION", "auto")
 
-        # Handle endpoint URL
         if not self.S3_ENDPOINT_URL and self.AWS_ENDPOINT_URL:
             object.__setattr__(self, "S3_ENDPOINT_URL", self.AWS_ENDPOINT_URL)
 
         self._mirror_base_fields()
         return self
 
-    #: `APP_ENVIRONMENT` is free text and has always defaulted to "development";
-    #: the base's `environment` is a Literal. An unrecognised value maps to
-    #: "local" rather than raising, so a typo in a Terraform variable degrades to
-    #: local-ish defaults instead of failing the process at construction.
     _ENVIRONMENT_ALIASES = {
         "development": "local",
         "dev": "local",
@@ -231,13 +169,10 @@ class Settings(BaseServiceSettings):
     }
 
     def _mirror_base_fields(self) -> None:
-        """Fill the base's lower case fields from CarModPicker's own spellings.
+        """Fill the base's lower case fields from CarModPicker's uppercase spellings.
 
-        A pydantic field cannot be shadowed by a property, so the two spellings
-        are reconciled after validation rather than by making one derive from the
-        other. CarModPicker's uppercase names stay the ones the application and
-        Terraform use; the lower case ones exist so anything reading a service
-        through `BaseServiceSettings` sees the same values.
+        A pydantic field cannot be shadowed by a property, so the two are reconciled
+        here rather than derived, and anything reading through the base sees the same values.
         """
         object.__setattr__(
             self,
@@ -249,7 +184,6 @@ class Settings(BaseServiceSettings):
         object.__setattr__(self, "cors_allow_origins", self.allowed_origins_list)
         object.__setattr__(self, "cors_allow_credentials", True)
 
-    # CORS settings
     ALLOWED_ORIGINS: str = Field(
         default=(
             "http://localhost,http://localhost:3000,http://localhost:4000,"
@@ -262,12 +196,6 @@ class Settings(BaseServiceSettings):
         description="Comma-separated list of allowed origins",
     )
 
-    # The Chrome Web Store id of the CarModPicker Browser Companion. Public, not
-    # a secret: it is in every store URL and in the `CWS_EXTENSION_ID` GitHub
-    # variable on both the staging and production environments (they share one
-    # listing). Defaulted here so no Terraform or Lambda env change is needed to
-    # keep the shipped extension working; override the variable to add an
-    # unpacked development id, which changes per developer profile.
     CHROME_EXTENSION_IDS: str = Field(
         default="dbglgmnnfandmnacdpibkfggkadjikkg",
         description=(
@@ -278,16 +206,12 @@ class Settings(BaseServiceSettings):
 
     @property
     def chrome_extension_origins_list(self) -> list[str]:
-        """`chrome-extension://<id>` origins built from CHROME_EXTENSION_IDS.
+        """The `chrome-extension://<id>` CORS origins from `CHROME_EXTENSION_IDS`.
 
-        An explicit list rather than a `chrome-extension://.*` regex. The old
-        regex combined with `allow_credentials=True` handed credentialed CORS to
-        every extension a user had installed, so any extension could read
-        authenticated responses from this API.
+        An explicit list, never a wildcard pattern: with `allow_credentials=True` a
+        pattern would let any installed extension read authenticated responses.
         """
         ids = [value.strip() for value in self.CHROME_EXTENSION_IDS.split(",") if value.strip()]
-        # Preserve order, drop duplicates, and tolerate an id supplied with the
-        # scheme already on it.
         origins: list[str] = []
         for extension_id in ids:
             origin = (
@@ -299,16 +223,10 @@ class Settings(BaseServiceSettings):
 
     @property
     def allowed_origins_list(self) -> list[str]:
-        """Every origin CORS admits: ALLOWED_ORIGINS plus the extension origins.
+        """Every origin CORS admits: `ALLOWED_ORIGINS` plus the extension origins.
 
-        The literal `"null"` origin is deliberately absent. It used to be appended
-        for "Chrome extension service workers", but an MV3 service worker sends
-        `Origin: chrome-extension://<id>`, not `null`, and the extension's own
-        fetches (`chrome-extension/src/background.ts`) authenticate with a bearer
-        token rather than cookies, so they never needed a credentialed origin
-        match at all. `"null"` is also what a sandboxed iframe, a `data:` document
-        and a file:// page send, so allowing it with `allow_credentials=True`
-        granted those the same access as the real frontend.
+        The literal `"null"` origin is excluded on purpose, since sandboxed iframes and
+        `file://` pages send it and would otherwise get credentialed access.
         """
         origins = []
         if self.ALLOWED_ORIGINS:
@@ -320,30 +238,13 @@ class Settings(BaseServiceSettings):
 
         return origins
 
-    # Runtime environment settings
     PORT: int = 8000
-    APP_ENVIRONMENT: str = "development"  # Set to "production" on App Runner via Terraform
+    APP_ENVIRONMENT: str = "development"
     RUN_STARTUP_TASKS: bool = Field(
         default=True,
         description="Run lifespan startup work (car generation seed, orphan job sweep). Lambda sets this false.",
     )
 
-    # The one `IDENTITY_*` variable this class names, and the only one it ever
-    # should. `IdentitySettings` in `webbpulse.identity` is a `BaseSettings` with
-    # `env_prefix="IDENTITY_"`, so it reads `IDENTITY_AUDIENCE`,
-    # `IDENTITY_SIGNING_KEY_ARNS`, `IDENTITY_DATA_KEY_ARN` and the rest out of the
-    # environment itself. Restating them here would be a second copy of the same
-    # list, kept in step by hand, with this one's types and validation
-    # necessarily weaker than the package's.
-    #
-    # This field is the exception because `app/composition/wiring.py` needs a
-    # cheap way to answer "is the identity application configured at all" before
-    # it constructs `IdentitySettings`, which raises when it is not.
-    # `IDENTITY_ISSUER` is required by that class and set by
-    # `terraform/lambda_domains.tf` on every deployed identity function, so its
-    # presence is exactly that question. Naming it here rather than reading
-    # `os.environ` in the composition root keeps every environment variable this
-    # application reads visible in one class.
     IDENTITY_ISSUER: str = Field(
         default="",
         description=(
@@ -353,7 +254,6 @@ class Settings(BaseServiceSettings):
         ),
     )
 
-    # DynamoDB settings
     DYNAMODB_TABLE_PREFIX: str = Field(
         default="",
         description="Prefix for every DynamoDB table name. Empty = carmodpicker-<APP_ENVIRONMENT>.",
@@ -369,20 +269,19 @@ class Settings(BaseServiceSettings):
 
     @property
     def dynamodb_table_prefix(self) -> str:
+        """The DynamoDB table name prefix, defaulting to `carmodpicker-<environment>`."""
         return self.DYNAMODB_TABLE_PREFIX or f"carmodpicker-{self.APP_ENVIRONMENT.lower()}"
 
-    # Security settings
     @property
     def is_production(self) -> bool:
-        """Check if running in production environment."""
+        """True outside debug mode and the development environment."""
         return not self.DEBUG and self.APP_ENVIRONMENT.lower() != "development"
 
     @property
     def secure_cookies(self) -> bool:
-        """Determine if cookies should use secure flag (HTTPS only)."""
+        """Whether cookies should carry the Secure flag (HTTPS only)."""
         return self.is_production
 
-    # Email settings
     EMAIL_ENABLED: bool = Field(
         default=False,
         description=(
@@ -391,7 +290,6 @@ class Settings(BaseServiceSettings):
     )
     EMAIL_FROM: str = Field(default="")
 
-    # Sentry settings (Phase 2 / OBS-01)
     SENTRY_DSN_SETTING: str = Field(
         default="",
         alias="SENTRY_DSN",
@@ -406,12 +304,10 @@ class Settings(BaseServiceSettings):
         description="Per-process server_name tag: 'apprunner-backend', 'ecs-crawler', 'crawler-cli' (D-11).",
     )
 
-    # Rate limiting settings
     ENABLE_RATE_LIMITING: bool = True
     RATE_LIMIT_REQUESTS_PER_MINUTE: int = 60
     RATE_LIMIT_REQUESTS_PER_HOUR: int = 1000
 
-    # Sophisticated rate limiting settings
     RATE_LIMIT_GET_REQUESTS_PER_MINUTE: int = 200
     RATE_LIMIT_GET_REQUESTS_PER_HOUR: int = 20000
     RATE_LIMIT_AUTH_REQUESTS_PER_MINUTE: int = 10
@@ -419,26 +315,13 @@ class Settings(BaseServiceSettings):
     RATE_LIMIT_ADMIN_REQUESTS_PER_MINUTE: int = 30
     RATE_LIMIT_ADMIN_REQUESTS_PER_HOUR: int = 300
 
-    # Layer 2: the shared, DynamoDB backed limiter. Layer 1 is the in-memory limiter
-    # above, which stays because it is free and absorbs a burst inside one execution
-    # environment before any network call happens. Layer 2 is what makes a limit hold
-    # across execution environments and, after the split, across the nine functions.
-    #
-    # The table name is not configurable. It is `<prefix>-rate-limits` by the platform
-    # standard, resolved from DYNAMODB_TABLE_PREFIX like every other table, and
-    # RATE_LIMITS_TABLE below exists only so the deployed function can be pointed at a
-    # differently named table without a code change. Leaving it empty is the normal case.
     ENABLE_SHARED_RATE_LIMITING: bool = True
     RATE_LIMITS_TABLE: str = ""
 
-    # S3 storage settings. On App Runner, these are set via Terraform env vars; credentials
-    # come from the App Runner instance IAM role (AWS_ACCESS_KEY_ID/SECRET left empty).
-    # Accepts alternative variable names for local dev flexibility.
     USER_IMAGES_BUCKET: str = Field(
         default="",
         description="S3 bucket name for user image uploads. Also accepts S3_BUCKET_NAME.",
     )
-    # Chrome extension POST /crawled-pages/scrape: max UTF-8 byte length of the `html` field (reject with 413).
     CRAWLED_PAGE_MAX_HTML_BYTES: int = Field(
         default=8 * 1024 * 1024,
         description="Maximum UTF-8 size in bytes for extension-submitted page HTML.",
@@ -475,7 +358,6 @@ class Settings(BaseServiceSettings):
         default="",
         description="Alternative name for endpoint URL (maps to S3_ENDPOINT_URL if S3_ENDPOINT_URL is not set)",
     )
-    # Image upload settings
     MAX_IMAGE_SIZE_MB: int = Field(default=10, description="Maximum image file size in MB")
     ALLOWED_IMAGE_EXTENSIONS: str = Field(
         default="jpg,jpeg,png,gif,webp",
@@ -488,14 +370,14 @@ class Settings(BaseServiceSettings):
 
     @property
     def allowed_image_extensions_list(self) -> list[str]:
-        """Get allowed image extensions as a list."""
+        """The allowed image file extensions, lowercased."""
         if not self.ALLOWED_IMAGE_EXTENSIONS:
             return []
         return [ext.strip().lower() for ext in self.ALLOWED_IMAGE_EXTENSIONS.split(",") if ext.strip()]
 
     @property
     def max_image_size_bytes(self) -> int:
-        """Get maximum image size in bytes."""
+        """The maximum upload image size, in bytes."""
         return self.MAX_IMAGE_SIZE_MB * 1024 * 1024
 
     APP_SECRETS_ARN: str = Field(
@@ -506,21 +388,11 @@ class Settings(BaseServiceSettings):
         ),
     )
 
-    # --- Lazily resolved secrets -------------------------------------------------
-    #
-    # Each SECRET_FIELDS name is stored in a `<NAME>_SETTING` field populated from
-    # the environment (via the field alias) and read back through a property that
-    # falls back to Secrets Manager only when the environment left it empty. The
-    # fetch is cached in app.core.secrets for the life of the execution
-    # environment, so the first read of the first secret pays the call and nothing
-    # after it does.
-
     def _resolve_secret(self, name: str) -> str:
-        # The live environment is consulted first, not just the value captured
-        # when this Settings was built. `settings` is a module level singleton
-        # constructed at import, so reading os.environ here preserves the old
-        # behaviour of picking up a value exported after that point, which the
-        # test suite and the crawler entrypoints both rely on.
+        """Resolve one secret, preferring the environment over the `APP_SECRETS_ARN` blob.
+
+        Returns an empty string when neither supplies it.
+        """
         from_env = os.environ.get(name, "") or getattr(self, f"{name}_SETTING", "")
         if from_env:
             return from_env
@@ -531,23 +403,24 @@ class Settings(BaseServiceSettings):
 
     @property
     def SECRET_KEY(self) -> str:
+        """The JWT signing key, resolved on access."""
         return self._resolve_secret("SECRET_KEY")
 
     @property
     def SENTRY_DSN(self) -> str:
+        """The Sentry DSN, resolved on access. Empty disables Sentry."""
         return self._resolve_secret("SENTRY_DSN")
 
     @property
     def EXTENSION_API_KEY(self) -> str:
+        """The shared X-API-Key secret for ingestion routes, resolved on access."""
         return self._resolve_secret("EXTENSION_API_KEY")
 
     def require_secrets(self, *names: str) -> None:
         """Raise unless every named secret resolves to a non-empty value.
 
-        Call this at the point of use, not at import. It replaces the import
-        time validator that used to warn about an empty SECRET_KEY: a function
-        that signs tokens fails loudly at startup, and one that does not, such
-        as an entirely read only domain, never asks and never needs the grant.
+        Called at the point of use rather than at import, so a read-only domain that
+        never signs a token needs neither the secret nor the IAM grant.
         """
         unknown = [name for name in names if name not in SECRET_FIELDS]
         if unknown:
@@ -559,10 +432,6 @@ class Settings(BaseServiceSettings):
                 f"as keys of the APP_SECRETS_ARN secret): {', '.join(missing)}"
             )
 
-    # Overrides the base's `case_sensitive=False`. See the module docstring:
-    # `SECRET_KEY` is an alias onto `SECRET_KEY_SETTING`, and a case-insensitive
-    # match would let the alias and its shadow field collide. `populate_by_name`
-    # is what makes that alias work from either spelling.
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
@@ -574,14 +443,11 @@ class Settings(BaseServiceSettings):
 
 @lru_cache()
 def get_settings() -> Settings:
-    """
-    Get cached settings.
-    For tests, this can be overridden before the first call.
+    """The process-wide `Settings`, cached so the env is parsed once.
+
+    Tests may override it before the first call.
     """
     return Settings()
 
 
-# No secret is read here. Importing this module makes no network call and needs
-# no AWS credentials, which is what lets every per domain entrypoint be imported
-# by tooling and by the route contract test.
 settings = get_settings()

@@ -1,11 +1,7 @@
-"""Lazy JSON loader for car-generations data (QUAL-01).
+"""Lazy loader for the per-make car generation JSON under `car_generations_seed/`.
 
-Per-make JSON assets live in car_generations_seed/ (package-adjacent), one
-file per make. First call reads+parses every file once and merges into a
-single dict; subsequent calls return the memoized dict reference.
-
-WARNING: Callers MUST NOT mutate the returned dict — @lru_cache returns the
-same object reference on every call (see Pitfall JS-01 in 03-RESEARCH.md).
+Callers must not mutate the returned dict: it is `lru_cache`d, so every call
+hands back the same object.
 """
 
 from __future__ import annotations
@@ -17,11 +13,10 @@ from importlib.resources import files
 
 @functools.lru_cache(maxsize=1)
 def load_car_generations() -> dict:
-    """Load and memoize the merged car-generations dict from car_generations_seed/.
+    """Load and memoize the merged car generations dict from the seed directory.
 
-    Each per-make file is a single-key JSON object: {"<Make>": [...models]}.
-    The loader globs *.json under the seed directory and merges into one dict.
-    Make-level keys must be unique across files (verified by an assertion).
+    Each file is a single-key object keyed by make, and make keys must be unique
+    across files, which an assertion checks.
     """
     seed_dir = files("app.core").joinpath("car_generations_seed")
     merged: dict = {}

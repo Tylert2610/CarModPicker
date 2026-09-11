@@ -1,8 +1,7 @@
-"""Image dedup cache on DynamoDB.
+"""Image dedup cache mapping a canonical source URL to its stored S3 key.
 
-Maps the canonical URL an image was downloaded from to the S3 file key we
-stored it under, so the same product image seen across parts or scrape
-sessions is uploaded once. ``source_url-index`` answers the lookup.
+Keeps the same product image from being uploaded twice across parts or
+scrape sessions. ``source_url-index`` answers the lookup.
 """
 
 from datetime import datetime
@@ -28,10 +27,14 @@ class ImageSourceMapping(DynamoModel):
 
 
 class ImageSourceMappingRepository(DynamoRepository[ImageSourceMapping]):
+    """The source URL to stored file key mapping."""
+
     def __init__(self) -> None:
+        """Bind to the image source mappings table."""
         super().__init__(ImageSourceMapping, IMAGE_SOURCE_MAPPINGS)
 
     def get_by_source_url(self, source_url: str) -> ImageSourceMapping | None:
+        """The mapping for this source URL, or None when the image is not stored yet."""
         page = self.query(SOURCE_URL_INDEX, source_url, limit=1)
         return page.items[0] if page.items else None
 
@@ -43,7 +46,9 @@ class ImageSourceMappingRepository(DynamoRepository[ImageSourceMapping]):
         return self.create(ImageSourceMapping(source_url=source_url, file_key=file_key))
 
     def all_file_keys(self) -> set[str]:
+        """Every stored file key, for reconciling against the bucket."""
         return {mapping.file_key for mapping in self.scan_all()}
 
     def count(self) -> int:
+        """How many mappings exist."""
         return len(self.scan_all())

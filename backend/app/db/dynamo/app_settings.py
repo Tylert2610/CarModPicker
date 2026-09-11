@@ -25,7 +25,10 @@ class AppSettings(DynamoModel):
 
 
 class AppSettingsRepository(DynamoRepository[AppSettings]):
+    """The singleton app settings item."""
+
     def __init__(self) -> None:
+        """Bind to the app settings table."""
         super().__init__(AppSettings, APP_SETTINGS)
 
     def get_or_create(self) -> AppSettings:
@@ -43,5 +46,6 @@ class AppSettingsRepository(DynamoRepository[AppSettings]):
         return self.update(SETTINGS_ID, updated_at=utc_now(), **changes)
 
     def premium_disabled(self) -> bool:
+        """True when the premium kill switch is set."""
         current = self.get(SETTINGS_ID)
         return bool(current and current.premium_disabled)

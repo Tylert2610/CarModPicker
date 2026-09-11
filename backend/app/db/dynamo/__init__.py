@@ -1,3 +1,5 @@
+"""The DynamoDB layer's public surface: models, repositories and table specs."""
+
 from app.db.dynamo.errors import ConditionFailed, DynamoError, ItemNotFound, TransactionCanceled
 from app.db.dynamo.models import DynamoModel, TimestampedDynamoModel, utc_now
 from app.db.dynamo.repository import DynamoRepository, Page, RangeCondition

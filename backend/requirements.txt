@@ -1,66 +1,5 @@
-# The shared WebbPulse package. It lives only in CodeArtifact (domain
-# `webbpulse`, repository `python`, us-west-2), not on PyPI, so anything that
-# installs this file needs a CodeArtifact token first. CI gets one from the
-# `aws codeartifact login --tool pip` step in `backend-ci.yml`.
-#
-# Extras, and why each one: `fastapi` for the app factory and `run_uvicorn`,
-# `otel` for `configure_tracing`, `dynamodb` for the botocore error handlers
-# `register_error_handlers(dynamodb=True)` installs. That extra used to be
-# absent because CarModPicker has its own repository layer and secret loader,
-# but the handlers are what turn a DynamoDB throttle into a 503 with
-# `Retry-After` instead of a flat 500, so it earns its place now. It adds no
-# new pins: boto3 is already pinned below.
-#
-# `aws-otel` is what row 16 added, and it is not optional once tracing is on.
-# The X-Ray OTLP endpoint authenticates with SigV4 and answers 403 to an
-# unsigned POST, and the OTLP exporter retries a 403 in silence, so the symptom
-# of leaving this out is traces that never appear with nothing in the logs to
-# say why. The extra carries `aws-opentelemetry-distro`, from which only the
-# `OTLPAwsSpanExporter` class is used: `webbpulse.otel` builds the pipeline
-# itself rather than launching under `opentelemetry-instrument`, so the
-# distribution is a library here and not a wrapper. It is additive to `otel`
-# rather than a replacement for it, and both must be present.
-#
-# `security` is what row 19 added: `webbpulse.security` now provides this app's
-# password hashing and JWT signing, replacing the local bcrypt and PyJWT calls.
-# It pulls PyJWT and bcrypt, both of which were already pinned below and stay
-# pinned here, because this file is the resolved set and the package's own
-# ranges must not be allowed to float a different major into the image.
-#
-# `identity` is what row 5 of the identity adoption plan adds:
-# `webbpulse.identity` now serves the M1 discovery documents and the M2 to M4
-# flows on the `identity` function, mounted by `app/composition/identity.py`.
-# The extra carries `PyJWT[crypto]`, which is PyJWT plus `cryptography`: the JWK
-# the JWKS publishes is built from the DER SubjectPublicKeyInfo that
-# `kms:GetPublicKey` returns, and `cryptography` is what parses it. Both are
-# already resolved below and stay pinned there, `PyJWT` now with its `crypto`
-# extra so the dependency is declared rather than inherited from `webauthn`.
-#
-# `oauth` and `passkeys` are what row 9 adds, and the version bump to 0.16.0 is
-# what carries the routes behind them.
-#
-# `oauth` pulls `httpx`, which is the only outbound HTTP this application makes:
-# the provider token exchange and userinfo calls of the package's M6 flow.
-# `app/composition/identity.py` now supplies both an `oauth_states` and an
-# `oauth_links` store, and `terraform/identity.tf` created both tables in the
-# module's default map, so the five OAuth routes mount as soon as a provider
-# carries a client id.
-#
-# `passkeys` pulls `py_webauthn`, which the package imports lazily inside the
-# methods that need it, so it costs nothing on a cold start that never sees a
-# passkey. This product already depends on `webauthn` below for its own legacy
-# WebAuthn routes, so the extra declares a dependency that was already resolved
-# rather than adding one.
-#
-# 0.17.0 adds one route and nothing else: `GET /api/auth/passkeys/availability`,
-# anonymous, unconditional, answering `{"enabled": bool, "passwordless": bool}`
-# from the two `IDENTITY_PASSKEYS_*` settings. It is the passkey counterpart of
-# 0.16.0's `oauth/providers` and mounts in every deployment including this one
-# with both flags off, where it answers false to both. No new dependency and no
-# new extra, so the pin moves and the resolved set below does not.
 webbpulse[fastapi,otel,dynamodb,aws-otel,security,identity,oauth,passkeys]==0.19.0
 
-# Core FastAPI and web framework dependencies
 annotated-types==0.8.0
 anyio==4.15.0
 click==8.5.0
@@ -78,11 +17,8 @@ typing_extensions==4.16.0
 uvicorn==0.52.4
 mangum==0.22.0
 
-# Database dependencies
 uuid6==2025.0.1
 
-# Authentication and security
-# PyJWT — primary JWT library (AUTH-04, Phase 5 D-06).
 PyJWT[crypto]==2.13.0
 bcrypt==5.0.0
 python-multipart==0.0.32
@@ -94,29 +30,18 @@ google-auth==2.57.1
 requests==2.34.2
 beautifulsoup4==4.15.0
 defusedxml==0.7.1
-# Circuit breaker for crawler rate-limit protection (CRAWL-04). Pinned exact
-# version; see threat model T-03-02-02 for supply-chain posture.
 pybreaker==1.4.1
 
-# Crawler Tier 1 (TLS impersonation). Mimics real Chrome's TLS/JA3 handshake to
-# get past Cloudflare fingerprint checks where the IP is not banned but plain
-# Python's handshake is flagged (e.g. Vivid Racing). Ships native libcurl-
-# impersonate binaries — Linux x86_64 wheels available on PyPI. Not required
-# for Tier 0 adapters; safe to install regardless. See app/crawlers/fetchers.py.
 curl_cffi==0.16.3
 
-# Image storage and processing
 boto3==1.43.88
-boto3-stubs[s3,sesv2,dynamodb]==1.43.88  # Type stubs for boto3 S3, SES, and DynamoDB clients
+boto3-stubs[s3,sesv2,dynamodb]==1.43.88
 Pillow==12.3.0
 
-# Observability (Phase 2 / OBS-01 + OBS-02)
 sentry-sdk>=2.68.1,<3
 
-# Testing: in-memory S3 and DynamoDB mocks (used with pytest fixtures; never runs in production)
 moto[s3,dynamodb]==5.2.3
 
-# Testing dependencies
 pytest==9.1.1
 pytest-asyncio==1.4.0
 pytest-xdist==3.8.0
@@ -124,14 +49,9 @@ pytest-cov==7.1.0
 pytest-recording==0.13.4
 httpx==0.28.1
 
-# Development tools
 black==26.5.1
 isort==8.0.1
 mypy==2.3.1
 watchdog==6.0.0
 
-# Perf-gate load testing (M002/S05/T05). Pure-Python load runner; the gate
-# script under backend/scripts/perf/ wraps it and parses the CSV output.
-# Dev-only — never imported by app code or run in production. See
-# backend/scripts/perf/README.md and D004 / R019 for the gate context.
 locust>=2.46.4

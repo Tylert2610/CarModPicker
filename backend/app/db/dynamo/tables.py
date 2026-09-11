@@ -1,3 +1,5 @@
+"""The declarative shape of every DynamoDB table: keys, indexes, TTL and derived attributes."""
+
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
@@ -7,12 +9,16 @@ Projection = Literal["ALL", "KEYS_ONLY"]
 
 @dataclass(frozen=True)
 class KeyAttribute:
+    """One key attribute: its name and its DynamoDB scalar type."""
+
     name: str
     type: KeyType = "S"
 
 
 @dataclass(frozen=True)
 class IndexSpec:
+    """A global secondary index: its name, its keys and its projection."""
+
     name: str
     hash_key: KeyAttribute
     range_key: KeyAttribute | None = None
@@ -21,6 +27,8 @@ class IndexSpec:
 
 @dataclass(frozen=True)
 class TableSpec:
+    """One table's keys, indexes, TTL and the attributes writes derive from fields."""
+
     suffix: str
     partition_key: KeyAttribute = field(default_factory=lambda: KeyAttribute("id"))
     sort_key: KeyAttribute | None = None
@@ -32,6 +40,7 @@ class TableSpec:
 
     @property
     def key_attribute_names(self) -> tuple[str, ...]:
+        """The table's own key attribute names, partition first."""
         names = [self.partition_key.name]
         if self.sort_key is not None:
             names.append(self.sort_key.name)
@@ -39,15 +48,23 @@ class TableSpec:
 
     @property
     def is_composite(self) -> bool:
+        """True when the table has a sort key as well as a partition key."""
         return self.sort_key is not None
 
     def index(self, name: str) -> IndexSpec:
+        """The index named `name`, or KeyError when the table declares no such index."""
         for index in self.indexes:
             if index.name == name:
                 return index
         raise KeyError(f"{self.suffix} has no index {name!r}")
 
     def attribute_definitions(self) -> list[dict[str, str]]:
+        """Every key attribute across the table and its indexes, deduplicated.
+
+
+        Raises ValueError when one name is declared with two different types, which
+        DynamoDB would reject at create time.
+        """
         seen: dict[str, str] = {}
         for attribute in self._all_key_attributes():
             existing = seen.get(attribute.name)
@@ -59,6 +76,7 @@ class TableSpec:
         return [{"AttributeName": name, "AttributeType": type_} for name, type_ in seen.items()]
 
     def _all_key_attributes(self) -> list[KeyAttribute]:
+        """Every key attribute of the table and of its indexes, with duplicates."""
         attributes = [self.partition_key]
         if self.sort_key is not None:
             attributes.append(self.sort_key)
@@ -69,9 +87,11 @@ class TableSpec:
         return attributes
 
     def key_schema(self) -> list[dict[str, str]]:
+        """The table's own KeySchema, in the CreateTable shape."""
         return _key_schema(self.partition_key, self.sort_key)
 
     def create_table_request(self, table_name: str) -> dict[str, Any]:
+        """The CreateTable request for this spec, on-demand billing."""
         request: dict[str, Any] = {
             "TableName": table_name,
             "KeySchema": self.key_schema(),
@@ -91,6 +111,7 @@ class TableSpec:
 
 
 def _key_schema(hash_key: KeyAttribute, range_key: KeyAttribute | None) -> list[dict[str, str]]:
+    """A KeySchema for one hash key and an optional range key."""
     schema = [{"AttributeName": hash_key.name, "KeyType": "HASH"}]
     if range_key is not None:
         schema.append({"AttributeName": range_key.name, "KeyType": "RANGE"})
@@ -98,16 +119,19 @@ def _key_schema(hash_key: KeyAttribute, range_key: KeyAttribute | None) -> list[
 
 
 def _s(name: str) -> KeyAttribute:
+    """A string key attribute named `name`."""
     return KeyAttribute(name, "S")
 
 
 def _n(name: str) -> KeyAttribute:
+    """A numeric key attribute named `name`."""
     return KeyAttribute(name, "N")
 
 
 def gsi(
     hash_key: str, range_key: str | None = None, *, name: str | None = None, numeric_range: bool = False
 ) -> IndexSpec:
+    """A global secondary index, naming itself after its keys when unnamed."""
     index_name = name or (f"{hash_key}-{range_key}-index" if range_key else f"{hash_key}-index")
     range_attribute = None
     if range_key is not None:
@@ -259,17 +283,6 @@ APP_SETTINGS = TableSpec(
     partition_key=_n("id"),
 )
 
-# The shared rate limiter's own table, layer 2 of the rate limiting standard.
-#
-# Its items are counters keyed on the API Gateway request context identity, not
-# domain data, and every one of them expires within its own window, so there is
-# nothing here worth restoring to a point in time. The suffix is "rate-limits"
-# rather than the underscored style the entity tables use, because the table name
-# is fixed by the platform standard as `<prefix>-rate-limits` and WebbPulse-Portfolio
-# already declares it under exactly that name.
-#
-# The TTL attribute is `expires_at`, matching Portfolio's declaration, so the two
-# repositories can converge on one limiter implementation without a table rename.
 RATE_LIMITS = TableSpec(
     suffix="rate-limits",
     partition_key=_s("pk"),
@@ -308,6 +321,7 @@ TABLES: tuple[TableSpec, ...] = (
 
 
 def table_by_suffix(suffix: str) -> TableSpec:
+    """The spec whose suffix is `suffix`, or KeyError when none matches."""
     for spec in TABLES:
         if spec.suffix == suffix:
             return spec
@@ -315,10 +329,12 @@ def table_by_suffix(suffix: str) -> TableSpec:
 
 
 def export_table_definitions() -> dict[str, dict[str, Any]]:
+    """Every table's shape keyed by suffix, for Terraform to consume."""
     return {spec.suffix: _table_definition(spec) for spec in TABLES}
 
 
 def _table_definition(spec: TableSpec) -> dict[str, Any]:
+    """One table's keys, indexes and TTL in the shape Terraform reads."""
     return {
         "hash_key": spec.partition_key.name,
         "range_key": spec.sort_key.name if spec.sort_key is not None else None,

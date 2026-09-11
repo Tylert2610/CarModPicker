@@ -1,60 +1,7 @@
-"""Seam 4: the price drop alert email, fired off the `part_listings` stream.
+"""Send price drop alert mail off the `part_listings` stream, so `admin` owns it.
 
-Split plan row 25, section 1.3's seam 4. `part_listing_service`'s price capture
-used to call `evaluate_alerts_for_listing` inline, on the request thread, after
-the transactional write returned. That is `catalog` reading `part_price_alerts`
-and calling SES, and both of those belong to `admin`. This module is the
-inversion: a Lambda consuming the `part_listings` DynamoDB stream, owned by
-`admin`, which evaluates the alerts and sends the mail. `catalog` keeps neither
-the alert read nor the SES grant.
-
-**Why this is worth doing on its own merits.** Section 1.3 makes the point and
-it is not a split argument: a price write used to block on a fan-out read of
-four tables plus a synchronous SES call inside a 29 second Lambda, and a user
-waiting on the listing write was waiting on someone else's email. Off the
-stream the write returns as soon as the transaction commits.
-
-**What a record gives us.** The stream carries `NEW_AND_OLD_IMAGES`, so a
-listing INSERT has the new item, a MODIFY has both and a REMOVE has only the
-old. The item is a `PartListing`, which carries `part_id`, `retailer_id`,
-`last_known_price_cents` and `last_price_updated_at`: exactly the four
-arguments the old inline call passed. Nothing is read out of `part_price_history`
-and nothing else is needed, which is what keeps the event to the record's own
-data.
-
-**A price has to have actually dropped.** Every write in the capture path
-touches the listing, including the ones that only re-stamp `updated_at` on an
-unchanged price, so a naive handler would re-evaluate every alert on every
-crawler revisit. The handler compares the new image's price against the old
-one's and does nothing unless the price moved down. An INSERT with a price is a
-drop by definition, because there was no previous price to be below. A REMOVE
-is never a drop.
-
-**Idempotency, which the stream requires rather than merely rewards.** A
-DynamoDB stream is at-least-once, so the same record can arrive twice, and this
-handler's side effect is an email, which cannot be taken back. Three things
-stand between a redelivery and a duplicate email, and they are listed in the
-order they take effect:
-
-1. The drop test above. A redelivered record carries the same two images, so it
-   computes the same verdict, and a record that was not a drop stays not a drop.
-2. `last_fired_at` on the alert row, which is the marker. A send writes it, and
-   an alert that fired within `ALERT_COOLDOWN` of the observation is suppressed.
-   A redelivery of a record that did fire an email therefore finds the marker
-   already written and sends nothing. This is the check that carries the weight,
-   and it is the reason the write of the marker is not optional.
-3. The window between the send and the marker write, which is the one hole none
-   of this closes: a function that dies between SES accepting the message and
-   the `last_fired_at` update will send twice on the retry. It is left open
-   deliberately. Closing it means a marker written before the send, which turns
-   the failure mode from a duplicate email into a silently missing one, and a
-   missed price alert is worse than a repeated one.
-
-**Per-alert isolation, per-listing failure reporting.** One alert that cannot be
-evaluated must not stop the others on the same listing, which the evaluation
-already guarantees by catching per alert. A listing that cannot be evaluated at
-all, which is a throttle or a timeout on the reads before the loop, is reported
-as a batch item failure so the mapping retries only that listing's records.
+A record counts only when the new price is below the old, and `last_fired_at` stops
+a redelivery mailing twice. It is written after the send, never before.
 """
 
 from __future__ import annotations
@@ -66,18 +13,14 @@ from uuid import UUID
 
 logger = logging.getLogger(__name__)
 
-#: The DynamoDB stream record field the mapping identifies a record by. It is
-#: what `batchItemFailures` entries must carry, spelled once so the handler and
-#: its tests cannot disagree about the key.
 SEQUENCE_NUMBER = "sequenceNumber"
 
 
 class PriceDrop:
-    """One evaluated listing record: what to evaluate alerts against.
+    """One evaluated listing record: what to evaluate its part's alerts against.
 
-    A small object rather than a tuple because four positional values of which
-    two are UUIDs and one is an int is exactly the shape that gets passed in the
-    wrong order eventually.
+    An object rather than a tuple, because two UUIDs and an int in a row is the
+    shape that eventually gets passed in the wrong order.
     """
 
     __slots__ = ("part_id", "retailer_id", "price_cents", "observed_at")
@@ -89,12 +32,14 @@ class PriceDrop:
         price_cents: int,
         observed_at: datetime,
     ) -> None:
+        """Hold the four values an alert evaluation needs."""
         self.part_id = part_id
         self.retailer_id = retailer_id
         self.price_cents = price_cents
         self.observed_at = observed_at
 
     def __eq__(self, other: object) -> bool:
+        """Compare on all four fields, so tests can assert on a whole drop."""
         if not isinstance(other, PriceDrop):
             return NotImplemented
         return (
@@ -105,6 +50,7 @@ class PriceDrop:
         )
 
     def __repr__(self) -> str:
+        """All four fields, for a readable assertion failure."""
         return (
             f"PriceDrop(part_id={self.part_id}, retailer_id={self.retailer_id}, "
             f"price_cents={self.price_cents}, observed_at={self.observed_at!r})"
@@ -112,15 +58,10 @@ class PriceDrop:
 
 
 def _plain(value: Any) -> Any:
-    """One attribute value out of a stream image.
+    """One attribute value out of a stream image's low level wire format.
 
-    Stream images are in the low level wire format, `{"S": "..."}` rather than
-    `"..."`, because an event source mapping delivers what the stream holds and
-    not what `boto3.resource` would deserialise. The four types this module
-    reads are handled: a string for the ids and the timestamp, a number for the
-    price, a null for a listing that has never carried one, and a boolean for
-    completeness. Anything else is returned untouched, which the caller treats
-    as a value it cannot read rather than guessing.
+    The string, number, null and boolean forms are unwrapped; anything else is
+    returned untouched for the caller to reject.
     """
     if not isinstance(value, Mapping):
         return value
@@ -149,6 +90,7 @@ def _images(record: Mapping[str, Any]) -> tuple[Mapping[str, Any], Mapping[str, 
 
 
 def _uuid(image: Mapping[str, Any], key: str) -> Optional[UUID]:
+    """One UUID-valued attribute off an image, or `None` when unreadable."""
     value = _plain(image.get(key))
     if not isinstance(value, str):
         return None
@@ -177,10 +119,8 @@ def _price_cents(image: Mapping[str, Any]) -> Optional[int]:
 def _observed_at(image: Mapping[str, Any]) -> Optional[datetime]:
     """`last_price_updated_at` off an image, as an aware datetime.
 
-    The repositories serialise datetimes as ISO 8601 strings, so this is a
-    string on the wire. A naive value is read as UTC, the same treatment
-    `part_price_alert_service._ensure_aware` gives one, because the observation
-    timestamps from the crawler path have historically arrived both ways.
+    A naive value is read as UTC, matching the alert service, because crawler
+    timestamps have historically arrived both ways.
     """
     value = _plain(image.get("last_price_updated_at"))
     if not isinstance(value, str):
@@ -195,21 +135,11 @@ def _observed_at(image: Mapping[str, Any]) -> Optional[datetime]:
 def price_drop_from_record(record: Mapping[str, Any]) -> Optional[PriceDrop]:
     """The drop this record represents, or `None` when it is not one.
 
-    `None` covers every reason a record is not this function's business, and
-    they are deliberately not distinguished because none of them is retryable:
-    a REMOVE, a write that did not touch the price, a write that raised the
-    price or left it equal, a listing that has never had a price, and an image
-    whose ids or timestamp cannot be read. Failing on any of them would put a
-    record on the dead letter queue that a redelivery could never fix.
-
-    An INSERT with a price counts as a drop. There is no earlier price for it
-    to be below, and a user who subscribed to a threshold before any retailer
-    listed the part should hear about the first listing that meets it.
+    `None` covers a REMOVE, an unchanged or raised price, and an unreadable
+    image alike, because none of those is retryable.
     """
     new_image, old_image = _images(record)
     if not new_image:
-        # A REMOVE, or a record with no image at all. Deleting a listing is not
-        # a price drop, and there is nothing to evaluate against.
         return None
 
     price_cents = _price_cents(new_image)
@@ -218,9 +148,6 @@ def price_drop_from_record(record: Mapping[str, Any]) -> Optional[PriceDrop]:
 
     previous = _price_cents(old_image)
     if previous is not None and price_cents >= previous:
-        # The write touched the listing without lowering the price. Every
-        # re-stamp of `updated_at` on an unchanged price lands here, which is
-        # the common case on a crawler that revisits a stable listing.
         return None
 
     part_id = _uuid(new_image, "part_id")
@@ -249,23 +176,10 @@ def price_drop_from_record(record: Mapping[str, Any]) -> Optional[PriceDrop]:
 def group_records_by_listing(
     records: Iterable[Mapping[str, Any]],
 ) -> Dict[UUID, tuple[PriceDrop, List[str]]]:
-    """`listing_id -> (the lowest drop seen for it, the records that asked)`.
+    """Map each listing to the lowest drop in the batch and the records that asked.
 
-    One evaluation per listing per batch rather than one per record. Ordering on
-    a DynamoDB stream is per partition key, which for `part_listings` is the
-    listing id, so records for one listing arrive in order within a shard and a
-    batch can hold several writes to the same listing. Evaluating each of them
-    would send the same user several emails for the same listing in one batch,
-    and the cooldown marker would only suppress the second and later ones after
-    the first had already written it, which is a race rather than a guarantee.
-
-    The lowest price in the batch is the one kept, because that is the one the
-    user's threshold is most likely to meet and the one whose email is worth
-    sending. Ties keep the earlier record, which is the earlier observation.
-
-    A listing with no readable sequence number is still evaluated. A missing
-    identifier is a reason not to be able to retry the record, not a reason to
-    leave a subscriber unemailed.
+    One evaluation per listing per batch, so several writes to one listing cannot
+    race the cooldown marker into several emails.
     """
     grouped: Dict[UUID, tuple[PriceDrop, List[str]]] = {}
     for record in records:
@@ -313,20 +227,8 @@ def _listing_id(record: Mapping[str, Any]) -> Optional[UUID]:
 def evaluate(repos: Any, drop: PriceDrop) -> None:
     """Evaluate one listing's drop against every alert on its part.
 
-    A thin call into `part_price_alert_service.evaluate_alerts_for_listing`,
-    which is unchanged by this row and stays the single implementation of the
-    alert semantics: the threshold test, the 24 hour cooldown, the per-alert
-    exception isolation, and the rule that an SES failure leaves `last_fired_at`
-    alone so the next observation retries.
-
-    Keeping that function rather than reimplementing it in the consumer is what
-    makes this row a move rather than a rewrite: the eleven service level tests
-    that pinned its behaviour on the monolith still pin it here, and there is
-    one place where a rule about when a user gets mail can be read.
-
-    The repositories are passed rather than resolved, because a consumer builds
-    its bundle once per execution environment while the service resolves
-    `get_repositories()` per call.
+    A thin call into `evaluate_alerts_for_listing`, which stays the single
+    implementation of the threshold, cooldown and per-alert isolation rules.
     """
     from app.api.services.part_price_alert_service import evaluate_alerts_for_listing
 
@@ -340,29 +242,15 @@ def evaluate(repos: Any, drop: PriceDrop) -> None:
 
 
 def process_records(repos: Any, records: Iterable[Mapping[str, Any]]) -> List[str]:
-    """Evaluate every listing the batch dropped; return the failed sequence numbers.
+    """Evaluate every listing the batch dropped and return the failed sequence numbers.
 
-    One evaluation per listing, and a failure on one listing does not stop the
-    others: the listings in a batch are independent, and abandoning the rest of
-    the batch on the first error would leave subscribers on healthy listings
-    unemailed.
+    Listings are independent, so one failure does not leave the rest unemailed.
     """
     failures: List[str] = []
     for listing_id, (drop, sequence_numbers) in group_records_by_listing(records).items():
         try:
             evaluate(repos, drop)
         except Exception:
-            # Broad on purpose, and narrower in practice than it reads. The
-            # evaluation already catches per alert, so what reaches here is a
-            # failure of the reads before the loop: a throttle, a timeout, or a
-            # transient DynamoDB error, every one of which is worth the
-            # mapping's retry. Letting it propagate instead would fail the whole
-            # batch, which is what `ReportBatchItemFailures` exists to avoid.
-            #
-            # A retry can duplicate an email for an alert that already fired
-            # inside a partially completed evaluation. The cooldown marker is
-            # what bounds that, and it is why the marker is written per alert
-            # rather than per listing.
             logger.exception(
                 "Price alert stream: failed to evaluate alerts for a listing; reporting its records for retry.",
                 extra={"listing_id": str(listing_id), "records": len(sequence_numbers)},
@@ -372,18 +260,10 @@ def process_records(repos: Any, records: Iterable[Mapping[str, Any]]) -> List[st
 
 
 def handle(event: Mapping[str, Any], repos: Any) -> Dict[str, List[Dict[str, str]]]:
-    """The handler body, with the repository bundle passed in.
+    """The handler body, with the repository bundle passed in so tests need no AWS.
 
-    Separate from the entrypoint's route so a test can drive it with a bundle of
-    fakes and no AWS at all, which is the same split every entrypoint makes
-    between `build_app` and `main`.
-
-    The return shape is the one an event source mapping with
-    `ReportBatchItemFailures` expects: `{"batchItemFailures": [{"itemIdentifier":
-    "<sequence number>"}]}`. An empty list means the whole batch succeeded, and
-    it is returned explicitly rather than as an empty response, because a
-    handler that returns something the mapping cannot parse has the whole batch
-    retried.
+    Returns the `batchItemFailures` shape the event source mapping expects; an
+    empty list is returned explicitly, since an unparseable result retries all.
     """
     records = event.get("Records") or []
     failures = process_records(repos, records)
