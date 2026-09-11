@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 from app.core.config import settings
 from tests.api.endpoints.test_admin import create_and_login_admin_user, create_and_login_user
+from tests.conftest import auth_headers
 
 
 class TestAppSettings:
@@ -29,14 +30,14 @@ class TestAppSettings:
         token = create_and_login_user(client, db_session, "app_settings_forbidden")
         response = client.put(
             f"{settings.API_STR}/app-settings/",
-            headers={"Authorization": f"Bearer {token}"},
+            headers=auth_headers(token),
             json={"premium_disabled": True},
         )
         assert response.status_code == 403
 
     def test_put_admin_toggles_premium_disabled(self, client: TestClient, db_session: Any) -> None:
         token = create_and_login_admin_user(client, db_session, "app_settings_toggle")
-        headers = {"Authorization": f"Bearer {token}"}
+        headers = auth_headers(token)
 
         # Flip on
         response = client.put(

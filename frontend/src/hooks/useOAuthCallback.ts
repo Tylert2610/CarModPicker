@@ -37,7 +37,6 @@ import {
   stripOAuthParams,
   type OAuthCallbackResult,
 } from '../api/identityOAuth';
-import { AUTH_MODE } from '../api/authMode';
 
 /** What the caller is told, once, when the page was reached from a callback. */
 export type OAuthCallbackHandler = (
@@ -47,8 +46,8 @@ export type OAuthCallbackHandler = (
 /**
  * Runs `onCallback` when the page was reached from an OAuth callback.
  *
- * A no-op in bearer mode, where nothing produces these markers, and a no-op on
- * every ordinary visit.
+ * A no-op on every ordinary visit: only a return trip from the identity
+ * service's OAuth leg carries these markers in the URL.
  */
 export function useOAuthCallback(onCallback: OAuthCallbackHandler): void {
   const handled = useRef(false);
@@ -60,7 +59,6 @@ export function useOAuthCallback(onCallback: OAuthCallbackHandler): void {
   useEffect(() => {
     if (handled.current) return;
     handled.current = true;
-    if (AUTH_MODE !== 'identity') return;
     const href = globalThis.location.href;
     const result = readOAuthCallback(href);
     if (result === null) return;

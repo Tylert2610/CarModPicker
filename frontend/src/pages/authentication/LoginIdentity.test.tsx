@@ -1,13 +1,12 @@
-// The login page in identity mode.
+// The login page.
 //
-// Separate from `./Login.test.tsx` rather than folded into it, because
-// `AUTH_MODE` is read once at module load and the two modes therefore need two
-// module graphs. That file covers bearer mode and must keep passing unchanged:
-// it is the proof that turning this work on changed nothing about `main`.
+// This was once one of two files, the other driving the same page through the
+// legacy bearer flow. Row 13 of `docs/identity-adoption.md` deleted that flow's
+// routes and its test with them, so this is now the only coverage the page has.
 //
-// What is covered here is the identity-only surface: the passkey button's
-// visibility gate, the provider buttons rendered from the discovery route, the
-// TOTP second leg, and the four OAuth callback markers.
+// What is covered is the passkey button's visibility gate, the provider buttons
+// rendered from the discovery route, the TOTP second leg, and the four OAuth
+// callback markers.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
@@ -66,12 +65,6 @@ vi.mock('../../hooks/useAuth', () => ({
   }),
 }));
 
-// Identity mode, for every module in this graph that reads it.
-vi.mock('../../api/authMode', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../api/authMode')>();
-  return { ...actual, AUTH_MODE: 'identity' as const };
-});
-
 vi.mock('../../api/identityAuth', async (importOriginal) => {
   const actual =
     await importOriginal<typeof import('../../api/identityAuth')>();
@@ -123,19 +116,6 @@ vi.mock('../../api/identityOAuth', async (importOriginal) => {
       `https://api.test/api/auth/oauth/${provider}/start`,
   };
 });
-
-// Legacy surfaces, stubbed so the bearer branch renders nothing in this graph.
-vi.mock('@simplewebauthn/browser', () => ({
-  startAuthentication: vi.fn(),
-  browserSupportsWebAuthn: () => false,
-}));
-vi.mock('../../components/authentication/GoogleAuthFlow', () => ({
-  default: () => null,
-}));
-vi.mock('../../hooks/useGoogleSignIn', () => ({
-  isGoogleConfigured: () => false,
-  useGoogleSignIn: () => ({ state: { kind: 'idle' }, reset: vi.fn() }),
-}));
 
 const renderLogin = async () => {
   const { default: Login } = await import('./Login');

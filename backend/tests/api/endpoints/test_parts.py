@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from app.core.config import settings
 from app.db.dynamo.catalog import Category, PartManufacturer, Retailer
 from app.db.dynamo.users import User, UserRepository
-from tests.conftest import INVALID_UUID_STR, save_catalog
+from tests.conftest import INVALID_UUID_STR, auth_headers, login_user, save_catalog
 
 
 def get_unique_name(base_name: str) -> str:
@@ -19,11 +19,8 @@ def get_unique_name(base_name: str) -> str:
 
 def get_auth_token_and_headers(client: TestClient, username: str, password: str = "testpassword") -> dict[str, str]:
     """Login and return Authorization headers with Bearer token."""
-    login_data = {"username": username, "password": password}
-    response = client.post(f"{settings.API_STR}/auth/token", data=login_data)
-    assert response.status_code == 200
-    token = response.json()["access_token"]
-    return {"Authorization": f"Bearer {token}"}
+    token = login_user(client, username)
+    return auth_headers(token)
 
 
 class TestParts:
@@ -34,11 +31,8 @@ class TestParts:
     ) -> None:
         """Test successful creation of a global part."""
         # Login as test user and get token
-        login_data = {"username": test_user.username, "password": "testpassword"}
-        response = client.post(f"{settings.API_STR}/auth/token", data=login_data)
-        assert response.status_code == 200
-        token = response.json()["access_token"]
-        headers = {"Authorization": f"Bearer {token}"}
+        token = login_user(client, test_user.username)
+        headers = auth_headers(token)
 
         # Create global part (pricing is per-retailer via listings, not on part)
         part_data = {
@@ -78,11 +72,8 @@ class TestParts:
     ) -> None:
         """Test retrieving list of global parts."""
         # Login and create a part first
-        login_data = {"username": test_user.username, "password": "testpassword"}
-        response = client.post(f"{settings.API_STR}/auth/token", data=login_data)
-        assert response.status_code == 200
-        token = response.json()["access_token"]
-        headers = {"Authorization": f"Bearer {token}"}
+        token = login_user(client, test_user.username)
+        headers = auth_headers(token)
 
         part_data = {
             "name": get_unique_name("test_part"),
@@ -559,14 +550,12 @@ class TestParts:
     def test_count_parts_by_user_zero(self, client: TestClient, db_session: Any) -> None:
         """Test counting global parts for a user with no parts."""
         # Create a new user with no parts
-        from app.api.dependencies.auth import get_password_hash
         from app.db.dynamo.users import User as DBUser
 
         new_user = UserRepository().create_user(
             DBUser(
                 username=f"new_user_{os.getpid()}_{id(db_session)}",
                 email=f"new_user_{os.getpid()}_{id(db_session)}@example.com",
-                hashed_password=get_password_hash("testpassword"),
                 email_verified=True,
                 disabled=False,
                 is_admin=False,

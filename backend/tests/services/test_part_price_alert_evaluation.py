@@ -48,7 +48,6 @@ def _make_user(db: Any, suffix: str) -> User:
     u = User(
         username=f"alert_user_{suffix}_{os.getpid()}_{uuid.uuid4().hex[:8]}",
         email=f"alert_user_{suffix}_{os.getpid()}_{uuid.uuid4().hex[:8]}@example.com",
-        hashed_password="$2b$12$dummy.hash.for.testing.only.not.real.bcrypt.hash..",
         email_verified=True,
         disabled=False,
     )

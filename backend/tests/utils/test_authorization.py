@@ -33,12 +33,10 @@ class TestAuthorization:
 
     def test_can_delete_part_admin(self, test_user: User) -> None:
         """Test that admin can delete any global part."""
-        from app.api.dependencies.auth import get_password_hash
 
         admin_user = User(
             username="admin_user",
             email="admin@example.com",
-            hashed_password=get_password_hash("password"),
             email_verified=True,
             disabled=False,
             is_admin=True,
@@ -55,12 +53,10 @@ class TestAuthorization:
 
     def test_can_delete_part_unauthorized(self, test_user: User) -> None:
         """Test that non-owner non-admin cannot delete global part."""
-        from app.api.dependencies.auth import get_password_hash
 
         other_user = User(
             username="other_user",
             email="other@example.com",
-            hashed_password=get_password_hash("password"),
             email_verified=True,
             disabled=False,
             is_admin=False,
@@ -87,12 +83,10 @@ class TestAuthorization:
 
     def test_can_edit_part_admin(self, test_user: User) -> None:
         """Test that admin can edit any global part."""
-        from app.api.dependencies.auth import get_password_hash
 
         admin_user = User(
             username="admin_user2",
             email="admin2@example.com",
-            hashed_password=get_password_hash("password"),
             email_verified=True,
             disabled=False,
             is_admin=True,
@@ -118,12 +112,10 @@ class TestAuthorization:
 
     def test_can_delete_build_list_part_admin(self, test_user: User) -> None:
         """Test that admin can delete any build list part."""
-        from app.api.dependencies.auth import get_password_hash
 
         admin_user = User(
             username="admin_user3",
             email="admin3@example.com",
-            hashed_password=get_password_hash("password"),
             email_verified=True,
             disabled=False,
             is_admin=True,
@@ -148,13 +140,11 @@ class TestAuthorization:
 
     def test_can_edit_build_list_part_build_list_owner(self, test_user: User) -> None:
         """Test that build list owner can edit parts in their build list."""
-        from app.api.dependencies.auth import get_password_hash
 
         other_user = UserRepository().create_user(
             User(
                 username="other_user2",
                 email="other2@example.com",
-                hashed_password=get_password_hash("password"),
                 email_verified=True,
                 disabled=False,
                 is_admin=False,
@@ -179,12 +169,10 @@ class TestAuthorization:
 
     def test_require_part_delete_permission_raises(self, test_user: User) -> None:
         """Test that require_part_delete_permission raises when unauthorized."""
-        from app.api.dependencies.auth import get_password_hash
 
         other_user = User(
             username="other_user3",
             email="other3@example.com",
-            hashed_password=get_password_hash("password"),
             email_verified=True,
             disabled=False,
             is_admin=False,
@@ -206,12 +194,10 @@ class TestAuthorization:
 
     def test_require_part_edit_permission_raises(self, test_user: User) -> None:
         """Test that require_part_edit_permission raises when unauthorized."""
-        from app.api.dependencies.auth import get_password_hash
 
         other_user = User(
             username="other_user4",
             email="other4@example.com",
-            hashed_password=get_password_hash("password"),
             email_verified=True,
             disabled=False,
             is_admin=False,

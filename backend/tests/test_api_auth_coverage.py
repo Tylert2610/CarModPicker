@@ -127,7 +127,7 @@ PUBLIC_ROUTES: set[tuple[str, str]] = {
 
 
 def _api_routes() -> list[tuple[str, str]]:
-    """All /api/ routes excluding /api/admin and /api/auth (covered elsewhere)."""
+    """All /api/ routes excluding /api/admin (swept elsewhere) and /api/auth (the package's)."""
     out: list[tuple[str, str]] = []
     for method, path in schema_routes():
         if not path.startswith("/api/"):

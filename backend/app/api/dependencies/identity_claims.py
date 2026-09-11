@@ -2,8 +2,9 @@
 
 Row 11 of `docs/identity-adoption.md`. Row 8 put the identity access token in
 front of fifteen `/api/auth` route keys at the gateway; this is the module that
-turns a verified token into a CarModPicker user, and it is what
-`app/api/dependencies/auth.py` calls after the legacy session fails to resolve.
+turns a verified token into a CarModPicker user, and since row 13 it is the
+only thing `app/api/dependencies/auth.py` calls: the legacy HS256 session that
+used to resolve ahead of it no longer exists.
 
 Nothing here mints, and nothing here decides policy. It answers one question,
 "which subject is this request for, if any", and answers it with `None` rather
@@ -71,8 +72,8 @@ cutover decision rather than a dual-mode one.
 
 ## Why a failed verification is indistinguishable from no token
 
-Every path below answers `None`, and the caller turns `None` into the same 401
-the legacy session already produces. An expired token, a token for another
+Every path below answers `None`, and the caller turns `None` into a 401. An
+expired token, a token for another
 audience, a `sub` that resolves to no row and no token at all are one answer to
 a caller, because distinguishing them is a signal handed to somebody probing.
 The reason is logged; it is not returned.
@@ -256,9 +257,10 @@ def verify_bearer_subject(request: "Request") -> str:
         claims = service.verify_access_token(presented.strip())
     except Exception:
         # Every verification failure is one answer to the caller. Debug rather
-        # than warning: on a dual-mode deployment a legacy HS256 session arrives
-        # in this same header and fails here on its way to the legacy resolver,
-        # so a warning would fire on the ordinary case.
+        # than warning: a failure here is an expired, malformed or foreign token
+        # on a request that is about to get the same 401 as a request carrying
+        # nothing, and the caller is told no more than that. The reason is
+        # logged; it is not returned.
         logger.debug("An identity access token did not verify.", exc_info=True)
         return ""
     return str(claims.get("sub", "") or "")

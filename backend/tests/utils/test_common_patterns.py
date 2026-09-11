@@ -19,7 +19,6 @@ def _user(*, is_admin: bool = False, is_superuser: bool = False) -> User:
     return User(
         username=f"u{uuid7().hex[:10]}",
         email=f"{uuid7().hex[:10]}@example.com",
-        hashed_password="x",
         email_verified=True,
         disabled=False,
         is_admin=is_admin,

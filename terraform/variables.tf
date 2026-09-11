@@ -65,8 +65,26 @@ variable "api_throttle_rate_limit" {
 }
 
 # Application secrets (stored in Secrets Manager, values injected via HCP workspace vars)
+
+# Kept, and kept for exactly one route rather than for the session layer it was
+# named after. Row 13 of docs/identity-adoption.md deleted the 24 legacy
+# /api/auth routes and the legacy HS256 branch of every auth resolver, so no
+# login, refresh, verification or reset token is signed with this value any
+# more: every one of those is RS256 and signed in KMS by the identity issuer.
+#
+# What still reads it is the price drop alert unsubscribe link.
+# backend/app/core/email.py mints a 30 day HS256 token with this key into the
+# alert email and GET /api/part-price-alerts/unsubscribe verifies it, which is
+# why the admin domain function and the admin price alerts consumer are the only
+# two functions left holding secretsmanager:GetSecretValue for this key. The
+# recipient of that mail is by construction not signed in, so there is no
+# identity access token equivalent and the link cannot simply be re-signed.
+#
+# Replacing that link is what lets this variable, its key in the app secret and
+# both of those grants be deleted. Until then it stays, and it is no longer a
+# JWT signing secret for the backend in any general sense.
 variable "secret_key" {
-  description = "JWT signing secret for the FastAPI backend"
+  description = "HS256 signing key for the price alert unsubscribe link, the one remaining application-signed token. All session tokens are RS256 and signed in KMS."
   type        = string
   sensitive   = true
 }

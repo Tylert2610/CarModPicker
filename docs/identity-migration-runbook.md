@@ -907,3 +907,138 @@ Exact, in the order to undo it:
 - **`deploy-backend.yml` is path filtered to `backend/**`.** A fix under
   `scripts/` merges without triggering a deploy. Dispatch one by hand with
   `gh workflow run "Deploy Backend" --ref staging`.
+
+# Row 13: retiring the legacy path
+
+This is the one row in the sequence that does not roll back by flipping a
+variable. Every row before it left the legacy path sitting there unused, so a
+rollback was a redeploy. Row 13 deletes it, and the clearing script at the end
+deletes data. Read this whole section before starting.
+
+## Before you start
+
+**The row 12 soak must have run its course.** Row 12 flipped every client onto
+the identity path and turned on `domain_jwt_enforced`. The evidence that it
+held is what authorises this merge: no elevated 401 rate on the domain
+functions, no support traffic about sign in, and the legacy `/api/auth` routes
+receiving no requests. Check the last of those directly in the access logs
+rather than inferring it, because a forgotten client is exactly what this row
+would break.
+
+The pull request is opened as a draft and stays a draft until that is true.
+
+**`clear_legacy_credentials.py` must not run yet.** Read
+`docs/identity-adoption.md`, "What row 13 could not remove, and why". Two routes
+in the users domain still write `hashed_password`, and clearing the column while
+they do breaks signup and password change. The script refuses a row whose
+identity credential is missing, but it cannot refuse on account of a route that
+still writes. The follow up row that ports those two writes is what unblocks
+step 4 below, and until it ships steps 1 through 3 are the whole of this
+runbook.
+
+## Order of operations
+
+The order is chosen so that the one way door is last. Everything up to step 3
+reverts by reverting the pull request. Step 4 does not.
+
+```
+1. Merge the pull request into staging, once the soak is clean.
+2. Let the deploy land. Nine domain images plus the frontend bundle.
+3. Verify, below. Nothing has been deleted from any row at this point.
+4. Only after the users-domain follow up has shipped:
+     cd backend
+     python scripts/clear_legacy_credentials.py --prefix carmodpicker-<env>-
+     # read the summary, then
+     python scripts/clear_legacy_credentials.py --prefix carmodpicker-<env>- --apply
+5. Only after step 4 has run clean in both environments, delete the
+   SECRET_KEY material. See the owner checklist below.
+```
+
+Step 5 is last because `SECRET_KEY` is still read on every price-alert
+unsubscribe, and because deleting an HCP variable is not something the pull
+request can do or undo.
+
+## Verifying step 3
+
+The legacy routes are gone and the identity ones are not:
+
+```
+# 404, because this application no longer serves it.
+curl -si https://api.staging.carmodpicker.com/api/auth/token -X POST | head -1
+
+# 200 or 401 depending on the body, but NOT 404: this is the package's route.
+curl -si https://api.staging.carmodpicker.com/api/auth/login -X POST \
+  -H 'content-type: application/json' -d '{"email":"x","password":"y"}' | head -1
+```
+
+A signed in session still works end to end: sign in through the frontend, load
+the profile page, change the session length, and open the security dialog. The
+security dialog is the one worth clicking through by hand, because row 13 pulled
+the legacy 2FA panel out of it and left only the identity one.
+
+The price alert unsubscribe link still works, which is the route that keeps
+`SECRET_KEY` alive. Take a link out of a recent alert email in staging and open
+it.
+
+## Reading the clearing script's summary
+
+Same shape as the credential migration's, and the same rule: the run either
+clears everything or writes nothing at all.
+
+- `cleared` the row held the column, the identity credential holds the same
+  secret, and the column was removed.
+- `already_clear` no legacy column on the row, and a credential is present. A
+  second run reports every row this way, which is what idempotence looks like.
+- `mismatch` a credential exists but holds a different secret. Usually benign,
+  a password changed through the identity service after the migration ran, but
+  the script will not make that judgement for you.
+- `missing_credential` no password credential for this user at all. Either an
+  OAuth-only or passkey-only account, or the migration has not run here.
+- `errors` the write itself failed.
+
+The last three are refusals, not warnings. Any of them and the script exits
+non-zero having written nothing, because a run that cleared half the rows and
+then stopped leaves an environment neither this runbook nor the migration
+describes.
+
+No hash and no TOTP seed reaches the output, in any branch. The comparison
+happens in memory and is reported as a verdict.
+
+## Rollback
+
+**Before step 4, revert the pull request and redeploy.** The legacy routes come
+back, the legacy HS256 branch of each resolver comes back, and every row still
+carries its `hashed_password` and `totp_secret` because nothing has cleared them.
+The one thing that does not come back on its own is a session: anybody signed in
+through the identity path stays signed in, and anybody who was relying on a
+legacy session lost it at row 12, not here.
+
+**After step 4 there is no rollback.** The columns are gone from the rows and the
+identity `credentials` table is the only place those secrets exist. A revert of
+the pull request restores the code that reads a column that is no longer there,
+which is a worse state than either side. If step 4 has run and something is
+wrong, fix forward.
+
+This is why step 4 is last and why it is a separate command from the deploy.
+
+## Owner checklist after the merge
+
+These are the things a pull request cannot do. None of them is urgent, and none
+of them should be done before step 4 has run clean in both environments.
+
+1. **Delete the `AUTH_MODE` GitHub Environment variable** on both the `staging`
+   and `production` Environments. Row 13 made the frontend's `AUTH_MODE` a
+   constant, so `VITE_AUTH_MODE` is read by nothing and the variable is inert.
+2. **Leave the HCP `secret_key` variable and the `SECRET_KEY` key of the
+   `carmodpicker-<env>/app` secret alone for now.** They are still read by
+   `GET /api/part-price-alerts/unsubscribe` on the `admin` function. Deleting
+   either breaks every unsubscribe link in every inbox. The follow up row that
+   replaces that link is what clears them, and when it does, the order is:
+   delete the `SECRET_KEY` key from the `carmodpicker-<env>/app` secret first,
+   confirm nothing 500s, then delete the `secret_key` HCP workspace variable and
+   remove `var.secret_key` from `terraform/variables.tf`.
+3. **Confirm the `identity` function no longer holds a Secrets Manager grant.**
+   Row 13 dropped `SECRET_KEY` from its descriptor, so its runtime policy should
+   have lost the `secretsmanager:GetSecretValue` statement and its environment
+   should have lost `APP_SECRETS_ARN`. The apply does this; the check is that it
+   actually did.

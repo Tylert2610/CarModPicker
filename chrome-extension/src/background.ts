@@ -355,21 +355,33 @@ type PendingIdentityAuth = {
 /**
  * Which sign in the popup offers.
  *
- * The web app switches on `VITE_AUTH_MODE`, a build time flag. The extension
- * has no build time env plumbing and ships one artifact to the store, so the
- * equivalent here is a runtime setting in `chrome.storage.sync` under
- * `authMode`, set from the options page. Default is `legacy` until row 12
- * cuts over, so an existing install behaves exactly as it does today.
+ * The extension has no build time env plumbing and ships one artifact to the
+ * store, so this is a runtime setting in `chrome.storage.sync` under
+ * `authMode`, set from the options page.
+ *
+ * The default is `identity`. It was `legacy` while both flows were served, and
+ * row 13 of docs/identity-adoption.md deleted the routes the legacy flow talked
+ * to, so an install that has never opened the options page must come up on the
+ * flow that still has a server behind it.
+ *
+ * The setting itself is kept rather than deleted, and so is the `legacy`
+ * branch, for one reason: a published extension updates on Chrome's schedule
+ * rather than ours, so some installs will be running an older build for a while
+ * yet and the option is the only lever available if the identity flow has to be
+ * backed out for a particular user. The coercion below is what changed: anything
+ * that is not the exact string `legacy` now resolves to identity, where it used
+ * to be the other way round, so a stale or malformed stored value lands on the
+ * working flow rather than a dead one.
  */
 type AuthMode = "legacy" | "identity";
 
 const AUTH_MODE_STORAGE_KEY = "authMode";
-const DEFAULT_AUTH_MODE: AuthMode = "legacy";
+const DEFAULT_AUTH_MODE: AuthMode = "identity";
 
 async function getAuthMode(): Promise<AuthMode> {
   const result = await chrome.storage.sync.get([AUTH_MODE_STORAGE_KEY]);
-  return result[AUTH_MODE_STORAGE_KEY] === "identity"
-    ? "identity"
+  return result[AUTH_MODE_STORAGE_KEY] === "legacy"
+    ? "legacy"
     : DEFAULT_AUTH_MODE;
 }
 

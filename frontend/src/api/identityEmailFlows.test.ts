@@ -1,14 +1,13 @@
-// The two "mail me a link" routes, across both mechanisms.
+// The two "mail me a link" routes.
 //
-// These two are worth their own file because they are the pair most easily got
+// These two are worth their own file because they were the pair most easily got
 // wrong at cutover, and the failure is invisible until a user clicks a link.
 // Whichever service sends the mail also builds the URL inside it and is the
-// only one that can confirm the token it carries. Request from one mechanism,
-// land the user on the other's confirm page, and the link fails every time
-// while both halves look correct in isolation.
-//
-// So the assertion that matters is not the return value but *which* mechanism
-// was asked. Each case pins the call itself.
+// only one that can confirm the token it carries. Row 13 of
+// docs/identity-adoption.md removed the other service, so there is no longer a
+// mechanism to send the request to by mistake, but the assertion that the
+// identity call is the one that runs is still what these cases pin: a
+// reintroduced fallback would break links rather than fail a request.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 type Stub = Record<string, ReturnType<typeof vi.fn>>;
@@ -18,8 +17,10 @@ const post = vi.fn();
 /**
  * Loads the module with the identity client either present or absent.
  *
- * `null` is bearer mode, where `getIdentityClient` returns null and the legacy
- * `apiClient` route is the one that must run.
+ * `null` now means construction failed rather than "run the other mechanism":
+ * see the doc comment on `getIdentityClient` in `./identityClient`. `apiClient`
+ * is still stubbed so that a request escaping to it would be caught rather than
+ * hitting the network.
  */
 const loadWith = async (stub: Stub | null) => {
   vi.resetModules();
@@ -106,13 +107,14 @@ describe('requestPasswordReset', () => {
     });
   });
 
-  it('uses the legacy route in bearer mode', async () => {
+  it('refuses rather than falling back when the client is missing', async () => {
+    // There is no `/auth/reset-password` behind this any more. Sending the mail
+    // some other way would mean a link nothing can confirm, so the honest
+    // answer is to say no mail was sent.
     const { requestPasswordReset } = await loadWith(null);
     const outcome = await requestPasswordReset('user@example.com');
-    expect(outcome.ok).toBe(true);
-    expect(post).toHaveBeenCalledWith('/auth/reset-password', {
-      email: 'user@example.com',
-    });
+    expect(outcome.ok).toBe(false);
+    expect(post).not.toHaveBeenCalled();
   });
 });
 
@@ -153,12 +155,10 @@ describe('requestVerificationEmail', () => {
     );
   });
 
-  it('uses the legacy route in bearer mode', async () => {
+  it('refuses rather than falling back when the client is missing', async () => {
     const { requestVerificationEmail } = await loadWith(null);
     const outcome = await requestVerificationEmail('user@example.com');
-    expect(outcome.ok).toBe(true);
-    expect(post).toHaveBeenCalledWith('/auth/verify-email', {
-      email: 'user@example.com',
-    });
+    expect(outcome.ok).toBe(false);
+    expect(post).not.toHaveBeenCalled();
   });
 });

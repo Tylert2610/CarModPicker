@@ -1,14 +1,6 @@
 [
   [
     "DELETE",
-    "/api/auth/oauth/{account_id}"
-  ],
-  [
-    "DELETE",
-    "/api/auth/webauthn/credentials/{credential_id}"
-  ],
-  [
-    "DELETE",
     "/api/bug-reports/{bug_report_id}"
   ],
   [
@@ -94,18 +86,6 @@
   [
     "GET",
     "/api/app-settings/"
-  ],
-  [
-    "GET",
-    "/api/auth/oauth"
-  ],
-  [
-    "GET",
-    "/api/auth/verify-email/confirm"
-  ],
-  [
-    "GET",
-    "/api/auth/webauthn/credentials"
   ],
   [
     "GET",
@@ -461,10 +441,6 @@
   ],
   [
     "PATCH",
-    "/api/auth/webauthn/credentials/{credential_id}"
-  ],
-  [
-    "PATCH",
     "/api/build-lists/{build_list_id}/primary-image"
   ],
   [
@@ -494,78 +470,6 @@
   [
     "POST",
     "/api/admin/db-ops/parts/delete-all"
-  ],
-  [
-    "POST",
-    "/api/auth/2fa/disable"
-  ],
-  [
-    "POST",
-    "/api/auth/2fa/setup"
-  ],
-  [
-    "POST",
-    "/api/auth/2fa/verify"
-  ],
-  [
-    "POST",
-    "/api/auth/logout"
-  ],
-  [
-    "POST",
-    "/api/auth/oauth/2fa"
-  ],
-  [
-    "POST",
-    "/api/auth/oauth/google"
-  ],
-  [
-    "POST",
-    "/api/auth/oauth/google/connect"
-  ],
-  [
-    "POST",
-    "/api/auth/oauth/google/link"
-  ],
-  [
-    "POST",
-    "/api/auth/oauth/google/signup"
-  ],
-  [
-    "POST",
-    "/api/auth/reset-password"
-  ],
-  [
-    "POST",
-    "/api/auth/reset-password/confirm"
-  ],
-  [
-    "POST",
-    "/api/auth/token"
-  ],
-  [
-    "POST",
-    "/api/auth/token/2fa"
-  ],
-  [
-    "POST",
-    "/api/auth/verify-email"
-  ],
-  [
-    "POST",
-    "/api/auth/webauthn/login/options"
-  ],
-  [
-    "POST",
-    "/api/auth/webauthn/login/verify"
-  ],
-  [
-    "POST",
-    "/api/auth/webauthn/register/options"
-  ],
-  [
-    "POST",
-    "/api/auth/webauthn/register/verify"
   ],
   [
     "POST",

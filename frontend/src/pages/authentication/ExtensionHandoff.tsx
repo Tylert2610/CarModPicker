@@ -52,7 +52,6 @@ import { Navigate, useSearchParams } from 'react-router-dom';
 import { Alert, AlertDescription } from '../../components/ui/alert';
 import Spinner from '../../components/ui/spinner';
 import { useAuth } from '../../hooks/useAuth';
-import { AUTH_MODE } from '../../api/authMode';
 import { getIdentityClient, identityUrl } from '../../api/identityClient';
 
 /** Where the exchange will live. Not mounted yet; see the module note. */
@@ -123,14 +122,6 @@ function ExtensionHandoff() {
   const extensionState = searchParams.get('state') ?? '';
 
   const run = useCallback(async () => {
-    if (AUTH_MODE !== 'identity') {
-      setState({
-        kind: 'refused',
-        message:
-          'This deployment does not use the shared sign in service, so there is nothing to hand off.',
-      });
-      return;
-    }
     const target = validateRedirectUri(redirectUri, allowedExtensionIds());
     if (target === null) {
       setState({

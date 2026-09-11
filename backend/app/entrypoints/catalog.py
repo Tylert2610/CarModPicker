@@ -2,8 +2,9 @@
 
 Parts, manufacturers, categories and retailers: 43 routes, the largest domain.
 
-Seventeen of them verify a token, so the domain needs `SECRET_KEY`. Two do not
-and are mutating: `POST /api/parts/{part_id}/listings` and
+Seventeen of them verify an identity access token, which the API Gateway JWT
+authorizer checks against the issuer's JWKS, so this domain needs no
+application secret. Two routes do not verify anything and are mutating: `POST /api/parts/{part_id}/listings` and
 `POST /api/parts/price-history` take no user dependency at all. Section 1.1 of
 the split plan flags both, and they should be settled on their own before this
 domain is cut, not as part of the cut.

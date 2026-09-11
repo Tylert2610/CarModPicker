@@ -44,13 +44,12 @@ from uuid import UUID
 from fastapi.testclient import TestClient
 from uuid6 import uuid7
 
-from app.api.dependencies.auth import get_password_hash
 from app.api.dependencies.repositories import get_repositories
 from app.core.config import settings
 from app.db.dynamo.catalog import Category, PartManufacturer
 from app.db.dynamo.moderation import Report, Vote
 from app.db.dynamo.users import User, UserRepository
-from tests.conftest import create_car_in_db, login_user
+from tests.conftest import auth_headers, create_car_in_db, login_user
 
 
 def _unique(base: str) -> str:
@@ -59,7 +58,7 @@ def _unique(base: str) -> str:
 
 
 def _headers(token: str) -> dict[str, str]:
-    return {"Authorization": f"Bearer {token}"}
+    return auth_headers(token)
 
 
 def _make_user(name: str) -> User:
@@ -67,7 +66,6 @@ def _make_user(name: str) -> User:
         User(
             username=name,
             email=f"{name}@example.com",
-            hashed_password=get_password_hash("testpassword"),
             email_verified=True,
         )
     )

@@ -2,11 +2,10 @@ from typing import Any
 
 from fastapi.testclient import TestClient
 
-from app.api.dependencies.auth import get_password_hash
 from app.core.config import settings
 from app.db.dynamo.users import User as DBUser
 from app.db.dynamo.users import UserRepository
-from tests.conftest import INVALID_UUID_STR, create_car_in_db
+from tests.conftest import INVALID_UUID_STR, auth_headers, create_car_in_db, login_user
 
 
 # Helper function to create and login an admin user
@@ -23,7 +22,6 @@ def create_and_login_admin_user(
         DBUser(
             username=username,
             email=email,
-            hashed_password=get_password_hash(password),
             is_admin=True,
             is_superuser=False,
             email_verified=True,
@@ -32,10 +30,7 @@ def create_and_login_admin_user(
     )
 
     # Log in and get token
-    login_data = {"username": username, "password": password}
-    token_response = client.post(f"{settings.API_STR}/auth/token", data=login_data)
-    assert token_response.status_code == 200, f"Failed to login admin user: {token_response.text}"
-    token = token_response.json()["access_token"]
+    token = login_user(client, username)
 
     return admin_user.__dict__, token
 
@@ -69,19 +64,10 @@ def create_and_login_user(
     else:
         response.raise_for_status()  # Raise an exception for other errors
 
-    login_data = {"username": username, "password": password}
-    token_response = client.post(f"{settings.API_STR}/auth/token", data=login_data)
-    if token_response.status_code != 200:
-        raise Exception(
-            f"Failed to log in user {username}. Status: {token_response.status_code}, Detail: {token_response.text}"
-        )
-
-    token_data = token_response.json()
-    assert "access_token" in token_data
-    token = token_data["access_token"]
+    token = login_user(client, username, password)
 
     if user_id == -1:  # If user existed and was not created, fetch ID
-        headers = {"Authorization": f"Bearer {token}"}
+        headers = auth_headers(token)
         me_response = client.get(f"{settings.API_STR}/users/me", headers=headers)
         if me_response.status_code == 200:
             user_id = me_response.json()["id"]
@@ -95,7 +81,7 @@ def create_and_login_user(
 
 def get_auth_headers(token: str) -> dict[str, str]:
     """Get Authorization headers with Bearer token."""
-    return {"Authorization": f"Bearer {token}"}
+    return auth_headers(token)
 
 
 # --- Test Cases ---

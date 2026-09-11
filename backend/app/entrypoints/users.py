@@ -3,8 +3,10 @@
 User accounts and the global app settings singleton: 14 routes under
 `/api/users` and `/api/app-settings`.
 
-Every route is behind `get_current_user` or `get_current_admin_user`, both of
-which decode a token, so this domain needs `SECRET_KEY`.
+Every route is behind `get_current_user` or `get_current_admin_user`. Since
+row 13 both resolve an identity access token, verified by the API Gateway JWT
+authorizer against the issuer's JWKS, so this domain needs no application
+secret and does not name `SECRET_KEY`.
 
 Run by the image as `python -m app.entrypoints.users`. `handler` is the
 Lambda entry point and is still Mangum, which is what `app/lambda_handler.py`

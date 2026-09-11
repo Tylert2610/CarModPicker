@@ -19,7 +19,6 @@ class TestAdminAuthentication:
             DBUser(
                 username="admin_test",
                 email="admin_test@example.com",
-                hashed_password="hashed_password",
                 is_admin=True,
                 is_superuser=False,
                 email_verified=True,
@@ -39,7 +38,6 @@ class TestAdminAuthentication:
             DBUser(
                 username="superuser_test",
                 email="superuser_test@example.com",
-                hashed_password="hashed_password",
                 is_admin=False,
                 is_superuser=True,
                 email_verified=True,
@@ -59,7 +57,6 @@ class TestAdminAuthentication:
             DBUser(
                 username="regular_test",
                 email="regular_test@example.com",
-                hashed_password="hashed_password",
                 is_admin=False,
                 is_superuser=False,
                 email_verified=True,
@@ -82,7 +79,6 @@ class TestAdminAuthentication:
             DBUser(
                 username="disabled_admin_test",
                 email="disabled_admin_test@example.com",
-                hashed_password="hashed_password",
                 is_admin=True,
                 is_superuser=False,
                 email_verified=True,
@@ -107,7 +103,6 @@ class TestSuperuserAuthentication:
             DBUser(
                 username="superuser_test",
                 email="superuser_test@example.com",
-                hashed_password="hashed_password",
                 is_admin=False,
                 is_superuser=True,
                 email_verified=True,
@@ -127,7 +122,6 @@ class TestSuperuserAuthentication:
             DBUser(
                 username="admin_test",
                 email="admin_test@example.com",
-                hashed_password="hashed_password",
                 is_admin=True,
                 is_superuser=False,  # Not a superuser
                 email_verified=True,
@@ -150,7 +144,6 @@ class TestSuperuserAuthentication:
             DBUser(
                 username="regular_test",
                 email="regular_test@example.com",
-                hashed_password="hashed_password",
                 is_admin=False,
                 is_superuser=False,
                 email_verified=True,
@@ -173,7 +166,6 @@ class TestSuperuserAuthentication:
             DBUser(
                 username="disabled_superuser_test",
                 email="disabled_superuser_test@example.com",
-                hashed_password="hashed_password",
                 is_admin=False,
                 is_superuser=True,
                 email_verified=True,
@@ -198,7 +190,6 @@ class TestPrivilegeHierarchy:
             DBUser(
                 username="dual_test",
                 email="dual_test@example.com",
-                hashed_password="hashed_password",
                 is_admin=True,
                 is_superuser=True,
                 email_verified=True,
@@ -222,7 +213,6 @@ class TestPrivilegeHierarchy:
             DBUser(
                 username="no_privilege_test",
                 email="no_privilege_test@example.com",
-                hashed_password="hashed_password",
                 is_admin=False,
                 is_superuser=False,
                 email_verified=True,

@@ -17,7 +17,7 @@ import re
 import pytest
 from fastapi.testclient import TestClient
 
-from tests.conftest import create_and_login_user, login_user
+from tests.conftest import auth_headers, create_and_login_user, login_user
 from tests.route_enumeration import schema_routes
 
 # D-28 + Risk 7: routes using Optional[DBUser] admin dep + X-Admin-Cron-Key.
@@ -59,7 +59,7 @@ def test_admin_route_forbids_regular_user(method: str, path: str, client: TestCl
     username = f"cov_user_{method.lower()}_{abs(hash(path)) & 0xFFFF:04x}"
     create_and_login_user(client, username=username)
     token = login_user(client, username)
-    resp = client.request(method, _fill_path_params(path), headers={"Authorization": f"Bearer {token}"})
+    resp = client.request(method, _fill_path_params(path), headers=auth_headers(token))
     assert resp.status_code == 403, f"{method} {path} with regular user -> {resp.status_code} (expected 403)"
 
 

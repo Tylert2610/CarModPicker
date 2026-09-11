@@ -24,20 +24,24 @@ These tests use a multi-byte password rather than a long ASCII one on purpose.
 An ASCII password of 73 characters is rejected by the schema with a 422, which is
 correct behaviour and not the bug. The multi-byte case is the one that got past
 validation, and it is the case that regressed.
+
+Row 13 of `docs/identity-adoption.md` deleted the four routers under `/api/auth`,
+and with them the login and password reset halves of this regression. What is
+left is the half that still has live callers: the hashing primitives, and
+`POST /api/users/` which is the users domain's own route and still takes a
+password. Login against an over limit account is now the package's business and
+is covered by the package's own tests.
 """
 
 from __future__ import annotations
 
 import os
-from datetime import timedelta
 from typing import Any
 
 from fastapi.testclient import TestClient
 
-from app.api.dependencies.auth import create_access_token, get_password_hash, verify_password
+from app.api.dependencies.auth import get_password_hash, verify_password
 from app.api.schemas.auth import PASSWORD_MAX_LENGTH
-from app.db.dynamo.users import User as DBUser
-from app.db.dynamo.users import UserRepository
 
 # `PASSWORD_MAX_LENGTH` characters of a two byte character: exactly at the schema's
 # limit, and exactly twice bcrypt's. Built from the constant rather than hardcoded so
@@ -73,8 +77,8 @@ def test_a_wrong_password_still_fails_against_an_over_limit_hash() -> None:
     assert verify_password("something else entirely", hashed) is False
 
 
-def test_signup_then_login_with_a_password_over_72_bytes(client: TestClient, db_session: Any) -> None:
-    """Signup 500'd on this password before the swap. Now it creates and logs in."""
+def test_signup_with_a_password_over_72_bytes(client: TestClient, db_session: Any) -> None:
+    """Signup 500'd on this password before the swap. Now it creates the account."""
     username = _uniq("longpw_signup")
 
     signup = client.post(
@@ -86,76 +90,7 @@ def test_signup_then_login_with_a_password_over_72_bytes(client: TestClient, db_
         },
     )
     assert signup.status_code == 200, signup.text
-
-    login = client.post(
-        "/api/auth/token",
-        data={"username": username, "password": OVER_LIMIT_PASSWORD},
-    )
-    assert login.status_code == 200, login.text
-    assert login.json()["access_token"]
-
-
-def test_login_rejects_a_wrong_password_on_an_over_limit_account(client: TestClient, db_session: Any) -> None:
-    """The account is reachable, but only with the right password."""
-    username = _uniq("longpw_wrong")
-
-    signup = client.post(
-        "/api/users/",
-        json={
-            "username": username,
-            "email": f"{username}@example.com",
-            "password": OVER_LIMIT_PASSWORD,
-        },
-    )
-    assert signup.status_code == 200, signup.text
-
-    login = client.post(
-        "/api/auth/token",
-        data={"username": username, "password": "not the right password"},
-    )
-    assert login.status_code == 401
-
-
-def test_password_reset_to_a_password_over_72_bytes(client: TestClient, db_session: Any) -> None:
-    """Reset confirm 500'd on this password before the swap. Now it resets and logs in."""
-    username = _uniq("longpw_reset")
-    email = f"{username}@example.com"
-    old_password = "old_password_123!"
-
-    UserRepository().create_user(
-        DBUser(
-            username=username,
-            email=email,
-            hashed_password=get_password_hash(old_password),
-            email_verified=True,
-            disabled=False,
-        )
-    )
-
-    # Minted directly rather than through POST /reset-password, which sends an SES
-    # email and fails in the test environment. Same call the endpoint makes.
-    token = create_access_token(
-        data={"sub": email, "purpose": "reset_password"},
-        expires_delta=timedelta(hours=1),
-    )
-
-    confirm = client.post(
-        "/api/auth/reset-password/confirm",
-        json={"token": token, "new_password": {"password": OVER_LIMIT_PASSWORD}},
-    )
-    assert confirm.status_code == 200, confirm.text
-
-    login = client.post(
-        "/api/auth/token",
-        data={"username": username, "password": OVER_LIMIT_PASSWORD},
-    )
-    assert login.status_code == 200, login.text
-
-    old_login = client.post(
-        "/api/auth/token",
-        data={"username": username, "password": old_password},
-    )
-    assert old_login.status_code == 401
+    assert signup.json()["username"] == username
 
 
 def test_an_ascii_password_past_the_char_cap_is_still_a_422(client: TestClient, db_session: Any) -> None:

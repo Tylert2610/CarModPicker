@@ -38,9 +38,6 @@ const Profile = lazy(() => import('./pages/Profile.tsx'));
 const ForgotPassword = lazy(
   () => import('./pages/authentication/ForgotPassword.tsx')
 );
-const ForgotPasswordConfirm = lazy(
-  () => import('./pages/authentication/ForgotPasswordConfirm.tsx')
-);
 const Login = lazy(() => import('./pages/authentication/Login.tsx'));
 const Register = lazy(() => import('./pages/authentication/Register.tsx'));
 const ResetPassword = lazy(
@@ -257,10 +254,6 @@ function App() {
                     path="/verify-email/confirm"
                     element={<VerifyEmailConfirm />}
                   />
-                  <Route
-                    path="/forgot-password/confirm"
-                    element={<ForgotPasswordConfirm />}
-                  />
                   <Route path="/extension-auth" element={<ExtensionAuth />} />
                   {/* The identity-mode handoff, which the extension opens
                       through `launchWebAuthFlow`. See the page's own note; the
@@ -317,11 +310,7 @@ function App() {
                   {/* Outside GuestRoute on purpose. A reset link is a
                       credential in its own right and a signed in user can
                       legitimately be holding one, so bouncing them away from
-                      it would strip the single use token. Registered
-                      unconditionally rather than behind the auth mode, because
-                      a route that only exists in one build is a route the
-                      coverage test cannot see. In bearer mode the page renders
-                      its own "not available in this deployment" state. */}
+                      it would strip the single use token. */}
                   <Route path="/reset-password" element={<ResetPassword />} />
                 </Route>
 

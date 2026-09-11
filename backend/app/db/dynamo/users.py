@@ -41,7 +41,6 @@ class User(TimestampedDynamoModel):
     email: str
     image_urls: list[str] | None = None
     email_verified: bool = False
-    hashed_password: str | None = None
     disabled: bool = False
     is_superuser: bool = False
     is_admin: bool = False
@@ -49,7 +48,13 @@ class User(TimestampedDynamoModel):
     subscription_tier: str = "free"
     subscription_expires_at: datetime | None = None
     subscription_status: str = "active"
-    totp_secret: str | None = None
+    # `totp_enabled` stays and `totp_secret` is gone. The flag is what the
+    # profile UI renders and what `UserRead` publishes; the seed itself lives
+    # sealed in the package's `totp-factors` table, which is the whole point of
+    # row 7's sealing migration. Row 13 removed the plaintext column from this
+    # model, and `backend/scripts/clear_legacy_credentials.py` removes it from
+    # the rows. `model_config` is `extra="ignore"`, so a row written before that
+    # script runs still loads here with the stale attribute simply dropped.
     totp_enabled: bool = False
     session_expire_minutes: int | None = None
     instagram_url: str | None = None
@@ -154,6 +159,59 @@ class UserRepository(DynamoRepository[User]):
         actions, labels = self.create_actions(user)
         run_unique_transaction(actions, labels)
         return user
+
+    # ---- the legacy password column -------------------------------------------------
+    #
+    # `hashed_password` is no longer a field on `User`, and these two methods are
+    # the only code left in the backend that reads or writes it. They exist
+    # because row 13 could not finish the job, and the shape of them is chosen to
+    # make that visible rather than comfortable.
+    #
+    # Three routes in `app/api/endpoints/users.py` still take a password:
+    # `POST /api/users/` (public registration), the password change on
+    # `PUT /api/users/{user_id}`, and the admin password set on
+    # `PUT /api/users/admin/users/{user_id}`. They are not `/api/auth` routes, so
+    # row 13 did not delete them, and the frontend still calls all three. The
+    # package serves `POST /api/auth/register` and `POST /api/auth/password`,
+    # which supersede the first two, but re-pointing the SPA at them is a
+    # frontend change with its own review rather than a line of this row.
+    #
+    # Writing through the package's `DynamoCredentialStore` instead would be a
+    # small code change and is blocked on infrastructure this row must not touch:
+    # the `credentials` table and its IAM grant belong to `module.identity`,
+    # which takes exactly one role (`identity_role_name`), and the users function
+    # holds no grant on that table. Giving it one means a new input on a
+    # versioned platform module in another repository, or a hand written policy
+    # in this one reaching into module owned ARNs. Either is its own row.
+    #
+    # So the column stays until that row lands, and these two methods keep it
+    # reachable without putting it back on the model. Keeping it off the model
+    # is what makes `UserRead` unable to leak it, makes every other read path
+    # structurally incapable of touching it, and leaves exactly one pair of call
+    # sites for the follow up row to delete.
+    #
+    # `backend/scripts/clear_legacy_credentials.py` must therefore NOT be run
+    # until that follow up row has shipped: clearing the column while these
+    # three routes are the only way a password is set would lock out every
+    # account that has one.
+
+    def get_legacy_password_hash(self, user_id: UUID) -> str | None:
+        """The stored bcrypt hash, read straight off the item.
+
+        A raw read rather than a model attribute, because `User` no longer
+        declares the field and `model_config` is `extra="ignore"`, so loading the
+        row would silently drop it.
+        """
+        response = self.table.get_item(Key=self.key(user_id))
+        item = response.get("Item")
+        if item is None:
+            return None
+        value = item.get("hashed_password")
+        return str(value) if isinstance(value, str) and value else None
+
+    def set_legacy_password_hash(self, user_id: UUID, hashed_password: str) -> None:
+        """Write the stored bcrypt hash, leaving every other attribute alone."""
+        self.update(user_id, hashed_password=hashed_password)
 
     def update_user(self, user_id: UUID, **changes: Any) -> User:
         current = self.get_or_raise(user_id)

@@ -1,93 +1,36 @@
+"""What survives the legacy auth routers.
+
+Row 13 of `docs/identity-adoption.md` deleted the four routers under
+`/api/auth`, and with them every request and response model that only those
+routes declared: the TOTP setup, verify, login and disable pairs, the four
+Google sign in shapes, and the three "this sign in needs another step" replies.
+The package owns all of those flows now and declares its own models for them.
+
+Three names are left, and none of them is about the legacy session:
+
+- `PASSWORD_MIN_LENGTH` and `PASSWORD_MAX_LENGTH` bound the password field on
+  `UserCreate` and `UserUpdate`, which are the users domain's own schemas for
+  `POST /api/users/` and the password change on `PUT /api/users/{user_id}`.
+  Those routes are not legacy auth routes and row 13 does not touch them.
+- `OAuthAccountRead` is read by `app/api/services/user_service.py` to render the
+  linked provider accounts on a user, which `GET /api/users/me` still returns.
+
+The 72 byte cap is bcrypt's and is expressed in characters here deliberately;
+`webbpulse.security.hash_password` truncates on the byte boundary, so a value
+that passes this validator always hashes. See the note in
+`app/api/dependencies/auth.py`.
+"""
+
 from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict
 
 # bcrypt silently truncates anything past 72 bytes. Capping here so users can't
 # set a password whose tail is ignored on verification.
 PASSWORD_MIN_LENGTH = 8
 PASSWORD_MAX_LENGTH = 72
-
-
-class NewPassword(BaseModel):
-    password: str = Field(..., min_length=PASSWORD_MIN_LENGTH, max_length=PASSWORD_MAX_LENGTH)
-
-
-class TOTPSetupResponse(BaseModel):
-    """Response when setting up 2FA - contains QR code data and secret."""
-
-    secret: str
-    qr_code_data: str  # Base64 encoded QR code image
-    manual_entry_key: str  # Formatted secret for manual entry
-
-
-class TOTPVerifyRequest(BaseModel):
-    """Request to verify and enable 2FA."""
-
-    otp: str  # The 6-digit OTP code
-
-
-class TOTPVerifyResponse(BaseModel):
-    """Response after verifying 2FA setup."""
-
-    success: bool
-    message: str
-
-
-class TOTPLoginRequest(BaseModel):
-    """Request for 2FA verification during login."""
-
-    username: str
-    password: str
-    otp: str  # The 6-digit OTP code
-
-
-class TOTPDisableRequest(BaseModel):
-    """Request to disable 2FA - requires password and OTP."""
-
-    password: str  # Current password
-    otp: str  # The 6-digit OTP code
-
-
-# --- Google / OAuth schemas ---
-
-
-class GoogleSignInRequest(BaseModel):
-    """Initial Google sign-in: frontend sends the Google ID token + nonce it generated."""
-
-    id_token: str
-    nonce: str
-
-
-class GoogleLinkRequest(BaseModel):
-    """Merge Google identity into an existing password account. Requires the link_token from
-    the initial Google sign-in plus the user's password (and OTP if 2FA enabled)."""
-
-    link_token: str
-    password: str
-    otp: Optional[str] = None
-
-
-class GoogleSignupRequest(BaseModel):
-    """Finish account creation after Google sign-in when no matching email was found."""
-
-    signup_token: str
-    username: str
-
-
-class OAuthTwoFactorRequest(BaseModel):
-    """Complete 2FA after a Google sign-in for a user with TOTP enabled."""
-
-    otp_token: str
-    otp: str
-
-
-class GoogleConnectRequest(BaseModel):
-    """Authenticated request to link a Google account to the current user."""
-
-    id_token: str
-    nonce: str
 
 
 class OAuthAccountRead(BaseModel):
@@ -97,31 +40,3 @@ class OAuthAccountRead(BaseModel):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
-
-
-class GoogleSignInLinkRequired(BaseModel):
-    """Returned by /auth/google when the email matches an existing password user.
-    Frontend prompts for password and submits to /auth/google/link."""
-
-    requires_link: bool = True
-    link_token: str
-    email: EmailStr
-    display_name: Optional[str] = None
-    has_totp: bool = False
-
-
-class GoogleSignInSignupRequired(BaseModel):
-    """Returned by /auth/google when no matching account exists.
-    Frontend collects a username and submits to /auth/google/signup."""
-
-    requires_signup: bool = True
-    signup_token: str
-    email: EmailStr
-    suggested_username: str
-
-
-class OAuthTwoFactorRequired(BaseModel):
-    """Returned when a verified Google sign-in maps to a user with TOTP enabled."""
-
-    requires_2fa: bool = True
-    otp_token: str

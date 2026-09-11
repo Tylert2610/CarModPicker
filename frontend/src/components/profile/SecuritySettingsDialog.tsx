@@ -1,21 +1,15 @@
 import { useEffect, useState } from 'react';
 import { FaClock, FaKey, FaLink, FaLock, FaShieldAlt } from 'react-icons/fa';
-import useApiRequest from '../../hooks/UseApiRequest';
 import { useAuth } from '../../hooks/useAuth';
-import { authApi } from '../../api/auth';
 import { identityAvailability } from '../../api/authMode';
-import { AUTH_MODE } from '../../api/authMode';
 import IdentityTotpSettings from './IdentityTotpSettings';
 import { usersApi } from '../../api/users';
-import type { TOTPSetupResponse } from '../../types/Api';
 import { ConfirmationAlert, ErrorAlert } from '../ui/alert';
 import { Button } from '../ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/dialog';
 import { Input } from '../ui/input';
-import ConnectedAccountsSettings from './ConnectedAccountsSettings';
 import IdentityConnectedAccounts from './IdentityConnectedAccounts';
 import IdentityPasskeySettings from './IdentityPasskeySettings';
-import PasskeySettings from './PasskeySettings';
 import { getApiErrorMessage } from '../../utils/apiError';
 
 const SESSION_EXPIRE_OPTIONS: { value: number | null; label: string }[] = [
@@ -100,16 +94,6 @@ function SecuritySettingsDialog({
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [passwordSuccess, setPasswordSuccess] = useState<string | null>(null);
 
-  // 2FA state
-  const [setupData, setSetupData] = useState<TOTPSetupResponse | null>(null);
-  const [otp, setOtp] = useState('');
-  const [disablePassword, setDisablePassword] = useState('');
-  const [disableOtp, setDisableOtp] = useState('');
-  const [isVerifying, setIsVerifying] = useState(false);
-  const [isDisabling, setIsDisabling] = useState(false);
-  const [twoFAError, setTwoFAError] = useState<string | null>(null);
-  const [twoFASuccess, setTwoFASuccess] = useState<string | null>(null);
-
   // Session expiry state
   const [sessionExpireMinutes, setSessionExpireMinutes] = useState<
     number | null
@@ -117,13 +101,6 @@ function SecuritySettingsDialog({
   const [isSavingSession, setIsSavingSession] = useState(false);
   const [sessionError, setSessionError] = useState<string | null>(null);
   const [sessionSuccess, setSessionSuccess] = useState<string | null>(null);
-
-  const setupRequestFn = () => authApi.setup2FA();
-  const {
-    error: setupError,
-    isLoading: isSettingUp,
-    executeRequest: performSetup,
-  } = useApiRequest(setupRequestFn);
 
   useEffect(() => {
     if (isOpen && user) {
@@ -143,14 +120,6 @@ function SecuritySettingsDialog({
     });
     setPasswordError(null);
     setPasswordSuccess(null);
-
-    // Reset 2FA form
-    setSetupData(null);
-    setOtp('');
-    setDisablePassword('');
-    setDisableOtp('');
-    setTwoFAError(null);
-    setTwoFASuccess(null);
 
     setSessionError(null);
     setSessionSuccess(null);
@@ -258,84 +227,6 @@ function SecuritySettingsDialog({
       setPasswordError(errorMessage);
     } finally {
       setIsChangingPassword(false);
-    }
-  };
-
-  // 2FA handlers
-  const handleSetup = async () => {
-    setTwoFAError(null);
-    setTwoFASuccess(null);
-    setOtp('');
-    try {
-      const result = await performSetup();
-      if (result) {
-        setSetupData(result);
-      }
-    } catch {
-      // Error handled by useApiRequest
-    }
-  };
-
-  const handleVerify = async () => {
-    if (!otp.trim() || otp.length !== 6) {
-      setTwoFAError('Please enter a valid 6-digit OTP code.');
-      return;
-    }
-
-    setTwoFAError(null);
-    setIsVerifying(true);
-
-    try {
-      await authApi.verify2FA({ otp });
-      setTwoFASuccess('2FA has been enabled successfully!');
-      setSetupData(null);
-      setOtp('');
-      setTimeout(() => {
-        on2FAEnabled();
-      }, 1500);
-    } catch (err: unknown) {
-      setTwoFAError(
-        getApiErrorMessage(err, 'Invalid OTP code. Please try again.')
-      );
-    } finally {
-      setIsVerifying(false);
-    }
-  };
-
-  const handleDisable = async () => {
-    setTwoFAError(null);
-    setTwoFASuccess(null);
-
-    // Validation
-    if (!disablePassword.trim()) {
-      setTwoFAError('Password is required to disable 2FA.');
-      return;
-    }
-
-    if (!disableOtp.trim() || disableOtp.length !== 6) {
-      setTwoFAError('Please enter a valid 6-digit OTP code.');
-      return;
-    }
-
-    setIsDisabling(true);
-
-    try {
-      await authApi.disable2FA({
-        password: disablePassword,
-        otp: disableOtp,
-      });
-      setTwoFASuccess('2FA has been disabled successfully!');
-      setTimeout(() => {
-        setDisablePassword('');
-        setDisableOtp('');
-        on2FADisabled();
-      }, 1500);
-    } catch (err: unknown) {
-      setTwoFAError(
-        getApiErrorMessage(err, 'Failed to disable 2FA. Please try again.')
-      );
-    } finally {
-      setIsDisabling(false);
     }
   };
 
@@ -567,12 +458,12 @@ function SecuritySettingsDialog({
             </form>
           )}
 
-          {/* 2FA Tab. Two different flows rather than two renderings of one:
-              the identity service takes only a code to disable a factor, hands
-              back a provisioning URI for the client to draw, and issues
-              recovery codes that the legacy service has no concept of. See
+          {/* 2FA Tab. The identity service takes only a code to disable a
+              factor, hands back a provisioning URI for the client to draw, and
+              issues recovery codes. Row 13 of `docs/identity-adoption.md`
+              deleted the legacy flow that used to render here instead. See
               IdentityTotpSettings. */}
-          {activeTab === '2fa' && AUTH_MODE === 'identity' && (
+          {activeTab === '2fa' && (
             <IdentityTotpSettings
               enabled={user?.totp_enabled === true}
               onChanged={() => {
@@ -583,216 +474,6 @@ function SecuritySettingsDialog({
                 }
               }}
             />
-          )}
-          {activeTab === '2fa' && AUTH_MODE !== 'identity' && (
-            <div className="space-y-6">
-              {twoFASuccess && <ConfirmationAlert message={twoFASuccess} />}
-              {(twoFAError || setupError) && (
-                <ErrorAlert
-                  message={twoFAError || setupError || 'An error occurred'}
-                />
-              )}
-
-              {!user?.totp_enabled && !setupData && (
-                <div className="space-y-4">
-                  <div className="flex items-center space-x-3 text-gray-300">
-                    <FaShieldAlt className="text-primary text-2xl" />
-                    <div>
-                      <h3 className="text-lg font-semibold">
-                        Enable Two-Factor Authentication
-                      </h3>
-                      <p className="text-sm text-gray-400">
-                        Add an extra layer of security to your account by
-                        requiring a code from your authenticator app when you
-                        log in.
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="bg-gray-800/50 rounded-lg p-4 space-y-2 text-sm text-gray-300">
-                    <p className="font-semibold">How it works:</p>
-                    <ol className="list-decimal list-inside space-y-1 ml-2">
-                      <li>
-                        Scan the QR code with an authenticator app (Google
-                        Authenticator, Authy, etc.)
-                      </li>
-                      <li>
-                        Enter the 6-digit code from your app to verify and
-                        enable 2FA
-                      </li>
-                      <li>You'll need this code every time you log in</li>
-                    </ol>
-                  </div>
-
-                  <Button
-                    type="button"
-                    onClick={() => void handleSetup()}
-                    disabled={isSettingUp}
-                    loading={isSettingUp}
-                    className="w-full"
-                  >
-                    {isSettingUp ? 'Setting up...' : 'Set Up 2FA'}
-                  </Button>
-                </div>
-              )}
-
-              {!user?.totp_enabled && setupData && (
-                <div className="space-y-4">
-                  <div className="text-center">
-                    <h3 className="text-lg font-semibold text-gray-300 mb-2">
-                      Scan this QR code
-                    </h3>
-                    <div className="flex justify-center mb-4">
-                      <img
-                        src={setupData.qr_code_data}
-                        alt="2FA QR Code"
-                        className="border-2 border-gray-700 rounded-lg p-2 bg-white"
-                      />
-                    </div>
-                    <p className="text-sm text-gray-400 mb-2">
-                      Or enter this code manually:
-                    </p>
-                    <p className="text-sm font-mono text-primary bg-gray-800/50 p-2 rounded">
-                      {setupData.manual_entry_key}
-                    </p>
-                  </div>
-
-                  <IconField
-                    id="setup-otp"
-                    label="Enter 6-digit code from your app"
-                    icon={<FaShieldAlt />}
-                  >
-                    <Input
-                      id="setup-otp"
-                      name="otp"
-                      type="text"
-                      value={otp}
-                      onChange={(e) => {
-                        const value = e.target.value
-                          .replace(/\D/g, '')
-                          .slice(0, 6);
-                        setOtp(value);
-                      }}
-                      placeholder="000000"
-                      maxLength={6}
-                      className="pl-10"
-                    />
-                  </IconField>
-
-                  <div className="flex space-x-2">
-                    <Button
-                      type="button"
-                      onClick={() => void handleVerify()}
-                      disabled={isVerifying || otp.length !== 6}
-                      loading={isVerifying}
-                      className="flex-1"
-                    >
-                      {isVerifying ? 'Verifying...' : 'Verify & Enable'}
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      onClick={() => {
-                        setSetupData(null);
-                        setOtp('');
-                        setTwoFAError(null);
-                      }}
-                      className="flex-1"
-                    >
-                      Cancel
-                    </Button>
-                  </div>
-                </div>
-              )}
-
-              {user?.totp_enabled && (
-                <div className="space-y-4">
-                  <div className="flex items-center space-x-3 text-gray-300">
-                    <FaShieldAlt className="text-green-400 text-2xl" />
-                    <div>
-                      <h3 className="text-lg font-semibold">2FA is Enabled</h3>
-                      <p className="text-sm text-gray-400">
-                        Your account is protected with two-factor
-                        authentication.
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="bg-yellow-900/20 border border-yellow-700/50 rounded-lg p-4">
-                    <p className="text-sm text-yellow-300">
-                      <strong>Warning:</strong> Disabling 2FA will remove this
-                      security feature from your account. Make sure you have
-                      backup codes or another way to secure your account.
-                    </p>
-                  </div>
-
-                  <div className="space-y-4">
-                    <IconField
-                      id="disablePassword"
-                      label="Password"
-                      icon={<FaLock />}
-                    >
-                      <Input
-                        id="disablePassword"
-                        name="disablePassword"
-                        type="password"
-                        value={disablePassword}
-                        onChange={(e) => {
-                          setDisablePassword(e.target.value);
-                          setTwoFAError(null);
-                        }}
-                        placeholder="Enter your password"
-                        disabled={isDisabling}
-                        required
-                        autoComplete="current-password"
-                        className="pl-10"
-                      />
-                    </IconField>
-
-                    <IconField
-                      id="disableOtp"
-                      label="2FA Code"
-                      icon={<FaShieldAlt />}
-                      helperText="Enter the 6-digit code from your authenticator app"
-                    >
-                      <Input
-                        id="disableOtp"
-                        name="disableOtp"
-                        type="text"
-                        value={disableOtp}
-                        onChange={(e) => {
-                          const value = e.target.value
-                            .replace(/\D/g, '')
-                            .slice(0, 6);
-                          setDisableOtp(value);
-                          setTwoFAError(null);
-                        }}
-                        placeholder="000000"
-                        disabled={isDisabling}
-                        required
-                        maxLength={6}
-                        className="pl-10"
-                      />
-                    </IconField>
-                  </div>
-
-                  <Button
-                    type="button"
-                    variant="destructive"
-                    onClick={() => void handleDisable()}
-                    disabled={
-                      isDisabling ||
-                      !disablePassword.trim() ||
-                      disableOtp.length !== 6
-                    }
-                    loading={isDisabling}
-                    className="w-full"
-                  >
-                    {isDisabling ? 'Disabling...' : 'Disable 2FA'}
-                  </Button>
-                </div>
-              )}
-            </div>
           )}
 
           {/* Session Tab */}
@@ -853,20 +534,12 @@ function SecuritySettingsDialog({
               </Button>
             </div>
           )}
-          {available.passkeys &&
-            activeTab === 'passkeys' &&
-            (AUTH_MODE === 'identity' ? (
-              <IdentityPasskeySettings />
-            ) : (
-              <PasskeySettings />
-            ))}
-          {available.googleOauth &&
-            activeTab === 'connected' &&
-            (AUTH_MODE === 'identity' ? (
-              <IdentityConnectedAccounts />
-            ) : (
-              <ConnectedAccountsSettings />
-            ))}
+          {available.passkeys && activeTab === 'passkeys' && (
+            <IdentityPasskeySettings />
+          )}
+          {available.googleOauth && activeTab === 'connected' && (
+            <IdentityConnectedAccounts />
+          )}
         </div>
       </DialogContent>
     </Dialog>

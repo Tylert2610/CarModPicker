@@ -1,14 +1,14 @@
 from fastapi.testclient import TestClient
 
 from app.core.config import settings
-from tests.conftest import create_and_login_user, login_user
+from tests.conftest import auth_headers, create_and_login_user, login_user
 
 SCRAPE_URL = f"{settings.API_STR}/crawled-pages/scrape"
 
 
 def _auth_headers(client: TestClient, username: str) -> dict[str, str]:
     create_and_login_user(client, username)
-    return {"Authorization": f"Bearer {login_user(client, username)}"}
+    return auth_headers(login_user(client, username))
 
 
 SAMPLE_HTML = """

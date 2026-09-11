@@ -7,7 +7,6 @@ from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import APIKeyHeader, OAuth2PasswordBearer
 from webbpulse.log_context import user_id_var
 from webbpulse.security import (
-    TokenError,
     create_token,
     decode_token,
     hash_password,
@@ -28,7 +27,6 @@ __all__ = [
     "ALGORITHM",
     "create_access_token",
     "decode_access_token",
-    "get_access_token_expires_delta_for_user",
     "get_current_active_user_optional",
     "get_current_admin_user",
     "get_current_superuser",
@@ -127,31 +125,22 @@ def verify_password(plain_password: str, hashed_password_str: Optional[str]) -> 
 # --- JWT Utilities ---
 
 
-def get_access_token_expires_delta_for_user(user: DBUser) -> timedelta:
-    """Returns the access token expiry duration for a user (their preference clamped to server bounds)."""
-    minutes = getattr(user, "session_expire_minutes", None)
-    if minutes is None:
-        minutes = settings.ACCESS_TOKEN_EXPIRE_MINUTES
-    minutes = max(
-        settings.ACCESS_TOKEN_EXPIRE_MINUTES_MIN,
-        min(settings.ACCESS_TOKEN_EXPIRE_MINUTES_MAX, minutes),
-    )
-    return timedelta(minutes=minutes)
-
-
 def create_access_token(data: dict[str, Any], expires_delta: Optional[timedelta] = None) -> str:
-    """Creates a JWT access token.
+    """Sign a short lived HS256 token with `SECRET_KEY`.
 
-    A thin wrapper over `webbpulse.security.create_token` that keeps this app's
-    two local decisions: the default expiry comes from settings when the caller
-    passes none, and the algorithm is `settings.JWT_ALGORITHM` rather than the
-    package default, so an operator overriding the setting still signs and
-    verifies with the same one.
+    **This is no longer a session token and row 13 left it deliberately.** The
+    legacy sign in flow that used to mint one here is gone; what still calls
+    this is the one-click unsubscribe link in a price drop alert email, which
+    `app/core/email.py` signs with `purpose="price_alert_unsubscribe"` and
+    `GET /api/part-price-alerts/unsubscribe` verifies through
+    `decode_access_token`. That token authenticates nobody: it names an alert id
+    and deactivates one alert, it is the only credential a mail client can carry
+    in a URL, and it has no identity access token equivalent because the
+    recipient is by construction not signed in.
 
-    The package additionally stamps `iat`, which the local implementation did
-    not. That is additive: nothing in this app requires `iat` to be absent, and
-    a token minted before this change still decodes, so existing sessions are
-    unaffected.
+    So `SECRET_KEY` outlives the legacy session, and the PR that retires the
+    rest of it says so rather than removing a setting three live callers read.
+    See `docs/identity-adoption.md` row 13 for the inventory.
     """
     return create_token(
         data,
@@ -167,31 +156,32 @@ def decode_access_token(token: str) -> dict[str, Any]:
     """Verify a token minted by `create_access_token` and return its claims.
 
     Raises `webbpulse.security.ExpiredToken` or `InvalidToken`, both of which
-    are `TokenError`. Callers that treated every decode failure the same way
-    catch `TokenError`; that is the same set of failures PyJWT's
-    `InvalidTokenError` covered here before, including expiry.
+    are `TokenError`.
 
     The algorithm list is always explicit and never read from the token header,
     which is what refuses `alg: none` and the RS256-verified-as-HMAC confusion.
+    Since row 13 the only caller is the price alert unsubscribe route; no
+    resolver in this module decodes anything, because the only credential that
+    resolves to a user is an identity access token.
     """
     return decode_token(token, settings.SECRET_KEY, algorithms=[ALGORITHM])
 
 
-# --- The identity access token, alongside the legacy session ---
+# --- The identity access token, which is now the only credential ---
 #
-# Row 11 of `docs/identity-adoption.md`. Every resolver below is dual mode: the
-# legacy HS256 session resolves exactly as it did, and an identity RS256 access
-# token additionally resolves to the same `DBUser`. Neither path can shadow the
-# other, because the two tokens are told apart by what they carry rather than by
-# a flag: a legacy session's `sub` is the **username** and is signed with
-# `SECRET_KEY`, an identity token's `sub` is the **user id** and is signed in
-# KMS. Row 12 is the cutover and row 13 is what deletes the legacy half.
+# Row 13 of `docs/identity-adoption.md`. Rows 11 and 12 ran these resolvers in
+# dual mode: a legacy HS256 session decoded first, and an identity RS256 access
+# token resolved to the same row when it did not. Row 12's cutover moved every
+# client onto the identity token and the soak confirmed it, so this row deletes
+# the legacy half.
 #
-# The legacy path is tried first and deliberately so. It is the path every
-# request takes today, it costs one HMAC verification with no network call, and
-# putting it first means the shipped flow's latency and its failure modes are
-# untouched by this row. An identity token simply fails `decode_access_token`,
-# because it is RS256 and the decoder names HS256 explicitly, and falls through.
+# What that removes is a whole branch rather than a flag. There is no
+# `decode_access_token` call on any resolver path any more, no `sub`-as-username
+# lookup, and no `get_by_username` read behind a bearer token. A request either
+# carries claims an authorizer verified, or a Bearer token this process can
+# verify on the identity function, or it is refused. `resolve_identity_user` is
+# the single answer to "who is this request for", and every resolver below is a
+# policy on top of it rather than a second way of asking.
 
 
 def _subject_from_request(request: Optional[Request]) -> str:
@@ -270,51 +260,32 @@ async def get_current_user(
     token: str = Depends(oauth2_scheme),  # Bearer token from Authorization header (FastAPI standard)
     repos: Repositories = Depends(get_repositories),
 ) -> DBUser:
+    """The user this request is for, or 401.
+
+    Identity only since row 13. The credential is an identity access token, and
+    it reaches this process in one of two ways: as claims an authorizer already
+    verified and put in the request context, or as a Bearer token that
+    `verify_bearer_subject` verifies here. `resolve_identity_user` tries them in
+    that order and applies the three account checks, so a disabled or unverified
+    account is refused on either.
+
+    `token` stays in the signature although nothing here reads it. It is what
+    keeps `oauth2_scheme` in the dependency tree, and that has two effects worth
+    keeping: the published OpenAPI document still declares the
+    `OAuth2PasswordBearer` security scheme on every route that depends on this,
+    and a request carrying neither a header nor authorizer claims is still
+    refused by the scheme itself with the same `Not authenticated` body it
+    always produced. Removing it would change the API's published contract as a
+    side effect of deleting the legacy decode, which is a different change from
+    the one this row is making.
     """
-    Decodes JWT Bearer token from Authorization header, validates credentials, and returns the user.
-    Uses standard OAuth2 Bearer token authentication.
-
-    Dual mode since row 11: a legacy HS256 session resolves first and unchanged,
-    and an identity RS256 access token resolves to the same row when it does not.
-    See the section comment above for why that order and why the two cannot be
-    confused for one another.
-
-    The scheme this depends on is `oauth2_scheme`, which admits a request
-    carrying no `Authorization` header only when an authorizer already put
-    verified claims on it. See `IdentityAwareOAuth2` for why.
-    """
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-
-    username: Optional[str] = None
-    if token:
-        try:
-            payload = decode_access_token(token)
-            username = payload.get("sub")
-        except TokenError:
-            username = None
-
-    if username is None:
-        # Not a legacy session. An identity access token is the other thing this
-        # header carries, and the account checks below are applied to it through
-        # `resolve_identity_user` rather than repeated here, so that a disabled
-        # or unverified account is refused identically on both paths.
-        identity_user = resolve_identity_user(request, repos)
-        if identity_user is None:
-            raise credentials_exception
-        return identity_user
-
-    user = repos.users.get_by_username(username)
+    user = resolve_identity_user(request, repos)
     if user is None:
-        raise credentials_exception
-    if user.disabled:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Inactive user")
-    if not user.email_verified:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Email not verified")
-    user_id_var.set(str(user.id))
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     return user
 
 
@@ -323,32 +294,17 @@ async def get_optional_current_user(
     token: Optional[str] = Depends(oauth2_scheme_optional),
     repos: Repositories = Depends(get_repositories),
 ) -> Optional[DBUser]:
+    """The user this request is for, or `None` for an anonymous caller.
+
+    For the routes that serve everybody and personalise for a signed in caller.
+    Identity only since row 13, and `None` rather than a raise for every way the
+    answer can be "nobody", which is what keeps a public page public.
+
+    `token` is unread, for the same reason `get_current_user`'s is: it holds the
+    optional security scheme in the dependency tree so the OpenAPI document is
+    unchanged by this row.
     """
-    Decodes JWT Bearer token and returns the user, or None if not authenticated.
-    This is for endpoints that can work with or without authentication.
-    Uses standard OAuth2 Bearer token authentication.
-
-    Dual mode since row 11. The identity path is tried even when there is no
-    `Authorization` header at all, because on a flagged route key the claims
-    arrive in the request context and the header the gateway verified is not
-    necessarily forwarded to the application.
-    """
-    username: Optional[str] = None
-    if token is not None:
-        try:
-            username = decode_access_token(token).get("sub")
-        except TokenError:
-            username = None
-
-    if username is None:
-        return resolve_identity_user(request, repos)
-
-    user = repos.users.get_by_username(username)
-    if user is None or user.disabled or not user.email_verified:
-        return None
-
-    user_id_var.set(str(user.id))
-    return user
+    return resolve_identity_user(request, repos)
 
 
 async def get_current_active_user_optional(
@@ -356,38 +312,22 @@ async def get_current_active_user_optional(
     token: Optional[str] = Depends(oauth2_scheme_optional),
     repos: Repositories = Depends(get_repositories),
 ) -> Optional[DBUser]:
+    """The current active user if one is authenticated, otherwise `None`.
+
+    Identity only since row 13, and now identical in behaviour to
+    `get_optional_current_user`. The two are kept as separate names because
+    their call sites mean different things by them and the dual-mode rows had a
+    real difference between them: this one did not require a verified address on
+    the legacy path where the other did. On the identity path that difference
+    never existed, because `resolve_identity_user` checks `email_verified` for
+    both, so deleting the legacy branch is what collapsed them.
+
+    Kept rather than aliased so a later divergence is a change to one function
+    rather than an unpicking of an alias, and because the accounts the looser
+    check would have admitted are exactly the ones `may_authenticate` refuses at
+    the package's door, so no identity token is ever minted for one.
     """
-    Optionally returns the current active user if a valid Bearer token is present.
-    Returns None if no token, token is invalid/expired, user not found, or user is inactive.
-    Uses standard OAuth2 Bearer token authentication.
-
-    Dual mode since row 11. This resolver does not require a verified address
-    where the other two do, and that difference is preserved rather than
-    flattened: `resolve_identity_user` does check it, so the identity path here
-    is the stricter of the two. Widening it would mean a second resolver whose
-    only difference is a check this row has no reason to relax, and the accounts
-    it would admit are exactly the ones `may_authenticate` refuses at the
-    package's own door, so no identity token is ever minted for one.
-    """
-    username: Optional[str] = None
-    if token is not None:
-        try:
-            username = decode_access_token(token).get("sub")
-        except TokenError:  # Covers expired, invalid signature, etc.
-            username = None
-
-    if username is None:
-        return resolve_identity_user(request, repos)
-
-    user = repos.users.get_by_username(username)
-    if user is None:
-        return None  # User from token not found in DB
-
-    if user.disabled:
-        return None  # User is inactive, so not considered an "active user"
-
-    user_id_var.set(str(user.id))
-    return user
+    return resolve_identity_user(request, repos)
 
 
 # --- Admin/Superuser Dependencies ---
@@ -455,7 +395,7 @@ async def require_api_key_or_admin(
     token: Optional[str] = Depends(oauth2_scheme_optional),
     repos: Repositories = Depends(get_repositories),
 ) -> Optional[DBUser]:
-    """Allow a valid `X-API-Key`, or an admin bearer token, and nothing else.
+    """Allow a valid `X-API-Key`, or an admin identity token, and nothing else.
 
     Returns the authenticated admin user, or `None` when the caller got in on
     the API key (there is no user behind a machine credential). Raises through
@@ -463,22 +403,25 @@ async def require_api_key_or_admin(
 
       - no credential at all, or a bad/unknown key with no token -> 401
       - a valid token belonging to a non-admin user -> 403
+
+    The API key is checked first and is a complete credential on its own, which
+    is why `POST /api/parts/price-history` is not a flagged route key at the
+    gateway: its callers are the Chrome extension and the ingestion jobs, and
+    neither carries a bearer token at all. See the row 12a inventory in
+    `docs/identity-adoption.md`.
+
+    `token` is unread since row 13. The bearer branch used to decode a legacy
+    session here; now both the header and the authorizer context are read by
+    `resolve_identity_user`, so there is one path rather than two.
     """
     if verify_api_key(api_key):
         return None
 
-    if token is None:
-        # No key and no bearer token still leaves the identity path, because on a
-        # flagged route key the claims arrive in the request context rather than
-        # in a header this application sees.
-        identity_user = resolve_identity_user(request, repos)
-        if identity_user is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Could not validate credentials",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-        return await get_current_admin_user(current_user=identity_user)
-
-    user = await get_current_user(request=request, token=token, repos=repos)
-    return await get_current_admin_user(current_user=user)
+    identity_user = resolve_identity_user(request, repos)
+    if identity_user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return await get_current_admin_user(current_user=identity_user)

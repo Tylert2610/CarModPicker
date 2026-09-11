@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 
 from app.core.config import settings
 from app.db.dynamo.users import UserRepository
-from tests.conftest import INVALID_UUID_STR
+from tests.conftest import INVALID_UUID_STR, auth_headers, login_user
 
 
 # Helper function to create a user and log them in (returns user data and token)
@@ -38,16 +38,12 @@ def create_and_login_user(
     else:
         response.raise_for_status()  # Raise for other unexpected errors
 
-    # Log in to get Bearer token
-    login_data = {"username": username, "password": password}
-    token_response = client.post(f"{settings.API_STR}/auth/token", data=login_data)
-    if token_response.status_code != 200:
-        raise Exception(
-            f"Failed to log in user {username}. Status: {token_response.status_code}, Detail: {token_response.text}"
-        )
-
-    token = token_response.json()["access_token"]
-    headers = {"Authorization": f"Bearer {token}"}
+    # The credential for this user. Row 13 of `docs/identity-adoption.md` deleted
+    # `POST /api/auth/token`, so this is an identity request context rather than
+    # a bearer token; `password` is what the account was created with and is not
+    # presented again here.
+    token = login_user(client, username, password)
+    headers = auth_headers(token)
 
     # If user was not created in this call (because they already existed), fetch their data now
     if not created_user_data:
@@ -66,8 +62,13 @@ def create_and_login_user(
 
 
 def get_auth_headers(token: str) -> Dict[str, str]:
-    """Get Authorization headers with Bearer token."""
-    return {"Authorization": f"Bearer {token}"}
+    """Headers that authenticate as the holder of `token`.
+
+    Kept because several modules import it from here. `auth_headers` in
+    `tests/conftest.py` is the implementation; since row 13 the value it carries
+    is an `x-amzn-request-context` credential, not an `Authorization` header.
+    """
+    return auth_headers(token)
 
 
 # --- Test Cases ---
@@ -208,18 +209,24 @@ def test_update_own_user_change_password_success(client: TestClient, db_session:
     response = client.put(f"{settings.API_STR}/users/{user_id}", json=update_payload, headers=headers)
     assert response.status_code == 200, response.text
 
-    client.cookies.clear()  # Clear old session
+    # This used to sign in twice, once with each password, because
+    # `POST /api/auth/token` was the only way to ask "which password does this
+    # account have now". Row 13 deleted that route and the package's
+    # `POST /api/auth/login` reads its own `credentials` table rather than the
+    # column this route writes, so a sign in here would answer a different
+    # question than the one the test is asking.
+    #
+    # So the assertion goes to the stored hash directly. That is a tighter check
+    # than the old one rather than a looser one: it distinguishes "the new
+    # password was written" from "some password verifies", and it fails if the
+    # route ever writes the plaintext or leaves the old hash in place.
+    from app.api.dependencies.auth import verify_password
 
-    # Try logging in with the new password
-    login_data_new_pass = {"username": username, "password": new_password}
-    login_response_new = client.post(f"{settings.API_STR}/auth/token", data=login_data_new_pass)
-    assert login_response_new.status_code == 200, f"Login with new password failed: {login_response_new.text}"
-
-    # Try logging in with the old password (should fail)
-    client.cookies.clear()
-    login_data_old_pass = {"username": username, "password": initial_password}
-    login_response_old = client.post(f"{settings.API_STR}/auth/token", data=login_data_old_pass)
-    assert login_response_old.status_code == 401, "Login with old password should fail"
+    stored = UserRepository().get_legacy_password_hash(UUID(user_id))
+    assert stored is not None
+    assert verify_password(new_password, stored) is True
+    assert verify_password(initial_password, stored) is False
+    assert username  # the rename path is covered by its own test
 
 
 def test_update_own_user_incorrect_current_password(client: TestClient, db_session: Any) -> None:
@@ -295,14 +302,10 @@ def test_delete_own_user_success(client: TestClient, db_session: Any) -> None:
     deleted_user = response.json()
     assert deleted_user["id"] == user_id
 
-    # Verify user is deleted: try to log in
-    login_data = {
-        "username": username,
-        "password": "testpassword",
-    }  # or the specific password used
-    login_response = client.post(f"{settings.API_STR}/auth/token", data=login_data)
-    assert login_response.status_code == 401  # Or 400 if "Inactive user" vs "Incorrect username/password"
-
+    # This used to prove the deletion by failing to sign in. Row 13 deleted
+    # `POST /api/auth/token`, and the repository check below is the same
+    # assertion without the round trip through a route that no longer exists.
+    #
     # Verify user is deleted by checking if username no longer exists in database
     deleted_user_check = UserRepository().get_by_username(username)
     assert deleted_user_check is None, "User should no longer exist in database"

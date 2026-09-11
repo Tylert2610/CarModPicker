@@ -73,30 +73,35 @@ afterEach(() => {
 });
 
 describe('client.ts — token helpers', () => {
-  it('setStoredToken writes to localStorage under the access_token key', async () => {
+  // Row 13 of docs/identity-adoption.md finished removing the bearer flow, and
+  // the `localStorage` token store went with it. These three exports are kept
+  // callable so the call sites that used to need them did not each grow a
+  // branch, and what is asserted here is that they are inert: a later change
+  // that quietly reintroduces a store has to delete a test that says why there
+  // is not one.
+  it('setStoredToken writes nothing anywhere a script can read back', async () => {
     const { setStoredToken } = await import('./client');
     setStoredToken('abc-123');
-    // The key is asserted literally: changing it signs every existing user out
-    // on the deploy that changed it.
-    expect(localStorage.getItem('access_token')).toBe('abc-123');
+    // The old key, asserted literally. Section 7.1 of the identity standard
+    // puts the access token in memory only, so a token reappearing here would
+    // be the regression.
+    expect(localStorage.getItem('access_token')).toBeNull();
+    expect(localStorage.length).toBe(0);
   });
 
-  it('getStoredToken returns the stored access_token', async () => {
-    const { setStoredToken, getStoredToken } = await import('./client');
-    setStoredToken('round-trip');
-    expect(getStoredToken()).toBe('round-trip');
-  });
-
-  it('getStoredToken returns null when no token is stored', async () => {
+  it('getStoredToken returns null when no client has a token', async () => {
+    // `getStoredToken` now reads `AuthClient`'s in-memory token rather than
+    // storage. Nothing has signed in in this graph, so there is none.
     const { getStoredToken } = await import('./client');
     expect(getStoredToken()).toBeNull();
   });
 
-  it('removeStoredToken clears the stored access_token', async () => {
-    const { setStoredToken, getStoredToken, removeStoredToken } =
-      await import('./client');
-    setStoredToken('to-be-removed');
-    removeStoredToken();
+  it('removeStoredToken is callable and clears nothing of its own', async () => {
+    // The session is the httpOnly refresh cookie, and only the server can
+    // revoke it, so the real end of a session is `AuthClient.logout()`. This
+    // stays callable purely so `AuthContext`'s two error paths do not branch.
+    const { getStoredToken, removeStoredToken } = await import('./client');
+    expect(() => removeStoredToken()).not.toThrow();
     expect(getStoredToken()).toBeNull();
   });
 });
@@ -168,17 +173,13 @@ describe('client.ts — query parameters', () => {
 });
 
 describe('client.ts — authorization header', () => {
-  it('attaches Authorization: Bearer <token> when a token is stored', async () => {
-    const calls = stubFetch();
-    const { apiClient, setStoredToken } = await import('./client');
-    setStoredToken('jwt-token');
-    await apiClient.get('/users/me');
-    expect(headerValue(only(calls).init, 'authorization')).toBe(
-      'Bearer jwt-token'
-    );
-  });
-
-  it('does not attach an Authorization header when no token is stored', async () => {
+  // There is no longer a way to put a token in from the outside: the header is
+  // filled by the `auth` provider the shared client is built with, which reads
+  // `AuthClient`'s in-memory token. Driving the positive case would mean
+  // standing up a signed in `AuthClient`, which `identityAuth.test.ts` already
+  // covers at the seam that matters. What is left worth asserting here is that
+  // an anonymous request carries no header at all.
+  it('does not attach an Authorization header when there is no session', async () => {
     const calls = stubFetch();
     const { apiClient } = await import('./client');
     await apiClient.get('/users/me');
@@ -187,9 +188,13 @@ describe('client.ts — authorization header', () => {
 });
 
 describe('client.ts — token rotation', () => {
-  it('stores an x-new-access-token header into localStorage', async () => {
-    // The API issues a replacement token mid-session, for example after a
-    // username change. Storing it is what keeps that from signing the user out.
+  // The bearer flow rotated tokens through an `x-new-access-token` response
+  // header, which the client wrote back to `localStorage`. Both halves are gone:
+  // the identity flow rotates through the refresh cookie inside `AuthClient`
+  // instead. What is asserted is that the header is now inert, because a client
+  // that still acted on it would be writing a token into a store that section
+  // 7.1 of the identity standard says must not exist.
+  it('ignores an x-new-access-token header rather than storing it', async () => {
     stubFetch(
       new Response(JSON.stringify({ ok: true }), {
         status: 200,
@@ -201,16 +206,8 @@ describe('client.ts — token rotation', () => {
     );
     const { apiClient, getStoredToken } = await import('./client');
     await apiClient.get('/users/me');
-    expect(getStoredToken()).toBe('rotated-token');
-  });
-
-  it('leaves the stored token alone when the header is absent', async () => {
-    stubFetch();
-    const { apiClient, setStoredToken, getStoredToken } =
-      await import('./client');
-    setStoredToken('original-token');
-    await apiClient.get('/users/me');
-    expect(getStoredToken()).toBe('original-token');
+    expect(getStoredToken()).toBeNull();
+    expect(localStorage.getItem('access_token')).toBeNull();
   });
 });
 
@@ -264,13 +261,15 @@ describe('client.ts — request bodies', () => {
   });
 
   it('encodes a plain object as form-urlencoded when the caller asks for it', async () => {
-    // The login endpoint is an OAuth2 password form. Axios inferred the
-    // encoding from this header; the shared client infers it from the body
-    // type, so the adapter converts the body rather than forwarding the header.
+    // Axios inferred the encoding from this header; the shared client infers it
+    // from the body type, so the adapter converts the body rather than
+    // forwarding the header. The path is arbitrary: what is under test is the
+    // encoding, and the OAuth2 password form this was written against is one of
+    // the routes row 13 of docs/identity-adoption.md deleted.
     const calls = stubFetch();
     const { apiClient } = await import('./client');
     await apiClient.post(
-      '/auth/token',
+      '/some-form-endpoint',
       { username: 'alice', password: 'p@ss word' },
       { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
     );

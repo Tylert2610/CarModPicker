@@ -3,13 +3,12 @@ from typing import Any, Dict
 
 from fastapi.testclient import TestClient
 
-from app.api.dependencies.auth import get_password_hash
 from app.core.config import settings
 from app.db.dynamo.catalog import Category as DBCategory
 from app.db.dynamo.users import User
 from app.db.dynamo.users import User as DBUser
 from app.db.dynamo.users import UserRepository
-from tests.conftest import INVALID_UUID_STR, create_car_in_db, save_catalog
+from tests.conftest import INVALID_UUID_STR, auth_headers, create_car_in_db, login_user, save_catalog
 
 
 def get_unique_name(base_name: str) -> str:
@@ -20,18 +19,19 @@ def get_unique_name(base_name: str) -> str:
 
 
 def get_auth_token(client: TestClient, username: str, password: str = "testpassword") -> str:
-    """Login and return the Bearer token for use in Authorization headers."""
-    login_data = {"username": username, "password": password}
-    response = client.post(f"{settings.API_STR}/auth/token", data=login_data)
-    assert response.status_code == 200
-    response_data = response.json()
-    assert "access_token" in response_data
-    return response_data["access_token"]
+    """The credential for `username`, for use with `auth_headers`.
+
+    A thin alias for `login_user` in `tests/conftest.py`, kept because this
+    module's tests call it by this name. Row 13 of `docs/identity-adoption.md`
+    deleted `POST /api/auth/token`, so what comes back is an identity request
+    context rather than a bearer token; `password` is accepted and ignored.
+    """
+    return login_user(client, username, password)
 
 
 def get_auth_headers(token: str) -> dict[str, str]:
     """Get Authorization headers with Bearer token."""
-    return {"Authorization": f"Bearer {token}"}
+    return auth_headers(token)
 
 
 def create_and_login_admin_user(
@@ -47,7 +47,6 @@ def create_and_login_admin_user(
         DBUser(
             username=username,
             email=email,
-            hashed_password=get_password_hash(password),
             is_admin=True,
             is_superuser=False,
             email_verified=True,
@@ -56,10 +55,7 @@ def create_and_login_admin_user(
     )
 
     # Log in and get token
-    login_data = {"username": username, "password": password}
-    token_response = client.post(f"{settings.API_STR}/auth/token", data=login_data)
-    assert token_response.status_code == 200, f"Failed to login admin user: {token_response.text}"
-    token = token_response.json()["access_token"]
+    token = login_user(client, username)
 
     return admin_user.__dict__, token
 
@@ -536,17 +532,30 @@ class TestBuildLists:
         assert response.status_code == 422
 
     def test_create_build_list_with_disabled_user(self, client: TestClient, test_user: User, db_session: Any) -> None:
-        """Test creating a build list with a disabled user account."""
-        # Disable the user and commit to database
+        """A disabled account cannot create a build list.
+
+        This used to assert that `POST /api/auth/token` answered 400, and then
+        stopped, with a comment saying the build list functionality could not be
+        reached because login had failed. Row 13 of `docs/identity-adoption.md`
+        deleted that route, and the disabled check moved to where it belongs: an
+        identity credential is issued by the package without consulting this
+        product's `disabled` flag, and `get_current_user` is what refuses. So the
+        test now does the thing it previously could not, and presents a valid
+        credential to the real endpoint.
+        """
         test_user = UserRepository().update(test_user.id, disabled=True)
+        car = create_car_in_db(db_session)
 
-        # Try to login as disabled user - this should fail
-        login_data = {"username": test_user.username, "password": "testpassword"}
-        response = client.post(f"{settings.API_STR}/auth/token", data=login_data)
-        assert response.status_code == 400  # Disabled users should get 400
+        headers = auth_headers(login_user(client, test_user.username))
+        build_list_data = {
+            "name": get_unique_name("test_build_list"),
+            "description": "A test build list description",
+            "car_id": str(car["id"]),
+        }
 
-        # Since login failed, we can't test the build list functionality
-        # The test demonstrates that disabled users cannot authenticate
+        response = client.post(f"{settings.API_STR}/build-lists/", json=build_list_data, headers=headers)
+
+        assert response.status_code == 401
 
     def test_create_build_list_with_unverified_email(
         self, client: TestClient, test_user: User, db_session: Any
@@ -558,16 +567,9 @@ class TestBuildLists:
         # Create a car in DB (cars are seeded from backend source; tests use create_car_in_db)
         car = create_car_in_db(db_session)
 
-        # Login as test user (this should work since email verification is checked in get_current_user)
-        login_data = {"username": test_user.username, "password": "testpassword"}
-        response = client.post(f"{settings.API_STR}/auth/token", data=login_data)
-        assert response.status_code == 200
-
-        # Extract token from login response
-        token_data = response.json()
-        assert "access_token" in token_data
-        token = token_data["access_token"]
-        headers = get_auth_headers(token)
+        # A credential is issued regardless: email verification is this product's
+        # check, made in `get_current_user`, not the identity provider's.
+        headers = auth_headers(login_user(client, test_user.username))
 
         # Try to create a build list with unverified email user
         # Even though login succeeded, the token should be invalid for protected endpoints
@@ -764,7 +766,6 @@ class TestBuildLists:
             DBUser(
                 username=get_unique_name("original_owner"),
                 email=f"{get_unique_name('original_owner')}@example.com",
-                hashed_password=get_password_hash("testpassword"),
                 email_verified=True,
                 disabled=False,
                 is_admin=False,
@@ -886,7 +887,6 @@ class TestBuildLists:
             DBUser(
                 username=get_unique_name("voter"),
                 email=f"{get_unique_name('voter')}@example.com",
-                hashed_password=get_password_hash("testpassword"),
                 email_verified=True,
                 disabled=False,
                 is_admin=False,
@@ -1123,7 +1123,6 @@ class TestBuildLists:
             DBUser(
                 username=get_unique_name("other_owner"),
                 email=f"{get_unique_name('other_owner')}@example.com",
-                hashed_password=get_password_hash("testpassword"),
                 email_verified=True,
                 disabled=False,
                 is_admin=False,
@@ -1179,7 +1178,6 @@ class TestBuildLists:
                 DBUser(
                     username=get_unique_name(f"voter_{i}"),
                     email=f"{get_unique_name(f'voter_{i}')}@example.com",
-                    hashed_password=get_password_hash("testpassword"),
                     email_verified=True,
                     disabled=False,
                     is_admin=False,
@@ -1204,7 +1202,6 @@ class TestBuildLists:
             DBUser(
                 username=get_unique_name("downvoter"),
                 email=f"{get_unique_name('downvoter')}@example.com",
-                hashed_password=get_password_hash("testpassword"),
                 email_verified=True,
                 disabled=False,
                 is_admin=False,

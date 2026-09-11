@@ -1,25 +1,28 @@
-"""Adopting `webbpulse.security` must not log anybody out or invalidate a stored hash.
+"""`webbpulse.security` must keep reading what the code before it wrote.
 
-This deploys to a running service holding live sessions and a table of bcrypt
-hashes written by the code being replaced. Neither can be migrated: there is no
-way to re-hash a password nobody has typed yet, and no way to re-mint a token
-sitting in somebody's browser. So the swap is only safe if the new code reads
-what the old code wrote, and these tests pin both halves of that.
+These pinned the `webbpulse.security` adoption: a swap onto a running service
+holding live sessions and a table of bcrypt hashes written by the code being
+replaced, neither of which could be migrated. Row 13 of
+`docs/identity-adoption.md` retired the legacy session, so the token half is no
+longer about anybody staying signed in. Both halves still describe live code:
+
+  - **Hashes.** `get_password_hash` and `verify_password` are what
+    `POST /api/users/` and the password change on `PUT /api/users/{user_id}`
+    still call, and every hash in the users table was written by the
+    implementation reproduced below as `_legacy_get_password_hash`. Until the
+    clearing script in `backend/scripts/clear_legacy_credentials.py` has run,
+    those stored values must keep verifying.
+  - **Tokens.** `create_access_token` and `decode_access_token` outlived the
+    legacy session by one caller: the 30 day price alert unsubscribe token that
+    `app/core/email.py` mints and `app/api/endpoints/part_price_alerts.py`
+    reads. Those links are already in people's inboxes, so the same
+    "what was minted before must still decode" property applies to them, for
+    the same reason and with a 30 day tail.
 
 The old primitives are reproduced here literally, as `_legacy_*`, rather than
 imported. Importing them would defeat the point once they are deleted; written
 out, they keep asserting against what production actually wrote even though that
 code no longer exists in the tree.
-
-The two facts that make this work:
-
-  - **Hashes.** The local `get_password_hash` passed `rounds=12` explicitly and
-    the package's `DEFAULT_ROUNDS` is also 12, so the stored value has the same
-    algorithm, cost and format. bcrypt hashes carry their own salt and cost, so
-    verification is a property of the string, not of who wrote it.
-  - **Tokens.** Both sign HS256 with `settings.SECRET_KEY` over the same claims.
-    The package additionally stamps `iat`, which is additive: nothing here
-    requires it to be absent, and a token minted without it still decodes.
 """
 
 from __future__ import annotations
@@ -39,6 +42,9 @@ from app.api.dependencies.auth import (
 from app.core.config import settings
 
 PASSWORD = "a-perfectly-ordinary-password"
+
+# The one live caller of these tokens: an alert id, not a user.
+ALERT_ID = "0199f3a1-2b7c-7e40-9a11-6d5c4f8e2b13"
 
 
 def _legacy_get_password_hash(password: str) -> str:
@@ -91,12 +97,12 @@ def test_an_account_with_no_password_at_all_verifies_false() -> None:
 
 
 def test_a_token_minted_before_the_swap_still_decodes() -> None:
-    """The live-session case: issued by the old code, verified by the new."""
-    legacy_token = _legacy_create_access_token({"sub": "alice"}, timedelta(minutes=60))
+    """An unsubscribe link already in an inbox: minted by the old code, read by the new."""
+    legacy_token = _legacy_create_access_token({"sub": ALERT_ID}, timedelta(minutes=60))
 
     claims = decode_access_token(legacy_token)
 
-    assert claims["sub"] == "alice"
+    assert claims["sub"] == ALERT_ID
     assert "exp" in claims
     # The old code never wrote `iat`, and decoding must not start requiring it.
     assert "iat" not in claims
@@ -104,16 +110,16 @@ def test_a_token_minted_before_the_swap_still_decodes() -> None:
 
 def test_a_token_minted_after_the_swap_decodes_under_the_old_code() -> None:
     """The reverse direction, which is what makes a rollback safe."""
-    token = create_access_token({"sub": "alice"}, expires_delta=timedelta(minutes=60))
+    token = create_access_token({"sub": ALERT_ID}, expires_delta=timedelta(minutes=60))
 
     payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[ALGORITHM])
 
-    assert payload["sub"] == "alice"
+    assert payload["sub"] == ALERT_ID
 
 
 def test_the_new_token_adds_iat_and_nothing_else() -> None:
     """`iat` is the one claim that changed. Pinned so a third does not appear unnoticed."""
-    token = create_access_token({"sub": "alice", "purpose": "verify_email"})
+    token = create_access_token({"sub": ALERT_ID, "purpose": "price_alert_unsubscribe"})
 
     claims = decode_access_token(token)
 
@@ -121,8 +127,13 @@ def test_the_new_token_adds_iat_and_nothing_else() -> None:
 
 
 def test_the_default_expiry_still_comes_from_settings() -> None:
-    """Expiry semantics are the app's, not the package's default."""
-    token = create_access_token({"sub": "alice"})
+    """Expiry semantics are the app's, not the package's default.
+
+    Nothing mints a default-expiry token any more: the unsubscribe link passes
+    an explicit 30 days. Pinned anyway so the default cannot drift silently
+    under a future caller.
+    """
+    token = create_access_token({"sub": ALERT_ID})
 
     claims = decode_access_token(token)
     expected = datetime.now(timezone.utc) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
@@ -135,7 +146,7 @@ def test_a_token_signed_with_another_secret_is_refused() -> None:
     from webbpulse.security import TokenError
 
     forged = jwt.encode(
-        {"sub": "alice", "exp": datetime.now(timezone.utc) + timedelta(minutes=60)},
+        {"sub": ALERT_ID, "exp": datetime.now(timezone.utc) + timedelta(minutes=60)},
         "not-the-real-secret",
         algorithm=ALGORITHM,
     )
@@ -151,7 +162,7 @@ def test_a_token_signed_with_another_secret_is_refused() -> None:
 def test_an_expired_token_is_refused() -> None:
     from webbpulse.security import ExpiredToken
 
-    expired = create_access_token({"sub": "alice"}, expires_delta=timedelta(minutes=-5))
+    expired = create_access_token({"sub": ALERT_ID}, expires_delta=timedelta(minutes=-5))
 
     try:
         decode_access_token(expired)

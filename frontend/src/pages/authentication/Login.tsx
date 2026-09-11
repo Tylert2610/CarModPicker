@@ -1,32 +1,16 @@
 import React, { useState } from 'react';
-import {
-  FaEye,
-  FaEyeSlash,
-  FaKey,
-  FaLock,
-  FaShieldAlt,
-  FaUser,
-} from 'react-icons/fa';
+import { FaEye, FaEyeSlash, FaLock, FaShieldAlt, FaUser } from 'react-icons/fa';
 import { GiRaceCar } from 'react-icons/gi';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import {
-  browserSupportsWebAuthn,
-  startAuthentication,
-} from '@simplewebauthn/browser';
 import { Alert, AlertDescription } from '../../components/ui/alert';
 import { Button } from '../../components/ui/button';
-import GoogleAuthFlow from '../../components/authentication/GoogleAuthFlow';
 import { Input } from '../../components/ui/input';
 import { useAuth } from '../../hooks/useAuth';
-import { isGoogleConfigured } from '../../hooks/useGoogleSignIn';
-import { AUTH_MODE, identityAvailability } from '../../api/authMode';
-import { authApi } from '../../api/auth';
 import OAuthProviderButtons from '../../components/authentication/OAuthProviderButtons';
 import PasskeySignInButton from '../../components/authentication/PasskeySignInButton';
 import { useOAuthCallback } from '../../hooks/useOAuthCallback';
 import { describeOAuthCallbackError } from '../../api/identityOAuth';
 import type { PasskeySignInResult } from '../../api/identityPasskeys';
-import { getApiErrorMessage } from '../../utils/apiError';
 import type { UserRead } from '../../types/Api';
 import {
   acceptsRecoveryCodes,
@@ -52,32 +36,22 @@ function Login() {
   const [otp, setOtp] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   // The challenge from the first leg, or null when there is no challenge in
-  // flight. Replaces the boolean this used to hold: in identity mode the second
-  // leg needs the server's ticket, and in bearer mode it needs the credentials
-  // again, so "a second factor is required" and "here is what it needs" are one
-  // fact rather than two.
+  // flight. Holds the server's ticket rather than a bare boolean, because "a
+  // second factor is required" and "here is what the second leg needs" are one
+  // fact rather than two, and the password is deliberately not kept around to
+  // be sent again.
   const [challenge, setChallenge] = useState<LoginChallenge | null>(null);
-  const [isPasskeyLoading, setIsPasskeyLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const returnTo = safeReturnTo(searchParams.get('returnTo'));
   const { login: authLogin, checkAuthStatus } = useAuth();
-  // Both mechanisms carry passkeys and OAuth, and they carry them differently:
-  // the legacy ones speak CarModPicker's own routes through
-  // `@simplewebauthn/browser` and `@react-oauth/google`, the identity ones go
-  // through the package. `available` says the mode has the affordance at all;
-  // the identity components ask the deployment whether it is actually on and
-  // render nothing when it is not.
-  const available = identityAvailability();
-  const identityMode = AUTH_MODE === 'identity';
-  const passkeySupported =
-    !identityMode && browserSupportsWebAuthn() && available.passkeys;
-  const googleAvailable =
-    !identityMode && isGoogleConfigured() && available.googleOauth;
   const requires2FA = challenge !== null;
-  // Only the identity service issues recovery codes, and one is not six digits,
-  // so the field stops being numeric when they are accepted.
+  // A recovery code is not six digits, so the field stops being numeric when
+  // they are accepted. `PasskeySignInButton` and `OAuthProviderButtons` ask the
+  // deployment whether passkeys and each provider are actually switched on and
+  // render nothing when they are not, which is why there is no build time gate
+  // on either of them here.
   const allowRecoveryCode = acceptsRecoveryCodes();
 
   const [apiError, setApiError] = useState<string | null>(null);
@@ -86,11 +60,11 @@ function Login() {
   /**
    * Finishes a sign in that has already succeeded on the server.
    *
-   * Bearer login answers with the user in the body, so it is handed straight
-   * to the context. Identity login answers with a token and no user, because
-   * this application reads roughly twenty `UserRead` fields that no token claim
-   * carries, so the user is fetched. One function rather than two so the
-   * navigate happens in one place either way.
+   * A sign in answers with a token and no user, because this application reads
+   * roughly twenty `UserRead` fields that no token claim carries, so the user is
+   * fetched. The parameter stays nullable because the passkey and OAuth paths
+   * share this function and a future one could carry a user, and the navigate
+   * then happens in one place rather than at each call site.
    */
   const finishLogin = async (user: UserRead | null) => {
     if (user !== null) {
@@ -144,38 +118,6 @@ function Login() {
       return;
     }
     if (result.status === 'failed') setApiError(result.error);
-  };
-
-  const handlePasskeyLogin = async () => {
-    setApiError(null);
-    setIsPasskeyLoading(true);
-    try {
-      const optsResp = await authApi.webauthnLoginOptions(
-        username.trim() || undefined
-      );
-      const { options, challenge_token } = optsResp.data;
-      const credential = await startAuthentication({
-        optionsJSON: options as unknown as Parameters<
-          typeof startAuthentication
-        >[0]['optionsJSON'],
-      });
-      const result = await authApi.webauthnLoginVerify({
-        challenge_token,
-        credential,
-      });
-      if (result.data) {
-        authLogin(result.data);
-        void navigate(returnTo);
-      }
-    } catch (err: unknown) {
-      if (err instanceof Error && err.name === 'NotAllowedError') {
-        setApiError('Passkey sign-in was cancelled.');
-      } else {
-        setApiError(getApiErrorMessage(err, 'Passkey sign-in failed.'));
-      }
-    } finally {
-      setIsPasskeyLoading(false);
-    }
   };
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -408,14 +350,14 @@ function Login() {
             <Button
               type="submit"
               loading={isLoading}
-              disabled={isLoading || isPasskeyLoading}
+              disabled={isLoading}
               className="w-full"
               size="lg"
             >
               {isLoading ? 'Signing in...' : 'Sign in'}
             </Button>
 
-            {!requires2FA && identityMode && (
+            {!requires2FA && (
               <>
                 <div className="flex items-center gap-3 my-2">
                   <div className="h-px flex-1 bg-muted"></div>
@@ -433,45 +375,6 @@ function Login() {
                   returnTo={returnTo}
                   disabled={isLoading}
                 />
-              </>
-            )}
-
-            {!requires2FA && (passkeySupported || googleAvailable) && (
-              <>
-                <div className="flex items-center gap-3 my-2">
-                  <div className="h-px flex-1 bg-muted"></div>
-                  <span className="text-xs text-muted-foreground uppercase tracking-wider">
-                    or
-                  </span>
-                  <div className="h-px flex-1 bg-muted"></div>
-                </div>
-                {passkeySupported && (
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="lg"
-                    className="w-full"
-                    onClick={() => void handlePasskeyLogin()}
-                    disabled={isLoading || isPasskeyLoading}
-                  >
-                    <FaKey />
-                    <span>
-                      {isPasskeyLoading
-                        ? 'Waiting for your passkey…'
-                        : 'Sign in with a passkey'}
-                    </span>
-                  </Button>
-                )}
-                {googleAvailable && (
-                  <GoogleAuthFlow
-                    onLoggedIn={(user) => {
-                      authLogin(user);
-                      void navigate(returnTo);
-                    }}
-                    onError={(message) => setApiError(message)}
-                    disabled={isLoading || isPasskeyLoading}
-                  />
-                )}
               </>
             )}
           </form>

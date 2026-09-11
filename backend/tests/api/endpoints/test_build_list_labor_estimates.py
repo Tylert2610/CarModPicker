@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 
 from app.core.config import settings
 from app.db.dynamo.users import User, UserRepository
-from tests.conftest import create_car_in_db, login_user
+from tests.conftest import auth_headers, create_car_in_db, login_user
 
 
 def _unique(base: str) -> str:
@@ -16,7 +16,7 @@ def _unique(base: str) -> str:
 
 
 def _auth(token: str) -> dict[str, str]:
-    return {"Authorization": f"Bearer {token}"}
+    return auth_headers(token)
 
 
 def _create_build_list(
@@ -116,13 +116,11 @@ class TestBuildListLaborEstimatesCRUD:
         ).json()
 
         # Second user attempts to edit
-        from app.api.dependencies.auth import get_password_hash
 
         other = UserRepository().create_user(
             User(
                 username=_unique("other"),
                 email=_unique("other") + "@example.com",
-                hashed_password=get_password_hash("testpassword"),
                 email_verified=True,
                 disabled=False,
             )

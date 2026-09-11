@@ -95,9 +95,10 @@ export const mockVoteSummary: VoteSummary = {
 
 // Mock API responses
 export const mockApiResponses = {
-  // Auth endpoints
-  '/auth/login': { data: { access_token: 'mock-token', token_type: 'bearer' } },
-  '/auth/logout': { data: { message: 'Logged out successfully' } },
+  // The signed in user. The `/auth/*` fixtures that used to sit here went with
+  // the routes themselves in row 13 of docs/identity-adoption.md: sign in and
+  // sign out now run through `AuthClient`, which the tests that care stub at
+  // `getIdentityClient` rather than at a URL.
   '/users/me': { data: mockUser },
 
   // Cars endpoints

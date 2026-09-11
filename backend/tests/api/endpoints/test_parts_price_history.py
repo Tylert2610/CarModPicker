@@ -20,7 +20,7 @@ from app.db.dynamo.catalog import PartListing as DBPartListing
 from app.db.dynamo.catalog import PartPriceHistory as DBPartPriceHistory
 from app.db.dynamo.catalog import Retailer as DBRetailer
 from app.db.dynamo.users import User
-from tests.conftest import INVALID_UUID_STR, get_default_category_id, login_user, save_catalog
+from tests.conftest import INVALID_UUID_STR, auth_headers, get_default_category_id, login_user, save_catalog
 
 PRICE_HISTORY_PATH = "/api/parts/{part_id}/price-history"
 BATCH_PRICE_HISTORY_PATH = "/api/parts/price-history"
@@ -31,7 +31,7 @@ TEST_API_KEY = "test-extension-api-key-0123456789"
 
 def _auth_headers(client: TestClient, user: User) -> dict[str, str]:
     """Bearer headers for ``user``."""
-    return {"Authorization": f"Bearer {login_user(client, user.username)}"}
+    return auth_headers(login_user(client, user.username))
 
 
 def _api_key_headers(key: str = TEST_API_KEY) -> dict[str, str]:

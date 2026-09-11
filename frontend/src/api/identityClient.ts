@@ -21,7 +21,6 @@ import {
   type AuthClient,
   type WebAuthnAdapter,
 } from '@webbpulse/auth';
-import { AUTH_MODE } from './authMode';
 import { appConfig } from '../config/app';
 
 /**
@@ -116,17 +115,19 @@ export const setWebAuthnAdapterForTests = (
 };
 
 /**
- * The identity client, or null when this bundle runs the legacy bearer flow.
+ * The identity client, or null when it could not be built.
  *
- * Every caller has to handle null. That is deliberate: the alternative is a
- * throw, and a component that renders a TOTP panel would then have to be
- * mounted only under a mode check somewhere else. A null return lets the panel
- * itself say "not available in this deployment" from the same code path.
+ * The null used to mean "this bundle runs the legacy bearer flow", which row 13
+ * of `docs/identity-adoption.md` removed. It is kept, and every caller still has
+ * to handle it, because construction can fail for its own reasons and a throw
+ * here would take down the whole bundle at first use: a component that renders a
+ * TOTP panel would have to be mounted only under a check somewhere else, whereas
+ * a null return lets the panel itself say "not available in this deployment"
+ * from the same code path.
  */
 export const getIdentityClient = (): AuthClient<unknown> | null => {
   if (built) return client;
   built = true;
-  if (AUTH_MODE !== 'identity') return null;
   // The origin, not `appConfig.apiBaseUrl`. See `identityOriginFrom`.
   //
   // An empty origin means the API shares the page's origin, which is the dev

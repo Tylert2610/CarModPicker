@@ -8,21 +8,16 @@
 // `paramsSerializer` that repeated array keys, and three `localStorage`
 // helpers.
 //
-// This file now builds one of two clients, selected by `./authMode`.
+// This file used to build one of two clients. Row 13 of
+// `docs/identity-adoption.md` deleted the bearer one along with the 24 routes
+// under `/api/auth` it talked to, and with it `./tokenStore`, which is gone from
+// the tree.
 //
-// In `bearer` mode, which is what every environment still runs, it is exactly
-// what it was: the token comes from `localStorage` through `./tokenStore` and
-// goes out as an `Authorization` header, and a rotated token arriving in
-// `x-new-access-token` is written back. `@webbpulse/auth` 0.4.0 removed
-// `TokenStore` outright, which is why that store is local again rather than
-// imported.
-//
-// In `identity` mode the client is handed an `AuthClient` as `auth` instead.
-// That one object holds the access token in memory, refreshes it from an
-// httpOnly cookie, collapses concurrent refreshes into one, and replays a
-// request that came back 401. `./tokenStore` is then unreachable: the three
-// helpers below become a read-through and two no-ops, because writing an access
-// token anywhere a script can read it back is the one thing section 7.1 of the
+// The client is handed an `AuthClient` as `auth`. That one object holds the
+// access token in memory, refreshes it from an httpOnly cookie, collapses
+// concurrent refreshes into one, and replays a request that came back 401.
+// Nothing is written to `localStorage`, because putting an access token
+// anywhere a script can read it back is the one thing section 7.1 of the
 // identity standard forbids.
 //
 // What did NOT change is the contract this file exports. Ninety modules under
@@ -48,73 +43,49 @@ import {
   type QueryParams,
   type RequestOptions,
 } from '@webbpulse/api-client';
-import { TokenStore } from './tokenStore';
-import { AUTH_MODE } from './authMode';
 import { getIdentityClient } from './identityClient';
 import { appConfig } from '../config/app';
 
 /**
- * Token storage key. Unchanged from the hand-rolled version: changing it would
- * sign every existing user out on the deploy that adopted this package.
- */
-const TOKEN_STORAGE_KEY = 'access_token';
-
-/**
- * Probes `localStorage` with a real write and falls back to an in-memory store.
- * Safari in private mode exposes a `localStorage` whose `setItem` throws, which
- * the direct calls this replaced did not survive.
- */
-const tokenStore = new TokenStore(TOKEN_STORAGE_KEY);
-
-/**
- * Get the token.
+ * Get the access token.
  *
- * In identity mode there is nothing in `localStorage` to get, and the access
- * token lives in `AuthClient`'s closure. Reading it through here rather than
- * returning null keeps the one caller that genuinely needs the raw string,
- * `ExtensionAuth`, working in both modes off a single call.
+ * There is nothing in `localStorage` to get: the token lives in `AuthClient`'s
+ * closure. Reading it through here rather than exposing the client keeps the one
+ * caller that genuinely needs the raw string, `ExtensionAuth`, to a single call.
  */
 export const getStoredToken = (): string | null =>
-  AUTH_MODE === 'identity'
-    ? (getIdentityClient()?.getAccessToken() ?? null)
-    : tokenStore.get();
+  getIdentityClient()?.getAccessToken() ?? null;
 
 /**
- * Store the token.
+ * Store the token. A no-op, and deliberately still callable.
  *
- * A no-op in identity mode. Section 7.1 of the identity standard puts the
- * access token in memory and nowhere a script can read it back after a reload,
- * so writing it to `localStorage` would defeat the control the whole mode
- * exists for. `AuthClient` owns the token; nothing outside it may put one back.
+ * Section 7.1 of the identity standard puts the access token in memory and
+ * nowhere a script can read it back after a reload, so there is no store to
+ * write to. `AuthClient` owns the token and nothing outside it may put one back.
+ * Kept as an export so the call sites that used to need it do not each grow a
+ * branch, and so that a caller reaching for it finds this note rather than
+ * reintroducing a store.
  */
-export const setStoredToken = (token: string): void => {
-  if (AUTH_MODE === 'identity') return;
-  tokenStore.set(token);
-};
+export const setStoredToken = (_token: string): void => {};
 
 /**
- * Forget the token.
+ * Forget the token. Also a no-op.
  *
- * In identity mode the session is the refresh cookie rather than anything
- * local, and only the server can revoke it, so the caller wants
- * `AuthClient.logout()` and this becomes a no-op. It is left callable so the
- * two error paths in `AuthContext` do not need a mode branch of their own.
+ * The session is the refresh cookie rather than anything local, and only the
+ * server can revoke it, so the caller wants `AuthClient.logout()`. Left callable
+ * so the two error paths in `AuthContext` do not need a branch of their own.
  */
-export const removeStoredToken = (): void => {
-  if (AUTH_MODE === 'identity') return;
-  tokenStore.clear();
-};
+export const removeStoredToken = (): void => {};
 
 /**
- * The identity token provider, or undefined in bearer mode.
+ * The identity token provider.
  *
  * Passing `auth` is what turns on the shared client's retry-once-on-401
  * pipeline: it reads the access token before each request, and on a 401 calls
  * `refresh()` once, waits on the single in-flight refresh if one is already
- * running, and replays the request. That is the entire mechanism, and it
- * replaces `getAuthToken` plus `onTokenRefresh` rather than joining them.
+ * running, and replays the request. That is the entire mechanism.
  */
-const identityAuth = AUTH_MODE === 'identity' ? getIdentityClient() : null;
+const identityAuth = getIdentityClient();
 
 const sharedClient = createApiClient({
   baseUrl: appConfig.apiBaseUrl,
@@ -123,23 +94,18 @@ const sharedClient = createApiClient({
   // apex, so a request from www.staging to api.staging only carries them when
   // the browser is told to include credentials. Both backends run CORS with
   // allow_credentials and an explicit origin list, so this is safe in every
-  // environment; auth itself still rides on the Bearer token below.
+  // environment.
   //
   // This is the shared client's default, stated explicitly because it is load
-  // bearing here rather than incidental. In identity mode it is load bearing
-  // twice over: the refresh cookie is httpOnly and only travels on a
-  // credentialed request.
+  // bearing here rather than incidental, and doubly so now: the refresh cookie
+  // is httpOnly and only travels on a credentialed request.
   credentials: 'include',
   timeoutMs: 30000,
-  // Exactly one of these two branches is live in a given bundle. In identity
-  // mode `auth` supplies the token and owns refreshing it; in bearer mode
-  // `getAuthToken` reads `localStorage` and `onTokenRefresh` writes back the
-  // rotated token the API sends in `x-new-access-token`, for example after a
-  // username change. Handing the client both would let a stale stored token
-  // shadow the in-memory one.
-  ...(identityAuth !== null
-    ? { auth: identityAuth }
-    : { getAuthToken: getStoredToken, onTokenRefresh: setStoredToken }),
+  // `auth` supplies the token and owns refreshing it. `getAuthToken` and
+  // `onTokenRefresh`, which read and wrote `localStorage` in the bearer bundle,
+  // are deliberately not passed: handing the client both would let a stale
+  // stored token shadow the in-memory one.
+  ...(identityAuth !== null ? { auth: identityAuth } : {}),
 });
 
 /**

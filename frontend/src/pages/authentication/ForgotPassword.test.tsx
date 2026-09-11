@@ -1,7 +1,11 @@
-// Phase 8 Plan 10 (D-11 Wave 3) — ForgotPassword page coverage.
+// ForgotPassword page coverage.
 //
-// Form: single email field → authApi.resetPassword({ email }) → confirmation
-// alert. Uses the shared mocked apiClient via setup.ts + test-utils.tsx.
+// Form: single email field, then `requestPasswordReset` from `../../api/identityAuth`,
+// then a confirmation alert. The page stopped posting to `apiClient` directly
+// when row 13 of docs/identity-adoption.md removed the legacy routes, so the
+// seam mocked here is that function rather than the HTTP client underneath it:
+// which service sends the mail is exactly what the page must not get wrong, and
+// asserting on the call names it.
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
@@ -11,8 +15,12 @@ import {
   fireEvent,
   testScenarios,
 } from '../../test/utils/test-utils';
-import { apiClient } from '../../api/client';
+import { requestPasswordReset } from '../../api/identityAuth';
 import ForgotPassword from './ForgotPassword';
+
+vi.mock('../../api/identityAuth', () => ({
+  requestPasswordReset: vi.fn(),
+}));
 
 const submitForm = (email: string) => {
   const emailInput = screen.getByPlaceholderText(/you@example\.com/i);
@@ -39,23 +47,18 @@ describe('ForgotPassword page', () => {
   });
 
   it('submits the email and shows a confirmation message on success', async () => {
-    vi.mocked(apiClient.post).mockResolvedValueOnce({
-      data: { message: 'Email sent' },
+    vi.mocked(requestPasswordReset).mockResolvedValueOnce({
+      ok: true,
+      message:
+        'If an account with that email exists, a password reset link has been sent.',
     });
 
     render(<ForgotPassword />, testScenarios.unauthenticated);
     submitForm('user@example.com');
 
     await waitFor(() => {
-      expect(apiClient.post).toHaveBeenCalled();
+      expect(requestPasswordReset).toHaveBeenCalledWith('user@example.com');
     });
-    expect(vi.mocked(apiClient.post).mock.calls[0]?.[0]).toBe(
-      '/auth/reset-password'
-    );
-
-    const rawBody: unknown = vi.mocked(apiClient.post).mock.calls[0]?.[1];
-    const body = rawBody as { email: string };
-    expect(body.email).toBe('user@example.com');
 
     await waitFor(() => {
       expect(
@@ -66,7 +69,7 @@ describe('ForgotPassword page', () => {
     });
   });
 
-  it('rejects an empty email without calling the API', async () => {
+  it('rejects an empty email without asking for a mail', async () => {
     render(<ForgotPassword />, testScenarios.unauthenticated);
     submitForm('');
 
@@ -75,6 +78,6 @@ describe('ForgotPassword page', () => {
         screen.getByText(/email address cannot be empty/i)
       ).toBeInTheDocument();
     });
-    expect(apiClient.post).not.toHaveBeenCalled();
+    expect(requestPasswordReset).not.toHaveBeenCalled();
   });
 });

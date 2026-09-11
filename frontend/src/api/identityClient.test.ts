@@ -69,25 +69,11 @@ describe('identityOriginFrom', () => {
 });
 
 describe('getIdentityClient', () => {
-  it('returns null in bearer mode', async () => {
-    // The default every environment runs today. A null client is what the
-    // pages branch on to render their "not available in this deployment"
-    // states, so this is load bearing rather than incidental.
-    vi.stubEnv('VITE_AUTH_MODE', '');
-    vi.resetModules();
-    const { getIdentityClient: fresh } = await import('./identityClient');
-    expect(fresh()).toBeNull();
-  });
-
-  it('returns null when the mode is explicitly bearer', async () => {
-    vi.stubEnv('VITE_AUTH_MODE', 'bearer');
-    vi.resetModules();
-    const { getIdentityClient: fresh } = await import('./identityClient');
-    expect(fresh()).toBeNull();
-  });
-
-  it('builds a client in identity mode and caches it', async () => {
-    vi.stubEnv('VITE_AUTH_MODE', 'identity');
+  it('builds a client and caches it', async () => {
+    // There is no mode to select any more: row 13 of docs/identity-adoption.md
+    // deleted the legacy routes, so this always builds. The null return is kept
+    // for a construction failure, which no test here can provoke without
+    // stubbing the package itself.
     vi.resetModules();
     const { getIdentityClient: fresh } = await import('./identityClient');
     const first = fresh();
@@ -98,7 +84,10 @@ describe('getIdentityClient', () => {
     expect(fresh()).toBe(first);
   });
 
-  it('is a no-op to call repeatedly in bearer mode', () => {
+  it('hands out the same instance to the module-level import too', () => {
+    // The caching test above re-imports the module; this one goes through the
+    // binding the rest of the bundle actually holds, which is the one that
+    // would break if the cache moved into the import rather than the call.
     expect(getIdentityClient()).toBe(getIdentityClient());
   });
 });

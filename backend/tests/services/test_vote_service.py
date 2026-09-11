@@ -206,19 +206,16 @@ class TestVoteService:
         )
 
         # Create votes from multiple users
-        from app.api.dependencies.auth import get_password_hash
 
         user2 = User(
             username=get_unique_name("user2"),
             email=f"{get_unique_name('user2')}@example.com",
-            hashed_password=get_password_hash("testpassword"),
             email_verified=True,
             disabled=False,
         )
         user3 = User(
             username=get_unique_name("user3"),
             email=f"{get_unique_name('user3')}@example.com",
-            hashed_password=get_password_hash("testpassword"),
             email_verified=True,
             disabled=False,
         )
@@ -289,13 +286,11 @@ class TestVoteService:
     def test_get_flagged_entities(self, db_session: Any, test_user: User) -> None:
         """Test getting flagged entities."""
         # Create multiple build lists with votes
-        from app.api.dependencies.auth import get_password_hash
 
         user2 = UserRepository().create_user(
             User(
                 username=get_unique_name("user4"),
                 email=f"{get_unique_name('user4')}@example.com",
-                hashed_password=get_password_hash("testpassword"),
                 email_verified=True,
                 disabled=False,
             )
@@ -323,7 +318,6 @@ class TestVoteService:
             user = User(
                 username=get_unique_name(f"voter{i}"),
                 email=f"{get_unique_name(f'voter{i}')}@example.com",
-                hashed_password=get_password_hash("testpassword"),
                 email_verified=True,
                 disabled=False,
             )

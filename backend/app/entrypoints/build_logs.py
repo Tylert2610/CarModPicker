@@ -2,7 +2,8 @@
 
 Forum-style build log threads and their posts: 5 routes under `/api/build-logs`.
 
-Four of them verify a token, so the domain needs `SECRET_KEY`.
+Four of them verify an identity access token, which needs no application
+secret, so this domain does not name `SECRET_KEY`.
 
 Run by the image as `python -m app.entrypoints.build_logs`. `handler` is the
 Lambda entry point and is still Mangum, which is what `app/lambda_handler.py`
