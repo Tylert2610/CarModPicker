@@ -703,6 +703,70 @@ module "api" {
   # authorizer runs on every route and admits an OPTIONS preflight, a call carrying the
   # origin-verify header (pipelines, health checks), or a browser call carrying the gate's
   # signed cookies.
+  # CORS answered by the gateway, ahead of the routes.
+  #
+  # Today every route key here is `ANY <prefix>` or `ANY <prefix>/{proxy+}` and
+  # `$default` still points at the monolith, so an OPTIONS preflight matches a
+  # route on any path and FastAPI's CORSMiddleware answers it. That is the only
+  # reason CORS works without this block, and it is not a property of the
+  # design: it is a property of `ANY` matching OPTIONS and of `$default`
+  # catching everything else.
+  #
+  # Both of those are going away. Each row cut replaces a fall-through with
+  # explicit keys, and the identity JWT flags add explicit method keys. The
+  # moment a path is served by a method key with no OPTIONS sibling, its
+  # preflight matches no route, API Gateway answers its own 404 with no CORS
+  # headers on it, and the browser reports an opaque CORS failure. That is
+  # exactly how browser sign-in broke on WebbPulse-Portfolio after its identity
+  # cutover, with the same module and the same shape of routes map.
+  #
+  # Configuring it now rather than during the cut also buys the other half: API
+  # Gateway attaches these headers to every response it produces itself,
+  # authorizer 401s included. A request the staging access gate or a JWT
+  # authorizer refuses never reaches the function, so the middleware can never
+  # put CORS headers on it, and a genuine 401 reads in the browser as a CORS
+  # error rather than as a sign-in error.
+  #
+  # The values mirror backend/app/composition/wiring.py's CORSMiddleware so the
+  # two agree. Two deliberate differences:
+  #
+  #   - `allow_origins` comes from local.cors_allow_origins, not from
+  #     local.allowed_origins. See the comment there: the env var local is the
+  #     empty string on production and the application falls back to its own
+  #     defaults, which a gateway list cannot do.
+  #   - `expose_headers` is an explicit list where the middleware passes ["*"].
+  #     A wildcard Access-Control-Expose-Headers is not honoured by browsers on
+  #     a credentialed response, and these calls are credentialed, so the
+  #     wildcard is already doing nothing there. Naming the headers is what
+  #     actually makes them readable, and the ones named are the headers this
+  #     application actually emits: X-Request-ID from
+  #     api/middleware/request_context.py, and Retry-After plus the two
+  #     X-RateLimit-Limit-* headers from api/middleware/rate_limiter.py.
+  #
+  # The middleware stays in place. It is what serves `docker run` and the test
+  # suite, where there is no gateway at all, and with both configured to the
+  # same values there is nothing for them to disagree about.
+  cors_configuration = {
+    allow_origins = local.cors_allow_origins
+    allow_methods = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+    allow_headers = [
+      "Accept",
+      "Authorization",
+      "Content-Type",
+      "Origin",
+      "X-Admin-Cron-Key",
+      "X-Requested-With",
+    ]
+    expose_headers = [
+      "Retry-After",
+      "X-RateLimit-Limit-Hour",
+      "X-RateLimit-Limit-Minute",
+      "X-Request-ID",
+    ]
+    allow_credentials = true
+    max_age           = 86400
+  }
+
   disable_execute_api_endpoint = local.staging_gate_enabled
   authorizer_id                = local.staging_gate_enabled ? module.staging_access_gate[0].http_api_authorizer_id : null
 
