@@ -215,7 +215,7 @@ async def read_build_lists_with_votes(
 
 
 @router.post(
-    "/",
+    "",
     response_model=BuildListRead,
     responses=standard_responses(
         success_description="Build list created successfully",

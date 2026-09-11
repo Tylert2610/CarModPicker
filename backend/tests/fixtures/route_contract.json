@@ -93,7 +93,7 @@
   ],
   [
     "GET",
-    "/api/app-settings/"
+    "/api/app-settings"
   ],
   [
     "GET",
@@ -149,7 +149,7 @@
   ],
   [
     "GET",
-    "/api/build-lists/"
+    "/api/build-lists"
   ],
   [
     "GET",
@@ -193,7 +193,7 @@
   ],
   [
     "GET",
-    "/api/car-generations/"
+    "/api/car-generations"
   ],
   [
     "GET",
@@ -277,7 +277,7 @@
   ],
   [
     "GET",
-    "/api/part-manufacturers/"
+    "/api/part-manufacturers"
   ],
   [
     "GET",
@@ -313,7 +313,7 @@
   ],
   [
     "GET",
-    "/api/parts/"
+    "/api/parts"
   ],
   [
     "GET",
@@ -385,7 +385,7 @@
   ],
   [
     "GET",
-    "/api/retailers/"
+    "/api/retailers"
   ],
   [
     "GET",
@@ -581,7 +581,7 @@
   ],
   [
     "POST",
-    "/api/build-lists/"
+    "/api/build-lists"
   ],
   [
     "POST",
@@ -617,15 +617,15 @@
   ],
   [
     "POST",
-    "/api/part-manufacturers/"
+    "/api/part-manufacturers"
   ],
   [
     "POST",
-    "/api/part-price-alerts/"
+    "/api/part-price-alerts"
   ],
   [
     "POST",
-    "/api/parts/"
+    "/api/parts"
   ],
   [
     "POST",
@@ -645,7 +645,7 @@
   ],
   [
     "POST",
-    "/api/retailers/"
+    "/api/retailers"
   ],
   [
     "POST",
@@ -665,7 +665,7 @@
   ],
   [
     "PUT",
-    "/api/app-settings/"
+    "/api/app-settings"
   ],
   [
     "PUT",

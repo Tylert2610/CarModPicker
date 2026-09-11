@@ -232,7 +232,7 @@ async def find_part_by_part_manufacturer_and_part_number_endpoint(
 
 
 @router.post(
-    "/",
+    "",
     response_model=PartRead,
     responses={
         400: {"description": "Bad request"},
@@ -559,7 +559,7 @@ async def post_batch_price_history(
 
 
 @router.get(
-    "/",
+    "",
     response_model=CursorPage[PartRead],
     responses={200: {"description": "Part page retrieved successfully"}},
 )

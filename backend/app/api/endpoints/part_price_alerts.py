@@ -44,7 +44,7 @@ router = APIRouter()
 
 
 @router.post(
-    "/",
+    "",
     response_model=PartPriceAlertRead,
     status_code=status.HTTP_201_CREATED,
     responses=standard_responses(

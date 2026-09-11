@@ -64,7 +64,7 @@ async def count_part_manufacturers(repos: Repositories = Depends(get_repositorie
     return {"count": repos.part_manufacturers.count()}
 
 
-@router.get("/", response_model=List[PartManufacturerResponse])
+@router.get("", response_model=List[PartManufacturerResponse])
 async def get_part_manufacturers(
     active_only: bool = Query(True, description="Only return active part manufacturers"),
     repos: Repositories = Depends(get_repositories),
@@ -122,7 +122,7 @@ async def get_parts_by_part_manufacturer(
 
 
 @router.post(
-    "/",
+    "",
     response_model=PartManufacturerResponse,
     responses=crud_responses("part manufacturer", "create"),
 )

@@ -212,10 +212,10 @@ def _dependency_names(route: object) -> Set[str]:
 def _route_key(method: str, path: str) -> str:
     """`<METHOD> <path>`, with the trailing slash removed.
 
-    A route key may not end in a slash: API Gateway normalises the trailing
-    slash onto the bare key and rejects the other spelling at apply time on a
-    plan that was green. `POST /api/build-lists/` in FastAPI is therefore
-    `POST /api/build-lists` here.
+    A route key may not end in a slash: API Gateway rejects that spelling at
+    create time. It does not normalise an inbound trailing slash onto the bare
+    key either, so a flagged route whose FastAPI path keeps the slash is never
+    matched. See `test_no_flagged_route_is_declared_with_a_trailing_slash`.
     """
     return f"{method} {path.rstrip('/') or path}"
 
@@ -347,6 +347,47 @@ def test_no_route_key_ends_in_a_slash() -> None:
     for key in sorted(set(terraform_domain_route_keys()) | set(terraform_guard_route_keys())):
         path = key.split(" ", 1)[1]
         assert path == "/" or not path.endswith("/"), f"{key} ends in a slash and would fail at apply time"
+
+
+def test_no_flagged_route_is_declared_with_a_trailing_slash() -> None:
+    """A flagged route's FastAPI path must match the key the gateway carries.
+
+    API Gateway refuses a route key ending in a slash and does not normalise an
+    inbound one onto the bare key, so `POST /api/build-lists/` matched the
+    unflagged `ANY /api/build-lists/{proxy+}` instead, arrived with no authorizer
+    claims and answered 401 to a valid identity token. Declaring the path without
+    the slash makes the flagged key the one that matches; the sibling routes on the
+    same base must lose the slash too, or the slashed request answers 405.
+    """
+    flagged = set(terraform_domain_route_keys())
+    offenders = sorted(
+        f"{method} {path}"
+        for method, path, _ in _application_routes()
+        if path.endswith("/") and path != "/" and _route_key(method, path) in flagged
+    )
+    assert not offenders, (
+        f"{offenders} are flagged in apigateway.tf but declared with a trailing slash, so the "
+        "gateway routes them to the unflagged {proxy+} key and they answer 401 to a valid "
+        'identity token. Declare the path as "" rather than "/".'
+    )
+
+
+def test_no_base_path_mixes_the_slashed_and_bare_spellings() -> None:
+    """Every root path must use one spelling across all its methods.
+
+    Starlette redirects a trailing slash only when nothing matches the slashed path,
+    so a base carrying `GET "/"` beside `POST ""` answers 405 to `POST /x/` rather
+    than redirecting, which breaks callers that still send the slash.
+    """
+    spellings: dict[str, set[str]] = {}
+    for method, path, _ in _application_routes():
+        base = path.rstrip("/") or "/"
+        spellings.setdefault(base, set()).add(path)
+    offenders = sorted(base for base, seen in spellings.items() if len(seen) > 1)
+    assert not offenders, (
+        f"{offenders} declare both the slashed and bare spelling, so the slashed request "
+        "answers 405 instead of redirecting onto the bare key."
+    )
 
 
 def test_anonymous_routes_are_not_captured_by_a_named_path_parameter_key() -> None:

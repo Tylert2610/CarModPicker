@@ -5990,10 +5990,10 @@
         ]
       }
     },
-    "/api/app-settings/": {
+    "/api/app-settings": {
       "get": {
         "description": "Public: current global app settings (used by the frontend to honor toggles).",
-        "operationId": "get_app_settings_api_app_settings__get",
+        "operationId": "get_app_settings_api_app_settings_get",
         "responses": {
           "200": {
             "content": {
@@ -6013,7 +6013,7 @@
       },
       "put": {
         "description": "Admin-only: update global app settings. Only provided fields change.",
-        "operationId": "update_app_settings_api_app_settings__put",
+        "operationId": "update_app_settings_api_app_settings_put",
         "requestBody": {
           "content": {
             "application/json": {
@@ -8506,9 +8506,9 @@
         ]
       }
     },
-    "/api/build-lists/": {
+    "/api/build-lists": {
       "get": {
-        "operationId": "list_entities_api_build_lists__get",
+        "operationId": "list_entities_api_build_lists_get",
         "parameters": [
           {
             "description": "Maximum number of items to return",
@@ -8572,7 +8572,7 @@
       },
       "post": {
         "description": "Create a build list. Free accounts are capped at one.",
-        "operationId": "create_build_list_api_build_lists__post",
+        "operationId": "create_build_list_api_build_lists_post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -10055,9 +10055,9 @@
         ]
       }
     },
-    "/api/car-generations/": {
+    "/api/car-generations": {
       "get": {
-        "operationId": "list_entities_api_car_generations__get",
+        "operationId": "list_entities_api_car_generations_get",
         "parameters": [
           {
             "description": "Maximum number of items to return",
@@ -11235,10 +11235,10 @@
         ]
       }
     },
-    "/api/part-manufacturers/": {
+    "/api/part-manufacturers": {
       "get": {
         "description": "List part manufacturers.",
-        "operationId": "get_part_manufacturers_api_part_manufacturers__get",
+        "operationId": "get_part_manufacturers_api_part_manufacturers_get",
         "parameters": [
           {
             "description": "Only return active part manufacturers",
@@ -11261,7 +11261,7 @@
                   "items": {
                     "$ref": "#/components/schemas/PartManufacturerResponse"
                   },
-                  "title": "Response Get Part Manufacturers Api Part Manufacturers  Get",
+                  "title": "Response Get Part Manufacturers Api Part Manufacturers Get",
                   "type": "array"
                 }
               }
@@ -11286,7 +11286,7 @@
       },
       "post": {
         "description": "Create a manufacturer.\n\nDedupes by case-insensitive name (and canonical key) so the same brand\nisn't minted twice \u2014 an existing match is returned instead.",
-        "operationId": "create_part_manufacturer_api_part_manufacturers__post",
+        "operationId": "create_part_manufacturer_api_part_manufacturers_post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -11755,10 +11755,10 @@
         ]
       }
     },
-    "/api/part-price-alerts/": {
+    "/api/part-price-alerts": {
       "post": {
         "description": "Subscribe the current user to a price-drop alert on a part.\n\nIdempotent on (user_id, part_id) \u2014 re-subscribing updates the threshold and\nreactivates a previously-soft-deleted alert instead of creating a duplicate.",
-        "operationId": "subscribe_to_part_price_alert_api_part_price_alerts__post",
+        "operationId": "subscribe_to_part_price_alert_api_part_price_alerts_post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -11989,10 +11989,10 @@
         ]
       }
     },
-    "/api/parts/": {
+    "/api/parts": {
       "get": {
         "description": "List canonical parts newest-first, optionally filtered by a search term.",
-        "operationId": "list_parts_api_parts__get",
+        "operationId": "list_parts_api_parts_get",
         "parameters": [
           {
             "description": "Search in part names and descriptions",
@@ -12074,7 +12074,7 @@
       },
       "post": {
         "description": "Create a user-contributed part, optionally with a retailer listing and price.",
-        "operationId": "create_part_api_parts__post",
+        "operationId": "create_part_api_parts_post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -14161,10 +14161,10 @@
         ]
       }
     },
-    "/api/retailers/": {
+    "/api/retailers": {
       "get": {
         "description": "Get all retailers (optionally filtered to active only).",
-        "operationId": "get_retailers_api_retailers__get",
+        "operationId": "get_retailers_api_retailers_get",
         "parameters": [
           {
             "description": "Only return active retailers",
@@ -14187,7 +14187,7 @@
                   "items": {
                     "$ref": "#/components/schemas/RetailerRead"
                   },
-                  "title": "Response Get Retailers Api Retailers  Get",
+                  "title": "Response Get Retailers Api Retailers Get",
                   "type": "array"
                 }
               }
@@ -14212,7 +14212,7 @@
       },
       "post": {
         "description": "Create a new retailer (admin only).",
-        "operationId": "create_retailer_api_retailers__post",
+        "operationId": "create_retailer_api_retailers_post",
         "requestBody": {
           "content": {
             "application/json": {

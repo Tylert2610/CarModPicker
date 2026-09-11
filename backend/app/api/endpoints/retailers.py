@@ -55,7 +55,7 @@ async def count_retailers(repos: Repositories = Depends(get_repositories)) -> Di
     return {"count": repos.retailers.count()}
 
 
-@router.get("/", response_model=List[RetailerRead])
+@router.get("", response_model=List[RetailerRead])
 async def get_retailers(
     active_only: bool = Query(True, description="Only return active retailers"),
     repos: Repositories = Depends(get_repositories),
@@ -109,7 +109,7 @@ async def get_retailer(retailer_id: UUID, repos: Repositories = Depends(get_repo
 
 
 @router.post(
-    "/",
+    "",
     response_model=RetailerRead,
     responses=crud_responses("retailer", "create"),
 )

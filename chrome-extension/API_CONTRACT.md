@@ -214,7 +214,7 @@ TESTING=true ENABLE_RATE_LIMITING=false python scripts/generate_ext_api_contract
 
 ---
 
-## `GET /api/retailers/`
+## `GET /api/retailers`
 
 **Summary:** Get Retailers
 
@@ -235,7 +235,7 @@ TESTING=true ENABLE_RATE_LIMITING=false python scripts/generate_ext_api_contract
   "items": {
     "$ref": "#/components/schemas/RetailerRead"
   },
-  "title": "Response Get Retailers Api Retailers  Get",
+  "title": "Response Get Retailers Api Retailers Get",
   "type": "array"
 }
 ```
@@ -863,7 +863,7 @@ adding parts from a retailer not yet in the catalog. Any authenticated user.
 
 ---
 
-## `POST /api/parts/`
+## `POST /api/parts`
 
 **Summary:** Create Part
 
@@ -1430,7 +1430,7 @@ adding parts from a retailer not yet in the catalog. Any authenticated user.
 
 ---
 
-## `GET /api/part-manufacturers/`
+## `GET /api/part-manufacturers`
 
 **Summary:** Get Part Manufacturers
 
@@ -1451,7 +1451,7 @@ adding parts from a retailer not yet in the catalog. Any authenticated user.
   "items": {
     "$ref": "#/components/schemas/PartManufacturerResponse"
   },
-  "title": "Response Get Part Manufacturers Api Part Manufacturers  Get",
+  "title": "Response Get Part Manufacturers Api Part Manufacturers Get",
   "type": "array"
 }
 ```
@@ -1477,7 +1477,7 @@ adding parts from a retailer not yet in the catalog. Any authenticated user.
 
 ---
 
-## `POST /api/part-manufacturers/`
+## `POST /api/part-manufacturers`
 
 **Summary:** Create Part Manufacturer
 
@@ -1588,7 +1588,7 @@ isn't minted twice — an existing match is returned instead.
 
 ---
 
-## `GET /api/car-generations/`
+## `GET /api/car-generations`
 
 **Summary:** List Entities
 
