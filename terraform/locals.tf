@@ -51,38 +51,8 @@ locals {
   dev_origins     = ["http://localhost", "http://localhost:3000", "http://localhost:4000"]
   allowed_origins = var.environment == "production" ? "" : join(",", concat(local.dev_origins, local.custom_domain ? ["https://${local.domain_name}", "https://www.${local.domain_name}"] : [local.frontend_url]))
 
-  # The origin list API Gateway answers CORS preflight with, in apigateway.tf.
-  #
-  # This is deliberately NOT local.allowed_origins. That one is the Lambda's
-  # ALLOWED_ORIGINS env var and it is the empty string on production, where
-  # lambda.tf's `if value != ""` filter drops it from the environment so the
-  # application falls back to the defaults baked into
-  # backend/app/core/config.py. A gateway cors_configuration has no such
-  # fallback: it is the literal list API Gateway matches Origin against, so
-  # production has to be spelled out here rather than left empty.
-  #
-  # The three parts mirror what the application's CORSMiddleware actually
-  # admits at runtime, so the gateway and the function agree rather than
-  # disagree:
-  #   - the site itself, apex and www, per environment
-  #   - the localhost dev origins, which config.py's default carries in both
-  #     environments and which cost nothing at the gateway
-  #   - the published Chrome extension. config.py defaults CHROME_EXTENSION_IDS
-  #     to the store id and nothing in Terraform sets it, so the extension's
-  #     `chrome-extension://<id>` origin is part of the runtime list and would
-  #     be silently dropped by a gateway list built from the site domains
-  #     alone. The id is public: it is in every store URL and in the
-  #     CWS_EXTENSION_ID GitHub variable.
-  #
-  # An unpacked development id overrides CHROME_EXTENSION_IDS on the function
-  # only. Preflight for it is answered by the function today and would stop
-  # being answered once route keys become explicit, which is a development-only
-  # gap worth naming here rather than discovering later.
-  chrome_extension_origins = ["chrome-extension://dbglgmnnfandmnacdpibkfggkadjikkg"]
-
   cors_allow_origins = concat(
     ["https://${local.domain_name}", "https://www.${local.domain_name}"],
     local.dev_origins,
-    local.chrome_extension_origins,
   )
 }
