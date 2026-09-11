@@ -387,6 +387,40 @@ workspace variable once the frontend sends identity tokens.
 applying.** It is the same shape of change in reverse and equally cheap, because
 in gate mode no route resource moves in either direction.
 
+### Step 4 is blocked: 95 route keys do not fit in a Lambda environment
+
+Steps 1 to 3 are done in staging as of 2026-09-11. Step 4 planned correctly, 0 to
+add and 1 to change, and then **failed at apply**:
+
+```
+InvalidParameterValueException: ... environment variables exceeded the 4KB
+limit. Measured size: 4545 bytes
+```
+
+Lambda caps a function's whole environment variable map at 4096 bytes. The gate
+authorizer already carries ten other variables (869 bytes, including a 451 byte
+public key PEM), and `IDENTITY_JWT_ROUTE_KEYS` holding all 95 keys is 3600 bytes
+on its own. The overage is 449 bytes, which is about a dozen domain keys, and
+dropping a key means not enforcing that route, so there is nothing to trim.
+
+`UpdateFunctionConfiguration` is atomic, so the authorizer kept its previous
+configuration and staging stayed healthy throughout. The estate is sitting at the
+end of step 3, which is a designed, safe resting point: the frontend sends
+identity tokens, the domain routes accept them, and nothing is enforced yet.
+
+**The plan cannot catch this.** Terraform checks the shape of the environment
+map, not its serialized size, which only the Lambda API measures at apply. Treat
+a green plan on this resource as no evidence about size.
+
+**The fix belongs in `terraform-aws-platform-modules`**, since the
+`staging-access-gate` module is what writes the variable. The route key list has
+to stop being an environment variable, most plausibly by moving into the
+authorizer's deployment package or into SSM or S3 read at cold start. Compressing
+the value buys room without removing the ceiling, and enforcing by prefix instead
+of by key would break the two anonymous guard routes that exist precisely because
+prefix matching is unsafe here. This is an owner decision, and production will hit
+the same ceiling when it flags its own routes.
+
 ## What is not here yet
 
 ### Deliberately not in row 4
@@ -436,14 +470,14 @@ unchanged per environment, so no passkey is re-enrolled and no link is re-made.
 | 3 | Package: per-user refresh TTL hook or settings field | owner decision | open |
 | 4 | Terraform: `module.identity` 2.7, six tables, two KMS keys, env merge | — | landed |
 | 5 | Backend M1 to M4: hooks, `composition/identity.py`, mount | 4 | landed |
-| 6 | Frontend: `AuthClient`, delete `tokenStore`, verify and reset pages, behind `VITE_AUTH_MODE` | — | |
-| 7 | Credential migration script plus TOTP seed sealing script | 5 | |
+| 6 | Frontend: `AuthClient`, delete `tokenStore`, verify and reset pages, behind `VITE_AUTH_MODE` | — | landed |
+| 7 | Credential migration script plus TOTP seed sealing script | 5 | landed |
 | 8 | Terraform: `identity_jwt_mode`, fifteen explicit `/api/auth` route keys, gate enforcement in staging | 4, 5 | landed |
 | 9 | Backend M5 and M6 adoption | 1, 2, 5 | landed |
 | 10 | Chrome extension: auth option, handoff page, publish | 6 | landed |
 | 11 | Domains read authorizer claims; `sub` becomes the user id | 8, 9 | landed |
-| 12a | Terraform: 80 explicit domain route keys behind `domain_jwt_enforced`, default off | 11 | **this change** |
-| 12 | Cutover: flip `VITE_AUTH_MODE`, run migrations, verify, then `domain_jwt_enforced = true` | 7, 9, 10, 11, 12a | |
+| 12a | Terraform: 80 explicit domain route keys behind `domain_jwt_enforced`, default off | 11 | landed |
+| 12 | Cutover: flip `VITE_AUTH_MODE`, run migrations, verify, then `domain_jwt_enforced = true` | 7, 9, 10, 11, 12a | staging: frontend flipped and verified; enforcement blocked, see below |
 | 13 | Retire legacy: 24 routes, `hashed_password`, `totp_secret`, `SECRET_KEY` | 12, soak | |
 
 Row 6 ships dark behind a flag, which makes row 12 a variable flip rather than a
