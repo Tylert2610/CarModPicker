@@ -140,9 +140,7 @@ describe('deletePasskey', () => {
 
 describe('signInWithPasskey', () => {
   it('reports a completed sign in', async () => {
-    const signIn = vi
-      .fn()
-      .mockResolvedValue({ ok: true, kind: 'signed-in' });
+    const signIn = vi.fn().mockResolvedValue({ ok: true, kind: 'signed-in' });
     const { signInWithPasskey } = await loadWith({
       signInWithPasskey: signIn,
     });
@@ -172,9 +170,7 @@ describe('signInWithPasskey', () => {
   });
 
   it('passes the mediation through so the page can ask for conditional', async () => {
-    const signIn = vi
-      .fn()
-      .mockResolvedValue({ ok: true, kind: 'signed-in' });
+    const signIn = vi.fn().mockResolvedValue({ ok: true, kind: 'signed-in' });
     const { signInWithPasskey } = await loadWith({
       signInWithPasskey: signIn,
     });
@@ -183,9 +179,7 @@ describe('signInWithPasskey', () => {
   });
 
   it('sends a username as an email when one was typed', async () => {
-    const signIn = vi
-      .fn()
-      .mockResolvedValue({ ok: true, kind: 'signed-in' });
+    const signIn = vi.fn().mockResolvedValue({ ok: true, kind: 'signed-in' });
     const { signInWithPasskey } = await loadWith({
       signInWithPasskey: signIn,
     });

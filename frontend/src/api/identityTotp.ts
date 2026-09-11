@@ -23,11 +23,11 @@ import { getIdentityClient } from './identityClient';
 
 /** What one TOTP operation produced. */
 export type TotpResult<T> =
-  | { status: 'ok'; value: T }
-  | { status: 'failed'; error: string };
+  { status: 'ok'; value: T } | { status: 'failed'; error: string };
 
 /** The sentence shown when the identity client is not the running mechanism. */
-const UNAVAILABLE = 'Two factor authentication is managed elsewhere in this deployment.';
+const UNAVAILABLE =
+  'Two factor authentication is managed elsewhere in this deployment.';
 
 /** What an enrolment start produced, for rendering a QR code and a seed. */
 export interface TotpEnrolment {
@@ -104,9 +104,7 @@ export const activateTotp = async (
  * accepted here too, which is what lets a user who lost the authenticator turn
  * it off rather than being locked out of their own settings.
  */
-export const disableTotp = async (
-  code: string
-): Promise<TotpResult<null>> => {
+export const disableTotp = async (code: string): Promise<TotpResult<null>> => {
   const identity = getIdentityClient();
   if (identity === null) return { status: 'failed', error: UNAVAILABLE };
   try {

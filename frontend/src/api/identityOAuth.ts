@@ -36,8 +36,7 @@ export type { OAuthCallbackResult, OAuthLink };
 
 /** What a link or unlink produced, in the one shape the panel renders. */
 export type OAuthLinkResult =
-  | { status: 'ok' }
-  | { status: 'failed'; error: string };
+  { status: 'ok' } | { status: 'failed'; error: string };
 
 /** The sentence shown when the identity client is not the running mechanism. */
 const UNAVAILABLE = 'Connected accounts are not available in this deployment.';
@@ -87,7 +86,9 @@ export const linkProvider = async (
     return {
       status: 'failed',
       error:
-        error instanceof Error ? error.message : 'Could not connect that account.',
+        error instanceof Error
+          ? error.message
+          : 'Could not connect that account.',
     };
   }
 };

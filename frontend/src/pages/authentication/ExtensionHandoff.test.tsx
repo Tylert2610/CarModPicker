@@ -5,10 +5,7 @@
 // what is about to be appended to it is a credential. Every case below is a
 // URL that must not be redirected to.
 import { describe, expect, it } from 'vitest';
-import {
-  allowedExtensionIds,
-  validateRedirectUri,
-} from './ExtensionHandoff';
+import { allowedExtensionIds, validateRedirectUri } from './ExtensionHandoff';
 
 const ALLOWED = ['abcdefghijklmnopabcdefghijklmnop'];
 

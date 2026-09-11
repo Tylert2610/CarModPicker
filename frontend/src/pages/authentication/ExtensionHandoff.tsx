@@ -43,7 +43,11 @@
  * "coming soon" when the route answers 404. It never invents a token.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { FaCheckCircle, FaExclamationTriangle, FaPuzzlePiece } from 'react-icons/fa';
+import {
+  FaCheckCircle,
+  FaExclamationTriangle,
+  FaPuzzlePiece,
+} from 'react-icons/fa';
 import { Navigate, useSearchParams } from 'react-router-dom';
 import { Alert, AlertDescription } from '../../components/ui/alert';
 import Spinner from '../../components/ui/spinner';
@@ -213,7 +217,10 @@ function ExtensionHandoff() {
     // Sign in first, then come straight back with the parameters intact.
     const returnTo = `${globalThis.location.pathname}${globalThis.location.search}`;
     return (
-      <Navigate to={`/login?returnTo=${encodeURIComponent(returnTo)}`} replace />
+      <Navigate
+        to={`/login?returnTo=${encodeURIComponent(returnTo)}`}
+        replace
+      />
     );
   }
 

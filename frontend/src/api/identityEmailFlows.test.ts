@@ -126,12 +126,12 @@ describe('requestVerificationEmail', () => {
       requestEmailVerification: request,
     });
 
-    await expect(
-      requestVerificationEmail('user@example.com')
-    ).resolves.toEqual({
-      ok: true,
-      message: 'Verification email sent.',
-    });
+    await expect(requestVerificationEmail('user@example.com')).resolves.toEqual(
+      {
+        ok: true,
+        message: 'Verification email sent.',
+      }
+    );
     expect(request).toHaveBeenCalledWith({ email: 'user@example.com' });
     expect(post).not.toHaveBeenCalled();
   });
@@ -145,12 +145,12 @@ describe('requestVerificationEmail', () => {
     const { requestVerificationEmail } = await loadWith({
       requestEmailVerification: request,
     });
-    await expect(
-      requestVerificationEmail('user@example.com')
-    ).resolves.toEqual({
-      ok: false,
-      message: 'Too many requests. Try again shortly.',
-    });
+    await expect(requestVerificationEmail('user@example.com')).resolves.toEqual(
+      {
+        ok: false,
+        message: 'Too many requests. Try again shortly.',
+      }
+    );
   });
 
   it('uses the legacy route in bearer mode', async () => {

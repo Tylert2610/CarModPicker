@@ -135,7 +135,9 @@ function PasskeySignInButton({
       disabled={disabled || busy}
     >
       <FaKey />
-      <span>{busy ? 'Waiting for your passkey…' : 'Sign in with a passkey'}</span>
+      <span>
+        {busy ? 'Waiting for your passkey…' : 'Sign in with a passkey'}
+      </span>
     </Button>
   );
 }

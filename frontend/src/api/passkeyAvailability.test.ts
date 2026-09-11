@@ -45,10 +45,7 @@ describe('probePasskeyLogin', () => {
     for (const code of ['PASSKEYS_DISABLED', 'PASSKEY_LOGIN_DISABLED']) {
       resetAvailabilityCache();
       await expect(
-        probePasskeyLogin(
-          URL_UNDER_TEST,
-          answering(403, { error_code: code })
-        )
+        probePasskeyLogin(URL_UNDER_TEST, answering(403, { error_code: code }))
       ).resolves.toBe('unavailable');
     }
   });
@@ -72,9 +69,9 @@ describe('probePasskeyLogin', () => {
 
   it('reads a network failure as unknown', async () => {
     const fetchImpl = vi.fn().mockRejectedValue(new TypeError('offline'));
-    await expect(
-      probePasskeyLogin(URL_UNDER_TEST, fetchImpl)
-    ).resolves.toBe('unknown');
+    await expect(probePasskeyLogin(URL_UNDER_TEST, fetchImpl)).resolves.toBe(
+      'unknown'
+    );
   });
 
   it('probes anonymously and without a username', async () => {
