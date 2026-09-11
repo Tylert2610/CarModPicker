@@ -290,7 +290,7 @@ locals {
 
   # Two route keys per prefix, generated rather than written out, so a domain added above cannot be
   # left with one half of a pair.
-  lambda_domain_route_keys = merge([
+  lambda_domain_generated_route_keys = merge([
     for name in local.routed_lambda_domains : {
       for key in flatten([
         for prefix in local.lambda_domain_path_prefixes[name] : [
@@ -300,11 +300,138 @@ locals {
       ]) : key => { integration = name }
     }
   ]...)
+
+  # ---------------------------------------------------------------------------
+  # Row 8. The identity routes that carry an access token, each given a route key of its own so
+  # that the token can be required on it.
+  #
+  # WHY EXPLICIT KEYS EXIST AT ALL, because the generated pair above already covers every one of
+  # these paths. Enforcement granularity at an HTTP API is the route key and nothing finer: both
+  # mechanisms, the native JWT authorizer and the gate Lambda checking route keys, decide per key.
+  # Row 27 cut this whole domain onto `ANY /api/auth` and `ANY /api/auth/{proxy+}`, so the token
+  # bearing routes and the anonymous ones share one key, and marking that key would require a
+  # token on `login`, `register`, `refresh` and every other way a caller obtains one. Requiring a
+  # token to get a token is an API nobody can sign in to. So the fifteen routes that do need a
+  # caller identity are pulled out onto keys of their own and marked there.
+  #
+  # WHY THAT IS SAFE. API Gateway picks the most specific matching route rather than the first or
+  # the longest prefix: a literal path beats a `{proxy+}`, and a more specific method beats `ANY`.
+  # `POST /api/auth/password` therefore takes precedence over `ANY /api/auth/{proxy+}` for exactly
+  # the POST to that path, and every other method and path under `/api/auth` still falls to the
+  # proxy key untouched. Each explicit key points at the same `identity` integration the proxy key
+  # does, so the request reaches the same function by the same route; the only difference is that
+  # the gateway now checks a token first.
+  #
+  # THE METHOD IS PART OF THE KEY, and writing `ANY` here would be the mistake. A key is
+  # `<METHOD> <path>`, so `GET /api/auth/passkeys` requires a token on the list route while a
+  # future `POST /api/auth/passkeys` would still fall to the proxy key. Each entry below is
+  # spelled with the method the package actually declares, verified against
+  # `webbpulse.identity` 0.16.0's routers rather than assumed:
+  # `router.py` for password and logout-all and the five TOTP and recovery routes,
+  # `passkey_routes.py` for the passkey management routes, `oauth_routes.py` for the link routes.
+  #
+  # WHAT IS DELIBERATELY NOT HERE. Every route below answers 401 without a verified subject today,
+  # inside the function, so each key states at the gateway what the application already refuses.
+  # The rest of `/api/auth` stays on the proxy key and stays anonymous, and the reasons divide:
+  #
+  #   - `register`, `login`, `refresh`, `reset`, `reset/confirm`, `verify-email`,
+  #     `verify-email/confirm` are how a caller obtains a token or recovers an account without
+  #     one. Requiring a token makes them unreachable, and the person who cannot sign in is
+  #     precisely who asks for a password reset.
+  #   - `login/totp` is the second leg of a login. Its caller holds an MFA ticket whose `aud` is
+  #     `<issuer>/mfa` rather than `local.identity_audience`, so a check configured with the API
+  #     audience refuses it and every MFA login becomes unfinishable. That is true of the native
+  #     authorizer and equally true of the gate Lambda, because both are configured from the same
+  #     pair of values.
+  #   - `login/passkey/options` and `login/passkey/verify` are the passwordless sign in legs, for
+  #     the same reason: the passkey is the credential and there is no token yet.
+  #   - `logout` takes no access token at all. It reads the refresh cookie, ignores the
+  #     Authorization header and always answers 200 because signing out is idempotent. Requiring a
+  #     token would break sign out for exactly the caller whose access token has expired, which is
+  #     the common case for somebody signing out, while the refresh cookie that carries the
+  #     session is still valid. `logout-all`, which reads the subject from verified claims, is the
+  #     one that does belong below.
+  #   - `oauth/providers`, `oauth/{provider}/start` and `oauth/callback` are the sign in flow.
+  #     `start` does read a subject when called with `mode=link`, conditionally, and so cannot be
+  #     marked without breaking the sign in half of the same route; the three link management
+  #     routes below are unconditional and are the ones marked.
+  #   - The two `.well-known` documents and `health` are anonymous by construction. The discovery
+  #     document and the JWKS are fetched by the authorizer itself, with none of our credentials,
+  #     so marking either would be circular.
+  #
+  # THE TWO `.well-known` DOCUMENTS NEED NO KEY OF THEIR OWN, which is worth stating because the
+  # adoption plan's row 8 entry names "`.well-known` at NONE" as part of this row and the module's
+  # README requires those two routes to be authorization_type NONE in both environments. They
+  # already are, in the environment where it matters, and no key is added for them:
+  #
+  #   - In production there is no gate, so `authorizer_id` on module.api is null and the module's
+  #     own default authorization_type is NONE for every route that is not marked. The proxy key
+  #     `ANY /api/auth/{proxy+}` that already serves both documents therefore resolves to NONE, and
+  #     CreateAuthorizer's anonymous fetch of the discovery document succeeds against it. An
+  #     explicit key set to NONE would be the same route with the same authorization type under a
+  #     more specific address.
+  #   - In staging the gate holds the slot on every route and no native authorizer is created at
+  #     all, so nothing fetches discovery during an apply and there is nothing to make anonymous.
+  #     Giving the two documents NONE here would be the failure the module warns about from the
+  #     other direction: a hole straight past the gate on two paths that currently sit behind it.
+  #
+  # If a future environment is ungated and still wants the documents addressed explicitly, the
+  # shape is two keys, `GET /api/auth/.well-known/openid-configuration` and
+  # `GET /api/auth/.well-known/jwks.json`, each with authorization_type = "NONE" and no
+  # require_identity_jwt. That is deliberately not written today, because in staging it would open
+  # them and in production it changes nothing.
+  #
+  # The `/api/v1` domain keys are untouched by this row for a different reason: they are `ANY`
+  # over a whole prefix, mixing public reads with authenticated writes, and CarModPicker's own
+  # `CurrentUser` still verifies a legacy HS256 session rather than this RS256 token. Row 11 is
+  # where the domains read the authorizer's claims; nothing here anticipates it.
+  identity_jwt_route_keys = {
+    # M1 and M2: the two session routes that read the subject from verified claims.
+    "POST /api/auth/password"   = { integration = "identity", require_identity_jwt = true }
+    "POST /api/auth/logout-all" = { integration = "identity", require_identity_jwt = true }
+
+    # M4: TOTP enrolment and management, and the step up. All five call `require_subject`, and a
+    # user id taken from the body instead would let anybody enrol or disable a factor on anybody
+    # else's account.
+    "POST /api/auth/totp/enrol"     = { integration = "identity", require_identity_jwt = true }
+    "POST /api/auth/totp/activate"  = { integration = "identity", require_identity_jwt = true }
+    "POST /api/auth/totp/disable"   = { integration = "identity", require_identity_jwt = true }
+    "POST /api/auth/recovery-codes" = { integration = "identity", require_identity_jwt = true }
+    "POST /api/auth/step-up"        = { integration = "identity", require_identity_jwt = true }
+
+    # M5: passkey registration and credential management, the five routes that are not a login
+    # leg. Registration binds a new credential to the calling user, so it is exactly the operation
+    # that must not accept an unverified caller.
+    "POST /api/auth/passkeys/register/options"  = { integration = "identity", require_identity_jwt = true }
+    "POST /api/auth/passkeys/register/verify"   = { integration = "identity", require_identity_jwt = true }
+    "GET /api/auth/passkeys"                    = { integration = "identity", require_identity_jwt = true }
+    "PATCH /api/auth/passkeys/{credential_id}"  = { integration = "identity", require_identity_jwt = true }
+    "DELETE /api/auth/passkeys/{credential_id}" = { integration = "identity", require_identity_jwt = true }
+
+    # M6: account linking, which is the half of OAuth that acts on an existing signed in user
+    # rather than creating a session. `{provider}` is a path parameter in the package's own route
+    # and is written the same way here, so one key covers google and github alike.
+    "POST /api/auth/oauth/{provider}/link"   = { integration = "identity", require_identity_jwt = true }
+    "GET /api/auth/oauth/links"              = { integration = "identity", require_identity_jwt = true }
+    "DELETE /api/auth/oauth/{provider}/link" = { integration = "identity", require_identity_jwt = true }
+  }
+
+  # The generated pairs plus the fifteen explicit identity keys. The merge cannot collide: every
+  # generated key is `ANY <prefix>` or `ANY <prefix>/{proxy+}` and every explicit key names a
+  # concrete method and a path below `/api/auth`, so no key is written twice and none of the nine
+  # domains' existing keys changes in any way.
+  lambda_domain_route_keys = merge(local.lambda_domain_generated_route_keys, local.identity_jwt_route_keys)
 }
 
 module "api" {
-  source  = "app.terraform.io/WebbPulse/platform-modules/aws//modules/http-api"
-  version = "~> 2.0"
+  source = "app.terraform.io/WebbPulse/platform-modules/aws//modules/http-api"
+
+  # 2.9 for identity_jwt, identity_jwt_depends_on and the per route require_identity_jwt flag, all
+  # three of which this file now uses. The release is additive and every new default preserves
+  # current behaviour, so the bump on its own is a no-op plan: what changes anything is the routes
+  # marked in local.identity_jwt_route_keys above and var.identity_jwt_mode being something other
+  # than "off".
+  version = "~> 2.9"
 
   name        = "${local.prefix}-api"
   description = "CarModPicker ${var.environment} API (Lambda proxy)"
@@ -388,6 +515,38 @@ module "api" {
   # signed cookies.
   disable_execute_api_endpoint = local.staging_gate_enabled
   authorizer_id                = local.staging_gate_enabled ? module.staging_access_gate[0].http_api_authorizer_id : null
+
+  # Row 8's native JWT authorizer, and ONLY in the native mode. Non-null here is what makes the
+  # module create an aws_apigatewayv2_authorizer and move every route marked require_identity_jwt
+  # onto it; null leaves all fifteen routes exactly where they are and publishes their keys in the
+  # identity_jwt_route_keys output instead, which is what terraform/staging_access_gate.tf reads.
+  #
+  # It is null in staging and it has to be. Every route on this API carries the gate's REQUEST
+  # authorizer, an HTTP API route takes exactly one authorizer, and a second one has no slot to
+  # occupy. var.identity_jwt_mode's own validation refuses "native" in staging for that reason, so
+  # this expression and that validation say the same thing from two directions.
+  #
+  # The issuer and the audience are local.identity_issuer and local.identity_audience, the same two
+  # locals module.identity is configured with in terraform/identity.tf and the same two the `iss`
+  # and `aud` claims are stamped from. Byte identity with the signer is the whole requirement here,
+  # so they are read rather than restated: a second spelling of either string is a token that
+  # verifies nowhere. identity.tf's own comment on local.identity_issuer names this authorizer as
+  # the third consumer of that string, and this is it.
+  identity_jwt = local.identity_jwt_native_enforced ? {
+    issuer   = local.identity_issuer
+    audience = local.identity_audience
+  } : null
+
+  # What CreateAuthorizer cannot be ordered against by the resource graph alone. The call
+  # synchronously fetches <issuer>/.well-known/openid-configuration from outside AWS with none of
+  # our credentials, so the identity function has to be deployed and answering before it runs.
+  # depends_on orders API calls rather than their effects, which is why the module takes this as an
+  # input and why the module's own README recommends two runs for a first apply: routes and
+  # function, then the authorizer.
+  #
+  # Empty in every mode but native, because in the other two no authorizer is created and there is
+  # nothing to order.
+  identity_jwt_depends_on = local.identity_jwt_native_enforced ? [module.lambda_domain["identity"]] : []
 
   domain_name      = local.custom_domain ? "api.${local.domain_name}" : null
   certificate_arn  = module.api_certificate.certificate_arn
