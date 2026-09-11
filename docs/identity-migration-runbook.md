@@ -540,3 +540,298 @@ change:
 cd backend
 TESTING=true SECRET_KEY=test-secret-key python -m pytest tests/entrypoints/test_gateway_routes.py
 ```
+
+## Creating a staging test user
+
+The behavioural checks in this runbook need an account whose password is known.
+Staging holds no such account: every user in it is synthetic, copied from
+production content with credentials deliberately left behind, so no staging row
+has a `hashed_password` at all. Create one, per check, with this procedure.
+
+Staging SES is in the sandbox, so the verification mail never delivers. That is
+the only reason this procedure ends by setting a flag by hand rather than
+clicking a link. Do not change the SES account configuration to work around it.
+
+**1. Generate a password into the scratchpad and nowhere else.** It must not
+reach a commit, a pull request, a report, or the terminal scrollback.
+
+```bash
+umask 077
+printf 'TEST_PASSWORD=%s\n' "$(python3 -c 'import secrets;print(secrets.token_urlsafe(24))')" \
+  > "$SCRATCH/staging_testuser.env"
+```
+
+**2. Register through the identity function.** The API sits behind the staging
+access gate, which refuses an unauthenticated HTTP request with a 403 before the
+application sees it, so invoke the function directly rather than going through
+the gateway. Name the user so nobody mistakes it for a real one, and give it an
+address under `staging.invalid`, which is a reserved TLD that can never receive
+mail.
+
+```bash
+. "$SCRATCH/staging_testuser.env"
+jq -n --arg pw "$TEST_PASSWORD" '{
+  version: "2.0", routeKey: "POST /api/auth/register",
+  rawPath: "/api/auth/register", requestContext: {http: {method: "POST", path: "/api/auth/register"}},
+  headers: {"content-type": "application/json"},
+  body: ({username: "row12-cutover-check",
+          email: "row12-cutover-check@staging.invalid",
+          password: $pw} | tostring),
+  isBase64Encoded: false
+}' > "$SCRATCH/register.json"
+
+aws lambda invoke --function-name carmodpicker-staging-identity \
+  --payload "fileb://$SCRATCH/register.json" "$SCRATCH/register-out.json" >/dev/null
+jq -r '.statusCode' "$SCRATCH/register-out.json"
+```
+
+A 403 carrying `EMAIL_VERIFICATION_REQUIRED` is the success case here, not a
+failure. The user row and its `credentials` row are both written before that
+refusal; what the refusal denies is the sign in, which is exactly what step 3
+unblocks.
+
+**3. Mark the address verified.** There is no admin or test hook for this in
+either the identity package or the application, so the flag is set directly on
+the one row. Scope the write with a condition on the username so a mistyped id
+cannot touch a different user.
+
+```bash
+USER_ID=$(aws dynamodb query --table-name carmodpicker-staging-users \
+  --index-name username-index \
+  --key-condition-expression 'username = :u' \
+  --expression-attribute-values '{":u":{"S":"row12-cutover-check"}}' \
+  --query 'Items[0].id.S' --output text)
+
+aws dynamodb update-item --table-name carmodpicker-staging-users \
+  --key "{\"id\":{\"S\":\"$USER_ID\"}}" \
+  --update-expression 'SET email_verified = :t' \
+  --condition-expression 'attribute_exists(id) AND username = :u' \
+  --expression-attribute-values '{":t":{"BOOL":true},":u":{"S":"row12-cutover-check"}}'
+```
+
+`may_authenticate` in `backend/app/composition/identity_hooks.py` gates on
+`disabled`, `is_service_account` and `email_verified`, so with the flag set the
+account signs in and nothing else about it is special.
+
+**4. Sign in and keep the token out of the report.** Invoke the identity function
+with `POST /api/auth/login` the same way, and assert on the shape rather than the
+value:
+
+```bash
+jq -r 'if (.body | fromjson | has("access_token")) then "has_access: true" else "has_access: false" end' \
+  "$SCRATCH/login-out.json"
+```
+
+**A `@staging.invalid` address makes some routes return 500, and it is not an
+auth failure.** `UserRead.email` is an `EmailStr`, and Pydantic refuses a
+reserved TLD on the way *out*, so any route that serialises a user object
+(`GET /api/users/me` among them) raises a `ValidationError` in
+`app/api/services/user_service.py` after authentication has already succeeded.
+Every one of the 58 pre-existing synthetic users has the same problem. Verify
+against a flagged route that returns no user object, such as
+`GET /api/build-lists/user/me`, and read a 500 here as a serialisation bug rather
+than evidence that the token was refused.
+
+Leave the account in place between rows. It is cheap, it is obviously synthetic,
+and recreating it is the only other way to run these checks.
+
+## Executed 2026-09-11, staging
+
+What actually ran for row 12 in the staging account (748861776298), workspace
+`CarModPicker-staging` / `ws-dNLoiEHVxr2o81XM`, against `origin/staging` at
+`aa91960d`.
+
+### Preflight
+
+Rows 7, 9, 10, 11 and 12a were confirmed on `origin/staging` and deployed. The
+users table was snapshotted first, with a projection that names the attributes to
+read rather than scanning whole items, so no hash and no seed entered the output:
+
+```bash
+aws dynamodb scan --table-name carmodpicker-staging-users \
+  --projection-expression 'id,#u,email,email_verified,is_active,is_admin,is_superuser,is_service_account,totp_enabled' \
+  --expression-attribute-names '{"#u":"username"}'
+```
+
+174 items: 58 user rows plus 116 `#unique#` sentinels. One admin and superuser
+(`Tylert2610`), one service account (`crawler`), every address under
+`staging.invalid`, `totp_enabled` on none.
+
+### Credential and TOTP migration: nothing to migrate
+
+Both scripts were dry run and both reported zero work, because **staging holds no
+credentials at all.** Counted without reading any value:
+
+| Attribute or table | Count |
+| --- | --- |
+| users with `hashed_password` | 0 |
+| users with `totp_secret` | 0 |
+| `oauth_accounts` rows | 0 |
+| `webauthn_credentials` rows | 0 |
+| every identity table | empty |
+
+```
+migrate_credentials_to_identity.py --prefix carmodpicker-staging
+  write=0 unchanged=0 conflict=0 skip_oauth_only=58 skip=0
+
+migrate_totp_seeds_to_identity.py --prefix carmodpicker-staging --verify
+  seal=0 unchanged=0 conflict=0 skip=58
+```
+
+Zero unsupported hashes and zero conflicts, which is the gate the runbook asks
+for. **`--apply` was deliberately not run on either script.** With `write=0` and
+`seal=0` an apply is a guaranteed no-op, and not running it keeps the record
+honest about what touched the account.
+
+This is expected rather than surprising: staging was seeded from production
+*content* on 2026-09-06 and real credentials were never copied. It does mean the
+migration scripts themselves are still unexercised against real data, and
+production is where they first do work.
+
+`migrate_totp_seeds_to_identity.py` builds its KMS client without threading
+`--region` through, so it raises `NoRegionError` unless `AWS_DEFAULT_REGION` is
+exported alongside `AWS_REGION`. Export both.
+
+### Frontend flip
+
+```bash
+gh variable set AUTH_MODE --env staging --body identity --repo WebbPulse/CarModPicker
+gh workflow run "Frontend Deploy" --ref staging
+```
+
+Run `34569931625`, success. Confirmed on the deployed artefact rather than on the
+variable: the bundles in `s3://carmodpicker-staging-frontend/assets/` carry
+`VITE_AUTH_MODE:"identity"` as a build time literal, which is what Vite leaves
+behind when it substitutes `import.meta.env`.
+
+### Behavioural verification, before enforcement
+
+Against the synthetic account from "Creating a staging test user"
+(`row12-cutover-check`, id `01a08f23-2ffa-79ea-9144-1806e48bba7f`):
+
+1. `POST /api/auth/login` on `carmodpicker-staging-identity`: 200, `has_access:
+   true`. Claims `sub=01a08f23-2ffa-79ea-9144-1806e48bba7f`,
+   `iss=https://api.staging.carmodpicker.com/api/auth`,
+   `aud=carmodpicker-staging-api`, `typ=access`, `roles=[]`. The `sub` equals the
+   DynamoDB row id, which is row 11's contract.
+2. `GET /api/build-lists/user/me` on `carmodpicker-staging-build-lists` with gate
+   shaped claims: **200**.
+3. The same call with no claims and no header: **401**, `UNAUTHORIZED`. The
+   negative control matters, because a route that answered 200 either way would
+   prove nothing.
+
+### Enforcement apply
+
+`bootstrap_image_tag` was refreshed from the stale `sha-2ad19cb0…` to
+`sha-aa91960d1876ba6a17d5d7873a9de0d5c789e9c9` first, and all nine
+`carmodpicker-staging/<domain>` ECR repositories were confirmed to carry that tag
+before queueing. A stale bootstrap tag plans green and fails at apply, because
+keep-last-10 lifecycle rules remove old tags.
+
+`domain_jwt_enforced` did not exist on the workspace (it was running on the
+`false` default) and was created as `true`.
+
+Run `run-wsHvCgFrQexSrc14` planned exactly as this runbook predicts:
+
+```
+Plan: 0 to add, 1 to change, 0 to destroy.
+  update  module.staging_access_gate[0].aws_lambda_function.authorizer
+```
+
+`IDENTITY_JWT_ROUTE_KEYS` was to go from **15 keys to 95** (15 identity plus 80
+domain). No route resource moved, which is the gate mode property this runbook
+predicts.
+
+**The apply then failed, and enforcement is not on.** See the next section.
+
+### The apply failed: the 95 keys do not fit in a Lambda environment
+
+```
+InvalidParameterValueException: Lambda was unable to configure your environment
+variables because the environment variables you have provided exceeded the 4KB
+limit. Measured size: 4545 bytes
+```
+
+Lambda caps the whole environment variable map at 4KB, and 95 comma joined route
+keys do not fit next to the gate's other ten variables:
+
+| Part | Bytes |
+| --- | --- |
+| the other ten variables, keys and values | 869 |
+| `IDENTITY_JWT_ROUTE_KEYS` with 15 identity keys | 498 |
+| `IDENTITY_JWT_ROUTE_KEYS` with all 95 keys | 3600 |
+| total as measured by Lambda at 95 keys | **4545** |
+| the limit | 4096 |
+
+The overage is 449 bytes. The 80 domain keys average 37.8 characters, so roughly
+a dozen of them would have to be dropped to squeeze under, which defeats the
+point of the row: enforcement granularity is the route key, and a key that is not
+in the list is a route that is not enforced.
+
+**Nothing is half applied.** `UpdateFunctionConfiguration` is atomic, so the
+function kept its previous configuration: 15 keys, `LastUpdateStatus:
+Successful`. Staging was never in a broken state and no user was signed out. The
+frontend is in identity mode and the domain routes are still unenforced, which is
+precisely the state step 2 of the flip procedure describes, so it is a safe place
+to stop.
+
+**Why the plan could not catch this.** Terraform validates the environment map
+shape, not its serialized size, and the size is only known to the Lambda API at
+apply. A green plan is not evidence the environment fits. Any future change that
+grows this map has the same failure mode.
+
+**The fix is not in this repository.** `IDENTITY_JWT_ROUTE_KEYS` is written by
+the `staging-access-gate` module in `terraform-aws-platform-modules`, so the
+route key list has to stop being an environment variable there before row 12 can
+finish. Options, in rough order of preference and all needing an owner decision:
+
+1. **Move the list out of the environment.** Ship it in the authorizer's
+   deployment package, or read it from SSM Parameter Store or S3 at cold start.
+   This removes the ceiling rather than raising it, and it is the only option
+   that still scales when production flags its own routes.
+2. **Compress the representation.** The keys share long prefixes, so a per method
+   prefix grouping or a compact encoding would fit today. It buys room rather
+   than removing the limit, and it makes the value unreadable in the console.
+3. **Enforce by prefix rather than by key.** Far smaller, but it changes the
+   enforcement granularity that rows 11 and 12a were built around, and the two
+   anonymous guard keys (`GET /api/reports/count`,
+   `GET /api/bug-reports/count`) exist precisely because prefix matching is not
+   safe here.
+
+Option 3 is cheapest and is the one to resist: it would quietly enforce the two
+guard routes and break anonymous reads.
+
+Until that lands, leave `domain_jwt_enforced` set to `true` on the workspace only
+if you intend to retry the apply immediately; otherwise set it back to `false` so
+the next unrelated apply on this workspace does not fail on the same error. It
+was set back to `false` on 2026-09-11.
+
+### Rollback
+
+Exact, in the order to undo it:
+
+1. **Enforcement.** Set `domain_jwt_enforced` to `false` on
+   `ws-dNLoiEHVxr2o81XM` and apply. The authorizer environment drops back to 15
+   keys, every route keeps its address, nobody is signed out. This alone reverses
+   the user visible effect.
+2. **Frontend.** `gh variable set AUTH_MODE --env staging --body bearer --repo
+   WebbPulse/CarModPicker`, then rerun the Frontend Deploy on `staging`. An empty
+   value works too, since `resolveAuthMode` treats empty as unset and falls
+   through to `bearer`.
+3. **Credentials.** Nothing to unwind. No migration wrote anything, and the
+   legacy `hashed_password` and `totp_secret` attributes are untouched until
+   row 13 retires them. Rollback is not clearing the plaintext.
+
+### Two things worth knowing before production
+
+- **`scripts/verify_route_cut.sh` needed a fix.** Its `expected_key()` assumed
+  every path under a domain prefix resolves to that prefix's `{proxy+}` key,
+  which stopped being true when row 12a added explicit `GET /api/<domain>/{id}`
+  keys: the gateway prefers the more specific key at the same depth. The
+  assertion was stale, not the deployment, and the 401 the probe got back was
+  proof the request had reached the authenticated handler. Fixed by reading the
+  explicit keys out of `terraform/apigateway.tf` rather than listing them again
+  in the script.
+- **`deploy-backend.yml` is path filtered to `backend/**`.** A fix under
+  `scripts/` merges without triggering a deploy. Dispatch one by hand with
+  `gh workflow run "Deploy Backend" --ref staging`.
