@@ -21,6 +21,7 @@ const alertVariants = cva(
   }
 );
 
+/** Props for Alert: standard div attributes plus a visual variant. */
 export interface AlertProps
   extends
     React.HTMLAttributes<HTMLDivElement>,
@@ -28,6 +29,7 @@ export interface AlertProps
   ref?: React.Ref<HTMLDivElement>;
 }
 
+/** A bordered callout box with role="alert", styled by variant. */
 export function Alert({ className, variant, ref, ...props }: AlertProps) {
   return (
     <div
@@ -39,6 +41,7 @@ export function Alert({ className, variant, ref, ...props }: AlertProps) {
   );
 }
 
+/** The heading line inside an Alert. */
 export function AlertTitle({
   className,
   ref,
@@ -55,6 +58,7 @@ export function AlertTitle({
   );
 }
 
+/** The body text inside an Alert. */
 export function AlertDescription({
   className,
   ref,
@@ -75,6 +79,7 @@ interface MessageAlertProps {
   message: string | null;
 }
 
+/** A destructive-variant Alert for a message, rendering nothing when null. */
 export const ErrorAlert: React.FC<MessageAlertProps> = ({ message }) => {
   if (!message) return null;
   return (
@@ -84,6 +89,7 @@ export const ErrorAlert: React.FC<MessageAlertProps> = ({ message }) => {
   );
 };
 
+/** A success-variant Alert for a confirmation message, or nothing when null. */
 export const ConfirmationAlert: React.FC<MessageAlertProps> = ({ message }) => {
   if (!message) return null;
   return (
@@ -93,6 +99,7 @@ export const ConfirmationAlert: React.FC<MessageAlertProps> = ({ message }) => {
   );
 };
 
+/** A success-variant Alert for a message, rendering nothing when null. */
 export const SuccessAlert: React.FC<MessageAlertProps> = ({ message }) => {
   if (!message) return null;
   return (

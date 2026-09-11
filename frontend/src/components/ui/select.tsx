@@ -4,10 +4,14 @@ import { Check, ChevronDown, ChevronUp } from 'lucide-react';
 
 import { cn } from '../../lib/utils';
 
+/** The select root; controls the chosen value and open state. */
 export const Select = SelectPrimitive.Root;
+/** Groups related SelectItems under a shared SelectLabel. */
 export const SelectGroup = SelectPrimitive.Group;
+/** Renders the currently selected value inside a SelectTrigger. */
 export const SelectValue = SelectPrimitive.Value;
 
+/** The control that opens a Select and shows its current value. */
 export function SelectTrigger({
   className,
   children,
@@ -29,6 +33,7 @@ export function SelectTrigger({
   );
 }
 
+/** The affordance that scrolls a long SelectContent upward. */
 export function SelectScrollUpButton({
   className,
   ...props
@@ -46,6 +51,7 @@ export function SelectScrollUpButton({
   );
 }
 
+/** The affordance that scrolls a long SelectContent downward. */
 export function SelectScrollDownButton({
   className,
   ...props
@@ -63,6 +69,7 @@ export function SelectScrollDownButton({
   );
 }
 
+/** The popup listing a Select's options. */
 export function SelectContent({
   className,
   children,
@@ -97,6 +104,7 @@ export function SelectContent({
   );
 }
 
+/** The heading for a SelectGroup. */
 export function SelectLabel({
   className,
   ...props
@@ -109,6 +117,7 @@ export function SelectLabel({
   );
 }
 
+/** One selectable option inside a SelectContent. */
 export function SelectItem({
   className,
   children,
@@ -132,6 +141,7 @@ export function SelectItem({
   );
 }
 
+/** A dividing rule between groups of SelectItems. */
 export function SelectSeparator({
   className,
   ...props

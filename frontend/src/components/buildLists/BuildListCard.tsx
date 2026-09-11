@@ -9,12 +9,14 @@ interface BuildListCardProps {
   buildList: BuildListRead | BuildListReadWithVotes;
 }
 
+/** Narrows a build list to the variant that carries vote tallies. */
 function hasVoteData(
   bl: BuildListRead | BuildListReadWithVotes
 ): bl is BuildListReadWithVotes {
   return 'total_votes' in bl && typeof bl.total_votes === 'number';
 }
 
+/** Cents as a dollar amount with two decimal places. */
 function formatTotalCost(cents: number): string {
   return `$${(cents / 100).toLocaleString(undefined, {
     minimumFractionDigits: 2,
@@ -22,6 +24,7 @@ function formatTotalCost(cents: number): string {
   })}`;
 }
 
+/** A build list as an image-led card, with its vote badge and total cost. */
 const BuildListCard: React.FC<BuildListCardProps> = ({ buildList }) => {
   const showVoteBadge = hasVoteData(buildList);
   const totalVotes = showVoteBadge ? buildList.total_votes : 0;

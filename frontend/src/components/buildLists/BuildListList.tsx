@@ -18,10 +18,11 @@ interface BuildListListProps {
   refreshKey?: number;
   title?: string;
   emptyMessage?: string;
-  onAddBuildListClick?: () => void; // Callback to open create form
-  search?: string | undefined; // Optional search term
+  onAddBuildListClick?: () => void;
+  search?: string | undefined;
 }
 
+/** Renders a collection of build lists, with an empty state. */
 const BuildListList: React.FC<BuildListListProps> = ({
   carId,
   refreshKey,
@@ -34,15 +35,11 @@ const BuildListList: React.FC<BuildListListProps> = ({
   const [totalItems, setTotalItems] = useState<number | null>(null);
   const itemsPerPage = BUILDER_ITEMS_PER_PAGE;
   const isFirstPage = currentPage === 1;
-  // On first page: create button (1) + 7 build lists = 8 items
-  // On other pages: 8 build lists = 8 items
   const buildListsPerPage = isFirstPage
     ? BUILDER_FIRST_PAGE_BUILD_LISTS
     : BUILDER_SUBSEQUENT_PAGE_BUILD_LISTS;
 
-  // Fetch build lists with pagination
   const fetchBuildListsByCarIdRequestFn = useCallback(() => {
-    // Calculate skip: page 1 = 0, page 2 = 7, page 3 = 15, page 4 = 23, etc.
     const skip = isFirstPage
       ? 0
       : BUILDER_FIRST_PAGE_BUILD_LISTS +
@@ -61,14 +58,11 @@ const BuildListList: React.FC<BuildListListProps> = ({
     executeRequest: fetchCarBuildLists,
   } = useApiRequest(fetchBuildListsByCarIdRequestFn);
 
-  // Extract build lists and total from paginated response
   const buildLists = buildListsResponse?.data || [];
   const totalBuildLists = buildListsResponse?.pagination?.total_items ?? 0;
 
-  // Calculate total items: build lists + 1 for the create button on page 1
   useEffect(() => {
     if (buildListsResponse) {
-      // Total items = total build lists + 1 (for the create button on page 1)
       setTotalItems(totalBuildLists + 1);
     }
   }, [buildListsResponse, totalBuildLists]);
@@ -77,7 +71,6 @@ const BuildListList: React.FC<BuildListListProps> = ({
     void fetchCarBuildLists();
   }, [fetchCarBuildLists, refreshKey]);
 
-  // Reset to page 1 when refresh key or search changes
   useEffect(() => {
     setCurrentPage(1);
     setTotalItems(null);
@@ -138,7 +131,6 @@ const BuildListList: React.FC<BuildListListProps> = ({
           totalPages={Math.ceil(totalItems / itemsPerPage)}
           onPageChange={(page) => {
             setCurrentPage(page);
-            // Scroll to top when page changes
             window.scrollTo({ top: 0, behavior: 'smooth' });
           }}
           itemsPerPage={itemsPerPage}

@@ -1,39 +1,7 @@
 /**
- * The "Sign in with a passkey" button for identity mode.
- *
- * Mirrors WebbPulse-Portfolio's `components/admin/PasskeySignInButton.tsx`.
- *
- * ## Why the button can be absent
- *
- * Three separate things have to be true before a passwordless sign in can work,
- * and they fail in different places:
- *
- *   1. the browser has to support WebAuthn at all (`passkeysSupported`)
- *   2. the deployment has to have passwordless sign in switched on, which the
- *      discovery route states as a field (`passkeyLoginAvailability`)
- *   3. the user has to actually have a passkey, which nothing can know before
- *      the ceremony runs
- *
- * The first two hide the button. The third cannot: asking would mean
- * enumerating accounts. So a user with no passkey sees the button, presses it,
- * and the browser tells them there is nothing to use, which is the browser's
- * job and not this component's.
- *
- * Nothing is rendered while the route is in flight. A button that appears and
- * then vanishes is worse than one that appears a beat late, and the password
- * form above it is usable the whole time.
- *
- * ## Conditional mediation
- *
- * `mediation: 'conditional'` puts the account chooser inside the username
- * field's own autofill rather than in a modal sheet, so a user who has a passkey
- * sees it offered as they focus the field and one who does not sees nothing at
- * all. It runs on mount alongside the visible button and is aborted on unmount:
- * a conditional request that outlives its page keeps the authenticator armed
- * against a form that is gone.
- *
- * A conditional request that finds no credential never resolves, which is why
- * its failure path is silence rather than an error banner.
+ * The "Sign in with a passkey" button for identity mode, hidden unless the
+ * browser supports WebAuthn and the deployment enables passwordless sign in.
+ * Also arms conditional mediation so the chooser appears in username autofill.
  */
 import { useEffect, useRef, useState } from 'react';
 import { FaKey } from 'react-icons/fa';
@@ -49,6 +17,9 @@ import {
   type PasskeySignInResult,
 } from '../../api/identityPasskeys';
 
+/**
+ * Props for PasskeySignInButton: the username hint, outcome callback, and autofill flag.
+ */
 export interface PasskeySignInButtonProps {
   /** Whatever is in the username field, so a known user skips the chooser. */
   username?: string;
@@ -80,8 +51,6 @@ function PasskeySignInButton({
     void passkeyLoginAvailability(identityUrl(PASSKEY_AVAILABILITY_PATH)).then(
       (answer) => {
         if (!live) return;
-        // `unknown` hides the button too: a read that learned nothing should
-        // not produce an affordance whose failure the user cannot act on.
         setAvailable(answer === 'available');
       }
     );
@@ -90,7 +59,6 @@ function PasskeySignInButton({
     };
   }, [supported]);
 
-  // Conditional mediation, armed once the deployment is known to support it.
   useEffect(() => {
     if (!conditional || available !== true) return;
     const controller = new AbortController();
@@ -117,7 +85,6 @@ function PasskeySignInButton({
           ? { username, mediation: 'optional' }
           : { mediation: 'optional' }
       );
-      // A dismissed sheet is not an error and gets no banner.
       if (result.status === 'cancelled') return;
       await handler.current(result);
     } finally {

@@ -2,11 +2,13 @@ import * as React from 'react';
 
 import { cn } from '../../lib/utils';
 
+/** Props for Textarea: textarea attributes plus an error flag. */
 export interface TextareaProps extends React.TextareaHTMLAttributes<HTMLTextAreaElement> {
   error?: boolean;
   ref?: React.Ref<HTMLTextAreaElement>;
 }
 
+/** A multi-line text input matching the Input styling. */
 export function Textarea({ className, error, ref, ...props }: TextareaProps) {
   return (
     <textarea

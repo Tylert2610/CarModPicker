@@ -4,20 +4,17 @@ import { Link } from 'react-router-dom';
 
 import { useCookieConsent } from '../../../hooks/useCookieConsent';
 
+/** The site footer: quick links, social links, and the copyright bar. */
 function Footer() {
   const { reset: resetCookieConsent } = useCookieConsent();
 
   return (
     <footer className="relative mt-auto w-full">
-      {/* Background with gradient */}
       <div className="absolute inset-0 bg-linear-to-r from-card via-muted to-card opacity-95"></div>
 
-      {/* Footer Content */}
       <div className="relative">
-        {/* Main Footer */}
         <div className="container mx-auto px-4 py-12">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
-            {/* PartManufacturer Section */}
             <div className="col-span-1 md:col-span-2">
               <div className="flex items-center space-x-2 mb-4">
                 <div className="w-8 h-8 bg-linear-to-br from-primary to-primary rounded-lg flex items-center justify-center">
@@ -34,7 +31,6 @@ function Footer() {
               </p>
             </div>
 
-            {/* Quick Links */}
             <div>
               <h3 className="text-white font-semibold mb-4 text-sm uppercase tracking-wider">
                 Quick Links
@@ -100,7 +96,6 @@ function Footer() {
               </ul>
             </div>
 
-            {/* Social Links */}
             <div>
               <h3 className="text-white font-semibold mb-4 text-sm uppercase tracking-wider">
                 Connect
@@ -135,7 +130,6 @@ function Footer() {
           </div>
         </div>
 
-        {/* Bottom Bar */}
         <div className="border-t border-white/10">
           <div className="container mx-auto px-4 py-6">
             <div className="flex flex-col md:flex-row justify-between items-center space-y-4 md:space-y-0">

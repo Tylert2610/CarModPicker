@@ -3,8 +3,10 @@ import * as TabsPrimitive from '@radix-ui/react-tabs';
 
 import { cn } from '../../lib/utils';
 
+/** The tabs root; controls which panel is shown. */
 export const Tabs = TabsPrimitive.Root;
 
+/** The row of TabsTriggers. */
 export function TabsList({
   className,
   ...props
@@ -20,6 +22,7 @@ export function TabsList({
   );
 }
 
+/** One tab button, which reveals its matching TabsContent. */
 export function TabsTrigger({
   className,
   ...props
@@ -35,6 +38,7 @@ export function TabsTrigger({
   );
 }
 
+/** The panel shown when its matching TabsTrigger is active. */
 export function TabsContent({
   className,
   ...props

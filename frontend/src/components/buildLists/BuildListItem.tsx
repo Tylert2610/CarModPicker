@@ -22,6 +22,7 @@ interface BuildListItemProps {
   ) => void;
 }
 
+/** A build list as a compact row, with its net vote score. */
 const BuildListItem: React.FC<BuildListItemProps> = ({
   buildList,
   showVoteButtons = false,
@@ -30,23 +31,18 @@ const BuildListItem: React.FC<BuildListItemProps> = ({
   const hasVoteData = 'upvotes' in buildList && 'downvotes' in buildList;
   const buildListWithVotes = hasVoteData ? buildList : null;
 
-  // Fetch vote summary if vote data is not available
   const [voteSummary, setVoteSummary] = useState<VoteSummary | null>(null);
   const [isLoadingVotes, setIsLoadingVotes] = useState(false);
 
-  // Fetch car information if car_id is available
   const [carInfo, setCarInfo] = useState<CarGenerationRead | null>(null);
   const [isLoadingCar, setIsLoadingCar] = useState(false);
 
   useEffect(() => {
-    // Fetch vote summary if vote data is not available
-    // This ensures we have accurate counts even when the buildList object doesn't include vote data
     if (!hasVoteData && !isLoadingVotes && !voteSummary) {
       setIsLoadingVotes(true);
       buildListVotesApi
         .getVoteSummary(buildList.id)
         .then((response) => {
-          // API returns AxiosResponse<VoteSummary>, so response.data is the VoteSummary
           setVoteSummary(response.data);
           setIsLoadingVotes(false);
         })
@@ -57,7 +53,6 @@ const BuildListItem: React.FC<BuildListItemProps> = ({
   }, [buildList.id, hasVoteData, isLoadingVotes, voteSummary]);
 
   useEffect(() => {
-    // Fetch car information if car_id is available
     if (buildList.car_id && !isLoadingCar && !carInfo) {
       setIsLoadingCar(true);
       carGenerationsApi
@@ -72,15 +67,12 @@ const BuildListItem: React.FC<BuildListItemProps> = ({
     }
   }, [buildList.car_id, isLoadingCar, carInfo]);
 
-  // Determine vote data from available sources
-  // Prefer voteSummary (freshly fetched) over buildListWithVotes (may be stale)
   const upvotes = voteSummary?.upvotes ?? buildListWithVotes?.upvotes ?? 0;
   const downvotes =
     voteSummary?.downvotes ?? buildListWithVotes?.downvotes ?? 0;
   const userVote =
     voteSummary?.user_vote ?? buildListWithVotes?.user_vote ?? null;
 
-  // Calculate net vote score (upvotes - downvotes), matching VoteButtons display
   const netVoteScore = upvotes - downvotes;
 
   return (
@@ -104,7 +96,6 @@ const BuildListItem: React.FC<BuildListItemProps> = ({
               <h3 className="text-lg font-semibold text-info flex-grow">
                 {buildList.name}
               </h3>
-              {/* Always show net vote score (upvotes - downvotes) */}
               <div className="flex items-center gap-1 ml-2 flex-shrink-0">
                 <svg
                   className={`w-4 h-4 ${

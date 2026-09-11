@@ -18,6 +18,7 @@ interface BuildListPartListItemProps {
   canMarkPurchased?: boolean;
 }
 
+/** One part in a build list's card view: purchase state, details, and price. */
 const BuildListPartListItem: React.FC<BuildListPartListItemProps> = React.memo(
   ({
     buildListPart,
@@ -32,7 +33,6 @@ const BuildListPartListItem: React.FC<BuildListPartListItemProps> = React.memo(
     const navigate = useNavigate();
     const { part, notes, quantity, purchased } = buildListPart;
 
-    // Prices from retailer listings (best_price_cents when available)
     const partPriceInCents = part.best_price_cents;
     const qty = quantity || 1;
     const totalPriceInCents =
@@ -41,7 +41,6 @@ const BuildListPartListItem: React.FC<BuildListPartListItemProps> = React.memo(
         : null;
 
     const formatPriceDisplay = (priceInCents: number) => {
-      // Convert cents to dollars for display
       const priceInDollars = priceInCents / 100;
       return `$${priceInDollars.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     };
@@ -56,7 +55,6 @@ const BuildListPartListItem: React.FC<BuildListPartListItemProps> = React.memo(
     };
 
     const handleCardClickWithCheck = (e: React.MouseEvent<HTMLDivElement>) => {
-      // Only navigate if the click wasn't on an interactive element
       const target = e.target as HTMLElement;
       const isInteractiveElement =
         target.closest('button') ||
@@ -79,7 +77,6 @@ const BuildListPartListItem: React.FC<BuildListPartListItemProps> = React.memo(
           className={`py-1 px-2 ${purchased ? 'opacity-60' : ''} cursor-pointer hover:border-blue-500 transition-colors`}
         >
           <div className={`grid ${gridCols} items-center gap-3`}>
-            {/* Purchased checkbox */}
             {showCheckbox && (
               <div className="flex items-center justify-center min-w-[28px]">
                 <label
@@ -119,7 +116,6 @@ const BuildListPartListItem: React.FC<BuildListPartListItemProps> = React.memo(
                 </label>
               </div>
             )}
-            {/* Left side: Part name, category, part_manufacturer, notes */}
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <h3
@@ -151,7 +147,6 @@ const BuildListPartListItem: React.FC<BuildListPartListItemProps> = React.memo(
               </div>
             </div>
 
-            {/* Actions column: Fixed width, always rendered for alignment */}
             <div className="flex items-center gap-1.5 flex-shrink-0 w-32 justify-end">
               {canEdit && onEdit && (
                 <Button
@@ -183,12 +178,10 @@ const BuildListPartListItem: React.FC<BuildListPartListItemProps> = React.memo(
               )}
             </div>
 
-            {/* Price column: Fixed width, rightmost element */}
             <div className="text-right w-24 flex-shrink-0">
               {partPriceInCents !== null && partPriceInCents !== undefined ? (
                 qty > 1 && totalPriceInCents !== null ? (
                   <div>
-                    {/* Total price is prominent when multiple quantities */}
                     <div
                       className={`text-sm font-semibold ${purchased ? 'text-gray-500 line-through' : 'text-gray-300'}`}
                     >
@@ -215,8 +208,6 @@ const BuildListPartListItem: React.FC<BuildListPartListItemProps> = React.memo(
     );
   },
   (prevProps, nextProps) => {
-    // Custom comparison function to prevent unnecessary re-renders
-    // Only re-render if the part data, purchased status, permissions, or callbacks change
     return (
       prevProps.buildListPart.id === nextProps.buildListPart.id &&
       prevProps.buildListPart.purchased === nextProps.buildListPart.purchased &&

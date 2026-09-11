@@ -3,12 +3,14 @@ import { Loader2 } from 'lucide-react';
 
 import { cn } from '../../lib/utils';
 
+/** Props for LoadingOverlay: div attributes plus a visibility flag. */
 export interface LoadingOverlayProps extends React.HTMLAttributes<HTMLDivElement> {
   visible: boolean;
   label?: string;
   ref?: React.Ref<HTMLDivElement>;
 }
 
+/** A translucent cover with a spinner, shown over content while it loads. */
 export function LoadingOverlay({
   className,
   visible,

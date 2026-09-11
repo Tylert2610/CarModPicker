@@ -9,6 +9,7 @@ interface PartListItemProps {
   part: PartRead;
 }
 
+/** A part as a compact row with its price. */
 const PartListItem: React.FC<PartListItemProps> = ({ part }) => {
   return (
     <Link to={`/parts/${part.id}`} className="block hover:no-underline">
@@ -41,7 +42,6 @@ const PartListItem: React.FC<PartListItemProps> = ({ part }) => {
 
             {part.best_price_cents != null && (
               <div>
-                {/* Optional: you can remove the "Price: " label if it's implied */}
                 <span className="text-gray-300 font-semibold text-lg">
                   ${(part.best_price_cents / 100).toFixed(2)}
                 </span>

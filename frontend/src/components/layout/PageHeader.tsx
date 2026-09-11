@@ -5,6 +5,7 @@ interface PageHeaderProps {
   subtitle?: string;
 }
 
+/** A page's title and optional subtitle. */
 const PageHeader: React.FC<PageHeaderProps> = ({ title, subtitle }) => {
   return (
     <div className="mb-6">

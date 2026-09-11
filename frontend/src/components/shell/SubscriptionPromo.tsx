@@ -10,6 +10,10 @@ import { Button } from '../ui/button';
 
 const DISMISS_KEY = 'subscription_promo_last_dismissed';
 
+/**
+ * Prompts signed-in non-premium users to subscribe, once a day, and only after
+ * the cookie consent decision so it does not stack with that banner.
+ */
 function SubscriptionPromo() {
   const [visible, setVisible] = useState(false);
   const { isAuthenticated, isLoading } = useAuth();
@@ -17,12 +21,8 @@ function SubscriptionPromo() {
   const { consent } = useCookieConsent();
 
   useEffect(() => {
-    // Wait for cookie-consent decision so we don't stack with that banner.
     if (consent === null) return;
-    // Don't show while auth is still resolving; the premium check would be wrong.
     if (isLoading) return;
-    // Premium users never see this; nor does anyone when the admin kill switch
-    // disconnects the premium system. Only signed-in users see the prompt.
     if (!isAuthenticated || isPremiumNow) return;
     if (isDismissedToday(DISMISS_KEY)) return;
     setVisible(true);

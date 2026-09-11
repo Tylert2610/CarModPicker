@@ -20,6 +20,7 @@ const formatPrice = (priceInCents: number) => {
   })}`;
 };
 
+/** Totals a build's parts, labor estimates, and base price into a cost card. */
 const BuildCostSummary: React.FC<BuildCostSummaryProps> = ({
   buildListParts,
   laborEstimates,
@@ -55,12 +56,8 @@ const BuildCostSummary: React.FC<BuildCostSummaryProps> = ({
   const totalPrice = basePrice + partsPrice + laborPrice;
   const purchasedCount = buildListParts.filter((p) => p.purchased).length;
   const remainingCount = buildListParts.length - purchasedCount;
-  // Progress bar tracks purchased parts only — labor and base car price
-  // don't have a purchased state.
   const purchaseProgress =
     partsPrice === 0 ? 0 : Math.round((purchasedPrice / partsPrice) * 100);
-  // Show the breakdown row whenever there's more than one cost source so the
-  // user can see how parts/labor/base contribute, not just when labor is set.
   const showBreakdown =
     [basePrice > 0, partsPrice > 0, laborPrice > 0].filter(Boolean).length > 1;
 

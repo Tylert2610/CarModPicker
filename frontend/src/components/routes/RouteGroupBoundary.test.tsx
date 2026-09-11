@@ -7,16 +7,9 @@ import type { MockInstance } from 'vitest';
 import { RouteGroupBoundary } from './RouteGroupBoundary';
 
 /**
- * Phase 6 FE-03 / D-07 / D-08:
- *  - RouteGroupBoundary wraps a route-group's children with a Sentry-backed
- *    ErrorBoundary that surfaces eventId + Retry + Go Home in the fallback UI.
- *  - data-route-group attribute is load-bearing — App.coverage.test.tsx queries
- *    it to confirm the right wrapper caught a thrown component.
- *
- * Note: We do NOT mock @sentry/react here (unlike ErrorBoundary.test.tsx).
- *   The real Sentry.ErrorBoundary runs cleanly under jsdom; mocking it would
- *   defeat the purpose of asserting eventId surfaces in the fallback render.
- *   PATTERNS.md §Wave 0 RouteGroupBoundary.test.tsx documents this deviation.
+ * Covers RouteGroupBoundary: containment, the eventId / Retry / Go Home
+ * fallback, and the data-route-group attribute other tests query. Uses the real
+ * @sentry/react so the surfaced eventId is genuine.
  */
 
 function Thrower(): ReactNode {
@@ -31,8 +24,6 @@ describe('RouteGroupBoundary', () => {
   let errorSpy: MockInstance<typeof console.error>;
 
   beforeEach(() => {
-    // React logs the thrown error to console.error via its error-boundary
-    // machinery; silence it so passing tests do not look noisy.
     errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
   });
 
@@ -74,9 +65,6 @@ describe('RouteGroupBoundary', () => {
   });
 
   it('Retry button calls resetError and re-renders non-throwing children', () => {
-    // Stateful Thrower that can be flipped to non-throwing — proves Retry
-    // actually resets the boundary (without the flip, resetError would just
-    // re-throw the same error and the fallback would re-render).
     let shouldThrow = true;
     function ConditionalThrower(): ReactNode {
       if (shouldThrow) throw new Error('boom');

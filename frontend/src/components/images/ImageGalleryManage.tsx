@@ -110,7 +110,6 @@ export default function ImageGalleryManage({
     return (
       <div className="space-y-3">
         {removeError && <ErrorAlert message={removeError} />}
-        {/* Large image: shows whichever thumbnail is selected (primary by default) */}
         <div className="aspect-[4/3] max-h-[420px] w-full rounded-lg overflow-hidden border border-gray-600 bg-gray-800/50 relative group">
           <ImageWithPlaceholder
             srcUrl={buildExternalImageUrl(selectedUrl, 'hero')}
@@ -149,7 +148,6 @@ export default function ImageGalleryManage({
             </button>
           </div>
         </div>
-        {/* Selector carousel: click a thumbnail to show it in the large view */}
         {allUrls.length > 1 && (
           <div className="flex gap-3 overflow-x-auto pb-2 rounded-lg">
             {allUrls.map((url, idx) => {
@@ -181,7 +179,6 @@ export default function ImageGalleryManage({
                     fallbackText="Failed to load"
                     loading="lazy"
                   />
-                  {/* Overlay: click on empty area selects image; buttons use stopPropagation */}
                   <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-2 p-2">
                     {idx === 0 ? (
                       <span className="text-xs font-medium text-success bg-success/80 px-2 py-1 rounded">

@@ -2,6 +2,9 @@ import React from 'react';
 import type { CarGenerationRead } from '../../types/Api';
 import { carFullDisplayName } from '../../utils/carUtils';
 
+/**
+ * Props for VehicleFilterChips: the active vehicle filters and how to clear them.
+ */
 export interface VehicleFilterChipsProps {
   selectedGeneration: CarGenerationRead | null;
   selectedMake?: string;
@@ -20,6 +23,7 @@ export const filterChipClass =
 const removeButtonClass =
   'p-0.5 rounded-full hover:bg-gray-600/80 hover:text-white transition-colors shrink-0';
 
+/** The chip text for the current vehicle selection, narrowest part first. */
 function vehicleChipLabel(
   selectedGeneration: CarGenerationRead | null,
   selectedMake: string,
@@ -37,6 +41,7 @@ function vehicleChipLabel(
   return 'Vehicle';
 }
 
+/** The active vehicle filter as a removable chip. */
 const VehicleFilterChips: React.FC<VehicleFilterChipsProps> = ({
   selectedGeneration,
   selectedMake = '',

@@ -26,7 +26,6 @@ import { Card } from '../ui/card';
 import Spinner from '../ui/spinner';
 import VoteButtons from './VoteButtons';
 
-// Simple cache for global parts data to improve UX when switching between pages
 interface CachedData {
   data: PartReadWithVotes[];
   pagination: PaginationInfo | null;
@@ -34,7 +33,6 @@ interface CachedData {
 }
 const partsCache = new Map<string, CachedData>();
 
-// Persistent car lookup cache — populated on-demand, survives page navigations
 const carByIdCache: Record<string, CarGenerationRead> = {};
 
 type TableColumnKey =
@@ -47,7 +45,6 @@ type TableColumnKey =
   | 'price'
   | 'actions';
 
-// Lower = higher priority (kept longer). `part` and `price` are pinned and never drop.
 const COLUMN_PRIORITY: Record<TableColumnKey, number> = {
   part: 0,
   price: 1,
@@ -59,11 +56,6 @@ const COLUMN_PRIORITY: Record<TableColumnKey, number> = {
   actions: 7,
 };
 
-// Minimum width where a column's content renders without truncation for typical
-// values (part_manufacturer names, part numbers, fit strings, etc.). A column is dropped
-// once the sum of these values across visible columns would exceed the
-// container width. Also used as the flex share for proportional width
-// distribution among the surviving columns.
 const COLUMN_MIN_WIDTH: Record<TableColumnKey, number> = {
   part: 280,
   price: 100,
@@ -97,6 +89,7 @@ interface SortableThProps {
   onSort: (column: SortColumn) => void;
 }
 
+/** A table header cell that sorts its column when clicked. */
 function SortableTh({
   column,
   children,
@@ -135,6 +128,7 @@ function SortableTh({
   );
 }
 
+/** A stable cache key for a params object, independent of key order. */
 function getCacheKey(params?: {
   skip?: number;
   limit?: number;
@@ -212,11 +206,11 @@ function columnAndDirectionToSortParam(
   return map[key] ?? 'votes_desc';
 }
 
+/** Returns a cached page of parts, or null when absent or past its TTL. */
 function getCachedData(cacheKey: string): CachedData | null {
   const cached = partsCache.get(cacheKey);
   if (!cached) return null;
 
-  // Check if cache is still valid
   const now = Date.now();
   if (now - cached.timestamp > CACHE_DURATION_MS) {
     partsCache.delete(cacheKey);
@@ -243,8 +237,8 @@ interface PartListProps {
     max_price_cents?: number;
     universal?: boolean;
   };
-  data?: PartReadWithVotes[]; // Optional: pass pre-fetched data instead of fetching
-  pagination?: PaginationInfo | null; // Optional: pass pagination info when using pre-fetched data
+  data?: PartReadWithVotes[];
+  pagination?: PaginationInfo | null;
   refreshKey?: number;
   title?: string;
   emptyMessage?: string;
@@ -289,6 +283,10 @@ const fetchPartsRequestFn = (params?: {
   universal?: boolean;
 }) => partsApi.getPartsWithVotes(params);
 
+/**
+ * Lists parts as cards or a dense sortable table, with client-side caching
+ * and either controlled or uncontrolled sorting.
+ */
 function PartList({
   params,
   data: providedData,
@@ -397,10 +395,8 @@ function PartList({
     executeRequest: fetchParts,
   } = useApiRequest(fetchPartsRequestFn);
 
-  // Initialize with cached data if available (for instant display)
   const cacheKey = getCacheKey(effectiveParams);
 
-  // Stable request key so we only refetch when the logical request changes (avoids duplicate fetches from re-renders)
   const fetchRequestKey = `${refreshKey}-${cacheKey}`;
 
   const [displayData, setDisplayData] = useState<PartReadWithVotes[]>(() => {
@@ -415,7 +411,6 @@ function PartList({
       return cached?.pagination ?? null;
     });
 
-  // On-demand car lookup: fetch only the car IDs that appear in the current page
   const [localCarsById, setLocalCarsById] = useState<
     Record<string, CarGenerationRead>
   >(() => ({ ...carByIdCache }));
@@ -443,14 +438,11 @@ function PartList({
       .catch(() => {});
   }, [displayData]);
 
-  // Merge prop-supplied map (for callers that manage their own lookup) with
-  // the internally-fetched map; prop values take precedence.
   const effectiveCarsById = useMemo(
     () => ({ ...localCarsById, ...carsById }),
     [localCarsById, carsById]
   );
 
-  // Only fetch if data is not provided; run when fetchRequestKey changes (not on every params reference change)
   useEffect(() => {
     if (!providedData) {
       const cached = getCachedData(cacheKey);
@@ -462,12 +454,10 @@ function PartList({
     }
   }, [fetchRequestKey]); // eslint-disable-line react-hooks/exhaustive-deps -- intentionally only refetch when request key changes; effectiveParams/cacheKey used inside
 
-  // Update display data when fresh data arrives
   useEffect(() => {
     if (paginatedResponse?.data) {
       setDisplayData(paginatedResponse.data);
       setDisplayPagination(paginatedResponse.pagination ?? null);
-      // Update cache
       partsCache.set(cacheKey, {
         data: paginatedResponse.data,
         pagination: paginatedResponse.pagination ?? null,
@@ -476,14 +466,11 @@ function PartList({
     }
   }, [paginatedResponse, cacheKey]);
 
-  // Track previous pagination to prevent unnecessary updates
   const prevPaginationRef = useRef<PaginationInfo | null>(null);
 
-  // Notify parent of pagination info when data changes
   useEffect(() => {
     const currentPagination = providedPagination ?? displayPagination;
 
-    // Only notify if pagination actually changed
     if (
       onPaginationChange &&
       JSON.stringify(prevPaginationRef.current) !==
@@ -494,14 +481,12 @@ function PartList({
     }
   }, [displayPagination, providedPagination, onPaginationChange]);
 
-  // Use provided data if available, otherwise use display data (from cache or fresh fetch)
   const isLoadingState = providedData
     ? false
     : isLoading && displayData.length === 0;
   const errorState = providedData ? null : error;
   const parts = providedData ?? displayData;
 
-  // Hooks must be called unconditionally, before any early returns
   const getCategoryName = useCallback(
     (categoryId: string) => {
       const cat = categories.find((c) => c.id === categoryId);
@@ -611,7 +596,6 @@ function PartList({
     getFitCell,
   ]);
 
-  // Server-side sort: use API order unless sort is by "fit" (no server support), then client-sort current page
   const displayParts =
     isControlledSort &&
     controlledSortParam !== 'fit_asc' &&
@@ -867,7 +851,6 @@ function PartList({
     );
   }
 
-  // Card layout (default)
   return (
     <Card>
       {title && (
@@ -888,7 +871,6 @@ function PartList({
               className="bg-gray-800 rounded-xl shadow-md border border-gray-700 hover:border-blue-500 transition-colors"
             >
               <div className="flex flex-row items-center gap-4 p-4">
-                {/* Image */}
                 <Link to={`/parts/${part.id}`} className="flex-shrink-0">
                   <div className="w-20 h-20">
                     <ImageWithPlaceholder
@@ -904,7 +886,6 @@ function PartList({
                   </div>
                 </Link>
 
-                {/* Main Content */}
                 <div className="flex-grow min-w-0">
                   <Link
                     to={`/parts/${part.id}`}
@@ -947,7 +928,6 @@ function PartList({
                     </div>
                   </Link>
 
-                  {/* Actions Row */}
                   <div className="flex items-center justify-between gap-2 mt-2 pt-2 border-t border-gray-700">
                     <div className="flex items-center gap-2">
                       {showVoteButtons && onVoteUpdate && (

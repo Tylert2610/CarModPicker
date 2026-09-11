@@ -17,6 +17,7 @@ interface SparklineCellProps {
 const DEFAULT_WIDTH = 60;
 const DEFAULT_HEIGHT = 16;
 
+/** A table cell showing a part's price trend, fetched through the shared cache. */
 export default function SparklineCell({
   partId,
   summary,
@@ -34,18 +35,13 @@ export default function SparklineCell({
   const observationCount = summary?.observation_count ?? 0;
   const hasMulti = observationCount >= 2;
 
-  // Set up IntersectionObserver only when the summary indicates multiple
-  // observations (zero/single observations don't need a per-part fetch — the
-  // summary itself drives the rendering). Re-runs if partId/hasMulti change.
   useEffect(() => {
     if (!hasMulti) return;
-    if (history !== null) return; // already populated from cache
+    if (history !== null) return;
 
     const node = wrapperRef.current;
     if (!node) return;
 
-    // Fallback: environments without IntersectionObserver (older jsdom in
-    // some test setups) — fetch eagerly.
     if (typeof IntersectionObserver === 'undefined') {
       setShouldFetch(true);
       return;
@@ -73,7 +69,6 @@ export default function SparklineCell({
     };
   }, [partId, hasMulti, history]);
 
-  // Trigger the actual fetch when shouldFetch flips true.
   useEffect(() => {
     if (!shouldFetch) return;
     if (history !== null) return;
@@ -87,13 +82,10 @@ export default function SparklineCell({
     };
   }, [shouldFetch, partId, history]);
 
-  // Zero observations → render nothing (caller controls layout spacing).
   if (observationCount === 0 || !summary) {
     return null;
   }
 
-  // Single observation → render the centered dot directly off the summary,
-  // no fetch needed. Synthesize a one-element history from the summary.
   if (observationCount === 1) {
     const synthetic: PartPriceHistoryReadWithRetailer[] =
       summary.last_cents !== null && summary.last_observed_at !== null
@@ -120,8 +112,6 @@ export default function SparklineCell({
     );
   }
 
-  // Multi-observation: wait for lazy-loaded history. Until then, reserve
-  // the slot with an empty span so layout doesn't jump.
   return (
     <span
       ref={wrapperRef}

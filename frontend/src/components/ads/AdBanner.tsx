@@ -23,6 +23,7 @@ declare global {
   }
 }
 
+/** One AdSense unit in the stack, pushed to adsbygoogle once consent allows. */
 function SingleAd({
   canServeAds,
   slotId,
@@ -40,9 +41,8 @@ function SingleAd({
     if (!canServeAds || !slotId || !insRef.current) return;
     try {
       (window.adsbygoogle = window.adsbygoogle || []).push({});
-    } catch {
-      // AdSense not loaded yet or blocked
-    }
+      // eslint-disable-next-line no-empty
+    } catch {}
   }, [canServeAds, slotId]);
 
   return (

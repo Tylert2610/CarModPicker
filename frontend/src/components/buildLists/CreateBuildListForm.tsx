@@ -33,6 +33,7 @@ interface CreateBuildListFormProps {
 const createBuildListRequestFn = (payload: BuildListCreate) =>
   apiClient.post<BuildListRead>('/build-lists/', payload);
 
+/** Creates a build list, picking the vehicle before its details. */
 const CreateBuildListForm: React.FC<CreateBuildListFormProps> = ({
   onBuildListCreated,
 }) => {
@@ -58,27 +59,23 @@ const CreateBuildListForm: React.FC<CreateBuildListFormProps> = ({
     setError: setApiError,
   } = useApiRequest(createBuildListRequestFn);
 
-  // Memoize request functions to prevent infinite re-renders
   const fetchMakeStatsFn = useCallback(
     () => carGenerationsApi.getCarMakeStats(),
     []
   );
 
-  // Fetch available manufacturers
   const {
     data: makeStats,
     isLoading: isLoadingMakes,
     executeRequest: fetchMakes,
   } = useApiRequest(fetchMakeStatsFn);
 
-  // Memoize cars by make request function
   const fetchCarsByMakeFn = useCallback(
     (make: string) =>
       carGenerationsApi.getCarsByMake(make, { limit: LARGE_FETCH_LIMIT }),
     []
   );
 
-  // Fetch cars by make when make is selected
   const {
     data: carsByMake,
     isLoading: isLoadingCars,
@@ -99,8 +96,8 @@ const CreateBuildListForm: React.FC<CreateBuildListFormProps> = ({
   useEffect(() => {
     if (selectedMake) {
       void fetchCarsByMake(selectedMake);
-      setSelectedModel(''); // Reset model when make changes
-      setSelectedGeneration(null); // Reset generation when make changes
+      setSelectedModel('');
+      setSelectedGeneration(null);
     } else {
       setAvailableCars([]);
       setSelectedModel('');
@@ -113,7 +110,6 @@ const CreateBuildListForm: React.FC<CreateBuildListFormProps> = ({
   }, [carsByMake]);
 
   useEffect(() => {
-    // Reset generation when model changes
     if (selectedModel) {
       setSelectedGeneration(null);
     }
@@ -168,7 +164,6 @@ const CreateBuildListForm: React.FC<CreateBuildListFormProps> = ({
         text: 'Build list created successfully!',
       });
       onBuildListCreated(result);
-      // Reset form
       setName('');
       setDescription('');
       setBasePriceDollars('');
@@ -179,14 +174,12 @@ const CreateBuildListForm: React.FC<CreateBuildListFormProps> = ({
     }
   };
 
-  // Get unique models for selected make
   const uniqueModels = Array.from(
     new Set(
       availableCars.map((car) => car.car_model_name ?? '').filter(Boolean)
     )
   ).sort();
 
-  // Get generations (cars) for selected make and model
   const generations = availableCars
     .filter(
       (car) =>
@@ -194,7 +187,6 @@ const CreateBuildListForm: React.FC<CreateBuildListFormProps> = ({
         (car.car_model_name ?? '') === selectedModel
     )
     .sort((a, b) => {
-      // Sort by start_year, then generation_name
       if (a.start_year !== b.start_year) {
         return a.start_year - b.start_year;
       }
@@ -204,7 +196,6 @@ const CreateBuildListForm: React.FC<CreateBuildListFormProps> = ({
   return (
     <div className="p-2">
       <form onSubmit={(e) => void handleSubmit(e)} className="space-y-6">
-        {/* Car Selection Section */}
         <div className="space-y-2">
           <h3 className="text-lg font-semibold text-gray-200">Select Car</h3>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -300,7 +291,6 @@ const CreateBuildListForm: React.FC<CreateBuildListFormProps> = ({
           )}
         </div>
 
-        {/* Build List Details Section - Only show after car is selected */}
         {selectedGeneration && (
           <div className="space-y-4 border-t border-gray-700 pt-4">
             <h3 className="text-lg font-semibold text-gray-200">

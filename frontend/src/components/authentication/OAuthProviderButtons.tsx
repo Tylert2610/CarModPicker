@@ -1,17 +1,7 @@
 /**
- * The "Continue with X" buttons on the login page, in identity mode.
- *
- * The set comes from `GET /api/auth/oauth/providers` rather than from a
- * hardcoded list, so a deployment that configures GitHub gets a GitHub button
- * with no frontend change and one that configures nothing renders nothing. See
- * `../../api/oauthProviders` for why that is a read rather than a probe.
- *
- * ## Why these are anchors and not buttons
- *
- * The start route answers a `302` to the provider, whose host sends no CORS
- * headers, so it has to be a real navigation rather than a `fetch`. Rendering
- * the URL on an anchor is the simplest way to get that, and it also gets
- * middle-click and "open in new tab" behaving the way a user expects.
+ * The "Continue with X" buttons for identity mode, one per provider reported by
+ * the providers route. Rendered as anchors because the start route redirects to
+ * a host that sends no CORS headers, so it must be a real navigation.
  */
 import { useEffect, useState } from 'react';
 import { FaGithub, FaGoogle, FaSignInAlt } from 'react-icons/fa';
@@ -24,6 +14,7 @@ import {
   type OAuthProvider,
 } from '../../api/oauthProviders';
 
+/** Props for OAuthProviderButtons: where to land after the callback. */
 export interface OAuthProviderButtonsProps {
   /** Where to land after the callback, as a path on this frontend. */
   returnTo?: string;

@@ -9,6 +9,7 @@ import { Button } from '../ui/button';
 import Spinner from '../ui/spinner';
 import { getApiErrorMessage } from '../../utils/apiError';
 
+/** A date for display, falling back to the raw value rather than throwing. */
 const formatDate = (value?: string | null): string => {
   if (!value) return '—';
   try {
@@ -18,12 +19,14 @@ const formatDate = (value?: string | null): string => {
   }
 };
 
+/** A random 32 byte hex nonce for the Google sign-in request. */
 const makeNonce = (): string => {
   const bytes = new Uint8Array(32);
   crypto.getRandomValues(bytes);
   return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
 };
 
+/** The legacy Google-only connected accounts tab, linking via an ID token. */
 function ConnectedAccountsSettings() {
   const [accounts, setAccounts] = useState<OAuthAccountRead[]>([]);
   const [isLoading, setIsLoading] = useState(true);

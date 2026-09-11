@@ -2,13 +2,13 @@ import { Link } from 'react-router-dom';
 
 import { useCookieConsent } from '../../hooks/useCookieConsent';
 
+/** Asks for cookie consent until a choice is made; rejecting reloads the page. */
 function CookieConsentBanner() {
   const { consent, accept, reject } = useCookieConsent();
   if (consent !== null) return null;
 
   const handleReject = () => {
     reject();
-    // Reload so any previously-loaded AdSense script and in-memory state is flushed.
     window.location.reload();
   };
 

@@ -5,6 +5,7 @@ interface SectionHeaderProps {
   className?: string;
 }
 
+/** A section's heading within a page. */
 const SectionHeader: React.FC<SectionHeaderProps> = ({
   title,
   className = '',

@@ -11,8 +11,10 @@ import {
   DialogTitle,
 } from './dialog';
 
+/** Whether the confirm action reads as ordinary or destructive. */
 export type ConfirmDialogVariant = 'default' | 'destructive';
 
+/** Props for ConfirmDialog: copy, open state, and the confirm handler. */
 export interface ConfirmDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -31,6 +33,7 @@ export interface ConfirmDialogProps {
   dataTestid?: string;
 }
 
+/** A modal that asks the user to confirm before running an action. */
 export function ConfirmDialog({
   open,
   onOpenChange,

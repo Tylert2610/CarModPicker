@@ -18,6 +18,9 @@ import { useAuth } from '../../../hooks/useAuth';
 import { Button } from '../../ui/button';
 import Spinner from '../../ui/spinner';
 
+/**
+ * The site header: logo, auth controls, primary navigation, and the mobile menu.
+ */
 function Header() {
   const { isAuthenticated, logout, isLoading, user } = useAuth();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -33,15 +36,11 @@ function Header() {
 
   return (
     <header className="w-full">
-      {/* Background with gradient */}
       <div className="absolute inset-0 bg-linear-to-r from-card via-muted to-card opacity-95 backdrop-blur-md"></div>
 
-      {/* Main Header Content */}
       <div className="relative">
-        {/* Top Tier - Logo and Auth */}
         <div className="container mx-auto px-4 py-3">
           <div className="flex justify-between items-center">
-            {/* Logo */}
             <Link
               to="/"
               className="flex items-center space-x-2 group animate-slideInLeft"
@@ -54,7 +53,6 @@ function Header() {
               </span>
             </Link>
 
-            {/* Desktop Auth Section */}
             <div className="hidden md:flex items-center space-x-4">
               {isLoading ? (
                 <div className="flex items-center space-x-2">
@@ -98,7 +96,6 @@ function Header() {
               )}
             </div>
 
-            {/* Mobile Menu Button */}
             <button
               type="button"
               onClick={toggleMobileMenu}
@@ -111,7 +108,6 @@ function Header() {
           </div>
         </div>
 
-        {/* Bottom Tier - Navigation */}
         <nav className="border-t border-white/10">
           <div className="container mx-auto px-4">
             <div className="hidden md:flex items-center justify-between py-2">
@@ -149,7 +145,6 @@ function Header() {
           </div>
         </nav>
 
-        {/* Mobile Menu */}
         {isMobileMenuOpen && (
           <div className="md:hidden animate-slideInUp">
             <div className="border border-white/10 bg-white/5 backdrop-blur-xl mx-4 mb-4 rounded-xl">
@@ -255,7 +250,7 @@ function Header() {
   );
 }
 
-// Desktop Navigation Link Component
+/** A desktop header link to an in-app route. */
 function NavLink({
   to,
   icon,
@@ -278,7 +273,7 @@ function NavLink({
   );
 }
 
-// Mobile Navigation Link Component
+/** A mobile-menu link to an in-app route, closing the menu on click. */
 function MobileNavLink({
   to,
   icon,
@@ -302,7 +297,7 @@ function MobileNavLink({
   );
 }
 
-// Desktop External Link Component (opens in new tab)
+/** A desktop header link to an external site. */
 function ExternalNavLink({
   href,
   icon,
@@ -327,7 +322,7 @@ function ExternalNavLink({
   );
 }
 
-// Mobile External Link Component (opens in new tab)
+/** A mobile-menu link to an external site, closing the menu on click. */
 function MobileExternalNavLink({
   href,
   icon,

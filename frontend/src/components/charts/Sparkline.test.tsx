@@ -32,7 +32,6 @@ describe('Sparkline', () => {
     expect(svg).not.toBeNull();
     const dot = container.querySelector('[data-testid="sparkline-dot"]');
     expect(dot).not.toBeNull();
-    // No polyline path when there's only one point
     expect(
       container.querySelector('[data-testid="sparkline-polyline"]')
     ).toBeNull();
@@ -50,7 +49,6 @@ describe('Sparkline', () => {
     );
     expect(polyline).not.toBeNull();
     const points = polyline?.getAttribute('points') ?? '';
-    // Three points → three coordinate pairs
     expect(points.split(' ').filter(Boolean)).toHaveLength(3);
     expect(polyline?.getAttribute('preserveAspectRatio')).toBeNull();
     const svg = container.querySelector('svg');
@@ -60,8 +58,6 @@ describe('Sparkline', () => {
   });
 
   it('sorts observations by observed_at ascending before plotting', () => {
-    // Provide unsorted input — first point in `points` should reflect the
-    // earliest observation (lowest cents here is at the earliest date).
     const history = [
       obs('late', 6000, '2026-04-10T00:00:00Z'),
       obs('early', 1000, '2026-01-01T00:00:00Z'),
@@ -74,8 +70,6 @@ describe('Sparkline', () => {
     const points = (polyline?.getAttribute('points') ?? '')
       .split(' ')
       .filter(Boolean);
-    // First point in plot order is x=0 (earliest), last is x=width.
-    // y is normalized so the minimum price (1000) maps to the largest y.
     expect(points[0]?.startsWith('0,')).toBe(true);
   });
 
@@ -107,7 +101,6 @@ describe('Sparkline', () => {
     const points = (polyline?.getAttribute('points') ?? '')
       .split(' ')
       .filter(Boolean);
-    // All y values should equal height/2 (default 24/2 = 12) when range is 0
     points.forEach((p) => {
       const [, y] = p.split(',');
       expect(Number(y)).toBe(12);

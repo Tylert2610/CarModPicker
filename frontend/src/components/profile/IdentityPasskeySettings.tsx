@@ -1,31 +1,7 @@
 /**
- * The passkeys panel for identity mode: enrol, rename, delete.
- *
- * Modelled on WebbPulse-Portfolio's `components/admin/PasskeysPanel.tsx`, which
- * serves the same three operations against the same package.
- *
- * ## Why this is a separate component from the existing passkeys tab
- *
- * `./PasskeySettings` speaks CarModPicker's own WebAuthn routes through
- * `@simplewebauthn/browser`: it fetches options and a `challenge_token`, runs
- * the ceremony in the page, and posts the credential back with that token. The
- * identity service holds the challenge server side against the session and the
- * package runs both legs inside one call, so there is no token for this
- * component to carry and no second request for it to make.
- *
- * The two also disagree about what a credential is called. The legacy summary
- * carries a `nickname` and an integer id; a package `Passkey` carries a `name`
- * and a base64url `credentialId`, which is what the rename and delete routes
- * take. One component holding both would branch at every field, so there are
- * two and `./SecuritySettingsDialog` picks one. Row 13 deletes the legacy one
- * whole.
- *
- * ## The last credential rule
- *
- * The server refuses to delete the only credential on an account that has no
- * other way in, and its refusal sentence names the next step. This panel shows
- * that sentence rather than a generic failure, which is the whole reason
- * `../../api/identityPasskeys` keeps the server's message.
+ * The passkeys panel for identity mode: enrol, rename, delete. The identity
+ * service holds the challenge server side, so one call runs both ceremony legs.
+ * Server refusals are surfaced verbatim because they name the user's next step.
  */
 import { useCallback, useEffect, useState } from 'react';
 import { FaKey, FaPencilAlt, FaPlus, FaTrash } from 'react-icons/fa';
@@ -92,8 +68,6 @@ function IdentityPasskeySettings() {
       } else if (result.status === 'failed') {
         setError(result.error);
       }
-      // A cancellation is silent. The user dismissed the browser's own sheet
-      // and already knows what happened; an error banner would only argue.
     } finally {
       setBusy(false);
     }
@@ -140,8 +114,6 @@ function IdentityPasskeySettings() {
         setSuccess('Passkey removed.');
         await load();
       } else if (result.status === 'failed') {
-        // Includes the last-credential refusal, whose sentence names the next
-        // step. See the module note.
         setError(result.error);
       }
     } finally {

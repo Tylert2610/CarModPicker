@@ -3,11 +3,9 @@ import ImageWithPlaceholder from '../images/ImageWithPlaceholder';
 import { buildExternalImageUrl } from '../../utils/externalImageUrls';
 
 const CAROUSEL_SIZE = 5;
-// Default 4:3 until the real image loads; clamp wide/tall extremes so the card
-// never collapses or dominates the column.
 const DEFAULT_HERO_ASPECT = 4 / 3;
-const MIN_HERO_ASPECT = 3 / 4; // taller than 3:4 (portrait) gets clamped
-const MAX_HERO_ASPECT = 16 / 9; // wider than 16:9 gets clamped
+const MIN_HERO_ASPECT = 3 / 4;
+const MAX_HERO_ASPECT = 16 / 9;
 
 interface ImageGalleryProps {
   /** Image URLs (presigned from API). First entry is the primary/display image. */
@@ -34,8 +32,6 @@ function ImageGallery({
 
   const allUrls = imageUrls && imageUrls.length > 0 ? imageUrls : [];
 
-  // Reset to the default aspect when the user picks a different image so we
-  // don't render the new image with the previous one's ratio for a frame.
   useEffect(() => {
     setHeroAspect(DEFAULT_HERO_ASPECT);
   }, [selectedIndex]);
@@ -54,7 +50,6 @@ function ImageGallery({
 
     return (
       <div className="space-y-3">
-        {/* Large image: container matches the actual image aspect (clamped) */}
         <div
           className="max-h-[420px] w-full rounded-lg overflow-hidden border border-gray-600 bg-gray-800/50"
           style={{ aspectRatio: heroAspect }}
@@ -76,7 +71,6 @@ function ImageGallery({
             }}
           />
         </div>
-        {/* Selector carousel: click a thumbnail to show it in the large view */}
         {allUrls.length > 1 && (
           <div className="flex gap-3 overflow-x-auto pb-2 rounded-lg">
             {allUrls.map((url, idx) => (

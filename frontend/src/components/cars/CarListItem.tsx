@@ -13,6 +13,7 @@ interface CarListItemProps {
   car: CarGenerationRead;
 }
 
+/** A car as a compact row linking to its detail page. */
 const CarListItem: React.FC<CarListItemProps> = ({ car }) => {
   return (
     <Link
@@ -20,7 +21,6 @@ const CarListItem: React.FC<CarListItemProps> = ({ car }) => {
       className="block hover:no-underline h-full"
     >
       <Card className="flex flex-col h-full hover:border-info border-2 border-transparent transition-colors">
-        {/* Add hover effect */}
         <div className="flex-grow flex flex-col">
           <h3 className="text-lg font-semibold text-info mb-2">
             {carFullDisplayName(car)}

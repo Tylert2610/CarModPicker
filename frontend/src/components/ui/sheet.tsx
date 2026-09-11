@@ -5,11 +5,16 @@ import { X } from 'lucide-react';
 
 import { cn } from '../../lib/utils';
 
+/** The slide-over panel root; controls open state. */
 export const Sheet = SheetPrimitive.Root;
+/** The element that opens its Sheet when activated. */
 export const SheetTrigger = SheetPrimitive.Trigger;
+/** The element that closes its Sheet when activated. */
 export const SheetClose = SheetPrimitive.Close;
+/** Renders Sheet content outside the normal DOM flow. */
 export const SheetPortal = SheetPrimitive.Portal;
 
+/** The dimmed backdrop behind an open Sheet. */
 export function SheetOverlay({
   className,
   ...props
@@ -44,11 +49,13 @@ const sheetVariants = cva(
   }
 );
 
+/** Props for SheetContent: dialog content props plus the edge it slides from. */
 export interface SheetContentProps
   extends
     React.ComponentProps<typeof SheetPrimitive.Content>,
     VariantProps<typeof sheetVariants> {}
 
+/** The Sheet's panel, sliding in from the given edge. */
 export function SheetContent({
   side = 'right',
   className,
@@ -72,6 +79,7 @@ export function SheetContent({
   );
 }
 
+/** The top section of a SheetContent, holding title and description. */
 export const SheetHeader = ({
   className,
   ...props
@@ -86,6 +94,7 @@ export const SheetHeader = ({
 );
 SheetHeader.displayName = 'SheetHeader';
 
+/** The bottom section of a SheetContent, usually holding actions. */
 export const SheetFooter = ({
   className,
   ...props
@@ -100,6 +109,7 @@ export const SheetFooter = ({
 );
 SheetFooter.displayName = 'SheetFooter';
 
+/** The accessible heading of a Sheet. */
 export function SheetTitle({
   className,
   ...props
@@ -112,6 +122,7 @@ export function SheetTitle({
   );
 }
 
+/** The accessible supporting text of a Sheet. */
 export function SheetDescription({
   className,
   ...props

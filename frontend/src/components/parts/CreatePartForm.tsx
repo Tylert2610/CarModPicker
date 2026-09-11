@@ -40,6 +40,9 @@ const createPartRequestFn = (partData: PartCreate) =>
 const fetchCarsRequestFn = () =>
   carGenerationsApi.listCars({ limit: LARGE_FETCH_LIMIT });
 
+/**
+ * Creates a part, including its vehicle fitment, category, manufacturer, and images.
+ */
 function CreatePartForm({ onPartCreated }: CreatePartFormProps) {
   const [formData, setFormData] = useState({
     name: '',
@@ -68,7 +71,6 @@ function CreatePartForm({ onPartCreated }: CreatePartFormProps) {
     useState<string | null>(null);
   const urlCheckTimeoutRef = useRef<number | null>(null);
 
-  // Convert categories to SearchableSelect options (only active categories)
   const categoryOptions: SearchableSelectOption[] = useMemo(() => {
     return categories
       .filter((category) => category.is_active)
@@ -80,7 +82,6 @@ function CreatePartForm({ onPartCreated }: CreatePartFormProps) {
       }));
   }, [categories]);
 
-  // Filter function for categories
   const filterCategories = useCallback(
     (
       options: SearchableSelectOption[],
@@ -102,7 +103,6 @@ function CreatePartForm({ onPartCreated }: CreatePartFormProps) {
     [categories]
   );
 
-  // Convert part_manufacturers to SearchableSelect options
   const part_manufacturerOptions: SearchableSelectOption[] = useMemo(() => {
     return part_manufacturers
       .filter((part_manufacturer) => part_manufacturer.is_active)
@@ -114,7 +114,6 @@ function CreatePartForm({ onPartCreated }: CreatePartFormProps) {
       }));
   }, [part_manufacturers]);
 
-  // Filter function for part_manufacturers
   const filterPartManufacturers = useCallback(
     (
       options: SearchableSelectOption[],
@@ -150,7 +149,6 @@ function CreatePartForm({ onPartCreated }: CreatePartFormProps) {
       ...prev,
       part_manufacturer_id: part_manufacturerId,
     }));
-    // Clear pending part_manufacturer if an existing part_manufacturer is selected or value is cleared
     if (part_manufacturerId !== null || value === null) {
       setPendingPartManufacturerName(null);
     }
@@ -164,15 +162,12 @@ function CreatePartForm({ onPartCreated }: CreatePartFormProps) {
   );
 
   const handleCreateNewPartManufacturer = (part_manufacturerName: string) => {
-    // Store the part_manufacturer name to be created later, don't create it yet
     setPendingPartManufacturerName(part_manufacturerName.trim());
-    // Clear the part_manufacturer_id since we're creating a new part_manufacturer
     setFormData((prev) => ({ ...prev, part_manufacturer_id: null }));
     if (validationError) setValidationError(null);
   };
 
   const handlePartManufacturerInputChange = (text: string) => {
-    // Clear pending part_manufacturer if user types something different
     if (
       pendingPartManufacturerName &&
       text.trim() !== pendingPartManufacturerName
@@ -201,7 +196,7 @@ function CreatePartForm({ onPartCreated }: CreatePartFormProps) {
     void fetchCategories();
     void fetchPartManufacturers();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Only fetch once on mount - request functions are stable
+  }, []);
 
   useEffect(() => {
     if (carsData && Array.isArray(carsData)) {
@@ -224,23 +219,19 @@ function CreatePartForm({ onPartCreated }: CreatePartFormProps) {
     }
   }, [part_manufacturersData]);
 
-  // Debounced URL checking effect
   useEffect(() => {
-    // Clear any existing timeout
     if (urlCheckTimeoutRef.current) {
       clearTimeout(urlCheckTimeoutRef.current);
     }
 
     const url = formData.product_url.trim();
 
-    // Don't check if URL is empty
     if (!url) {
       setDuplicatePartId(null);
       setIsCheckingUrl(false);
       return;
     }
 
-    // Basic URL validation - only check if it looks like a URL
     const urlPattern = /^https?:\/\/.+/;
     if (!urlPattern.test(url)) {
       setDuplicatePartId(null);
@@ -248,11 +239,9 @@ function CreatePartForm({ onPartCreated }: CreatePartFormProps) {
       return;
     }
 
-    // Set checking state
     setIsCheckingUrl(true);
     setDuplicatePartId(null);
 
-    // Debounce the check - wait 500ms after user stops typing
     urlCheckTimeoutRef.current = window.setTimeout(() => {
       void (async () => {
         try {
@@ -263,7 +252,6 @@ function CreatePartForm({ onPartCreated }: CreatePartFormProps) {
             setDuplicatePartId(null);
           }
         } catch {
-          // Silently fail - don't show error for URL checks
           setDuplicatePartId(null);
         } finally {
           setIsCheckingUrl(false);
@@ -271,7 +259,6 @@ function CreatePartForm({ onPartCreated }: CreatePartFormProps) {
       })();
     }, 500);
 
-    // Cleanup function
     return () => {
       if (urlCheckTimeoutRef.current) {
         clearTimeout(urlCheckTimeoutRef.current);
@@ -283,7 +270,6 @@ function CreatePartForm({ onPartCreated }: CreatePartFormProps) {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
     if (validationError) setValidationError(null);
-    // Don't clear duplicatePartId here - let the useEffect handle it
   };
 
   const handleCarIdsChange = (carIds: string[]) => {
@@ -315,7 +301,6 @@ function CreatePartForm({ onPartCreated }: CreatePartFormProps) {
       return;
     }
 
-    // Create part manufacturer first if there's a pending part_manufacturer name
     let part_manufacturerId = formData.part_manufacturer_id;
     if (pendingPartManufacturerName) {
       try {
@@ -325,7 +310,6 @@ function CreatePartForm({ onPartCreated }: CreatePartFormProps) {
         });
         if (part_manufacturerResult !== null && part_manufacturerResult.id) {
           part_manufacturerId = part_manufacturerResult.id;
-          // Refresh part_manufacturers list
           await fetchPartManufacturers();
         } else {
           setValidationError(
@@ -351,7 +335,7 @@ function CreatePartForm({ onPartCreated }: CreatePartFormProps) {
       category_id: formData.category_id,
       is_universal: formData.is_universal,
       car_ids: formData.is_universal ? [] : formData.car_ids,
-      part_manufacturer_id: part_manufacturerId!, // part_manufacturerId is guaranteed to be set at this point due to validation
+      part_manufacturer_id: part_manufacturerId!,
       part_number: formData.part_number.trim() || null,
     };
 
@@ -360,34 +344,25 @@ function CreatePartForm({ onPartCreated }: CreatePartFormProps) {
     setValidationError(null);
 
     try {
-      // Call API directly to access full error response
       await partsApi.createPart(partData);
-      // Clear pending part_manufacturer after successful creation
       setPendingPartManufacturerName(null);
       setIsCreating(false);
       onPartCreated();
     } catch (err) {
       setIsCreating(false);
-      // Handle duplicate URL error
       if (err instanceof ApiError && err.body) {
-        // `PART_ALREADY_EXISTS` is what the backend actually sends for a
-        // duplicate. The other two are kept because they cost nothing and this
-        // branch is the only thing standing between a duplicate and a dead-end
-        // error message.
         const errorCode = getApiErrorCode(err);
         if (
           errorCode === 'PART_ALREADY_EXISTS' ||
           errorCode === 'DUPLICATE_PRODUCT_URL' ||
           errorCode === 'CONFLICT'
         ) {
-          // Extract existing part ID from details or message
           const existingPartId = getApiErrorDetails(err)?.['existing_part_id'];
           if (typeof existingPartId === 'string') {
             setDuplicatePartId(existingPartId);
             setValidationError(null);
             return;
           }
-          // Try to extract from message if details not available
           const message = getApiErrorMessage(err, '');
           const match = message.match(/Part ID: ([\w-]+)/);
           if (match && match[1]) {
@@ -396,7 +371,6 @@ function CreatePartForm({ onPartCreated }: CreatePartFormProps) {
             return;
           }
         }
-        // For other errors, set validation error
         setValidationError(
           getApiErrorMessage(err, 'Failed to create part. Please try again.')
         );

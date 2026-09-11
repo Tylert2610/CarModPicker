@@ -79,9 +79,6 @@ describe('ConfirmDialog', () => {
     const { onOpenChange, onConfirm } = renderControlled({ loading: true });
     const confirm = screen.getByTestId('confirm-dialog-confirm');
     fireEvent.click(confirm);
-    // Disabled buttons swallow click events — neither callback fires.
-    // Critical guarantee: ConfirmDialog never calls onOpenChange itself
-    // in response to a confirm interaction.
     expect(onOpenChange).not.toHaveBeenCalled();
     expect(onConfirm).not.toHaveBeenCalled();
   });

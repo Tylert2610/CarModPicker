@@ -4,13 +4,20 @@ import { Check, ChevronRight, Circle } from 'lucide-react';
 
 import { cn } from '../../lib/utils';
 
+/** The dropdown menu root; controls open state. */
 export const DropdownMenu = DropdownMenuPrimitive.Root;
+/** The element that opens its DropdownMenu when activated. */
 export const DropdownMenuTrigger = DropdownMenuPrimitive.Trigger;
+/** Groups related items under a shared DropdownMenuLabel. */
 export const DropdownMenuGroup = DropdownMenuPrimitive.Group;
+/** Renders menu content outside the normal DOM flow. */
 export const DropdownMenuPortal = DropdownMenuPrimitive.Portal;
+/** A nested submenu root. */
 export const DropdownMenuSub = DropdownMenuPrimitive.Sub;
+/** Groups DropdownMenuRadioItems into one exclusive choice. */
 export const DropdownMenuRadioGroup = DropdownMenuPrimitive.RadioGroup;
 
+/** The item that opens a nested submenu. */
 export function DropdownMenuSubTrigger({
   className,
   inset,
@@ -34,6 +41,7 @@ export function DropdownMenuSubTrigger({
   );
 }
 
+/** The popup for a nested submenu. */
 export function DropdownMenuSubContent({
   className,
   ...props
@@ -49,6 +57,7 @@ export function DropdownMenuSubContent({
   );
 }
 
+/** The popup listing a DropdownMenu's items. */
 export function DropdownMenuContent({
   className,
   sideOffset = 4,
@@ -68,6 +77,7 @@ export function DropdownMenuContent({
   );
 }
 
+/** One activatable entry in a dropdown menu. */
 export function DropdownMenuItem({
   className,
   inset,
@@ -87,6 +97,7 @@ export function DropdownMenuItem({
   );
 }
 
+/** A menu entry that toggles a boolean, showing a check when set. */
 export function DropdownMenuCheckboxItem({
   className,
   children,
@@ -112,6 +123,7 @@ export function DropdownMenuCheckboxItem({
   );
 }
 
+/** A menu entry that selects one value within a radio group. */
 export function DropdownMenuRadioItem({
   className,
   children,
@@ -135,6 +147,7 @@ export function DropdownMenuRadioItem({
   );
 }
 
+/** The heading for a group of menu items. */
 export function DropdownMenuLabel({
   className,
   inset,
@@ -154,6 +167,7 @@ export function DropdownMenuLabel({
   );
 }
 
+/** A dividing rule between groups of menu items. */
 export function DropdownMenuSeparator({
   className,
   ...props
@@ -166,6 +180,7 @@ export function DropdownMenuSeparator({
   );
 }
 
+/** The right-aligned keyboard hint on a menu item. */
 export const DropdownMenuShortcut = ({
   className,
   ...props

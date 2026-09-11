@@ -2,6 +2,7 @@ import * as React from 'react';
 
 import { cn } from '../../lib/utils';
 
+/** How severe a DangerActionPanel's action is, which sets its tone. */
 export type DangerColor = 'destructive' | 'warning' | 'info';
 
 const PANEL_TONE: Record<DangerColor, { container: string; heading: string }> =
@@ -20,6 +21,7 @@ const PANEL_TONE: Record<DangerColor, { container: string; heading: string }> =
     },
   };
 
+/** Props for DangerActionPanel: heading, description, tone, and children. */
 export interface DangerActionPanelProps {
   title: string;
   description: React.ReactNode;
@@ -29,10 +31,8 @@ export interface DangerActionPanelProps {
 }
 
 /**
- * Panel chrome for an admin destructive-action section. Owns the heading +
- * description + tone container; consumers slot buttons + result blocks +
- * confirm-dialog mounts via children. Used by SystemAdmin's Deletion-options
- * accordion (3 sections: cars, global parts/manufacturers, bucket cleanup).
+ * Panel chrome for an admin destructive-action section: heading, description,
+ * and tone container. Consumers slot buttons and confirm dialogs via children.
  */
 export function DangerActionPanel({
   title,

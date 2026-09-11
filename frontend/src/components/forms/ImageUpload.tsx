@@ -34,6 +34,9 @@ interface ImageUploadProps {
 
 const DEFAULT_ALLOWED_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
 
+/**
+ * Uploads and previews a single image, or hands the file to the caller instead.
+ */
 const ImageUpload: React.FC<ImageUploadProps> = ({
   currentImageUrl,
   entityType,
@@ -59,7 +62,6 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Validate file type
     const fileExtension = file.name.split('.').pop()?.toLowerCase();
     if (!fileExtension || !allowedExtensions.includes(fileExtension)) {
       setError(
@@ -68,7 +70,6 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
       return;
     }
 
-    // Validate file size
     const fileSizeMB = file.size / (1024 * 1024);
     if (fileSizeMB > maxSizeMB) {
       setError(`File size exceeds maximum of ${maxSizeMB}MB`);
@@ -80,11 +81,8 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
 
     void (async () => {
       try {
-        // If onFileSelected is provided, use it instead of default upload
         if (onFileSelected) {
           await onFileSelected(file);
-          // Note: onFileSelected is responsible for updating preview and calling onImageUploaded if needed
-          // Reset file input
           if (fileInputRef.current) {
             fileInputRef.current.value = '';
           }
@@ -92,18 +90,15 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
           return;
         }
 
-        // Default upload behavior
         const response: ImageUploadResponse = await imageApi.uploadImage(
           file,
           entityType,
           entityId
         );
 
-        // Store the file_key in your database, use presigned_url for display
         onImageUploaded(response.file_key, response.presigned_url);
         setPreviewUrl(response.presigned_url);
 
-        // Reset file input
         if (fileInputRef.current) {
           fileInputRef.current.value = '';
         }
@@ -141,7 +136,6 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
 
       {error && <ErrorAlert message={error} />}
 
-      {/* Preview */}
       {showPreview && previewUrl && (
         <div className="relative">
           <ImageWithPlaceholder
@@ -162,7 +156,6 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
         </div>
       )}
 
-      {/* Upload Input */}
       <div className="space-y-2">
         <input
           ref={fileInputRef}

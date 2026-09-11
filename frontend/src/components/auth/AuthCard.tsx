@@ -5,6 +5,7 @@ interface AuthCardProps {
   children: React.ReactNode;
 }
 
+/** The centred card that frames an auth page's title and form. */
 const AuthCard: React.FC<AuthCardProps> = ({ title, children }) => {
   return (
     <div className="min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">

@@ -46,8 +46,6 @@ function makeSingleResponse(
   };
 }
 
-// jsdom does not implement IntersectionObserver. Provide a controllable mock
-// that lets each test trigger intersection on demand.
 type IOEntryPartial = Pick<IntersectionObserverEntry, 'isIntersecting'>;
 interface IOMock {
   observe: ReturnType<typeof vi.fn>;
@@ -72,7 +70,6 @@ beforeEach(() => {
         trigger: (entries) => cb(entries),
       };
       ioInstances.push(inst);
-      // Mutate `this` so the class instance has the spy methods.
       Object.assign(this, inst);
     }
   }
@@ -127,7 +124,6 @@ describe('SparklineCell', () => {
       />
     );
 
-    // Wrapper is rendered but no polyline yet, no fetch yet.
     expect(
       container.querySelector('[data-testid="sparkline-cell"]')
     ).not.toBeNull();
@@ -136,7 +132,6 @@ describe('SparklineCell', () => {
     ).toBeNull();
     expect(vi.mocked(apiClient.get)).not.toHaveBeenCalled();
 
-    // Trigger intersection.
     expect(ioInstances).toHaveLength(1);
     await act(async () => {
       ioInstances[0]!.trigger([{ isIntersecting: true }]);
@@ -158,7 +153,6 @@ describe('SparklineCell', () => {
       buildResponse(makeSingleResponse(makeHistory(3)))
     );
 
-    // First mount → trigger intersection → fetch fires.
     const first = render(
       <SparklineCell
         partId="p-1"
@@ -174,8 +168,6 @@ describe('SparklineCell', () => {
     });
     first.unmount();
 
-    // Second mount for the same partId — the cache should serve the response
-    // synchronously and no new fetch should fire (even after intersection).
     const second = render(
       <SparklineCell
         partId="p-1"

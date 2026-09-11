@@ -38,6 +38,7 @@ const updateBuildListRequestFn = (payload: {
     payload.data
   );
 
+/** Edits a build list's details and its vehicle assignment. */
 const EditBuildListForm: React.FC<EditBuildListFormProps> = ({
   buildList,
   onBuildListUpdated,
@@ -70,34 +71,29 @@ const EditBuildListForm: React.FC<EditBuildListFormProps> = ({
     setError: setApiError,
   } = useApiRequest(updateBuildListRequestFn);
 
-  // Memoize request functions to prevent infinite re-renders
   const fetchMakeStatsFn = useCallback(
     () => carGenerationsApi.getCarMakeStats(),
     []
   );
 
-  // Fetch available manufacturers
   const {
     data: makeStats,
     isLoading: isLoadingMakes,
     executeRequest: fetchMakes,
   } = useApiRequest(fetchMakeStatsFn);
 
-  // Memoize cars by make request function
   const fetchCarsByMakeFn = useCallback(
     (make: string) =>
       carGenerationsApi.getCarsByMake(make, { limit: LARGE_FETCH_LIMIT }),
     []
   );
 
-  // Fetch cars by make when make is selected
   const {
     data: carsByMake,
     isLoading: isLoadingCars,
     executeRequest: fetchCarsByMake,
   } = useApiRequest(fetchCarsByMakeFn);
 
-  // Fetch current car if buildList has car_id
   const fetchCurrentCarFn = useCallback(
     (carId: string) => carGenerationsApi.getCar(carId),
     []
@@ -120,8 +116,8 @@ const EditBuildListForm: React.FC<EditBuildListFormProps> = ({
   useEffect(() => {
     if (selectedMake) {
       void fetchCarsByMake(selectedMake);
-      setSelectedModel(''); // Reset model when make changes
-      setSelectedGeneration(null); // Reset generation when make changes
+      setSelectedModel('');
+      setSelectedGeneration(null);
     } else {
       setAvailableCars([]);
       setSelectedModel('');
@@ -134,13 +130,11 @@ const EditBuildListForm: React.FC<EditBuildListFormProps> = ({
   }, [carsByMake]);
 
   useEffect(() => {
-    // Reset generation when model changes
     if (selectedModel) {
       setSelectedGeneration(null);
     }
   }, [selectedModel]);
 
-  // Fetch current car when buildList changes
   useEffect(() => {
     if (buildList.car_id) {
       void fetchCurrentCar(buildList.car_id);
@@ -170,7 +164,6 @@ const EditBuildListForm: React.FC<EditBuildListFormProps> = ({
         ? (buildList.base_price_cents / 100).toFixed(2)
         : ''
     );
-    // Note: buildList.image_urls[0] is a presigned URL from the API
     setImageFileKey(null);
     setImageChanged(false);
     setApiError(null);
@@ -215,19 +208,16 @@ const EditBuildListForm: React.FC<EditBuildListFormProps> = ({
     });
 
     if (result) {
-      // Handle image changes separately so existing gallery images are not wiped.
       let updated = result;
       if (imageChanged) {
         try {
           if (imageFileKey) {
-            // Append the new image to the gallery (preserves existing images)
             const appended = await buildListsApi.appendBuildListImages(
               buildList.id,
               [imageFileKey]
             );
             updated = appended.data;
           } else {
-            // User removed the displayed image — delete only the first one (index 0)
             const removed = await buildListsApi.removeBuildListImage(
               buildList.id,
               0
@@ -251,14 +241,12 @@ const EditBuildListForm: React.FC<EditBuildListFormProps> = ({
     }
   };
 
-  // Get unique models for selected make
   const uniqueModels = Array.from(
     new Set(
       availableCars.map((car) => car.car_model_name ?? '').filter(Boolean)
     )
   ).sort();
 
-  // Get generations (cars) for selected make and model
   const generations = availableCars
     .filter(
       (car) =>
@@ -266,7 +254,6 @@ const EditBuildListForm: React.FC<EditBuildListFormProps> = ({
         (car.car_model_name ?? '') === selectedModel
     )
     .sort((a, b) => {
-      // Sort by start_year, then generation_name
       if (a.start_year !== b.start_year) {
         return a.start_year - b.start_year;
       }
@@ -276,13 +263,11 @@ const EditBuildListForm: React.FC<EditBuildListFormProps> = ({
   return (
     <div className="p-4">
       <form onSubmit={(e) => void handleSubmit(e)} className="space-y-6">
-        {/* Car Selection Section */}
         <div className="space-y-4">
           <h3 className="text-lg font-semibold text-gray-200">
             Select Car (Optional)
           </h3>
 
-          {/* Layer 1: Make Selection */}
           <div>
             <label className="block text-sm font-medium text-gray-300 mb-2">
               {selectedMake ? (
@@ -290,11 +275,9 @@ const EditBuildListForm: React.FC<EditBuildListFormProps> = ({
                   type="button"
                   onClick={() => {
                     if (selectedModel) {
-                      // On generation page, go back to models
                       setSelectedModel('');
                       setSelectedGeneration(null);
                     } else {
-                      // On model page, go back to manufacturers
                       setSelectedMake('');
                       setSelectedModel('');
                       setSelectedGeneration(null);
@@ -336,7 +319,6 @@ const EditBuildListForm: React.FC<EditBuildListFormProps> = ({
               </>
             )}
 
-            {/* Layer 2: Model Selection */}
             {selectedMake && !selectedModel && (
               <>
                 <label className="block text-sm font-medium text-gray-300 mb-2 mt-4">
@@ -366,7 +348,6 @@ const EditBuildListForm: React.FC<EditBuildListFormProps> = ({
               </>
             )}
 
-            {/* Layer 3: Generation Selection */}
             {selectedMake && selectedModel && !selectedGeneration && (
               <>
                 <label className="block text-sm font-medium text-gray-300 mb-2 mt-4">
@@ -391,7 +372,6 @@ const EditBuildListForm: React.FC<EditBuildListFormProps> = ({
               </>
             )}
 
-            {/* Selected Generation Display */}
             {selectedGeneration && (
               <Card className="mt-4 bg-gray-800">
                 <div className="flex items-center justify-between p-3">
@@ -421,7 +401,6 @@ const EditBuildListForm: React.FC<EditBuildListFormProps> = ({
               </Card>
             )}
 
-            {/* Option to remove car assignment */}
             {selectedGeneration && (
               <button
                 type="button"
