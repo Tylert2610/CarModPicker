@@ -2,6 +2,7 @@
   "components": {
     "schemas": {
       "AdminUserUpdate": {
+        "description": "Request body for an admin editing any account.",
         "properties": {
           "disabled": {
             "anyOf": [
@@ -316,6 +317,7 @@
         "type": "object"
       },
       "BugReportCreate": {
+        "description": "Request body for filing a bug report.",
         "properties": {
           "actual_behavior": {
             "anyOf": [
@@ -400,6 +402,7 @@
         "type": "object"
       },
       "BugReportPriority": {
+        "description": "Triage priority of a bug report.",
         "enum": [
           "low",
           "medium",
@@ -410,6 +413,7 @@
         "type": "string"
       },
       "BugReportRead": {
+        "description": "A bug report as returned to clients.",
         "properties": {
           "actual_behavior": {
             "anyOf": [
@@ -569,6 +573,7 @@
         "type": "object"
       },
       "BugReportStatus": {
+        "description": "Lifecycle state of a bug report.",
         "enum": [
           "pending",
           "in_progress",
@@ -579,6 +584,7 @@
         "type": "string"
       },
       "BugReportUpdate": {
+        "description": "Request body for an admin triaging a bug report.",
         "properties": {
           "admin_notes": {
             "anyOf": [
@@ -628,6 +634,7 @@
         "type": "object"
       },
       "BugReportWithDetails": {
+        "description": "A bug report with reporter and assignee usernames resolved.",
         "properties": {
           "actual_behavior": {
             "anyOf": [
@@ -809,6 +816,7 @@
         "type": "object"
       },
       "BuildListAppendImages": {
+        "description": "Request body for appending images to a build list gallery.",
         "properties": {
           "file_keys": {
             "description": "Image references to append: file keys (from images/upload) or external URLs; max 12.",
@@ -827,6 +835,7 @@
         "type": "object"
       },
       "BuildListCreate": {
+        "description": "Request body for creating a build list.",
         "properties": {
           "base_price_cents": {
             "default": 0,
@@ -883,6 +892,7 @@
         "type": "object"
       },
       "BuildListLaborEstimateCreate": {
+        "description": "Request body for creating a labor estimate.",
         "properties": {
           "build_list_phase_id": {
             "anyOf": [
@@ -939,6 +949,7 @@
         "type": "object"
       },
       "BuildListLaborEstimateRead": {
+        "description": "A labor estimate as returned to clients.",
         "properties": {
           "build_list_id": {
             "format": "uuid",
@@ -997,6 +1008,7 @@
         "type": "object"
       },
       "BuildListLaborEstimateUpdate": {
+        "description": "Request body for updating a labor estimate.",
         "properties": {
           "build_list_phase_id": {
             "anyOf": [
@@ -1064,6 +1076,7 @@
         "type": "object"
       },
       "BuildListPartCreate": {
+        "description": "Request body for adding a part to a build list.",
         "properties": {
           "build_list_phase_id": {
             "anyOf": [
@@ -1112,6 +1125,7 @@
         "type": "object"
       },
       "BuildListPartRead": {
+        "description": "A build list part as returned to clients.",
         "properties": {
           "added_at": {
             "format": "date-time",
@@ -1183,6 +1197,7 @@
         "type": "object"
       },
       "BuildListPartReadWithPart": {
+        "description": "A build list part with its part and phase name resolved.",
         "properties": {
           "added_at": {
             "format": "date-time",
@@ -1269,6 +1284,7 @@
         "type": "object"
       },
       "BuildListPartUpdate": {
+        "description": "Request body for updating a build list part.",
         "properties": {
           "build_list_phase_id": {
             "anyOf": [
@@ -1322,6 +1338,7 @@
         "type": "object"
       },
       "BuildListPhaseCreate": {
+        "description": "Request body for creating a build list phase.",
         "properties": {
           "name": {
             "description": "Phase name (e.g. Phase 1, Must Have)",
@@ -1344,6 +1361,7 @@
         "type": "object"
       },
       "BuildListPhaseRead": {
+        "description": "A build list phase as returned to clients.",
         "properties": {
           "build_list_id": {
             "format": "uuid",
@@ -1374,6 +1392,7 @@
         "type": "object"
       },
       "BuildListPhaseUpdate": {
+        "description": "Request body for updating a build list phase.",
         "properties": {
           "name": {
             "anyOf": [
@@ -1406,6 +1425,7 @@
         "type": "object"
       },
       "BuildListRead": {
+        "description": "A build list as returned to clients.",
         "properties": {
           "base_price_cents": {
             "default": 0,
@@ -1485,6 +1505,7 @@
         "type": "object"
       },
       "BuildListSetPrimaryImageRequest": {
+        "description": "Request body for choosing a build list's primary image.",
         "properties": {
           "index": {
             "description": "0-based index into the build list's image_urls gallery",
@@ -1500,6 +1521,7 @@
         "type": "object"
       },
       "BuildListUpdate": {
+        "description": "Request body for updating a build list.",
         "properties": {
           "base_price_cents": {
             "anyOf": [
@@ -1571,6 +1593,7 @@
         "type": "object"
       },
       "BuildLogPostCreate": {
+        "description": "Request body for creating a build log post.",
         "properties": {
           "content": {
             "description": "Post content cannot be empty",
@@ -1586,6 +1609,7 @@
         "type": "object"
       },
       "BuildLogPostRead": {
+        "description": "A build log post as returned to clients.",
         "properties": {
           "author_image_url": {
             "anyOf": [
@@ -1657,6 +1681,7 @@
         "type": "object"
       },
       "BuildLogPostUpdate": {
+        "description": "Request body for updating a build log post.",
         "properties": {
           "content": {
             "anyOf": [
@@ -1676,6 +1701,7 @@
         "type": "object"
       },
       "BuildLogReadPaginated": {
+        "description": "A build log whose posts carry pagination metadata.",
         "properties": {
           "build_list_id": {
             "format": "uuid",
@@ -1727,12 +1753,14 @@
         "type": "object"
       },
       "CarGenerationRead": {
+        "description": "A car generation as returned to clients.",
         "properties": {
           "car_make_name": {
             "title": "Car Make Name",
             "type": "string"
           },
           "car_model_display_label": {
+            "description": "The model's display name, falling back to its raw name.",
             "readOnly": true,
             "title": "Car Model Display Label",
             "type": "string"
@@ -1764,6 +1792,7 @@
             "title": "Description"
           },
           "display_label": {
+            "description": "The generation's display name, falling back to its raw name.",
             "readOnly": true,
             "title": "Display Label",
             "type": "string"
@@ -1831,6 +1860,7 @@
         "type": "object"
       },
       "CategoryResponse": {
+        "description": "A category as returned to clients.",
         "properties": {
           "created_at": {
             "format": "date-time",
@@ -2372,6 +2402,7 @@
         "type": "object"
       },
       "FlaggedEntitySummary": {
+        "description": "An entity surfaced to moderators by its downvote pattern.",
         "properties": {
           "created_at": {
             "format": "date-time",
@@ -2554,6 +2585,7 @@
         "type": "object"
       },
       "NewPassword": {
+        "description": "A new password constrained to the bcrypt safe length range.",
         "properties": {
           "password": {
             "maxLength": 72,
@@ -2569,6 +2601,7 @@
         "type": "object"
       },
       "OAuthAccountRead": {
+        "description": "A linked OAuth account as returned to clients.",
         "properties": {
           "created_at": {
             "format": "date-time",
@@ -2624,6 +2657,7 @@
         "type": "object"
       },
       "PartAppendImages": {
+        "description": "Request body for appending images to a part gallery.",
         "properties": {
           "file_keys": {
             "description": "Image references to append: file keys (from images/upload) or external URLs (scraped); max 12.",
@@ -2642,6 +2676,7 @@
         "type": "object"
       },
       "PartCreate": {
+        "description": "Request body for creating a part.",
         "properties": {
           "car_ids": {
             "anyOf": [
@@ -2785,6 +2820,7 @@
         "type": "object"
       },
       "PartListingCreate": {
+        "description": "Request body for creating a part listing.",
         "properties": {
           "part_id": {
             "description": "Part ID",
@@ -2832,6 +2868,7 @@
         "type": "object"
       },
       "PartListingReadWithRetailer": {
+        "description": "A part listing with its retailer resolved.",
         "properties": {
           "created_at": {
             "format": "date-time",
@@ -2990,6 +3027,7 @@
         "type": "object"
       },
       "PartManufacturerResponse": {
+        "description": "A part manufacturer as returned to clients.",
         "properties": {
           "created_at": {
             "format": "date-time",
@@ -3207,6 +3245,7 @@
         "type": "object"
       },
       "PartRead": {
+        "description": "A part as returned to clients.",
         "properties": {
           "best_price_cents": {
             "anyOf": [
@@ -3355,6 +3394,7 @@
         "type": "object"
       },
       "PartReadWithListings": {
+        "description": "A part with its retailer listings and the cheapest one.",
         "properties": {
           "best_listing": {
             "anyOf": [
@@ -3522,6 +3562,7 @@
         "type": "object"
       },
       "PartReadWithVotes": {
+        "description": "A part with its vote tallies.",
         "properties": {
           "best_price_cents": {
             "anyOf": [
@@ -3696,6 +3737,7 @@
         "type": "object"
       },
       "PartUpdate": {
+        "description": "Request body for updating a part.",
         "properties": {
           "car_ids": {
             "anyOf": [
@@ -4071,6 +4113,7 @@
         "type": "object"
       },
       "PublicUserRead": {
+        "description": "A user profile as shown to other users.",
         "properties": {
           "disabled": {
             "title": "Disabled",
@@ -4201,6 +4244,7 @@
         "type": "object"
       },
       "ReportCreate": {
+        "description": "Request body for filing a report.",
         "properties": {
           "description": {
             "anyOf": [
@@ -4224,6 +4268,7 @@
         "type": "object"
       },
       "ReportEntityType": {
+        "description": "Kind of entity a report targets.",
         "enum": [
           "build_list",
           "part"
@@ -4232,6 +4277,7 @@
         "type": "string"
       },
       "ReportRead": {
+        "description": "A report as returned to clients.",
         "properties": {
           "admin_notes": {
             "anyOf": [
@@ -4331,6 +4377,7 @@
         "type": "object"
       },
       "ReportReason": {
+        "description": "Why a user reported an entity.",
         "enum": [
           "inappropriate_content",
           "spam",
@@ -4342,6 +4389,7 @@
         "type": "string"
       },
       "ReportStatus": {
+        "description": "Moderation state of a report.",
         "enum": [
           "pending",
           "reviewed",
@@ -4352,6 +4400,7 @@
         "type": "string"
       },
       "ReportUpdate": {
+        "description": "Request body for a moderator acting on a report.",
         "properties": {
           "admin_notes": {
             "anyOf": [
@@ -4375,6 +4424,7 @@
         "type": "object"
       },
       "ReportWithDetails": {
+        "description": "A report with reporter, reviewer and target names resolved.",
         "properties": {
           "admin_notes": {
             "anyOf": [
@@ -4506,6 +4556,7 @@
         "type": "object"
       },
       "RetailerCreate": {
+        "description": "Request body for creating a retailer.",
         "properties": {
           "base_url": {
             "anyOf": [
@@ -4660,6 +4711,7 @@
         "type": "object"
       },
       "RetailerRead": {
+        "description": "A retailer as returned to clients.",
         "properties": {
           "base_url": {
             "anyOf": [
@@ -4722,6 +4774,7 @@
         "type": "object"
       },
       "RetailerUpdate": {
+        "description": "Request body for updating a retailer.",
         "properties": {
           "base_url": {
             "anyOf": [
@@ -4776,6 +4829,7 @@
         "type": "object"
       },
       "ScrapeRequest": {
+        "description": "A product page URL and its HTML, submitted by the browser extension.",
         "properties": {
           "html": {
             "title": "Html",
@@ -4794,6 +4848,7 @@
         "type": "object"
       },
       "ScrapeResponse": {
+        "description": "The part fields parsed out of a scraped product page.",
         "properties": {
           "adapter_used": {
             "title": "Adapter Used",
@@ -4896,6 +4951,7 @@
         "type": "object"
       },
       "SetPrimaryImageRequest": {
+        "description": "Request body for choosing a part's primary image.",
         "properties": {
           "index": {
             "description": "0-based index into the part's image_urls gallery",
@@ -5011,6 +5067,7 @@
         "type": "object"
       },
       "UserCreate": {
+        "description": "Request body for registering an account.",
         "properties": {
           "email": {
             "format": "email",
@@ -5037,6 +5094,7 @@
         "type": "object"
       },
       "UserRead": {
+        "description": "A user account as returned to its owner.",
         "properties": {
           "disabled": {
             "title": "Disabled",
@@ -5201,6 +5259,7 @@
         "type": "object"
       },
       "UserUpdate": {
+        "description": "Request body for a user editing their own account.",
         "properties": {
           "current_password": {
             "anyOf": [
@@ -5396,6 +5455,7 @@
         "type": "object"
       },
       "VoteCreate": {
+        "description": "Request body for casting a vote.",
         "properties": {
           "vote_type": {
             "$ref": "#/components/schemas/VoteType"
@@ -5408,6 +5468,7 @@
         "type": "object"
       },
       "VoteEntityType": {
+        "description": "Kind of entity a vote targets.",
         "enum": [
           "car_generation",
           "build_list",
@@ -5417,7 +5478,7 @@
         "type": "string"
       },
       "VoteMutationResult": {
-        "description": "A vote write, plus the entity's tallies as of that write.\n\nSplit plan row 24 and its open question 2. Once the `net_votes` aggregate is\nrecomputed off the `votes` stream it lags the vote by the stream latency, so\na client that votes and then re-reads can see the old number. Carrying the\ncounts on the write response removes the re-read entirely: the vote itself\nis synchronous and strongly consistent, so the tallies computed in the same\nrequest are the authoritative ones and the client has no reason to ask\nagain.\n\n`vote` is `None` on a removal, where there is no vote left to return. The\ncounts are always present, which is what lets one response shape serve both\nroutes and keeps the frontend from branching on which call it made.\n\nThe counts are read from the `votes` table, not from `parts.net_votes`.\nReading the denormalised column would hand back exactly the stale number\nthis schema exists to avoid.",
+        "description": "A vote write, plus the entity's tallies as of that write.\n\nThe tallies are returned with the write so clients need not re-read an\naggregate that lags behind the stream.",
         "properties": {
           "downvotes": {
             "title": "Downvotes",
@@ -5456,6 +5517,7 @@
         "type": "object"
       },
       "VoteRead": {
+        "description": "A vote as returned to clients.",
         "properties": {
           "created_at": {
             "format": "date-time",
@@ -5504,6 +5566,7 @@
         "type": "object"
       },
       "VoteSummary": {
+        "description": "Vote tallies for one entity, including the caller's own vote.",
         "properties": {
           "downvotes": {
             "title": "Downvotes",
@@ -5555,6 +5618,7 @@
         "type": "object"
       },
       "VoteType": {
+        "description": "Direction of a vote.",
         "enum": [
           "upvote",
           "downvote"
@@ -5563,6 +5627,7 @@
         "type": "string"
       },
       "WebAuthnCredentialRename": {
+        "description": "Request body for renaming a registered passkey.",
         "properties": {
           "nickname": {
             "title": "Nickname",
@@ -5576,6 +5641,7 @@
         "type": "object"
       },
       "WebAuthnCredentialSummary": {
+        "description": "A registered passkey as shown in account settings.",
         "properties": {
           "aaguid": {
             "anyOf": [
@@ -5648,6 +5714,7 @@
         "type": "object"
       },
       "WebAuthnLoginOptionsRequest": {
+        "description": "Request body for starting a passkey assertion.",
         "properties": {
           "username": {
             "anyOf": [
@@ -5665,6 +5732,7 @@
         "type": "object"
       },
       "WebAuthnLoginOptionsResponse": {
+        "description": "Assertion options plus the challenge token to echo back.",
         "properties": {
           "challenge_token": {
             "title": "Challenge Token",
@@ -5684,6 +5752,7 @@
         "type": "object"
       },
       "WebAuthnLoginVerifyRequest": {
+        "description": "Request body carrying the assertion credential to verify.",
         "properties": {
           "challenge_token": {
             "title": "Challenge Token",
@@ -5703,6 +5772,7 @@
         "type": "object"
       },
       "WebAuthnRegisterOptionsRequest": {
+        "description": "Request body for starting passkey registration.",
         "properties": {
           "nickname": {
             "title": "Nickname",
@@ -5716,6 +5786,7 @@
         "type": "object"
       },
       "WebAuthnRegisterOptionsResponse": {
+        "description": "Registration options plus the challenge token to echo back.",
         "properties": {
           "challenge_token": {
             "title": "Challenge Token",
@@ -5735,6 +5806,7 @@
         "type": "object"
       },
       "WebAuthnRegisterVerifyRequest": {
+        "description": "Request body carrying the registration credential to verify.",
         "properties": {
           "challenge_token": {
             "title": "Challenge Token",
@@ -5806,7 +5878,7 @@
     },
     "/api/admin/db-ops/cars/delete-all": {
       "post": {
-        "description": "Delete all cars / car generations (admin only).\n\nUnlinks build lists from cars (sets car_id to null), removes car votes and\npart_cars links, then deletes all Car, CarModel, and Make rows so\nInit Car Generations can repopulate from a clean slate.\nThis action cannot be undone.",
+        "description": "Delete all cars / car generations (admin only).\n\nUnlinks build lists from cars (sets car_id to null), removes car votes and\npart_cars links, then deletes all Car, CarModel, and Make rows so",
         "operationId": "delete_all_cars_api_admin_db_ops_cars_delete_all_post",
         "responses": {
           "200": {
@@ -5836,7 +5908,7 @@
     },
     "/api/admin/db-ops/init/car-generations": {
       "post": {
-        "description": "Initialize car generations from source of truth (admin only).\n\nSyncs makes, car models, and car generations from car_generations_data\ninto the database. Run this manually after deploying or when seed data\nhas been updated.",
+        "description": "Initialize car generations from source of truth (admin only).\n\nSyncs makes, car models, and car generations from car_generations_data\ninto the database. Run this manually after deploying or when seed data",
         "operationId": "init_car_generations_endpoint_api_admin_db_ops_init_car_generations_post",
         "responses": {
           "200": {
@@ -6218,6 +6290,7 @@
     },
     "/api/auth/oauth": {
       "get": {
+        "description": "Return the OAuth providers linked to the caller.",
         "operationId": "list_oauth_accounts_api_auth_oauth_get",
         "responses": {
           "200": {
@@ -6301,7 +6374,7 @@
     },
     "/api/auth/oauth/google": {
       "post": {
-        "description": "Verify a Google ID token and route to the right next step.\n\nOutcomes:\n  - Google `sub` is already linked \u2192 log the user in (or 2FA challenge).\n  - Email matches an existing user \u2192 return a `link_token`; client prompts for password.\n  - No match \u2192 return a `signup_token`; client collects a username.",
+        "description": "Verify a Google ID token and route to the right next step.\n\nOutcomes:",
         "operationId": "google_sign_in_api_auth_oauth_google_post",
         "requestBody": {
           "content": {
@@ -6345,7 +6418,7 @@
     },
     "/api/auth/oauth/google/connect": {
       "post": {
-        "description": "Link a Google account to the *currently logged-in* user.\n\nRefuses if the Google email matches a *different* user \u2014 the user must instead sign out\nand use the merge flow from the login page. This preserves the invariant that no two\naccounts share an email.",
+        "description": "Link a Google account to the *currently logged-in* user.\n\nRefuses if the Google email matches a *different* user \u2014 the user must instead sign out\nand use the merge flow from the login page. This preserves the invariant that no two",
         "operationId": "google_connect_api_auth_oauth_google_connect_post",
         "requestBody": {
           "content": {
@@ -6392,7 +6465,7 @@
     },
     "/api/auth/oauth/google/link": {
       "post": {
-        "description": "Merge a Google identity into an existing password account.\n\nRequired after the initial /auth/google call returned `requires_link: true`.\nVerifies the user's password (and OTP if 2FA is enabled), creates the oauth_accounts row,\nand returns an access token.",
+        "description": "Merge a Google identity into an existing password account.\n\nRequired after the initial /auth/google call returned `requires_link: true`.\nVerifies the user's password (and OTP if 2FA is enabled), creates the oauth_accounts row,",
         "operationId": "google_link_api_auth_oauth_google_link_post",
         "requestBody": {
           "content": {
@@ -6643,7 +6716,7 @@
     },
     "/api/auth/token": {
       "post": {
-        "description": "Authenticate user and return access token and user details.\nTakes form data: username and password.\nIf 2FA is enabled, returns requires_2fa: true and user must call /token/2fa to complete login.\nReturns Bearer token in response body for standard OAuth2 flow.",
+        "description": "Authenticate user and return access token and user details.\n\nTakes form data: username and password.\nIf 2FA is enabled, returns requires_2fa: true and user must call /token/2fa to complete login.",
         "operationId": "login_for_access_token_api_auth_token_post",
         "requestBody": {
           "content": {
@@ -6839,6 +6912,7 @@
     },
     "/api/auth/webauthn/credentials": {
       "get": {
+        "description": "Return the caller's registered passkeys.",
         "operationId": "list_webauthn_credentials_api_auth_webauthn_credentials_get",
         "responses": {
           "200": {
@@ -6869,6 +6943,7 @@
     },
     "/api/auth/webauthn/credentials/{credential_id}": {
       "delete": {
+        "description": "Remove one of the caller's passkeys.",
         "operationId": "delete_webauthn_credential_api_auth_webauthn_credentials__credential_id__delete",
         "parameters": [
           {
@@ -6919,6 +6994,7 @@
         ]
       },
       "patch": {
+        "description": "Set a new nickname on one of the caller's passkeys.",
         "operationId": "rename_webauthn_credential_api_auth_webauthn_credentials__credential_id__patch",
         "parameters": [
           {
@@ -8508,6 +8584,7 @@
     },
     "/api/build-lists": {
       "get": {
+        "description": "Return one page of entities.",
         "operationId": "list_entities_api_build_lists_get",
         "parameters": [
           {
@@ -9651,6 +9728,7 @@
     },
     "/api/build-lists/{entity_id}": {
       "delete": {
+        "description": "Delete an entity the caller is allowed to modify.",
         "operationId": "delete_entity_api_build_lists__entity_id__delete",
         "parameters": [
           {
@@ -9703,6 +9781,7 @@
         ]
       },
       "put": {
+        "description": "Update an entity the caller is allowed to modify.",
         "operationId": "update_entity_api_build_lists__entity_id__put",
         "parameters": [
           {
@@ -10057,6 +10136,7 @@
     },
     "/api/car-generations": {
       "get": {
+        "description": "Return one page of entities.",
         "operationId": "list_entities_api_car_generations_get",
         "parameters": [
           {
@@ -10382,6 +10462,7 @@
     },
     "/api/car-generations/count": {
       "get": {
+        "description": "Return the total number of entities.",
         "operationId": "count_entities_api_car_generations_count_get",
         "responses": {
           "200": {
@@ -10513,6 +10594,7 @@
     },
     "/api/car-generations/{entity_id}": {
       "get": {
+        "description": "Return one entity without requiring authentication.",
         "operationId": "read_entity_public_api_car_generations__entity_id__get",
         "parameters": [
           {
@@ -10585,6 +10667,7 @@
     },
     "/api/categories/count": {
       "get": {
+        "description": "Return the total number of categories.",
         "operationId": "count_categories_api_categories_count_get",
         "responses": {
           "200": {
@@ -10781,6 +10864,7 @@
     },
     "/api/crawled-pages/scrape": {
       "post": {
+        "description": "Parse a scraped product page into part fields the caller can review.",
         "operationId": "scrape_page_from_extension_api_crawled_pages_scrape_post",
         "requestBody": {
           "content": {
@@ -10842,7 +10926,7 @@
     },
     "/api/images/admin/count": {
       "get": {
-        "description": "Get the total count of objects in the S3 bucket (admin only).\n\nArgs:\n    current_user: Authenticated admin user (from JWT token)\n\nReturns:\n    dict: Contains 'count' with the total number of bucket objects\n\nRaises:\n    HTTPException: If counting fails or user is not an admin",
+        "description": "Get the total count of objects in the S3 bucket (admin only).",
         "operationId": "get_bucket_object_count_api_images_admin_count_get",
         "responses": {
           "200": {
@@ -10943,7 +11027,7 @@
     },
     "/api/images/admin/purge-orphaned": {
       "post": {
-        "description": "Delete bucket objects that are not referenced by any entity (orphans).\nAdmin only. Non-destructive: only objects with no DB reference are removed.\nReferenced keys come from: part (image_urls), user (image_urls),\ncar (image_urls), build_list (image_urls), image_source_mapping (file_key).",
+        "description": "Delete bucket objects that are not referenced by any entity (orphans).\n\nAdmin only. Non-destructive: only objects with no DB reference are removed.\nReferenced keys come from: part (image_urls), user (image_urls),",
         "operationId": "purge_orphaned_bucket_objects_api_images_admin_purge_orphaned_post",
         "responses": {
           "200": {
@@ -11038,7 +11122,7 @@
     },
     "/api/images/delete": {
       "delete": {
-        "description": "Delete an image from S3 bucket.\n\nOnly the owner of the image can delete it. Ownership is verified by checking\nthe user_hash embedded in the file_key.\n\nArgs:\n    file_key: The file key to delete\n    current_user: Authenticated user (from JWT token)\n\nReturns:\n    dict: Success message\n\nRaises:\n    HTTPException: If deletion fails, user is not authenticated, or user doesn't own the image",
+        "description": "Delete an image from S3 bucket.\n\nOnly the owner of the image can delete it. Ownership is verified by checking\nthe user_hash embedded in the file_key.",
         "operationId": "delete_image_api_images_delete_delete",
         "parameters": [
           {
@@ -11090,7 +11174,7 @@
     },
     "/api/images/presigned-url": {
       "get": {
-        "description": "Generate a presigned URL for accessing an image in S3 bucket.\n\nThe S3 bucket is private; presigned URLs are required to access images.\nThese URLs are temporary and expire after the specified time (default: 24 hours).\n\nFor security, if a user is authenticated, we verify they own the image.\nPublic access is allowed for images that may be shared (e.g., public build lists).\n\nArgs:\n    file_key: The file key stored in your database (from upload endpoint)\n    expiration: Optional expiration time in seconds (default: 24 hours, max: 90 days)\n    current_user: Optional authenticated user (for private images)\n\nReturns:\n    dict: Contains 'presigned_url' for accessing the image\n\nRaises:\n    HTTPException: If URL generation fails or user doesn't own the image",
+        "description": "Generate a presigned URL for accessing an image in S3 bucket.\n\nThe S3 bucket is private; presigned URLs are required to access images.\nThese URLs are temporary and expire after the specified time (default: 24 hours).",
         "operationId": "get_presigned_url_api_images_presigned_url_get",
         "parameters": [
           {
@@ -11158,7 +11242,7 @@
     },
     "/api/images/upload": {
       "post": {
-        "description": "Upload an image file to S3 bucket.\n\nThe file is validated for security (type, size, content) and stored\nin S3 bucket. Returns the file key which should be stored\nin your database. Use the /presigned-url endpoint to get a URL for displaying.\n\nArgs:\n    entity_type: Type of entity (e.g., 'build_list', 'part', 'user', 'car')\n    entity_id: Optional ID of the entity (for updates)\n    file: Image file to upload\n    current_user: Authenticated user (from JWT token)\n\nReturns:\n    dict: Contains 'file_key' (store this in your database) and 'presigned_url' (for immediate use)\n\nRaises:\n    HTTPException: If upload fails, validation fails, or user is not authenticated",
+        "description": "Upload an image file to S3 bucket.\n\nThe file is validated for security (type, size, content) and stored\nin S3 bucket. Returns the file key which should be stored",
         "operationId": "upload_image_api_images_upload_post",
         "parameters": [
           {
@@ -11334,6 +11418,7 @@
     },
     "/api/part-manufacturers/count": {
       "get": {
+        "description": "Return the total number of part manufacturers.",
         "operationId": "count_part_manufacturers_api_part_manufacturers_count_get",
         "responses": {
           "200": {
@@ -11840,7 +11925,7 @@
     },
     "/api/part-price-alerts/unsubscribe": {
       "get": {
-        "description": "One-click unsubscribe via signed JWT (no auth dependency \u2014 token IS the auth).\n\nDecodes the token, requires ``purpose == 'price_alert_unsubscribe'``, looks\nup the alert by id, sets ``active=False``, and redirects the browser to the\nfrontend ``/account/alerts`` page. Invalid/expired tokens redirect to the\nsame page with ``status=error`` so the user gets a coherent UI in either\ncase (we never reveal why decode failed).",
+        "description": "One-click unsubscribe via signed JWT (no auth dependency \u2014 token IS the auth).\n\nDecodes the token, requires ``purpose == 'price_alert_unsubscribe'``, looks\nup the alert by id, sets ``active=False``, and redirects the browser to the",
         "operationId": "unsubscribe_via_token_api_part_price_alerts_unsubscribe_get",
         "parameters": [
           {
@@ -11884,7 +11969,7 @@
     },
     "/api/part-price-alerts/{alert_id}": {
       "delete": {
-        "description": "Soft-delete the user's own alert by setting active=False.\n\nIdempotent at the user-experience level: a second DELETE on the same id\nreturns 404 because the row is no longer ownable-and-active. (T03 will\ntreat already-deleted rows the same way the unsubscribe-via-token path\ndoes \u2014 currently 404 is the simplest contract for this surface.)",
+        "description": "Soft-delete the user's own alert by setting active=False.\n\nIdempotent at the user-experience level: a second DELETE on the same id\nreturns 404 because the row is no longer ownable-and-active. (T03 will",
         "operationId": "delete_my_alert_api_part_price_alerts__alert_id__delete",
         "parameters": [
           {
@@ -12269,6 +12354,7 @@
     },
     "/api/parts/count": {
       "get": {
+        "description": "Return the total number of entities.",
         "operationId": "count_entities_api_parts_count_get",
         "responses": {
           "200": {
@@ -12536,7 +12622,7 @@
     },
     "/api/parts/price-history": {
       "post": {
-        "description": "Aggregate min/max/last/trend per part for a batch of part IDs (1\u2013100).\n\nPOST (not GET) so the body can carry up to 100 UUIDs without hitting proxy\nURL-length limits. The endpoint never 404s on a per-id basis \u2014 unknown IDs\nreturn well-formed empty-summary entries so the client can iterate without\nholes. Invalid `window` values 422 with `error_code: INVALID_WINDOW`.\n\nWriters are machines, not end users: an `X-API-Key` matching the configured\n`EXTENSION_API_KEY` gets in (the Chrome extension and ingestion jobs), and so\ndoes an admin bearer token. A non-admin user token is 403; no credential at\nall is 401. `caller` is the admin user, or None on the API-key path.",
+        "description": "Aggregate min/max/last/trend per part for a batch of part IDs (1\u2013100).\n\nPOST (not GET) so the body can carry up to 100 UUIDs without hitting proxy\nURL-length limits. The endpoint never 404s on a per-id basis \u2014 unknown IDs",
         "operationId": "post_batch_price_history_api_parts_price_history_post",
         "requestBody": {
           "content": {
@@ -12959,6 +13045,7 @@
     },
     "/api/parts/{entity_id}": {
       "get": {
+        "description": "Return one entity without requiring authentication.",
         "operationId": "read_entity_public_api_parts__entity_id__get",
         "parameters": [
           {
@@ -13003,6 +13090,7 @@
         ]
       },
       "put": {
+        "description": "Update an entity the caller is allowed to modify.",
         "operationId": "update_entity_api_parts__entity_id__put",
         "parameters": [
           {
@@ -13403,7 +13491,7 @@
     },
     "/api/parts/{part_id}/price-history": {
       "get": {
-        "description": "Get price history for this part (aggregated across its link group).\n\nReturns the S05 object shape (`summary`, `retailers`, `history`, `window`).\nOptional `retailer_id` narrows the response to one retailer; `summary` is\nrecomputed from that filtered slice (not the cross-retailer aggregate).\nInvalid `window` values produce a 422 with `error_code: INVALID_WINDOW`\n(see schema response).",
+        "description": "Get price history for this part (aggregated across its link group).\n\nReturns the S05 object shape (`summary`, `retailers`, `history`, `window`).\nOptional `retailer_id` narrows the response to one retailer; `summary` is",
         "operationId": "get_part_price_history_api_parts__part_id__price_history_get",
         "parameters": [
           {
@@ -14260,6 +14348,7 @@
     },
     "/api/retailers/count": {
       "get": {
+        "description": "Return the total number of retailers.",
         "operationId": "count_retailers_api_retailers_count_get",
         "responses": {
           "200": {
@@ -14615,7 +14704,7 @@
     },
     "/api/users/": {
       "get": {
-        "description": "List all users with pagination and search.\n\nReturns full UserRead (with email_verified and totp_enabled) for each user if:\n- The current user is an admin\n- The current user is a superuser\n\nOtherwise returns PublicUserRead (without sensitive fields) for each user.",
+        "description": "List all users with pagination and search.\n\nReturns full UserRead (with email_verified and totp_enabled) for each user if:",
         "operationId": "list_users_api_users__get",
         "parameters": [
           {
@@ -15017,7 +15106,7 @@
     },
     "/api/users/me/profile-picture": {
       "delete": {
-        "description": "Delete the current user's profile picture.\n\nThis endpoint removes the profile picture from storage and clears\nthe user's image_urls field.\n\nArgs:\n    current_user: Authenticated user (from JWT token)\n    logger: Logger instance\n\nReturns:\n    UserRead: Updated user object with profile picture removed\n\nRaises:\n    HTTPException: If deletion fails",
+        "description": "Delete the current user's profile picture.\n\nThis endpoint removes the profile picture from storage and clears\nthe user's image_urls field.",
         "operationId": "delete_profile_picture_api_users_me_profile_picture_delete",
         "responses": {
           "200": {
@@ -15042,7 +15131,7 @@
         ]
       },
       "post": {
-        "description": "Upload a profile picture for the current user.\n\nThis endpoint uploads the image to storage and automatically updates\nthe user's image_urls field. If the user already has a profile picture,\nthe old one will be deleted from storage.\n\nArgs:\n    file: Image file to upload\n    current_user: Authenticated user (from JWT token)\n    logger: Logger instance\n\nReturns:\n    UserRead: Updated user object with new profile picture URL\n\nRaises:\n    HTTPException: If upload fails or validation fails",
+        "description": "Upload a profile picture for the current user.\n\nThis endpoint uploads the image to storage and automatically updates\nthe user's image_urls field. If the user already has a profile picture,",
         "operationId": "upload_profile_picture_api_users_me_profile_picture_post",
         "requestBody": {
           "content": {
@@ -15145,7 +15234,7 @@
         ]
       },
       "get": {
-        "description": "Get a user by ID.\n\nReturns full UserRead (with email_verified and totp_enabled) if:\n- The current user is viewing their own profile\n- The current user is an admin\n- The current user is a superuser\n\nOtherwise returns PublicUserRead (without sensitive fields).",
+        "description": "Get a user by ID.\n\nReturns full UserRead (with email_verified and totp_enabled) if:",
         "operationId": "get_user_api_users__user_id__get",
         "parameters": [
           {
@@ -15203,6 +15292,7 @@
         ]
       },
       "put": {
+        "description": "Update a user profile the caller is allowed to modify.",
         "operationId": "update_user_api_users__user_id__put",
         "parameters": [
           {
@@ -15366,7 +15456,7 @@
     },
     "/api/votes/{entity_type}/{entity_id}": {
       "delete": {
-        "description": "Remove a vote from an entity.\n\nReturns the same shape the vote route does, with `vote` set to null because\nthere is no vote left. A client removing a vote needs the new total for\nexactly the same reason a client casting one does.",
+        "description": "Remove a vote from an entity.\n\nReturns the same shape the vote route does, with `vote` set to null because\nthere is no vote left. A client removing a vote needs the new total for",
         "operationId": "remove_vote_api_votes__entity_type___entity_id__delete",
         "parameters": [
           {
@@ -15424,7 +15514,7 @@
         ]
       },
       "post": {
-        "description": "Vote on an entity (car, build list, or global part).\n\nThe response carries the entity's recomputed tallies alongside the vote.\nSplit plan row 24 moved the `parts.net_votes` aggregate onto the `votes`\nstream, so that column now lags the vote; these counts are read from the\n`votes` table in this request and do not, which is what lets a client render\nthe new total without a follow-up read.",
+        "description": "Vote on an entity (car, build list, or global part).\n\nThe response carries the entity's recomputed tallies alongside the vote.\nSplit plan row 24 moved the `parts.net_votes` aggregate onto the `votes`",
         "operationId": "vote_on_entity_api_votes__entity_type___entity_id__post",
         "parameters": [
           {

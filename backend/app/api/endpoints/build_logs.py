@@ -30,11 +30,11 @@ from app.db.dynamo.build_logs import BuildLog, BuildLogPost
 from app.db.dynamo.tombstones import live_or_none
 from app.db.dynamo.users import User as DBUser
 
-# Create router
 router = APIRouter()
 
 
 def _require_build_list(repos: Repositories, build_list_id: UUID) -> BuildList:
+    """Return the build list or raise 404."""
     build_list = repos.build_lists.get(build_list_id)
     if build_list is None:
         ResponsePatterns.raise_not_found("build list", build_list_id)
@@ -46,9 +46,6 @@ def _require_build_log(repos: Repositories, build_list_id: UUID, logger) -> Buil
     """The build log for a build list; every build list is created with one."""
     build_log = repos.build_logs.for_build_list(build_list_id)
     if build_log is None:
-        # Post-DATA-08 backfill invariant: every build list has a build log.
-        # If this branch fires, something broke the invariant — do not silently
-        # auto-create (the old fallback hid data-integrity issues).
         logger.error("Orphan build_list %s has no build_log; DATA-08 invariant violated", build_list_id)
         ResponsePatterns.raise_not_found("build log", build_list_id)
     assert build_log is not None
@@ -56,6 +53,7 @@ def _require_build_log(repos: Repositories, build_list_id: UUID, logger) -> Buil
 
 
 def _require_post(repos: Repositories, post_id: UUID) -> BuildLogPost:
+    """Return the build log post or raise 404."""
     post = repos.build_log_posts.get(post_id)
     if post is None:
         ResponsePatterns.raise_not_found("build log post", post_id)
@@ -64,11 +62,7 @@ def _require_post(repos: Repositories, post_id: UUID) -> BuildLogPost:
 
 
 def _post_with_author(post: BuildLogPost, author: Optional[DBUser]) -> BuildLogPostRead:
-    # Seam 1's read consequence: a tombstoned author renders exactly like an
-    # absent one. Both call sites pass their author through here, so collapsing
-    # the tombstone to None once covers the batch join and the single get
-    # without either of them repeating the predicate. `author_username` and
-    # `author_image_url` are already Optional, so no schema change follows.
+    """Read a post with its author's username and avatar attached."""
     author = live_or_none(author)
     post_data = BuildLogPostRead.model_validate(post)
     post_data.author_username = author.username if author else None
@@ -166,13 +160,12 @@ async def get_build_log_by_build_list(
         message="Build log retrieved successfully",
     )
 
-    # Map pagination response to match frontend expectations
     pagination_data = paginated_response["pagination"]
     pagination_mapped = {
         "current_page": pagination_data["current_page"],
         "total_pages": pagination_data["total_pages"],
-        "total_items": pagination_data["total"],  # Map 'total' to 'total_items'
-        "items_per_page": pagination_data["limit"],  # Map 'limit' to 'items_per_page'
+        "total_items": pagination_data["total"],
+        "items_per_page": pagination_data["limit"],
         "has_next": pagination_data["has_next"],
         "has_previous": pagination_data["has_previous"],
     }

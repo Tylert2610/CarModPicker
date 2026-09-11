@@ -29,41 +29,44 @@ FREE_TIER_LIMIT_DETAIL = "Free accounts are limited to 1 build list. Upgrade to 
 
 
 class BuildListService(BaseDynamoCRUDService[BuildList, BuildListCreate, BuildListUpdate]):
+    """Build list CRUD with car validation and free tier limits."""
+
     def __init__(self, repos: Optional[Repositories] = None) -> None:
+        """Bind the service to a repository bundle."""
         self.repos = repos or get_repositories()
         super().__init__(self.repos.build_lists, "build list")
 
-    # -- helpers -----------------------------------------------------------
-
     def _verify_car_exists(self, car_id: UUID) -> None:
+        """Raise 404 when the referenced car generation is missing."""
         if self.repos.car_generations.get(str(car_id)) is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Car not found")
 
     def _enforce_free_tier_limit(self, current_user: DBUser) -> None:
+        """Raise 402 when a free account is at its build list limit."""
         if is_user_premium(current_user, check_kill_switch=True):
             return
         if self.count_by_user(current_user.id) >= FREE_TIER_BUILD_LIST_LIMIT:
             raise HTTPException(status_code=status.HTTP_402_PAYMENT_REQUIRED, detail=FREE_TIER_LIMIT_DETAIL)
 
     def _create_build_log(self, build_list: BuildList) -> BuildLog:
+        """Create the build log thread that accompanies a new build list."""
         return self.repos.build_logs.create(
             BuildLog(build_list_id=build_list.id, title=f"Build Log: {build_list.name}")
         )
 
-    # -- reads -------------------------------------------------------------
-
     def get_build_lists_by_car(self, car_id: UUID, skip: int = 0, limit: int = 100) -> List[BuildList]:
+        """Return build lists for a car, newest first."""
         items = self.repos.build_lists.query_all("car_id-created_at-index", car_id)
         return items[skip : skip + limit]
 
     def get_build_lists_by_user(self, user_id: UUID, skip: int = 0, limit: int = 100) -> List[BuildList]:
+        """Return build lists owned by a user, newest first."""
         items = self.repos.build_lists.query_all("user_id-created_at-index", user_id)
         return items[skip : skip + limit]
 
     def count_by_user(self, user_id: UUID) -> int:
+        """Return how many build lists a user owns."""
         return len(self.repos.build_lists.query_all("user_id-created_at-index", user_id))
-
-    # -- writes ------------------------------------------------------------
 
     def create(
         self,
@@ -73,6 +76,7 @@ class BuildListService(BaseDynamoCRUDService[BuildList, BuildListCreate, BuildLi
         *,
         logger: Optional[logging.Logger] = None,
     ) -> BuildList:
+        """Create a build list and its build log after the eligibility checks."""
         self._verify_car_exists(data.car_id)
         self._enforce_free_tier_limit(current_user)
 
@@ -83,6 +87,7 @@ class BuildListService(BaseDynamoCRUDService[BuildList, BuildListCreate, BuildLi
         return build_list
 
     def update(self, entity_id: UUID, data: BuildListUpdate, current_user: DBUser) -> BuildList:
+        """Update a build list, revalidating the car when it changes."""
         changes = data.model_dump(exclude_unset=True)
         if changes.get("car_id") is not None:
             self._verify_car_exists(changes["car_id"])

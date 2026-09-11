@@ -22,26 +22,31 @@ class CarGenerationService(BaseDynamoCRUDService[CarGeneration, CarGenerationCre
     """
 
     def __init__(self, repos: Optional[Repositories] = None) -> None:
+        """Bind the service to a repository bundle."""
         self.repos = repos or get_repositories()
         super().__init__(repository=self.repos.car_generations, entity_name="car_generation")
 
     def _models_and_makes(
         self, generations: Iterable[CarGeneration]
     ) -> tuple[dict[UUID, CarModel], dict[UUID, CarMake]]:
+        """Load the car models and makes these generations refer to."""
         models = self.repos.car_models.get_many({gen.car_model_id for gen in generations})
         makes = self.repos.car_makes.get_many({model.car_make_id for model in models.values()})
         return models, makes
 
     def hydrate(self, generations: Iterable[CarGeneration]) -> list[CarGenerationRead]:
+        """Resolve make and model names onto many generations."""
         items = list(generations)
         models, makes = self._models_and_makes(items)
         return [self._to_read(gen, models, makes) for gen in items]
 
     def hydrate_one(self, generation: CarGeneration) -> CarGenerationRead:
+        """Resolve make and model names onto a single generation."""
         return self.hydrate([generation])[0]
 
     @staticmethod
     def _to_read(gen: CarGeneration, models: dict[UUID, CarModel], makes: dict[UUID, CarMake]) -> CarGenerationRead:
+        """Build a read schema from a generation and its resolved model and make."""
         model = models.get(gen.car_model_id)
         make = makes.get(model.car_make_id) if model is not None else None
         return CarGenerationRead(
@@ -58,6 +63,7 @@ class CarGenerationService(BaseDynamoCRUDService[CarGeneration, CarGenerationCre
         )
 
     def get_read(self, entity_id: UUID, logger: Optional[logging.Logger] = None) -> CarGenerationRead:
+        """Fetch one generation with its make and model names resolved."""
         gen = self.get_by_id(entity_id, allow_public=True)
         if logger:
             logger.info(f"Retrieved {self.entity_name} {entity_id}")
@@ -81,6 +87,7 @@ class CarGenerationService(BaseDynamoCRUDService[CarGeneration, CarGenerationCre
         cursor: str | None,
         sort_key: Callable[[CarGeneration], str] | None = None,
     ) -> CursorPage[CarGenerationRead]:
+        """Paginate generations, hydrating each page in one lookup."""
         models, makes = self._models_and_makes(generations)
         return search.paginate(
             generations,
@@ -91,9 +98,11 @@ class CarGenerationService(BaseDynamoCRUDService[CarGeneration, CarGenerationCre
         )
 
     def list_page_read(self, *, limit: int, cursor: str | None) -> CursorPage[CarGenerationRead]:
+        """Return one page of generations, newest first."""
         return self._paginate(self.repos.car_generations.list_all(), limit=limit, cursor=cursor)
 
     def _generations_for_models(self, models: Iterable[CarModel]) -> list[CarGeneration]:
+        """Collect every generation belonging to these models."""
         generations: list[CarGeneration] = []
         for model in models:
             generations.extend(self.repos.car_generations.list_by_model(model.id))
@@ -141,6 +150,7 @@ class CarGenerationService(BaseDynamoCRUDService[CarGeneration, CarGenerationCre
         return self._paginate(generations, limit=limit, cursor=cursor)
 
     def matching_generations(self, search_term: str, *, include_years: bool = False) -> list[CarGeneration]:
+        """Return generations matching a search term across make, model and name."""
         term = search.normalize_term(search_term)
         matching_make_ids = {make.id for make in self.repos.car_makes.list_all() if search.contains(term, make.name)}
         models = self.repos.car_models.list_all()
@@ -149,6 +159,7 @@ class CarGenerationService(BaseDynamoCRUDService[CarGeneration, CarGenerationCre
         }
 
         def matches(gen: CarGeneration) -> bool:
+            """Report whether this generation matches the search term."""
             if gen.car_model_id in matching_model_ids or search.contains(term, gen.generation_name):
                 return True
             return include_years and search.contains(term, str(gen.start_year), str(gen.end_year or ""))
@@ -156,6 +167,7 @@ class CarGenerationService(BaseDynamoCRUDService[CarGeneration, CarGenerationCre
         return search.scan_matching(self.repos.car_generations, matches)
 
     def count_by_make(self) -> dict[str, int]:
+        """Return the number of generations per make name."""
         models = {model.id: model for model in self.repos.car_models.list_all()}
         makes = self.repos.car_makes.get_many({model.car_make_id for model in models.values()})
         counts: dict[str, int] = {}

@@ -61,9 +61,7 @@ part_service = PartService()
 
 
 def _get_part_or_404(repos: Repositories, part_id: UUID) -> Part:
-    # A tombstoned part is absent: same 404 as an id that never existed. Every
-    # listing, image and price-history route under /api/parts funnels through
-    # here, so they all inherit it.
+    """Return the live part or raise 404."""
     part = repos.parts.get(str(part_id))
     if part is None or is_tombstoned(part):
         ResponsePatterns.raise_not_found("Part")
@@ -72,6 +70,7 @@ def _get_part_or_404(repos: Repositories, part_id: UUID) -> Part:
 
 
 def _invalid_window(window: str) -> HTTPException:
+    """Build the 422 raised for an unrecognised time window."""
     return HTTPException(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
         detail={
@@ -404,6 +403,7 @@ async def set_primary_image_for_part(
 
 
 def _best_listing(repos: Repositories, part_id: UUID) -> Optional[PartListingReadWithRetailer]:
+    """Return the cheapest priced listing for a part, or None when none are priced."""
     listings = listings_with_retailers(repos.part_listings.list_by_part(part_id))
     priced = [l for l in listings if l.last_known_price_cents is not None and l.last_known_price_cents >= 0]
     return min(priced, key=lambda l: (l.last_known_price_cents or 0, str(l.id))) if priced else None
@@ -472,9 +472,6 @@ async def get_part_price_history(
 
     Returns the S05 object shape (`summary`, `retailers`, `history`, `window`).
     Optional `retailer_id` narrows the response to one retailer; `summary` is
-    recomputed from that filtered slice (not the cross-retailer aggregate).
-    Invalid `window` values produce a 422 with `error_code: INVALID_WINDOW`
-    (see schema response).
     """
     logger = deps["logger"]
     _get_part_or_404(repos, part_id)
@@ -517,13 +514,6 @@ async def post_batch_price_history(
 
     POST (not GET) so the body can carry up to 100 UUIDs without hitting proxy
     URL-length limits. The endpoint never 404s on a per-id basis — unknown IDs
-    return well-formed empty-summary entries so the client can iterate without
-    holes. Invalid `window` values 422 with `error_code: INVALID_WINDOW`.
-
-    Writers are machines, not end users: an `X-API-Key` matching the configured
-    `EXTENSION_API_KEY` gets in (the Chrome extension and ingestion jobs), and so
-    does an admin bearer token. A non-admin user token is 403; no credential at
-    all is 401. `caller` is the admin user, or None on the API-key path.
     """
     logger = deps["logger"]
 

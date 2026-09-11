@@ -28,10 +28,8 @@ from app.db.dynamo.users import User as DBUser
 
 logger = logging.getLogger(__name__)
 
-# Create router
 router = APIRouter()
 
-# Create service
 vote_service = VoteService()
 
 
@@ -75,9 +73,6 @@ async def vote_on_entity(
 
     The response carries the entity's recomputed tallies alongside the vote.
     Split plan row 24 moved the `parts.net_votes` aggregate onto the `votes`
-    stream, so that column now lags the vote; these counts are read from the
-    `votes` table in this request and do not, which is what lets a client render
-    the new total without a follow-up read.
     """
     return vote_service.vote_on_entity(
         entity_type=entity_type,
@@ -105,7 +100,6 @@ async def remove_vote(
 
     Returns the same shape the vote route does, with `vote` set to null because
     there is no vote left. A client removing a vote needs the new total for
-    exactly the same reason a client casting one does.
     """
     result = vote_service.remove_vote(
         entity_type=entity_type,
@@ -115,9 +109,6 @@ async def remove_vote(
     )
 
     if result is None:
-        # IN-06: use the centralized error-shape helper instead of raw
-        # ``HTTPException`` so the response follows the same {message,
-        # error_code, details} contract as the rest of the module.
         ResponsePatterns.raise_not_found("Vote")
     return result
 

@@ -1,3 +1,5 @@
+"""Request and response schemas for part price alerts."""
+
 from datetime import datetime
 from typing import Optional
 from uuid import UUID

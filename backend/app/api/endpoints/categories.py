@@ -24,6 +24,7 @@ router = APIRouter()
 
 
 def _get_category_or_404(repos: Repositories, category_id: UUID) -> Category:
+    """Return the category or raise 404."""
     category = repos.categories.get(str(category_id))
     if category is None:
         ResponsePatterns.raise_not_found("Category")
@@ -37,6 +38,7 @@ def _get_category_or_404(repos: Repositories, category_id: UUID) -> Category:
     responses={200: {"description": "Category count retrieved successfully"}},
 )
 async def count_categories(repos: Repositories = Depends(get_repositories)) -> Dict[str, int]:
+    """Return the total number of categories."""
     return {"count": repos.categories.count()}
 
 

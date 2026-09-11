@@ -1,11 +1,7 @@
-"""
-Sanitize HTML submitted by the Chrome extension before archival or parsing.
+"""Sanitize HTML submitted by the Chrome extension before archival or parsing.
 
 The extension transmits a full DOM snapshot of whatever page the user scrapes, so
 the payload can incidentally include autofilled form values, personalized widgets,
-and inline scripts that embed user state. This module removes those classes of
-content while preserving what the product parser reads: title tags, og:*/twitter:*
-meta, product markup, and ``<script type="application/ld+json">`` structured data.
 """
 
 from __future__ import annotations
@@ -68,6 +64,7 @@ def sanitize_html(html: str) -> str:
 
 
 def _is_meta_allowed(meta: Tag) -> bool:
+    """Report whether a meta tag is on the sanitizer allow list."""
     if meta.has_attr("charset"):
         return True
     prop = meta.get("property")

@@ -27,6 +27,7 @@ def _init_result(success: bool, message: str) -> Dict[str, Any]:
 
 
 def _purge_parts(repos: Repositories, parts: list[Part]) -> int:
+    """Tombstone every given part and purge the rows that reference them."""
     service = PartService(repos)
     for part in parts:
         service.purge(part)
@@ -45,12 +46,10 @@ def _purge_parts(repos: Repositories, parts: list[Part]) -> int:
 async def init_car_generations_endpoint(
     current_user: DBUser = Depends(get_current_admin_user),
 ) -> Dict[str, Any]:
-    """
-    Initialize car generations from source of truth (admin only).
+    """Initialize car generations from source of truth (admin only).
 
     Syncs makes, car models, and car generations from car_generations_data
     into the database. Run this manually after deploying or when seed data
-    has been updated.
     """
     try:
         logger.info(f"Admin {current_user.id} triggered car generations init")
@@ -113,13 +112,10 @@ async def delete_all_cars(
     current_user: DBUser = Depends(get_current_admin_user),
     repos: Repositories = Depends(get_repositories),
 ) -> DeleteAllCarsResponse:
-    """
-    Delete all cars / car generations (admin only).
+    """Delete all cars / car generations (admin only).
 
     Unlinks build lists from cars (sets car_id to null), removes car votes and
     part_cars links, then deletes all Car, CarModel, and Make rows so
-    Init Car Generations can repopulate from a clean slate.
-    This action cannot be undone.
     """
     try:
         for build_list in repos.build_lists.scan_all():

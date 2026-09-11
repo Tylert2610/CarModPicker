@@ -1,3 +1,5 @@
+"""Request and response schemas for build logs and their posts."""
+
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 from uuid import UUID
@@ -5,18 +7,21 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 
-# Schema for request body when creating a build log post
 class BuildLogPostCreate(BaseModel):
+    """Request body for creating a build log post."""
+
     content: str = Field(..., min_length=1, description="Post content cannot be empty")
 
 
-# Schema for request body when updating a build log post
 class BuildLogPostUpdate(BaseModel):
+    """Request body for updating a build log post."""
+
     content: Optional[str] = Field(None, min_length=1, description="Post content cannot be empty")
 
 
-# Schema for response body when reading a build log post
 class BuildLogPostRead(BaseModel):
+    """A build log post as returned to clients."""
+
     id: UUID
     build_log_id: UUID
     user_id: Optional[UUID] = None
@@ -29,8 +34,9 @@ class BuildLogPostRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-# Schema for response body when reading a build log with posts
 class BuildLogRead(BaseModel):
+    """A build log with its posts."""
+
     id: UUID
     build_list_id: UUID
     title: str
@@ -41,8 +47,9 @@ class BuildLogRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-# Schema for paginated build log response
 class BuildLogReadPaginated(BaseModel):
+    """A build log whose posts carry pagination metadata."""
+
     id: UUID
     build_list_id: UUID
     title: str
@@ -54,8 +61,9 @@ class BuildLogReadPaginated(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-# Schema for response body when reading a build log post with author details
 class BuildLogPostReadWithAuthor(BaseModel):
+    """A build log post with its author resolved."""
+
     id: UUID
     build_log_id: UUID
     user_id: Optional[UUID] = None

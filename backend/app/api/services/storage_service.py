@@ -28,21 +28,17 @@ else:
 
 logger = logging.getLogger(__name__)
 
-# First segment is entity_type (e.g. user, car); second is 16-char user hash from upload pipeline.
 _STANDARD_IMAGE_OBJECT_KEY = re.compile(r"^([a-z_]+)/[a-f0-9]{16}/[^/]+$")
 
 
 def _is_test_environment() -> bool:
     """Check if we're running in a test environment."""
-    # Check for pytest - PYTEST_CURRENT_TEST is set by pytest
     if "PYTEST_CURRENT_TEST" in os.environ:
         return True
-    # Check if pytest is in sys.modules (imported)
     import sys
 
     if "pytest" in sys.modules:
         return True
-    # Check for common test environment variables
     if os.environ.get("TESTING", "").lower() in ("true", "1", "yes"):
         return True
     return False
@@ -63,7 +59,7 @@ class StorageService:
         self.bucket_name = settings.USER_IMAGES_BUCKET
         self.max_size_bytes = settings.max_image_size_bytes
         self.allowed_extensions = settings.allowed_image_extensions_list
-        self.presigned_url_expiration = min(settings.PRESIGNED_URL_EXPIRATION, 7776000)  # Max 90 days
+        self.presigned_url_expiration = min(settings.PRESIGNED_URL_EXPIRATION, 7776000)
         self.s3_client = None
         self.s3_client_presigner = None
 
@@ -71,33 +67,24 @@ class StorageService:
             logger.warning("USER_IMAGES_BUCKET not configured. Image uploads will be disabled.")
 
     def _ensure_client(self) -> None:
+        """Create the S3 clients on first use, outside tests."""
         if self.s3_client is not None and self.s3_client_presigner is not None:
             return
         if not self.bucket_name or _is_test_environment():
             return
 
         try:
-            # Pass None for empty strings so boto3 falls back to the IAM role
-            # credential chain (used on App Runner / EC2 / ECS). Explicit non-empty
-            # values take precedence over the IAM role credential chain.
             client_kwargs = {
                 "aws_access_key_id": settings.AWS_ACCESS_KEY_ID or None,
                 "aws_secret_access_key": settings.AWS_SECRET_ACCESS_KEY or None,
                 "aws_session_token": settings.AWS_SESSION_TOKEN or None,
                 "region_name": settings.AWS_REGION or None,
                 "endpoint_url": settings.S3_ENDPOINT_URL or None,
-                # Default urllib3 pool is 10 per-host; the crawler runs up to
-                # ``DB_POOL_SIZE + DB_MAX_OVERFLOW - API_CONNECTION_RESERVE``
-                # (80) adapter threads in parallel, each ingesting parts that
-                # hit S3 for image uploads and presign lookups. Without this
-                # bump urllib3 logs "Connection pool is full, discarding
-                # connection" and churns sockets.
                 "config": BotoConfig(max_pool_connections=100),
             }
 
             s3_client = boto3.client("s3", **client_kwargs)  # type: ignore[redundant-cast]
 
-            # Verify bucket exists and is accessible
             try:
                 s3_client.head_bucket(Bucket=self.bucket_name)  # type: ignore[attr-defined]
                 logger.info(f"S3 bucket '{self.bucket_name}' is accessible")
@@ -120,7 +107,6 @@ class StorageService:
                     )
 
             self.s3_client = s3_client
-            # Create presigner client for generating presigned URLs
             self.s3_client_presigner = boto3.client("s3", **client_kwargs)  # type: ignore[redundant-cast]
 
         except Exception as e:
@@ -131,18 +117,9 @@ class StorageService:
             )
 
     def _validate_file(self, file: UploadFile) -> tuple[str, bytes]:
-        """
-        Validate uploaded file for security.
-
-        Returns:
-            tuple: (file_extension, file_content_bytes)
-
-        Raises:
-            HTTPException: If file validation fails
-        """
-        # Check file size
+        """Validate uploaded file for security."""
         file_content = file.file.read()
-        file.file.seek(0)  # Reset file pointer for potential reuse
+        file.file.seek(0)
 
         if len(file_content) > self.max_size_bytes:
             raise HTTPException(
@@ -156,7 +133,6 @@ class StorageService:
                 detail="File is empty",
             )
 
-        # Validate file extension
         filename = file.filename or ""
         file_extension = filename.split(".")[-1].lower() if "." in filename else ""
 
@@ -166,26 +142,21 @@ class StorageService:
                 detail=f"File extension '{file_extension}' not allowed. Allowed extensions: {', '.join(self.allowed_extensions)}",
             )
 
-        # Validate file is actually an image using Pillow
         try:
             image = Image.open(BytesIO(file_content))
-            image.verify()  # Verify it's a valid image
+            image.verify()
 
-            # Reset for actual upload
             image = Image.open(BytesIO(file_content))
 
-            # Optional: Validate image dimensions (prevent extremely large images)
-            max_dimension = 10000  # 10k pixels max
+            max_dimension = 10000
             if image.width > max_dimension or image.height > max_dimension:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=f"Image dimensions too large. Maximum dimension: {max_dimension}px",
                 )
 
-            # Convert to RGB if necessary (handles RGBA, P, etc.)
             if image.mode != "RGB":
                 image = image.convert("RGB")  # type: ignore[assignment]
-                # Convert back to bytes
                 output = BytesIO()
                 image.save(output, format="JPEG", quality=95, optimize=True)
                 file_content = output.getvalue()
@@ -200,43 +171,29 @@ class StorageService:
         return file_extension, file_content
 
     def _process_image_to_square(self, file_content: bytes, target_size: int = 512) -> bytes:
-        """
-        Process an image to a square aspect ratio by cropping and resizing.
+        """Process an image to a square aspect ratio by cropping and resizing.
 
         The image is cropped to the center square of the original image,
         then resized to the target size.
-
-        Args:
-            file_content: Original image bytes
-            target_size: Target size for the square image (default: 512px)
-
-        Returns:
-            bytes: Processed square image as JPEG bytes
         """
         try:
             image = Image.open(BytesIO(file_content))
 
-            # Convert to RGB if necessary
             if image.mode != "RGB":
                 image = image.convert("RGB")  # type: ignore[assignment]
 
-            # Get dimensions
             width, height = image.size
 
-            # Calculate crop box for center square
             size = min(width, height)
             left = (width - size) // 2
             top = (height - size) // 2
             right = left + size
             bottom = top + size
 
-            # Crop to square
             image = image.crop((left, top, right, bottom))
 
-            # Resize to target size
             image = image.resize((target_size, target_size), Image.Resampling.LANCZOS)
 
-            # Convert to bytes
             output = BytesIO()
             image.save(output, format="JPEG", quality=95, optimize=True)
             return output.getvalue()
@@ -251,26 +208,11 @@ class StorageService:
     def _generate_file_key(
         self, entity_type: str, entity_id: Optional[UUID], user_id: UUID, file_extension: str
     ) -> str:
-        """
-        Generate a unique, secure file key for S3 bucket.
-
-        Args:
-            entity_type: Type of entity (e.g., 'build_list', 'part', 'user', 'car')
-            entity_id: Optional ID of the entity
-            user_id: ID of the user uploading the image
-            file_extension: File extension
-
-        Returns:
-            str: S3 object key
-        """
-        # Generate unique identifier
+        """Generate a unique, secure file key for S3 bucket."""
         unique_id = uuid.uuid4().hex[:8]
 
-        # Create hash of user_id for additional security
-        # Using SHA256 instead of MD5 for better security (though this is just for obfuscation)
         user_hash = hashlib.sha256(str(user_id).encode()).hexdigest()[:16]
 
-        # Build path: entity_type/user_hash/entity_id-unique_id.extension
         if entity_id:
             filename = f"{entity_id}-{unique_id}.{file_extension}"
         else:
@@ -279,56 +221,34 @@ class StorageService:
         return f"{entity_type}/{user_hash}/{filename}"
 
     def verify_file_key_ownership(self, file_key: str, user_id: UUID) -> bool:
-        """
-        Verify that a file key belongs to a specific user.
-
-        Args:
-            file_key: The file key to verify
-            user_id: The user ID to check against
-
-        Returns:
-            bool: True if the file key belongs to the user, False otherwise
-        """
+        """Verify that a file key belongs to a specific user."""
         if not file_key:
             return False
 
-        # Extract user_hash from file_key (format: entity_type/user_hash/filename)
         parts = file_key.split("/")
         if len(parts) < 3:
             return False
 
         user_hash_in_key = parts[1]
 
-        # Calculate expected user_hash for this user_id
         expected_hash = hashlib.sha256(str(user_id).encode()).hexdigest()[:16]
 
         return user_hash_in_key == expected_hash
 
     def validate_file_key(self, file_key: str) -> None:
-        """
-        Validate that a file key is safe and doesn't contain path traversal attempts.
-
-        Args:
-            file_key: The file key to validate
-
-        Raises:
-            HTTPException: If the file key is invalid or contains path traversal
-        """
+        """Validate that a file key is safe and doesn't contain path traversal attempts."""
         if not file_key:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="File key is required",
             )
 
-        # Check for path traversal attempts
         if ".." in file_key or file_key.startswith("/") or "//" in file_key:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid file key: path traversal detected",
             )
 
-        # Validate file key format: entity_type/user_hash/filename
-        # Should match pattern: word/hex16/filename.extension
         pattern = r"^[a-z_]+/[a-f0-9]{16}/[^/]+$"
         if not re.match(pattern, file_key):
             raise HTTPException(
@@ -337,15 +257,7 @@ class StorageService:
             )
 
     def object_exists(self, key: str) -> bool:
-        """
-        Check if an object exists in the bucket (head_object).
-
-        Args:
-            key: The S3 object key
-
-        Returns:
-            True if the object exists, False otherwise (404 or error).
-        """
+        """Check if an object exists in the bucket (head_object)."""
         try:
             self._ensure_client()
         except HTTPException:
@@ -373,24 +285,10 @@ class StorageService:
         entity_id: Optional[UUID] = None,
         force_square: bool = False,
     ) -> str:
-        """
-        Upload an image file to S3 bucket and return a presigned URL.
+        """Upload an image file to S3 bucket and return a presigned URL.
 
         The S3 bucket is private; we store the file key in the database
         and generate presigned URLs when serving images.
-
-        Args:
-            file: FastAPI UploadFile object
-            entity_type: Type of entity (e.g., 'build_list', 'part', 'user', 'car')
-            user_id: ID of the user uploading the image
-            entity_id: Optional ID of the entity (for updates)
-            force_square: If True, crop and resize image to square aspect ratio (default: False)
-
-        Returns:
-            str: File key (stored in database, used to generate presigned URLs)
-
-        Raises:
-            HTTPException: If upload fails or validation fails
         """
         self._ensure_client()
         if not self.s3_client or not self.bucket_name:
@@ -399,22 +297,17 @@ class StorageService:
                 detail="Image storage is not configured. Please contact administrator.",
             )
 
-        # Validate file
         file_extension, file_content = self._validate_file(file)
 
-        # Process to square if requested
         if force_square:
             file_content = self._process_image_to_square(file_content)
-            file_extension = "jpg"  # Square images are always saved as JPEG
+            file_extension = "jpg"
 
-        # Generate secure file key
         file_key = self._generate_file_key(entity_type, entity_id, user_id, file_extension)
 
         try:
-            # Upload to S3 bucket
             content_type = f"image/{file_extension}" if file_extension != "jpg" else "image/jpeg"
 
-            # Type narrowing: we've checked bucket_name is not None above
             assert self.bucket_name is not None
             self.s3_client.put_object(
                 Bucket=self.bucket_name,
@@ -424,7 +317,6 @@ class StorageService:
             )
 
             logger.info(f"Successfully uploaded image to S3 bucket: {file_key}")
-            # Return the file key (not a URL) - we'll generate presigned URLs when serving
             return file_key
 
         except ClientError as e:
@@ -448,21 +340,10 @@ class StorageService:
             )
 
     def get_presigned_url(self, file_key: str, expiration: Optional[int] = None) -> str:
-        """
-        Generate a presigned URL for accessing a file in S3 bucket.
+        """Generate a presigned URL for accessing a file in S3 bucket.
 
         The S3 bucket is private; presigned URLs are used to serve images.
         These URLs are temporary and expire after the specified time.
-
-        Args:
-            file_key: The S3 object key (stored in database)
-            expiration: Optional expiration time in seconds (defaults to PRESIGNED_URL_EXPIRATION)
-
-        Returns:
-            str: Presigned URL for accessing the image
-
-        Raises:
-            HTTPException: If URL generation fails
         """
         self._ensure_client()
         if not self.s3_client_presigner:
@@ -493,15 +374,7 @@ class StorageService:
             )
 
     def delete_image(self, file_key: str) -> bool:
-        """
-        Delete an image from S3 bucket.
-
-        Args:
-            file_key: The S3 object key to delete
-
-        Returns:
-            bool: True if deletion was successful, False otherwise
-        """
+        """Delete an image from S3 bucket."""
         try:
             self._ensure_client()
         except HTTPException:
@@ -514,7 +387,6 @@ class StorageService:
             return False
 
         try:
-            # Type narrowing: we've checked bucket_name is not None above
             assert self.bucket_name is not None
             self.s3_client.delete_object(Bucket=self.bucket_name, Key=file_key)
             logger.info(f"Successfully deleted image from S3 bucket: {file_key}")
@@ -525,16 +397,9 @@ class StorageService:
             return False
 
     def count_bucket_objects(self) -> int:
-        """
-        Count the total number of objects in the S3 bucket.
+        """Count the total number of objects in the S3 bucket.
 
         Uses list_objects_v2 with pagination to handle buckets with many objects.
-
-        Returns:
-            int: Total number of objects in the bucket
-
-        Raises:
-            HTTPException: If counting fails or bucket is not configured
         """
         self._ensure_client()
         if not self.s3_client or not self.bucket_name:
@@ -544,13 +409,11 @@ class StorageService:
             )
 
         try:
-            # Type narrowing: we've checked bucket_name is not None above
             assert self.bucket_name is not None
 
             total_count = 0
             continuation_token = None
 
-            # Use pagination to count all objects (S3 list_objects_v2 returns max 1000 per request)
             while True:
                 list_kwargs: dict[str, Any] = {"Bucket": self.bucket_name}
                 if continuation_token:
@@ -558,11 +421,9 @@ class StorageService:
 
                 response = self.s3_client.list_objects_v2(**list_kwargs)
 
-                # Count objects in this page
                 if "Contents" in response:
                     total_count += len(response["Contents"])
 
-                # Check if there are more pages
                 if response.get("IsTruncated", False):
                     continuation_token = response.get("NextContinuationToken")
                 else:
@@ -592,14 +453,10 @@ class StorageService:
             )
 
     def count_bucket_objects_by_entity_prefix(self) -> dict[str, Any]:
-        """
-        Single S3 list pass: total object count plus counts grouped by first path segment
+        """Single S3 list pass: total object count plus counts grouped by first path segment
+
         for keys matching the standard upload layout (entity_type/user_hash/filename).
-
         Keys that do not match are counted under ``other`` (legacy or stray objects).
-
-        Returns:
-            dict with keys: total (int), by_entity_type (dict[str, int]), other (int)
         """
         self._ensure_client()
         if not self.s3_client or not self.bucket_name:
@@ -675,16 +532,9 @@ class StorageService:
             )
 
     def list_bucket_object_keys(self) -> list[str]:
-        """
-        List all object keys in the S3 bucket (for admin orphan cleanup).
+        """List all object keys in the S3 bucket (for admin orphan cleanup).
 
         Uses list_objects_v2 with pagination. Use with care on large buckets.
-
-        Returns:
-            list[str]: All object keys in the bucket
-
-        Raises:
-            HTTPException: If listing fails or bucket is not configured
         """
         self._ensure_client()
         if not self.s3_client or not self.bucket_name:
@@ -738,5 +588,4 @@ class StorageService:
             )
 
 
-# Create singleton instance
 storage_service = StorageService()

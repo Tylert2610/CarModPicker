@@ -1,3 +1,5 @@
+"""User account routes: registration, profile reads and updates, and deletion."""
+
 import logging
 import os
 from typing import Any, Dict, Optional, Union
@@ -41,79 +43,23 @@ user_service = UserService()
 
 
 def _raise_duplicate(error: UniqueAttributeTaken) -> None:
+    """Raise the 409 matching whichever unique attribute was already taken."""
     if error.attribute == EMAIL:
         ResponsePatterns.raise_conflict("Email already registered", "EMAIL_EXISTS")
     ResponsePatterns.raise_conflict("Username already registered", "USERNAME_EXISTS")
 
 
 def _delete_user_everywhere(repos: Repositories, user: DBUser) -> None:
-    """Delete a user account, and get everything that references it deleted.
-
-    Seam 1, split plan row 30. This function is kept, with its name and its
-    signature, and it still means what it always meant: after it returns, the
-    caller has done everything required to remove the user and every row in the
-    roughly fifteen tables that reference it. What changed is that it no longer
-    performs that cascade itself.
-
-    The three helpers this file used to hold, `_purge_owned_parts`,
-    `_purge_owned_build_lists` and `_purge_owned_moderation`, plus the two
-    `delete_all_for_user` calls, moved verbatim to
-    `app/consumers/user_delete.py`. They now run on
-    `carmodpicker-<env>-users-delete-consumer`, off the `users` stream and
-    through the `user-delete` work queue, with their own IAM and their own
-    concurrency. That is what takes `users` from twenty-three declared
-    repositories down to three, and the narrowing of the grant is the other half
-    of this row.
-
-    Keeping this function rather than editing it out of both call sites is what
-    makes the seam reversible, the same argument
-    `purge_related_rows_for_parts` made for seam 2 in row 28. If the consumer
-    has to be turned off, restoring the five calls here restores the old
-    synchronous behaviour at two call sites that are still in the right places,
-    with no route changes. The function is the seam, and a seam you can close
-    again is worth more than the lines it saves.
-
-    **Two writes, in this order, and the order is the whole design.**
-
-    The tombstone goes first. Writing `deleted` and `deleted_at` before the hard
-    delete puts a record on the `users` stream carrying a NewImage with the flag
-    set, which is what the consumer keys on. Without it the stream would carry
-    only a REMOVE, whose OldImage is the live user and which the consumer
-    deliberately ignores, because a REMOVE is also what an already drained
-    cascade leaves behind. Doing it the other way round would let a successful
-    delete with a failed tombstone remove the row with no stream record any
-    consumer can act on, stranding the user's rows in fifteen tables with
-    nothing left pointing at them.
-
-    The hard delete stays synchronous, and row 30 is where that is decided for
-    seam 1 as row 28 decided it for seam 2. `repos.users.delete_user` removes
-    the row and releases the `username` and `email` reservations in one
-    transaction, and deferring that release is what would break. A reservation
-    held past the tombstone is a person who deleted their account and cannot
-    register again with the address they just freed, for as long as the
-    `user-delete` queue is deep, and who is told the email already exists
-    against a row nobody can see. It fails closed and the way out is a manual
-    edit, so the window has to be zero rather than however deep the queue is.
-
-    Between those two writes and the consumer draining, the account is in a
-    half-deleted state: the user row is gone and the rows referencing it are
-    not. Every read path that joins to a user tolerates that, because row 23
-    made `is_tombstoned` the predicate on every such join, and a missing user
-    already rendered as an absent author before row 23 existed.
-    """
-    # The tombstone the consumer keys on, written before the row is removed so
-    # the stream carries an image with the flag rather than only a REMOVE.
+    """Mark a user deleted and cascade the removal to everything referencing them."""
     repos.users.update(str(user.id), deleted=True, deleted_at=utc_now())
 
-    # The row and its two unique reservations, together, on this thread. See the
-    # docstring: deferring the release is the one part of this cascade that
-    # cannot move.
     repos.users.delete_user(user)
 
 
 def _user_page(
     users: list[DBUser], params: CursorParams, repos: Repositories, full: bool
 ) -> CursorPage[Union[UserRead, PublicUserRead]]:
+    """Return one page of users, as full or public reads."""
     if full:
         reads = {read.id: read for read in user_reads(users, repos)}
         return paginate_in_memory(
@@ -170,23 +116,10 @@ async def upload_profile_picture(
     current_user: DBUser = Depends(get_current_user),
     repos: Repositories = Depends(get_repositories),
 ) -> UserRead:
-    """
-    Upload a profile picture for the current user.
+    """Upload a profile picture for the current user.
 
     This endpoint uploads the image to storage and automatically updates
     the user's image_urls field. If the user already has a profile picture,
-    the old one will be deleted from storage.
-
-    Args:
-        file: Image file to upload
-        current_user: Authenticated user (from JWT token)
-        logger: Logger instance
-
-    Returns:
-        UserRead: Updated user object with new profile picture URL
-
-    Raises:
-        HTTPException: If upload fails or validation fails
     """
     try:
         file_key = storage_service.upload_image(
@@ -225,21 +158,10 @@ async def delete_profile_picture(
     current_user: DBUser = Depends(get_current_user),
     repos: Repositories = Depends(get_repositories),
 ) -> UserRead:
-    """
-    Delete the current user's profile picture.
+    """Delete the current user's profile picture.
 
     This endpoint removes the profile picture from storage and clears
     the user's image_urls field.
-
-    Args:
-        current_user: Authenticated user (from JWT token)
-        logger: Logger instance
-
-    Returns:
-        UserRead: Updated user object with profile picture removed
-
-    Raises:
-        HTTPException: If deletion fails
     """
     old_file_key = (current_user.image_urls or [None])[0]
     if not old_file_key:
@@ -277,15 +199,9 @@ async def get_user(
     repos: Repositories = Depends(get_repositories),
     current_user: Union[DBUser, None] = Depends(get_optional_current_user),
 ) -> Union[UserRead, PublicUserRead]:
-    """
-    Get a user by ID.
+    """Get a user by ID.
 
     Returns full UserRead (with email_verified and totp_enabled) if:
-    - The current user is viewing their own profile
-    - The current user is an admin
-    - The current user is a superuser
-
-    Otherwise returns PublicUserRead (without sensitive fields).
     """
     db_user = repos.users.get(user_id)
     if not db_user:
@@ -314,14 +230,9 @@ async def list_users(
     repos: Repositories = Depends(get_repositories),
     current_user: Union[DBUser, None] = Depends(get_optional_current_user),
 ) -> CursorPage[Union[UserRead, PublicUserRead]]:
-    """
-    List all users with pagination and search.
+    """List all users with pagination and search.
 
     Returns full UserRead (with email_verified and totp_enabled) for each user if:
-    - The current user is an admin
-    - The current user is a superuser
-
-    Otherwise returns PublicUserRead (without sensitive fields) for each user.
     """
     users = user_service.get_all_users(search=search, logger=logger)
 
@@ -385,6 +296,7 @@ async def update_user(
     repos: Repositories = Depends(get_repositories),
     current_user: DBUser = Depends(get_current_user),
 ) -> UserRead:
+    """Update a user profile the caller is allowed to modify."""
     db_user = repos.users.get(user_id)
 
     if not db_user:

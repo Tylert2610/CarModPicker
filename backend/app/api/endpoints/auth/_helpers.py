@@ -1,3 +1,5 @@
+"""Shared pieces the auth endpoints use to finish a sign in."""
+
 from __future__ import annotations
 
 import logging
@@ -20,6 +22,7 @@ GOOGLE_PROVIDER = "google"
 
 
 def issue_login_response(user: DBUser, repos: Optional[Repositories] = None) -> dict[str, str | UserRead]:
+    """Mint an access token for the user and return it with their profile."""
     expires_delta = get_access_token_expires_delta_for_user(user)
     access_token = create_access_token(data={"sub": user.username}, expires_delta=expires_delta)
     return {
@@ -30,6 +33,7 @@ def issue_login_response(user: DBUser, repos: Optional[Repositories] = None) -> 
 
 
 def maybe_2fa_challenge(user: DBUser) -> Optional[dict[str, str | bool]]:
+    """Return a short lived 2FA challenge when the user has TOTP enabled, else None."""
     if not user.totp_enabled:
         return None
     otp_token = create_access_token(

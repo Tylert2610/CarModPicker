@@ -26,6 +26,7 @@ class BugReportService:
     """
 
     def __init__(self, repos: Optional[Repositories] = None) -> None:
+        """Bind the service to a repository bundle."""
         self.repos = repos or get_repositories()
         self.users = self.repos.users
 
@@ -44,6 +45,7 @@ class BugReportService:
     def _list(
         self, status: Optional[str], priority: Optional[str], skip: int, limit: int
     ) -> tuple[List[BugReport], int]:
+        """Return one filtered slice of bug reports plus the unpaginated total."""
         reports = self.repos.bug_reports.list_filtered(status=status or None, priority=priority or None)
         return reports[skip : skip + limit], len(reports)
 
@@ -75,8 +77,7 @@ class BugReportService:
         users_by_id = self.users.get_many(user_ids)
 
         def username(user_id: UUID | None) -> str | None:
-            # A tombstoned reporter or assignee reads as absent, which this
-            # closure already renders as None.
+            """Return the live user's username, or None when absent or tombstoned."""
             user = live_or_none(users_by_id.get(user_id)) if user_id else None
             return user.username if user else None
 
@@ -144,9 +145,8 @@ class BugReportService:
             assignee_username=assignee.username if assignee else None,
         )
 
-    # -- helpers -----------------------------------------------------------
-
     def _require(self, bug_report_id: UUID) -> BugReport:
+        """Fetch a bug report or raise 404."""
         bug_report = self.repos.bug_reports.get(bug_report_id)
         if bug_report is None:
             raise HTTPException(status_code=404, detail="Bug report not found")
@@ -156,6 +156,7 @@ class BugReportService:
     def _with_details(
         bug_report: BugReport, *, reporter_username: str | None, assignee_username: str | None
     ) -> BugReportWithDetails:
+        """Attach reporter and assignee usernames to a bug report."""
         return BugReportWithDetails(
             **BugReportRead.model_validate(bug_report).model_dump(),
             reporter_username=reporter_username,

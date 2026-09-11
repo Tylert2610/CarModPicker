@@ -25,10 +25,8 @@ from app.db.dynamo.users import User as DBUser
 
 logger = logging.getLogger(__name__)
 
-# Create router
 router = APIRouter()
 
-# Create service
 report_service = ReportService()
 
 
@@ -229,9 +227,6 @@ async def get_report(
     )
 
     if not report:
-        # IN-06: use the centralized error-shape helper instead of raw
-        # ``HTTPException`` so the response follows the same {message,
-        # error_code, details} contract as the rest of the module.
         ResponsePatterns.raise_not_found("Report", report_id)
 
     return report

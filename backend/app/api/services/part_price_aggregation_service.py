@@ -1,15 +1,6 @@
-"""
-Pure read service that aggregates `PartPriceHistory` over a time window.
+"""Pure read service that aggregates `PartPriceHistory` over a time window.
 
 Two public functions:
-- `aggregate_single_part(part_id, window)` — full per-retailer breakdown +
-  listing-level history for one part (resolved across its canonical link group).
-- `aggregate_batch(part_ids, window)` — min/max/last/trend per requested
-  part_id, dedup'd by canonical link group, in a fixed number of round-trips
-  regardless of batch size.
-
-The service does NOT enforce a batch cap — that lives at the endpoint layer
-(T03) so this stays reusable from S07 alert evaluation.
 """
 
 from __future__ import annotations
@@ -54,11 +45,11 @@ def parse_window(window: str) -> Optional[datetime]:
         return now - timedelta(days=90)
     if window == "180d":
         return now - timedelta(days=180)
-    # window == "1y"
     return now - timedelta(days=365)
 
 
 def _empty_summary() -> PriceHistorySummary:
+    """Return a zeroed summary for a part with no observations."""
     return PriceHistorySummary(
         min_cents=None,
         max_cents=None,
@@ -70,6 +61,7 @@ def _empty_summary() -> PriceHistorySummary:
 
 
 def _empty_batch_item() -> PriceHistoryBatchSummaryItem:
+    """Return a zeroed batch summary item for a part with no observations."""
     return PriceHistoryBatchSummaryItem(
         min_cents=None,
         max_cents=None,
@@ -92,8 +84,6 @@ def _compute_trend(prices_chronological: list[int]) -> PriceTrend:
     mean = statistics.fmean(prices_chronological)
     if mean == 0:
         return "flat"
-    # x = 0, 1, 2, ... n-1 — uniform spacing is fine for slope-sign purposes; we
-    # don't need real-time x-axis precision for an up/down/flat verdict.
     x_mean = (n - 1) / 2.0
     num = 0.0
     den = 0.0
@@ -104,7 +94,7 @@ def _compute_trend(prices_chronological: list[int]) -> PriceTrend:
     if den == 0:
         return "flat"
     slope = num / den
-    drift = slope * (n - 1)  # total expected change across the window
+    drift = slope * (n - 1)
     threshold = abs(mean) * 0.01
     if drift > threshold:
         return "up"
@@ -113,14 +103,12 @@ def _compute_trend(prices_chronological: list[int]) -> PriceTrend:
     return "flat"
 
 
-# --- Single-part aggregation -------------------------------------------------
-
-
 def _history_rows(
     part_ids: Iterable[UUID],
     *,
     since: Optional[datetime],
 ) -> tuple[list[tuple[PartPriceHistory, UUID]], dict[UUID, Retailer]]:
+    """Load price observations for these parts with their retailers, newest first."""
     repos = get_repositories()
     listings = repos.part_listings.list_by_parts(part_ids)
     retailers = repos.retailers.get_many(listing.retailer_id for listing in listings)
@@ -133,6 +121,7 @@ def _history_rows(
 
 
 def _with_retailer(entry: PartPriceHistory, retailer: Retailer) -> PartPriceHistoryReadWithRetailer:
+    """Build a price history read schema with its retailer named."""
     return PartPriceHistoryReadWithRetailer(
         id=entry.id,
         part_listing_id=entry.part_listing_id,
@@ -229,10 +218,6 @@ def apply_retailer_filter(
 
     Filters `history` to entries from the given retailer, keeps at most one
     matching `RetailerPriceBreakdown` in `retailers`, and recomputes `summary`
-    from the filtered observations so `min/max/last/trend/observation_count`
-    reflect the single-retailer view rather than the cross-retailer aggregate.
-    Returns an empty-summary shape (status 200 from the endpoint) when no
-    observations match.
     """
     filtered_history = [h for h in result.history if h.retailer_id == retailer_id]
     filtered_retailers = [r for r in result.retailers if r.retailer_id == retailer_id]
@@ -267,9 +252,6 @@ def apply_retailer_filter(
     )
 
 
-# --- Batch aggregation -------------------------------------------------------
-
-
 def aggregate_batch(
     part_ids: list[UUID],
     window: str,
@@ -278,8 +260,6 @@ def aggregate_batch(
 
     Always returns one entry per requested part_id — empty parts get the
     well-formed empty shape so the frontend can iterate without holes. Resolves
-    canonical link groups so a request for both a canonical and its duplicate
-    does not double-count.
     """
     since = parse_window(window)
 

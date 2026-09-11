@@ -8,17 +8,15 @@ from app.api.utils.image_utils import is_file_key
 
 
 def get_all_referenced_file_keys() -> set[str]:
-    """
-    Collect all file keys that are referenced by any entity in the database.
-    Used to identify bucket objects that are safe to delete (orphans).
+    """Collect every file key referenced by a stored entity.
 
-    Includes: part (image_urls), user (image_urls), car (image_urls),
-    build_list (image_urls), image_source_mapping (file_key).
+    Anything in the bucket outside this set is an orphan and safe to delete.
     """
     referenced: set[str] = set()
     repos = get_repositories()
 
     def _collect_image_urls(image_urls: list[str] | None) -> None:
+        """Add any file keys in this image list to the referenced set."""
         if image_urls:
             for k in image_urls:
                 if k and is_file_key(k):
@@ -33,11 +31,9 @@ def get_all_referenced_file_keys() -> set[str]:
     for car in repos.car_generations.list_all():
         _collect_image_urls(car.image_urls)
 
-    # Build lists: image_urls
     for build_list in repos.build_lists.scan_all():
         _collect_image_urls(build_list.image_urls)
 
-    # Image source mappings (dedup cache)
     for file_key in repos.image_source_mappings.all_file_keys():
         if file_key and is_file_key(file_key):
             referenced.add(file_key)

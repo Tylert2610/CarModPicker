@@ -1,3 +1,5 @@
+"""Parses a product page that the browser extension scraped for the caller."""
+
 import hashlib
 import logging
 from typing import Any, List, Optional
@@ -44,6 +46,7 @@ _TRACKING_PARAMS = frozenset(
 
 
 def canonicalize_url(url: str) -> str:
+    """Normalise a product URL so the same page yields one key, dropping tracking params."""
     try:
         parsed = urlparse(url)
     except Exception:
@@ -64,6 +67,7 @@ def canonicalize_url(url: str) -> str:
 
 
 def _html_fingerprint(html: str) -> tuple[int, str]:
+    """Return the UTF-8 byte length and SHA-256 of the HTML."""
     b = html.encode("utf-8", errors="replace")
     return len(b), hashlib.sha256(b).hexdigest()
 
@@ -75,6 +79,7 @@ def _enforce_max_html_size(
     url: str,
     content_length: Optional[str],
 ) -> None:
+    """Raise 413 when the submitted HTML exceeds the configured size ceiling."""
     max_b = settings.CRAWLED_PAGE_MAX_HTML_BYTES
     if html_size_bytes <= max_b:
         return
@@ -97,11 +102,15 @@ def _enforce_max_html_size(
 
 
 class ScrapeRequest(BaseModel):
+    """A product page URL and its HTML, submitted by the browser extension."""
+
     url: str
     html: str
 
 
 class ScrapeResponse(BaseModel):
+    """The part fields parsed out of a scraped product page."""
+
     name: Optional[str] = None
     description: Optional[str] = None
     price: Optional[int] = None
@@ -126,6 +135,7 @@ async def scrape_page_from_extension(
     body: ScrapeRequest,
     current_user: DBUser = Depends(get_current_user),
 ) -> ScrapeResponse:
+    """Parse a scraped product page into part fields the caller can review."""
     raw_url = body.url.strip()
     if not raw_url:
         raise HTTPException(status_code=400, detail="url is required")

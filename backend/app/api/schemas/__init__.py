@@ -1,3 +1,5 @@
+"""Pydantic schemas for the CarModPicker API."""
+
 from .auth import (
     NewPassword,
     TOTPDisableRequest,

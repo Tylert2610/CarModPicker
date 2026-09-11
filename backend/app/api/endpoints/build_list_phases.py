@@ -28,6 +28,7 @@ router = APIRouter()
 
 
 def _require_phase(repos: Repositories, phase_id: UUID) -> BuildListPhase:
+    """Return the build list phase or raise 404."""
     phase = repos.build_list_phases.get(phase_id)
     if phase is None:
         ResponsePatterns.raise_not_found("build list phase", phase_id)
@@ -36,6 +37,7 @@ def _require_phase(repos: Repositories, phase_id: UUID) -> BuildListPhase:
 
 
 def _require_build_list(repos: Repositories, build_list_id: UUID) -> BuildList:
+    """Return the build list or raise 404."""
     build_list = repos.build_lists.get(build_list_id)
     if build_list is None:
         ResponsePatterns.raise_not_found("build list", build_list_id)
@@ -107,7 +109,6 @@ async def delete_build_list_phase(
 
     deleted_data = BuildListPhaseRead.model_validate(phase)
 
-    # Mirror the SQL ON DELETE SET NULL: detach children, then drop the phase.
     detach_actions = [
         *repos.build_list_parts.clear_phase(phase.id, phase.build_list_id),
         *repos.build_list_labor_estimates.clear_phase(phase.id, phase.build_list_id),

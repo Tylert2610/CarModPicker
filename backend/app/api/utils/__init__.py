@@ -1,3 +1,5 @@
+"""Shared helpers for the API endpoints."""
+
 from .authorization import (
     can_delete_build_list_part,
     can_delete_part,

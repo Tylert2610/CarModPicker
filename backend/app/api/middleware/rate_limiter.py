@@ -32,6 +32,7 @@ class RateLimitConfig:
         admin_requests_per_minute: int = 30,
         admin_requests_per_hour: int = 300,
     ):
+        """Set the per minute and per hour caps for each request class."""
         self.requests_per_minute = requests_per_minute
         self.requests_per_hour = requests_per_hour
         self.get_requests_per_minute = get_requests_per_minute
@@ -49,9 +50,9 @@ class SophisticatedRateLimiter:
     """
 
     def __init__(self, config: Optional[RateLimitConfig] = None) -> None:
+        """Create the per identity request windows from the config."""
         self.config = config or RateLimitConfig()
 
-        # Separate tracking for different rate limit types
         self.minute_requests: Dict[str, list[float]] = defaultdict(list)
         self.hour_requests: Dict[str, list[float]] = defaultdict(list)
         self.get_minute_requests: Dict[str, list[float]] = defaultdict(list)
@@ -63,12 +64,10 @@ class SophisticatedRateLimiter:
 
     def _get_client_ip(self, request: Request) -> str:
         """Extract client IP from request, handling proxy headers."""
-        # Check for forwarded headers first (for proxy setups)
         forwarded_for = request.headers.get("X-Forwarded-For")
         if forwarded_for:
             return forwarded_for.split(",")[0].strip()
 
-        # Fall back to direct connection
         return request.client.host if request.client else "unknown"
 
     def _get_rate_limit_key(self, request: Request) -> str:
@@ -77,7 +76,6 @@ class SophisticatedRateLimiter:
         path = request.url.path
         method = request.method
 
-        # Determine endpoint type
         if path.startswith("/api/auth"):
             return f"auth:{client_ip}"
         elif path.startswith("/api/admin") or "admin" in path:
@@ -141,11 +139,9 @@ class SophisticatedRateLimiter:
         minute_limit, hour_limit = self._get_rate_limits_for_request(request)
         minute_dict, hour_dict = self._get_tracking_dicts_for_request(request)
 
-        # Clean up old requests
         self._cleanup_old_requests(key, 60, minute_dict)
         self._cleanup_old_requests(key, 3600, hour_dict)
 
-        # Check minute limit
         minute_count = len(minute_dict[key])
         if minute_count >= minute_limit:
             return (
@@ -159,7 +155,6 @@ class SophisticatedRateLimiter:
                 },
             )
 
-        # Check hour limit
         hour_count = len(hour_dict[key])
         if hour_count >= hour_limit:
             return (
@@ -173,7 +168,6 @@ class SophisticatedRateLimiter:
                 },
             )
 
-        # Add current request to tracking
         minute_dict[key].append(current_time)
         hour_dict[key].append(current_time)
 
@@ -195,7 +189,6 @@ class SophisticatedRateLimiter:
         minute_limit, hour_limit = self._get_rate_limits_for_request(request)
         minute_dict, hour_dict = self._get_tracking_dicts_for_request(request)
 
-        # Clean up old requests
         self._cleanup_old_requests(key, 60, minute_dict)
         self._cleanup_old_requests(key, 3600, hour_dict)
 
@@ -212,7 +205,6 @@ class SophisticatedRateLimiter:
         }
 
 
-# Global rate limiter instance with configuration from settings
 rate_limiter = SophisticatedRateLimiter(
     RateLimitConfig(
         requests_per_minute=settings.RATE_LIMIT_REQUESTS_PER_MINUTE,
@@ -227,13 +219,8 @@ rate_limiter = SophisticatedRateLimiter(
 )
 
 
-# Paths that must match exactly to be exempt from rate limiting. These are single
-# endpoints, so a prefix test would wrongly exempt unrelated paths. In particular "/"
-# is a prefix of every path, so testing it with startswith exempts the entire API.
 RATE_LIMIT_EXEMPT_EXACT: Tuple[str, ...] = ("/", "/health", "/ready", "/openapi.json")
 
-# Paths that are exempt along with everything beneath them. The documentation UIs serve
-# their own sub-resources (for example /docs/oauth2-redirect), so they match as prefixes.
 RATE_LIMIT_EXEMPT_PREFIXES: Tuple[str, ...] = ("/docs", "/redoc")
 
 
@@ -242,9 +229,6 @@ def is_rate_limit_exempt(path: str) -> bool:
 
     Exemption is deliberately split into two kinds. Entries in
     ``RATE_LIMIT_EXEMPT_EXACT`` are matched exactly, so the root path "/" exempts only
-    the root and not every path that begins with it. Entries in
-    ``RATE_LIMIT_EXEMPT_PREFIXES`` are matched as prefixes, so the docs UIs also exempt
-    the sub-resources they load.
     """
     if path in RATE_LIMIT_EXEMPT_EXACT:
         return True
@@ -256,24 +240,20 @@ async def rate_limit_middleware(request: Request, call_next: Callable[[Request],
     """
     FastAPI middleware for sophisticated rate limiting.
     """
-    # Skip rate limiting if disabled in settings or in test environment
     if not settings.ENABLE_RATE_LIMITING or os.getenv("ENABLE_RATE_LIMITING", "true").lower() == "false":
         response = await call_next(request)
         return response
 
-    # Skip rate limiting for health checks, readiness, the root, and documentation
     if is_rate_limit_exempt(request.url.path):
         response = await call_next(request)
         return response
 
-    # Check rate limit
     is_limited, reason, limits_info = rate_limiter.is_rate_limited(request)
 
     if is_limited:
         client_ip = request.client.host if request.client else "unknown"
         logger.warning(f"Rate limit exceeded for {client_ip}: {reason}")
 
-        # Determine retry after time based on which limit was hit
         retry_after = 60 if "minute" in reason else 3600
 
         return JSONResponse(
@@ -293,18 +273,8 @@ async def rate_limit_middleware(request: Request, call_next: Callable[[Request],
             },
         )
 
-    # Layer 2: the shared limiter. Layer 1 above is in-memory, so it only sees the
-    # traffic that reached this execution environment; the shared counter is what makes
-    # a limit hold across environments and, after the split, across the nine functions.
-    # It runs only once layer 1 has allowed the request, so a burst that layer 1 already
-    # rejected costs no DynamoDB call.
-    #
-    # Every failure mode inside is swallowed and logged at WARNING, so this call cannot
-    # raise into the request path or turn a DynamoDB problem into a 5xx.
     if settings.ENABLE_SHARED_RATE_LIMITING:
         identity = client_identity(request)
-        # The route, not the raw path: a fail-open record should group by endpoint rather
-        # than fan out over every id in a path. Falls back to the path when no route matched.
         route = request.scope.get("route")
         route_label = getattr(route, "path", None) or request.url.path
         with request_route(route_label):
@@ -325,7 +295,6 @@ async def rate_limit_middleware(request: Request, call_next: Callable[[Request],
                 },
             )
 
-    # Add rate limit headers to response
     response = await call_next(request)
     remaining = rate_limiter.get_remaining_requests(request)
 

@@ -1,3 +1,5 @@
+"""Schemas for part price history and its aggregated summaries."""
+
 from datetime import UTC, datetime
 from typing import Literal, Optional
 from uuid import UUID
@@ -6,18 +8,24 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class PartPriceHistoryBase(BaseModel):
+    """Fields shared by every price history schema."""
+
     part_listing_id: UUID = Field(..., description="Part listing ID")
     price_cents: int = Field(..., ge=0, description="Price in cents")
     observed_at: datetime = Field(..., description="When this price was observed")
 
 
 class PartPriceHistoryCreate(BaseModel):
+    """Request body for recording an observed price."""
+
     part_listing_id: UUID = Field(..., description="Part listing ID")
     price_cents: int = Field(..., ge=0, description="Price in cents")
     observed_at: datetime = Field(default_factory=lambda: datetime.now(UTC), description="When this price was observed")
 
 
 class PartPriceHistoryRead(PartPriceHistoryBase):
+    """A price observation as returned to clients."""
+
     id: UUID
 
     model_config = ConfigDict(from_attributes=True)
@@ -29,8 +37,6 @@ class PartPriceHistoryReadWithRetailer(PartPriceHistoryRead):
     retailer_id: UUID = Field(..., description="Retailer ID")
     retailer_name: str = Field(..., description="Retailer display name")
 
-
-# --- S05 price-history aggregation schemas -----------------------------------
 
 PriceTrend = Literal["up", "down", "flat"]
 PriceWindow = Literal["7d", "30d", "90d", "180d", "1y", "all"]

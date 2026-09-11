@@ -1,3 +1,5 @@
+"""Schemas for global application settings."""
+
 from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict

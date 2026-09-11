@@ -1,8 +1,7 @@
-"""
-Generic page-parsing helpers for the Chrome extension's `POST /crawled-pages/scrape`
+"""Generic page-parsing helpers for the Chrome extension's `POST /crawled-pages/scrape`
+
 flow. Extracts product details from a fetched HTML payload using JSON-LD Product
 schema first, then OpenGraph / DOM fallbacks for price and image. No retailer-
-specific logic.
 """
 
 from __future__ import annotations
@@ -126,6 +125,7 @@ def part_number_canonical(raw: Optional[str]) -> Optional[str]:
 
 
 def _meta_content(tag: Optional[Tag]) -> Optional[str]:
+    """Return a meta tag's content attribute when it is a string."""
     if not isinstance(tag, Tag):
         return None
     content = tag.get("content")
@@ -155,9 +155,11 @@ def _canonical_url_key(url: Optional[str]) -> Optional[str]:
 
 
 def _json_ld_product_urls(item: Dict[str, Any]) -> List[str]:
+    """Collect every candidate product URL from a JSON-LD item."""
     urls: List[str] = []
 
     def _append(val: Any) -> None:
+        """Append a URL, recursing through lists and objects."""
         if isinstance(val, str) and val.strip():
             urls.append(val.strip())
         elif isinstance(val, list):
@@ -211,6 +213,7 @@ def _escape_json_control_chars(raw: str) -> str:
 
 
 def _json_ld_type_is_product(t: Any) -> bool:
+    """Report whether a JSON-LD @type denotes a Product."""
     if isinstance(t, str):
         return t.strip().lower() == "product"
     if isinstance(t, list):
@@ -258,6 +261,7 @@ def _extract_json_ld_product(html: str, *, product_url: Optional[str] = None) ->
 
 
 def _part_manufacturer_from_json_ld(item: Dict[str, Any]) -> Optional[str]:
+    """Return the brand name from a JSON-LD item."""
     brand = item.get("brand")
     if isinstance(brand, str) and brand.strip():
         return html_module.unescape(brand.strip())
@@ -269,6 +273,7 @@ def _part_manufacturer_from_json_ld(item: Dict[str, Any]) -> Optional[str]:
 
 
 def _price_from_json_ld(item: Dict[str, Any]) -> Optional[int]:
+    """Return the offer price in cents from a JSON-LD item."""
     offers = item.get("offers")
     offer: Optional[Dict[str, Any]]
     if isinstance(offers, list) and offers:
@@ -294,6 +299,7 @@ def _price_from_json_ld(item: Dict[str, Any]) -> Optional[int]:
 
 
 def _images_from_json_ld(item: Dict[str, Any]) -> List[str]:
+    """Return the image URLs from a JSON-LD item."""
     img = item.get("image")
     if not img:
         return []
@@ -336,6 +342,7 @@ def _extract_dom_price(soup: BeautifulSoup) -> Optional[int]:
 
 
 def _og_meta(soup: BeautifulSoup, prop: str) -> Optional[str]:
+    """Return the content of an OpenGraph meta property."""
     return _meta_content(soup.find("meta", property=prop))
 
 

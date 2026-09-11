@@ -2,21 +2,6 @@
 
 The frontend is a static SPA on S3/CloudFront and cannot generate a sitemap
 from the database, so the backend produces one here. A sitemap *index* is
-served at ``/sitemap.xml`` and points at per-type child sitemaps:
-
-    /sitemap.xml              -> sitemap index
-    /sitemap-static.xml       -> hand-curated landing/marketing pages
-    /sitemap-parts.xml        -> every canonical part
-    /sitemap-cars.xml         -> every car generation (seed data)
-    /sitemap-build-lists.xml  -> every build list (all are publicly readable)
-
-URLs are absolute against ``settings.frontend_base_url`` (the SPA origin),
-not the API host. User profiles are intentionally excluded — they are thin,
-low-value pages and listing them invites privacy/SEO noise.
-
-Sitemaps protocol limits each file to 50,000 URLs / 50MB. Each child sitemap
-is paginated via ``?page=N`` and the index enumerates one entry per page so
-we never exceed the per-file cap even as the catalog grows.
 """
 
 from __future__ import annotations
@@ -28,19 +13,13 @@ from app.api.dependencies.repositories import get_repositories
 from app.core.config import settings
 from app.db.dynamo.models import TimestampedDynamoModel
 
-# Sitemaps protocol hard cap is 50,000 URLs per file; stay well under it so a
-# single page is always a valid sitemap even with metadata overhead.
 URLS_PER_PAGE = 20_000
 
-# Child sitemap identifiers (also the URL path segment: /sitemap-<name>.xml).
 SITEMAP_STATIC = "static"
 SITEMAP_PARTS = "parts"
 SITEMAP_CARS = "cars"
 SITEMAP_BUILD_LISTS = "build-lists"
 
-# Static, hand-maintained pages. Mirrors the public, indexable routes from the
-# frontend router (kept in sync with frontend/public/robots.txt Disallow list:
-# anything disallowed there must NOT appear here). (path, changefreq, priority)
 _STATIC_PAGES: list[tuple[str, str, str]] = [
     ("/", "daily", "1.0"),
     ("/build-lists", "daily", "0.9"),
@@ -72,7 +51,7 @@ def escape(text: str) -> str:
 
     Uses ``html.escape`` (escapes & < > " ') purely for *output* — this
     module never parses XML, so the XML-parsing attack class does not apply
-    here."""
+    """
     return _html_escape(text, quote=True)
 
 
@@ -88,6 +67,7 @@ def _url_element(
     changefreq: str | None = None,
     priority: str | None = None,
 ) -> str:
+    """Render one <url> entry for a sitemap."""
     parts = [f"  <url>\n    <loc>{escape(loc)}</loc>"]
     if lastmod is not None:
         parts.append(f"    <lastmod>{_w3c_datetime(lastmod)}</lastmod>")
@@ -100,6 +80,7 @@ def _url_element(
 
 
 def _urlset(url_elements: list[str]) -> str:
+    """Wrap rendered <url> entries in a sitemap urlset document."""
     body = "\n".join(url_elements)
     return (
         '<?xml version="1.0" encoding="UTF-8"?>\n'
@@ -109,22 +90,18 @@ def _urlset(url_elements: list[str]) -> str:
     )
 
 
-# --- Per-type counting + row queries -------------------------------------
-
-
 def _canonical_parts() -> list[TimestampedDynamoModel]:
-    # Only canonical parts: a non-null canonical_part_id means this row is a
-    # duplicate whose surface page redirects to the canonical, so indexing it
-    # would create duplicate-content URLs.
+    """Return every canonical part row."""
     return list(get_repositories().parts.list_canonical())
 
 
 def _build_lists() -> list[TimestampedDynamoModel]:
-    # Every build list is publicly readable by id (no privacy flag exists).
+    """Return every build list row."""
     return list(get_repositories().build_lists.scan_all())
 
 
 def _car_generations() -> list[TimestampedDynamoModel]:
+    """Return every car generation row."""
     return list(get_repositories().car_generations.list_all())
 
 
@@ -136,9 +113,6 @@ def page_count(total: int) -> int:
     return (total + URLS_PER_PAGE - 1) // URLS_PER_PAGE
 
 
-# --- Public API ----------------------------------------------------------
-
-
 def generate_sitemap_index() -> str:
     """Sitemap index referencing every child sitemap page."""
     api = _api_base_url()
@@ -147,6 +121,7 @@ def generate_sitemap_index() -> str:
     sitemaps: list[str] = []
 
     def add(name: str, pages: int) -> None:
+        """Append the child sitemap entries for one type."""
         for page in range(1, pages + 1):
             suffix = "" if page == 1 else f"?page={page}"
             loc = f"{api}/sitemap-{name}.xml{suffix}"
@@ -169,6 +144,7 @@ def generate_sitemap_index() -> str:
 
 
 def generate_static_sitemap() -> str:
+    """Render the sitemap covering the static marketing pages."""
     base = _base_url()
     elements = [
         _url_element(f"{base}{path}", changefreq=changefreq, priority=priority)
@@ -185,6 +161,7 @@ def _dynamo_sitemap(
     changefreq: str,
     priority: str,
 ) -> str:
+    """Render one page of a sitemap from stored rows, ordered by id."""
     base = _base_url()
     offset = (page - 1) * URLS_PER_PAGE
     ordered = sorted(rows, key=lambda row: str(row.id))[offset : offset + URLS_PER_PAGE]
