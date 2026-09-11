@@ -921,9 +921,10 @@ def test_the_mount_adds_exactly_the_package_routes_and_nothing_else(
     plus row 10's two.
 
     Nineteen rather than twenty-one because two of the twenty-one already
-    existed on the legacy side. Pinning the difference rather than a total is what makes this
-    test survive row 8 adding a route to some other part of the domain, while
-    still failing if this mount starts declaring something it did not before.
+    existed on the legacy side. Pinning the difference rather than a total is
+    what makes this test survive row 8 adding a route to some other part of the
+    domain, while still failing if this mount starts declaring something it did
+    not before.
 
     Row 10 is a deliberate instance of exactly that: the same
     `if domain.name == "identity"` block in `app/composition/wiring.py` now also
