@@ -19,18 +19,17 @@ import {
   getHighResImageUrl,
 } from "./utils/imageUrlUtils";
 
-// API base URL - defaults to production (backend is at api subdomain + /api path)
 const DEFAULT_API_URL = "https://api.carmodpicker.com/api";
 
 /** Old prod URLs to migrate to DEFAULT_API_URL when seen */
 const LEGACY_PROD_API_URLS = [
-  "https://carmodpicker.com/api", // frontend origin + /api
-  "https://api.carmodpicker.com", // api host without /api path
+  "https://carmodpicker.com/api",
+  "https://api.carmodpicker.com",
 ];
 
-/** Old localhost URLs to migrate (Vite proxy doesn't add CORS headers for
- * chrome-extension:// origins, so the extension must talk directly to the
- * backend on :8000 instead of the :4000 frontend proxy). */
+/** Old localhost URLs to migrate: the extension talks to the backend on :8000
+ * directly, because the :4000 frontend proxy sends no CORS headers for
+ * chrome-extension:// origins. */
 const LEGACY_LOCAL_API_URLS = [
   "http://localhost:4000/api",
   "http://127.0.0.1:4000/api",
@@ -54,17 +53,10 @@ async function getApiUrl(): Promise<string> {
 }
 
 /**
- * Get the stored ingestion API key.
+ * Get the stored ingestion API key, or null when unset.
  *
- * `POST /api/parts/price-history` takes `require_api_key_or_admin` on the
- * backend: a matching `X-API-Key`, or a bearer token belonging to an admin.
- * The extension is one of the two sanctioned machine writers, so it carries
- * the shared key rather than needing every user to be an admin.
- *
- * Stored in `chrome.storage.local`, not `sync`, deliberately: it is a shared
- * secret and `sync` would replicate it to every Chrome profile the user is
- * signed into. Unset is the normal state — the header is simply omitted and
- * the routes that do not need it are unaffected.
+ * Kept in `local` rather than `sync` because it is a shared secret that must
+ * not replicate to every Chrome profile the user signs into.
  */
 async function getApiKey(): Promise<string | null> {
   const result = await chrome.storage.local.get(["apiKey"]);
@@ -115,9 +107,6 @@ async function apiRequest<T>(
     headers["Authorization"] = `Bearer ${token}`;
   }
 
-  // Sent alongside the bearer token, not instead of it. Routes that take
-  // `require_api_key_or_admin` check the key first and let a non-admin user
-  // through on it; every other route ignores the header entirely.
   if (apiKey) {
     headers["X-API-Key"] = apiKey;
   }
@@ -131,10 +120,6 @@ async function apiRequest<T>(
     const data = (await response.json().catch(() => ({}))) as unknown;
 
     if (!response.ok) {
-      // FastAPI returns a `detail` field which may be a string (simple errors)
-      // or a dict (structured errors like PART_ALREADY_EXISTS). Preserve the
-      // dict shape on errorData so callers can branch on error_code, while
-      // still surfacing a human-readable message in error.
       const errorBody = (data ?? {}) as { detail?: unknown };
       const rawDetail = errorBody.detail;
       let errorMessage: string;
@@ -172,20 +157,15 @@ async function apiRequest<T>(
 }
 
 /**
- * Delegated auth: the extension opens the CarModPicker web app in a new tab,
- * the user signs in there (with password manager / passkey / Google / 2FA — all
- * the methods the web app supports), and the web page posts the resulting JWT
- * back to the extension via chrome.runtime.sendMessage. The `externally_connectable`
- * manifest entry restricts which origins can reach us, and a per-session state
- * nonce binds the response to the request the user just initiated.
+ * Legacy delegated sign in: the web app posts a JWT back over
+ * `chrome.runtime.sendMessage`, bound to a per-session state nonce.
  */
 const AUTH_NONCE_STORAGE_KEY = "pendingWebAuth";
 const AUTH_NONCE_TTL_MS = 10 * 60 * 1000;
-// Base domains whose subdomains (incl. www, staging) are permitted to hand off
-// auth tokens. Kept in sync with `externally_connectable.matches` in manifest.json.
 const ALLOWED_WEB_HOST_SUFFIXES: ReadonlyArray<string> = ["carmodpicker.com"];
 const ALLOWED_EXACT_HOSTS: ReadonlyArray<string> = ["localhost", "127.0.0.1"];
 
+/** Whether a sender host may hand off an auth token to this extension. */
 function isAllowedWebHost(hostname: string): boolean {
   if (ALLOWED_EXACT_HOSTS.includes(hostname)) return true;
   return ALLOWED_WEB_HOST_SUFFIXES.some(
@@ -199,14 +179,14 @@ type PendingWebAuth = {
   tabId?: number;
 };
 
+/** A random 32 byte hex string used as a sign in state nonce. */
 function generateNonce(): string {
   const bytes = new Uint8Array(32);
   crypto.getRandomValues(bytes);
   return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-/** The legacy `/extension-auth` page, which posts a token back to us over
- * `chrome.runtime.sendMessage`. */
+/** URL of the legacy `/extension-auth` sign in page for a given state nonce. */
 async function getWebAuthUrl(state: string): Promise<string> {
   const origin = await getWebOrigin();
   return `${origin}/extension-auth?extensionId=${encodeURIComponent(
@@ -214,6 +194,7 @@ async function getWebAuthUrl(state: string): Promise<string> {
   )}&state=${encodeURIComponent(state)}`;
 }
 
+/** The in-flight legacy sign in, or null when none is pending or it expired. */
 async function getPendingWebAuth(): Promise<PendingWebAuth | null> {
   const result = await chrome.storage.local.get(AUTH_NONCE_STORAGE_KEY);
   const pending = result[AUTH_NONCE_STORAGE_KEY] as PendingWebAuth | undefined;
@@ -225,10 +206,12 @@ async function getPendingWebAuth(): Promise<PendingWebAuth | null> {
   return pending;
 }
 
+/** Forget any in-flight legacy sign in. */
 async function clearPendingWebAuth(): Promise<void> {
   await chrome.storage.local.remove(AUTH_NONCE_STORAGE_KEY);
 }
 
+/** Start a legacy sign in by opening the web app's auth page in a new tab. */
 async function initiateWebAuth(): Promise<ApiResponse<{ authUrl: string }>> {
   const state = generateNonce();
   const pending: PendingWebAuth = { state, createdAt: Date.now() };
@@ -260,6 +243,7 @@ async function initiateWebAuth(): Promise<ApiResponse<{ authUrl: string }>> {
   }
 }
 
+/** Accept a token handed off by an allowed web page, if its state matches. */
 async function handleExternalMessage(
   message: unknown,
   sender: chrome.runtime.MessageSender,
@@ -296,9 +280,7 @@ async function handleExternalMessage(
   if (typeof tabId === "number") {
     try {
       await chrome.tabs.remove(tabId);
-    } catch {
-      // tab may already be closed by the user — ignore
-    }
+    } catch {}
   }
   return { success: true };
 }
@@ -311,39 +293,21 @@ chrome.runtime.onMessageExternal.addListener(
 );
 
 /**
- * Identity-mode sign in (row 10 of docs/identity-adoption.md).
- *
- * The legacy flow above has the web page push a token at us over
- * `chrome.runtime.sendMessage`. The identity flow inverts that: the web app
- * redirects back to a URL we own, carrying a short lived code in the URL
- * fragment, and we spend that code ourselves at the API. Nothing but this
- * service worker ever holds the resulting access token.
- *
- * Why `chrome.tabs` rather than `chrome.identity.launchWebAuthFlow`, which the
- * row 10 brief named first. `launchWebAuthFlow` only ever hands back a
- * `https://<extension-id>.chromiumapp.org/` redirect. Row 6's handoff page
- * (frontend/src/pages/authentication/ExtensionHandoff.tsx) validates the
- * `redirect_uri` by requiring `url.protocol === 'chrome-extension:'` and
- * refuses anything else, so a chromiumapp.org callback is rejected before the
- * page ever calls the API. Matching that contract exactly, as the brief
- * requires, means redirecting to a `chrome-extension://` page, and that is
- * what `chrome.tabs` plus a bundled callback page does. It also avoids adding
- * the `identity` permission, which is a new user visible grant on an installed
- * base and a Chrome Web Store review the owner has not asked for.
- *
- * The callback page is `auth-callback.html`, a page inside this extension. It
- * reads the fragment, relays it to the worker, and closes itself. A fragment
- * never leaves the browser, so the code is not in any server log along the way.
+ * Identity sign in: the web app redirects to a page inside this extension with
+ * a short lived code in the URL fragment, and only this worker spends that code
+ * for an access token. The handoff page accepts `chrome-extension:` redirect
+ * targets only, which is why a bundled callback page stands in for
+ * `chrome.identity.launchWebAuthFlow`.
  */
 
 /** Where the web app sends the user back to. Must be a `chrome-extension:` URL. */
 const IDENTITY_CALLBACK_PAGE = "auth-callback.html";
 
-/** The row 6 page's route in the web app. */
+/** The handoff page's route in the web app. */
 const IDENTITY_HANDOFF_PATH = "/auth/extension-handoff";
 
-/** Pending identity sign in, kept separately from the legacy nonce so the two
- * modes cannot consume each other's state. */
+/** Pending identity sign in, kept apart from the legacy nonce so neither mode
+ * can consume the other's state. */
 const IDENTITY_NONCE_STORAGE_KEY = "pendingIdentityAuth";
 
 type PendingIdentityAuth = {
@@ -353,19 +317,15 @@ type PendingIdentityAuth = {
 };
 
 /**
- * Which sign in the popup offers.
- *
- * The web app switches on `VITE_AUTH_MODE`, a build time flag. The extension
- * has no build time env plumbing and ships one artifact to the store, so the
- * equivalent here is a runtime setting in `chrome.storage.sync` under
- * `authMode`, set from the options page. Default is `legacy` until row 12
- * cuts over, so an existing install behaves exactly as it does today.
+ * Which sign in the popup offers. A runtime setting rather than a build flag,
+ * because the extension ships one artifact to the store.
  */
 type AuthMode = "legacy" | "identity";
 
 const AUTH_MODE_STORAGE_KEY = "authMode";
 const DEFAULT_AUTH_MODE: AuthMode = "legacy";
 
+/** The configured sign in mode, defaulting to legacy on any other value. */
 async function getAuthMode(): Promise<AuthMode> {
   const result = await chrome.storage.sync.get([AUTH_MODE_STORAGE_KEY]);
   return result[AUTH_MODE_STORAGE_KEY] === "identity"
@@ -374,13 +334,8 @@ async function getAuthMode(): Promise<AuthMode> {
 }
 
 /**
- * Derive the web origin (where the sign in pages live) from the configured API
- * URL. In prod/staging the API is at api.<domain> and the web app at <domain>
- * on the same port. In local dev the backend runs on :8000 and the frontend
- * dev server on :4000, so we swap the port.
- *
- * Shared by both sign in modes so they cannot disagree about where the web app
- * lives.
+ * Derive the web app's origin from the configured API URL, so both sign in
+ * modes agree on where the sign in pages live.
  */
 async function getWebOrigin(): Promise<string> {
   const apiUrl = await getApiUrl();
@@ -394,6 +349,7 @@ async function getWebOrigin(): Promise<string> {
   return `${u.protocol}//${host}`;
 }
 
+/** URL of the identity handoff page for a given state nonce. */
 async function getIdentityAuthUrl(state: string): Promise<string> {
   const origin = await getWebOrigin();
   const redirectUri = chrome.runtime.getURL(IDENTITY_CALLBACK_PAGE);
@@ -404,6 +360,7 @@ async function getIdentityAuthUrl(state: string): Promise<string> {
   return `${origin}${IDENTITY_HANDOFF_PATH}?${params.toString()}`;
 }
 
+/** The in-flight identity sign in, or null when none is pending or it expired. */
 async function getPendingIdentityAuth(): Promise<PendingIdentityAuth | null> {
   const result = await chrome.storage.local.get(IDENTITY_NONCE_STORAGE_KEY);
   const pending = result[IDENTITY_NONCE_STORAGE_KEY] as
@@ -417,10 +374,12 @@ async function getPendingIdentityAuth(): Promise<PendingIdentityAuth | null> {
   return pending;
 }
 
+/** Forget any in-flight identity sign in. */
 async function clearPendingIdentityAuth(): Promise<void> {
   await chrome.storage.local.remove(IDENTITY_NONCE_STORAGE_KEY);
 }
 
+/** Start an identity sign in by opening the handoff page in a new tab. */
 async function initiateIdentityAuth(): Promise<ApiResponse<{ authUrl: string }>> {
   const state = generateNonce();
   const pending: PendingIdentityAuth = { state, createdAt: Date.now() };
@@ -453,19 +412,11 @@ async function initiateIdentityAuth(): Promise<ApiResponse<{ authUrl: string }>>
 }
 
 /**
- * Spend a handoff code for an access token.
+ * Spend a handoff code for an access token and store it.
  *
- * Deliberately not `apiRequest`: that helper attaches the stored bearer token,
- * and the whole point of the exchange is that it stands on the code alone. The
- * backend accepts it with no Authorization header, which is what lets a signed
- * out extension complete a sign in.
- *
- * No refresh token comes back. The identity package's `POST /api/auth/refresh`
- * reads its token from an httpOnly cookie and applies a `Sec-Fetch-Site`
- * check, so a service worker cannot drive it. That matches how the extension
- * behaves today: when the access token expires the user signs in again. Open
- * question 2 in docs/identity-adoption.md is the owner's call on whether
- * extensions get a refresh family of their own.
+ * Bypasses `apiRequest` so the call carries no Authorization header: the code
+ * alone authorizes it, which is what lets a signed out extension sign in. No
+ * refresh token comes back, so an expired token means signing in again.
  */
 async function exchangeHandoffCode(
   code: string,
@@ -504,11 +455,8 @@ async function exchangeHandoffCode(
 }
 
 /**
- * Handle the callback page reporting back what the web app put in the
- * fragment. The sender check is that the message came from this extension's
- * own callback page: `chrome.runtime.onMessage` only carries messages from
- * inside the extension, and the id and page are pinned here so a content
- * script on some other page cannot stand in for it.
+ * Finish an identity sign in from the code and state the callback page read out
+ * of the URL fragment.
  */
 async function completeIdentityAuth(
   code: string,
@@ -528,37 +476,27 @@ async function completeIdentityAuth(
   if (typeof tabId === "number") {
     try {
       await chrome.tabs.remove(tabId);
-    } catch {
-      // tab may already be closed by the user - ignore
-    }
+    } catch {}
   }
   return result;
 }
 
-/**
- * Get current user
- */
+/** Get the signed in user. */
 async function getCurrentUser(): Promise<ApiResponse<User>> {
   return apiRequest<User>("/users/me", { method: "GET" });
 }
 
-/**
- * Get categories
- */
+/** List part categories. */
 async function getCategories(): Promise<ApiResponse<Category[]>> {
   return apiRequest<Category[]>("/categories/", { method: "GET" });
 }
 
-/**
- * Get cars
- */
+/** List car generations. */
 async function getCars(limit: number = 1000): Promise<ApiResponse<Car[]>> {
   return apiRequest<Car[]>(`/car-generations/?limit=${limit}`, { method: "GET" });
 }
 
-/**
- * Search cars
- */
+/** Search car generations by name. */
 async function searchCars(
   searchTerm: string,
   limit: number = 100,
@@ -569,9 +507,7 @@ async function searchCars(
   );
 }
 
-/**
- * Get part_manufacturers (optionally filtered to active only)
- */
+/** List part manufacturers, active ones only by default. */
 async function getPartManufacturers(
   activeOnly: boolean = true,
 ): Promise<ApiResponse<PartManufacturer[]>> {
@@ -580,9 +516,7 @@ async function getPartManufacturers(
   });
 }
 
-/**
- * Search part_manufacturers by name
- */
+/** Search part manufacturers by name. */
 async function searchPartManufacturers(
   searchTerm: string,
   limit: number = 100,
@@ -593,9 +527,7 @@ async function searchPartManufacturers(
   );
 }
 
-/**
- * Create a part_manufacturer (get-or-create: returns existing if same name exists)
- */
+/** Create a part manufacturer, returning the existing one on a name match. */
 async function createPartManufacturer(name: string): Promise<ApiResponse<PartManufacturer>> {
   return apiRequest<PartManufacturer>("/part-manufacturers/", {
     method: "POST",
@@ -603,9 +535,7 @@ async function createPartManufacturer(name: string): Promise<ApiResponse<PartMan
   });
 }
 
-/**
- * Get retailers (optionally filtered to active only)
- */
+/** List retailers, active ones only by default. */
 async function getRetailers(
   activeOnly: boolean = true,
 ): Promise<ApiResponse<Retailer[]>> {
@@ -614,9 +544,7 @@ async function getRetailers(
   });
 }
 
-/**
- * Get or create retailer by domain (for scrapers - creates retailer if not in catalog)
- */
+/** Look up a retailer by domain, creating it when the catalog has none. */
 async function getOrCreateRetailerByDomain(
   domain: string,
   name?: string,
@@ -633,9 +561,7 @@ async function getOrCreateRetailerByDomain(
   });
 }
 
-/**
- * Check if product URL already exists in catalog
- */
+/** Check whether a product URL is already in the catalog. */
 async function checkProductUrl(
   productUrl: string,
 ): Promise<ApiResponse<{ existing_part_id: string | null }>> {
@@ -645,9 +571,7 @@ async function checkProductUrl(
   );
 }
 
-/**
- * Get global part by ID (with listings for display)
- */
+/** Get one part by id, with its listings. */
 async function getPart(
   partId: string,
 ): Promise<ApiResponse<PartRead>> {
@@ -657,8 +581,8 @@ async function getPart(
 }
 
 /**
- * Find existing global part by part_manufacturer ID and part number (for scraper update-mode detection).
- * Returns the part if found, or { success: false } when not found (404).
+ * Find a part by manufacturer and part number, failing when there is no match.
+ * Lets the scraper tell an update from a create.
  */
 async function findExistingPartByPartManufacturerAndPartNumber(
   part_manufacturerId: string,
@@ -674,9 +598,7 @@ async function findExistingPartByPartManufacturerAndPartNumber(
   return apiRequest<PartRead>(url, { method: "GET" });
 }
 
-/**
- * Append image file keys to a global part's gallery
- */
+/** Append image file keys to a part's gallery. */
 async function appendImagesToPart(
   partId: string,
   fileKeys: string[],
@@ -687,13 +609,12 @@ async function appendImagesToPart(
   });
 }
 
-/** Max images allowed per global part (must match backend MAX_IMAGES_PER_GLOBAL_PART) */
+/** Max images per part. Must match the backend's MAX_IMAGES_PER_GLOBAL_PART. */
 const MAX_IMAGES_PER_GLOBAL_PART = 12;
 
 /**
- * Check which source URLs are not in our image cache.
- * Dedupes by canonical URL - returns one high-res URL per unique image.
- * Only considers up to MAX_IMAGES_PER_GLOBAL_PART URLs.
+ * Report which source URLs are not yet cached, one high-res URL per canonical
+ * image and at most MAX_IMAGES_PER_GLOBAL_PART of them.
  */
 async function checkUncachedImageUrls(
   sourceUrls: string[],
@@ -727,9 +648,7 @@ async function checkUncachedImageUrls(
   return { success: true, data: { uncachedUrls: uncached } };
 }
 
-/**
- * Add or update part listing (creates PartListing and PartPriceHistory)
- */
+/** Add a part listing, which also records a price history entry. */
 async function addPartListing(
   data: PartListingCreate,
 ): Promise<ApiResponse<unknown>> {
@@ -739,9 +658,7 @@ async function addPartListing(
   });
 }
 
-/**
- * Create global part
- */
+/** Create a part. */
 async function createPart(
   partData: PartCreate,
 ): Promise<ApiResponse<unknown>> {
@@ -751,9 +668,7 @@ async function createPart(
   });
 }
 
-/**
- * Check if we already have this image cached by source URL (deduplication)
- */
+/** Look up a cached image by its source URL. */
 async function getImageBySourceUrl(
   sourceUrl: string,
 ): Promise<ApiResponse<{ fileKey: string }>> {
@@ -768,10 +683,8 @@ async function getImageBySourceUrl(
 }
 
 /**
- * Upload image and get file key.
- * First checks if we've already stored this image by source URL (deduplication).
- * If not cached, fetches the image and uploads, passing source_url for future dedup.
- * When entityId (global part id) is provided, backend enforces max images and rejects if part is full.
+ * Return the file key for an image URL, uploading it when it is not cached.
+ * Passing a part id lets the backend reject an upload onto a full gallery.
  */
 async function uploadImage(
   imageUrl: string,
@@ -785,13 +698,11 @@ async function uploadImage(
       return { success: false, error: "Not authenticated" };
     }
 
-    // Check cache first (backend uses canonical URL for dedup)
     const cached = await getImageBySourceUrl(imageUrl);
     if (cached.success && cached.data?.fileKey) {
       return { success: true, data: { fileKey: cached.data.fileKey } };
     }
 
-    // Not cached: fetch high-res and upload (canonical for storage)
     const fetchUrl = getHighResImageUrl(imageUrl);
     const imageResponse = await fetch(fetchUrl);
     if (!imageResponse.ok) {
@@ -839,9 +750,8 @@ async function uploadImage(
 }
 
 /**
- * Send full page HTML to the server for archival + server-side parsing.
- * The server selects the best adapter for the URL (site-specific or generic fallback)
- * and returns parsed part attributes for the user to review.
+ * Send page HTML to the server for archival and parsing, returning the part
+ * attributes it extracted for the user to review.
  */
 async function scrapeAndParsePage(
   url: string,
@@ -889,7 +799,6 @@ async function scrapeAndParsePage(
   return res;
 }
 
-// Listen for messages from popup/content scripts
 chrome.runtime.onMessage.addListener(
   (
     request: {
@@ -909,16 +818,12 @@ chrome.runtime.onMessage.addListener(
       listingData?: PartListingCreate;
       url?: string;
       html?: string;
-      // Identity sign in: sent by auth-callback.html with what the handoff
-      // page put in the URL fragment.
       code?: string;
       state?: string;
     },
     _sender,
     sendResponse: (response: unknown) => void,
   ) => {
-    // Sign in. Which of the two flows runs is the `authMode` setting, not the
-    // caller's choice, so the popup needs no knowledge of either one.
     if (request.action === "initiateWebAuth") {
       getAuthMode()
         .then((mode) =>
@@ -947,9 +852,6 @@ chrome.runtime.onMessage.addListener(
       return true;
     }
 
-    // Posted by auth-callback.html, the `redirect_uri` the handoff page sends
-    // the user back to. `onMessage` only carries messages from inside this
-    // extension, so no external page can reach this branch.
     if (request.action === "completeIdentityAuth") {
       const code = typeof request.code === "string" ? request.code : "";
       const state = typeof request.state === "string" ? request.state : "";

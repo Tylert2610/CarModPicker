@@ -22,10 +22,7 @@ interface BlockingPart {
   reason: "non_ugc_exists" | "own_ugc_exists";
 }
 
-/**
- * Resolve the frontend URL for a given API URL, matching the env mapping used
- * by PartDialog's post-create open-tab logic (localhost/staging/prod).
- */
+/** The frontend origin matching the configured API environment. */
 async function getFrontendUrl(): Promise<string> {
   return new Promise((resolve) => {
     chrome.storage.sync.get(["apiUrl"], (settings) => {
@@ -42,6 +39,7 @@ async function getFrontendUrl(): Promise<string> {
   });
 }
 
+/** Notice offering to open the part that blocked this create. */
 const BlockingPartPanel: React.FC<{
   blocking: BlockingPart;
   onDismiss: () => void;
@@ -116,7 +114,7 @@ interface PartDialogProps {
   }) => Promise<unknown>;
 }
 
-/** Extract domain (hostname) from URL for retailer matching */
+/** The hostname of a URL, for matching a retailer, or null when unparseable. */
 function domainFromUrl(url: string): string | null {
   try {
     const parsed = new URL(url);
@@ -126,12 +124,12 @@ function domainFromUrl(url: string): string | null {
   }
 }
 
-/** Normalize domain for matching (strip www.) */
+/** Strip a leading `www.` so domains compare equal. */
 function normalizeDomain(domain: string): string {
   return domain.replace(/^www\./, "");
 }
 
-/** Normalize part number for API (strip "SKU:", "Part #:", etc.) so dedup matches. */
+/** Strip label prefixes such as "SKU:" so part numbers dedupe correctly. */
 function normalizePartNumber(raw: string): string {
   let s = raw.trim();
   const prefixes = [
@@ -149,6 +147,7 @@ function normalizePartNumber(raw: string): string {
   return s.trim();
 }
 
+/** Review a scraped product, then create the part or record its price. */
 const PartDialog: React.FC<PartDialogProps> = ({
   scrapedData,
   onClose,
@@ -157,10 +156,6 @@ const PartDialog: React.FC<PartDialogProps> = ({
 }) => {
   const [viewMode, setViewMode] = useState<PartDialogView>("checking");
   const [existingPart, setExistingPart] = useState<PartRead | null>(null);
-  // When set, the user's UGC create collides with an existing part (URL-only
-  // dedup). Populated from the backend 409 on POST /parts/. We render a notice
-  // screen (not the form) while this is set, so the user's only next actions
-  // are "open existing" or "dismiss".
   const [blockingPart, setBlockingPart] = useState<BlockingPart | null>(null);
   const [recordPriceRetailer, setRecordPriceRetailer] =
     useState<Retailer | null>(null);
@@ -191,7 +186,6 @@ const PartDialog: React.FC<PartDialogProps> = ({
     scrapedData.image_urls?.[0] ?? "",
   );
 
-  // Match retailer by product URL domain (for create flow - from preloaded list or get-or-create)
   const [resolvedRetailer, setResolvedRetailer] = useState<Retailer | null>(
     null,
   );
@@ -211,10 +205,8 @@ const PartDialog: React.FC<PartDialogProps> = ({
     );
   }, [formData.url, scrapedData.product_url, retailers]);
 
-  // Use matched from list, or resolved from get-or-create
   const matchedRetailer = resolvedRetailer ?? matchedRetailerFromList;
 
-  // Check if URL already exists - show RecordPrice view if so
   useEffect(() => {
     const productUrl = scrapedData.product_url?.trim();
     if (!productUrl) {
@@ -276,14 +268,6 @@ const PartDialog: React.FC<PartDialogProps> = ({
     loadRetailers();
   }, [viewMode]);
 
-  // UGC dedup is URL-only:
-  //   - URL match against a scraped part → caught by the `checkProductUrl`
-  //     effect above, which routes to record_price mode (a non-blocking UX).
-  //   - URL match against the user's own prior UGC → caught server-side and
-  //     returned as a 409; we set blockingPart in handleSubmit's error branch.
-  // No pre-submit client check on manufacturer+part_number or GTIN.
-
-  // Pre-select part_manufacturer from scraped data when part_manufacturers first load
   useEffect(() => {
     if (
       hasInitializedPartManufacturer.current ||
@@ -302,7 +286,6 @@ const PartDialog: React.FC<PartDialogProps> = ({
     }
   }, [part_manufacturers, scrapedData.part_manufacturer]);
 
-  // Pre-select inferred category from server when categories first load
   useEffect(() => {
     if (
       hasInitializedCategory.current ||
@@ -327,6 +310,7 @@ const PartDialog: React.FC<PartDialogProps> = ({
     }
   }, [formData.imageUrl, formData.imageUrls]);
 
+  /** Load the active categories, leaving the list empty on failure. */
   const loadCategories = async () => {
     try {
       const response = (await sendMessage({
@@ -336,11 +320,10 @@ const PartDialog: React.FC<PartDialogProps> = ({
       if (response.success && Array.isArray(response.data)) {
         setCategories(response.data.filter((cat) => cat.is_active));
       }
-    } catch {
-      // Categories failed to load; form will show empty
-    }
+    } catch {}
   };
 
+  /** Load the part manufacturers, leaving the list empty on failure. */
   const loadPartManufacturers = async () => {
     try {
       const response = (await sendMessage({
@@ -349,11 +332,10 @@ const PartDialog: React.FC<PartDialogProps> = ({
       if (response.success && Array.isArray(response.data)) {
         setPartManufacturers(response.data);
       }
-    } catch {
-      // PartManufacturers failed to load
-    }
+    } catch {}
   };
 
+  /** Load the retailers, leaving the list empty on failure. */
   const loadRetailers = async () => {
     try {
       const response = (await sendMessage({
@@ -362,11 +344,10 @@ const PartDialog: React.FC<PartDialogProps> = ({
       if (response.success && Array.isArray(response.data)) {
         setRetailers(response.data);
       }
-    } catch {
-      // Retailers failed to load
-    }
+    } catch {}
   };
 
+  /** Load the car generations, leaving the list empty on failure. */
   const loadCars = async () => {
     try {
       const response = (await sendMessage({
@@ -377,13 +358,13 @@ const PartDialog: React.FC<PartDialogProps> = ({
       if (response.success && Array.isArray(response.data)) {
         setCars(response.data);
       }
-    } catch {
-      // Cars failed to load; form will show empty
-    }
+    } catch {}
   };
 
-  // For create flow: always get-or-create retailer when URL has domain - ensures
-  // PartListing and PartPriceHistory are created on first scrape
+  /**
+   * Resolve the retailer for the product URL, creating it when the catalog has
+   * none, so a first scrape still records a listing and its price.
+   */
   const ensureRetailerForCreate = async (): Promise<Retailer | null> => {
     const url = formData.url?.trim() || scrapedData.product_url;
     if (!url) return null;
@@ -403,6 +384,7 @@ const PartDialog: React.FC<PartDialogProps> = ({
     return null;
   };
 
+  /** Search manufacturers by name, falling back to the loaded list. */
   const searchPartManufacturers = async (searchTerm: string): Promise<PartManufacturer[]> => {
     if (!searchTerm || searchTerm.length <= 1) return part_manufacturers;
     try {
@@ -413,12 +395,11 @@ const PartDialog: React.FC<PartDialogProps> = ({
       if (response.success && Array.isArray(response.data)) {
         return response.data;
       }
-    } catch {
-      // Search failed
-    }
+    } catch {}
     return part_manufacturers;
   };
 
+  /** Search car generations by name, or return the loaded list for short terms. */
   const searchCars = async (searchTerm: string): Promise<Car[]> => {
     if (!searchTerm || searchTerm.length <= 2) {
       return cars;
@@ -433,13 +414,12 @@ const PartDialog: React.FC<PartDialogProps> = ({
       if (response.success && Array.isArray(response.data)) {
         return response.data;
       }
-    } catch {
-      // Search failed; return existing cars
-    }
+    } catch {}
 
     return [];
   };
 
+  /** Create the part, then record its listing and open the new part page. */
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError("");
@@ -466,7 +446,6 @@ const PartDialog: React.FC<PartDialogProps> = ({
         return;
       }
 
-      // Resolve part_manufacturer_id: create part_manufacturer if pending
       let part_manufacturerId: string | null = formData.part_manufacturerId;
       if (!part_manufacturerId && pendingPartManufacturerName) {
         const part_manufacturerResult = (await sendMessage({
@@ -485,7 +464,7 @@ const PartDialog: React.FC<PartDialogProps> = ({
 
       const priceCents = formData.price
         ? Math.round(parseFloat(formData.price) * 100)
-        : scrapedData.price; // Fallback to scraped price if user cleared the field
+        : scrapedData.price;
 
       const partData: PartCreate = {
         name: formData.name.trim(),
@@ -502,7 +481,6 @@ const PartDialog: React.FC<PartDialogProps> = ({
         price_cents: retailer && priceCents != null ? priceCents : null,
       };
 
-      // Scraped images: store as external URL references (no upload). Cap at max images per part.
       const MAX_IMAGES_PER_GLOBAL_PART = 12;
       const scrapedImageUrls = [
         ...new Set(
@@ -516,15 +494,11 @@ const PartDialog: React.FC<PartDialogProps> = ({
         partData.image_urls = scrapedImageUrls;
       }
 
-      // Create part
       const response = (await sendMessage({
         action: "createPart",
         partData,
       })) as ApiResponse<{ id: string }>;
 
-      // Backend signals "already exists" with HTTP 409 + structured detail.
-      // Surface a block panel instead of a toast so the user can click through
-      // to the existing part rather than keep retrying.
       if (!response.success && response.status === 409 && response.errorData) {
         const detail = response.errorData;
         const existingId = detail["existing_part_id"];
@@ -552,8 +526,6 @@ const PartDialog: React.FC<PartDialogProps> = ({
       if (response.success && response.data?.id) {
         const partId = response.data.id;
 
-        // Explicitly add PartListing and PartPriceHistory after create - ensures they are
-        // always created on first scrape (belt-and-suspenders with create payload)
         const productUrl = formData.url?.trim() || scrapedData.product_url;
         const retailerForListing =
           retailer ?? (await ensureRetailerForCreate());
@@ -581,15 +553,13 @@ const PartDialog: React.FC<PartDialogProps> = ({
           }
         }
 
-        // Check if we should open the part page
         chrome.storage.sync.get(
           ["openPartAfterCreation", "openInNewTab", "apiUrl"],
           (settings) => {
-            const shouldOpen = settings["openPartAfterCreation"] !== false; // Default to true
-            const openInNewTab = settings["openInNewTab"] !== false; // Default to true
+            const shouldOpen = settings["openPartAfterCreation"] !== false;
+            const openInNewTab = settings["openInNewTab"] !== false;
 
             if (shouldOpen && partId) {
-              // Get frontend URL based on API environment
               const apiUrl =
                 (settings["apiUrl"] as string) ||
                 "https://api.carmodpicker.com/api";
@@ -682,10 +652,6 @@ const PartDialog: React.FC<PartDialogProps> = ({
     );
   }
 
-  // When the create is blocked (URL collides with an existing part), replace
-  // the whole form with a notice screen instead of leaving a disabled form
-  // behind the banner. The user's only next steps are "open existing" or
-  // "dismiss and edit details" — the form has nothing useful to offer.
   if (blockingPart) {
     return (
       <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
@@ -764,7 +730,7 @@ const PartDialog: React.FC<PartDialogProps> = ({
                 onChange={(value) => {
                   const id = value !== null && value !== "" ? value : null;
                   setFormData((prev) => ({ ...prev, part_manufacturerId: id }));
-                  setPendingPartManufacturerName(null); // Clear pending when selecting or clearing
+                  setPendingPartManufacturerName(null);
                 }}
                 placeholder="Search or create part_manufacturer..."
                 label="PartManufacturer *"

@@ -1,9 +1,6 @@
 /**
- * Content script: loads only on CarModPicker domains to set an install marker
- * the web app can detect (`data-carmodpicker-extension="installed"`).
- *
- * Scraping third-party pages is done via on-demand `chrome.scripting.executeScript`
- * from the popup, so this script does NOT need broad host access.
+ * Content script for CarModPicker domains only. Sets the install marker
+ * `data-carmodpicker-extension="installed"` for the web app to detect.
  */
 
 const CARMODPICKER_HOST_PATTERN = /(^|\.)carmodpicker\.com$|^localhost$/i;

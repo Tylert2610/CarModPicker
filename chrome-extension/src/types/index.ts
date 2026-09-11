@@ -1,6 +1,4 @@
-/**
- * Type definitions for CarModPicker API
- */
+/** Type definitions for the CarModPicker API. */
 
 export interface User {
   id: string;
@@ -63,16 +61,16 @@ export interface Retailer {
 export interface PartCreate {
   name: string;
   description?: string | null;
-  price?: number | null; // Price in cents (legacy Part field)
+  price?: number | null;
   image_urls?: string[] | null;
   product_url?: string | null;
   category_id: string;
   car_ids?: string[] | null;
   is_universal?: boolean;
-  part_manufacturer_id: string; // Required - part manufacturer (e.g. HKS, Borla)
+  part_manufacturer_id: string;
   part_number?: string | null;
-  retailer_id?: string | null; // Optional - store/site where part is sold
-  price_cents?: number | null; // Optional - for PartListing/price history when retailer_id set
+  retailer_id?: string | null;
+  price_cents?: number | null;
 }
 
 export interface PartRead {
@@ -97,12 +95,12 @@ export interface PartRead {
 export interface ScrapedProductData {
   name: string | null;
   description: string | null;
-  price: number | null; // Price in cents
-  image_urls: string[]; // Product images; first entry is the primary/display image
+  price: number | null;
+  image_urls: string[];
   product_url: string;
   part_manufacturer: string | null;
   part_number: string | null;
-  inferred_category: string | null; // server-inferred category name slug, e.g. "exhaust"
+  inferred_category: string | null;
 }
 
 export interface LoginResponse {
@@ -116,12 +114,7 @@ export interface ApiResponse<T> {
   success: boolean;
   data?: T;
   error?: string;
-  // HTTP status code for failed requests (populated on !success). Useful for
-  // branching on 409 "already exists" vs. generic errors.
   status?: number;
-  // Structured error body from the backend when the server returned JSON with
-  // a non-string `detail` field (e.g. PART_ALREADY_EXISTS). Preserved raw so
-  // the UI can read reason/existing_part_id without reparsing strings.
   errorData?: Record<string, unknown>;
   requires2FA?: boolean;
 }

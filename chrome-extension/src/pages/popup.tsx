@@ -4,6 +4,7 @@ import MainScreen from "../components/popup/MainScreen";
 import PartDialog from "../components/popup/PartDialog";
 import type { ScrapedProductData, User } from "../types";
 
+/** Extension popup: signs the user in, then pulls in the current page. */
 function Popup() {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -20,7 +21,6 @@ function Popup() {
     checkAuthStatus();
   }, []);
 
-  // Dynamically resize popup window based on dialog state
   useEffect(() => {
     const body = document.body;
     if (showPartDialog) {
@@ -30,6 +30,7 @@ function Popup() {
     }
   }, [showPartDialog]);
 
+  /** Load the signed in user, leaving the user null when there is none. */
   const checkAuthStatus = async () => {
     try {
       const response = (await sendMessage({
@@ -57,6 +58,7 @@ function Popup() {
     setUser(null);
   };
 
+  /** Capture the active tab's HTML and open the part dialog on the result. */
   const handleScrape = async () => {
     try {
       const [tab] = await chrome.tabs.query({
@@ -70,7 +72,6 @@ function Popup() {
 
       showStatus("Analyzing page...", "info");
 
-      // On-demand injection using activeTab grant — no broad host permissions needed.
       let pageHtml: string;
       try {
         const results = await chrome.scripting.executeScript({
@@ -116,7 +117,7 @@ function Popup() {
               }
             | undefined
         ) => {
-          void chrome.runtime.lastError; // suppress unchecked error if popup closed
+          void chrome.runtime.lastError;
           if (!serverResponse?.success || !serverResponse.data) {
             showStatus(
               serverResponse?.error ||
@@ -139,6 +140,7 @@ function Popup() {
     }
   };
 
+  /** Show a status banner, clearing a success one after a few seconds. */
   const showStatus = (message: string, type: "info" | "success" | "error") => {
     setStatusMessage({ message, type });
     if (type === "success") {
@@ -162,6 +164,7 @@ function Popup() {
     searchTerm?: string;
   };
 
+  /** Send one message to the service worker and resolve with its reply. */
   const sendMessage = (message: SendMessageParams): Promise<unknown> => {
     return new Promise((resolve, reject) => {
       chrome.runtime.sendMessage(message, (response: unknown) => {
@@ -182,14 +185,12 @@ function Popup() {
     );
   }
 
-  // Dynamically size the popup based on whether we're showing the dialog
   const containerClasses = showPartDialog
     ? "w-full min-h-[600px] max-h-[600px] overflow-y-auto"
     : "w-full overflow-y-auto";
 
   return (
     <div className={containerClasses}>
-      {/* Header with CarModPicker title */}
       <div className="w-full px-4 py-3 border-b border-white/10 bg-linear-to-r from-neutral-900/50 to-neutral-800/50 backdrop-blur-sm">
         <h1 className="text-sm font-semibold text-white/90 tracking-wide">
           CarModPicker

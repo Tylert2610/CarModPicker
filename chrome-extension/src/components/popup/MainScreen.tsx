@@ -8,6 +8,7 @@ interface MainScreenProps {
   statusMessage: { message: string; type: 'info' | 'success' | 'error' } | null;
 }
 
+/** Signed in view: pulls in the current page and shows the result status. */
 const MainScreen: React.FC<MainScreenProps> = ({ user, onLogout, onScrape, statusMessage }) => {
   const statusClasses = {
     success: 'bg-green-500/20 border border-green-500/50 text-green-200',
