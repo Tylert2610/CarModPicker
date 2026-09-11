@@ -95,18 +95,47 @@ again cannot make the answer wrong, but a product that counted only those and
 forgot everything else would be reporting the very thing the hook was added to
 ask about.
 
-So this counts the three sign-in methods that live in **this product's own**
-tables and that the package cannot see:
+So this counts every sign-in method that `unlink` does not count for itself.
+Row 9 makes that five rather than three, because a user may now hold a package
+passkey or a package OAuth link and nothing else:
 
 1. a **legacy password**, `users.hashed_password`, which is not the package's
    `credentials` row and is still what the legacy `POST /api/auth/token` flow
    verifies until row 7 migrates the hashes and row 13 drops the column;
-2. a **passkey**, any row in `webauthn_credentials` for the user, which is this
-   product's M5-equivalent store and is invisible to the package until package
-   M5 adoption lands in row 9;
+2. a **legacy passkey**, any row in `webauthn_credentials` for the user, which
+   is this product's own WebAuthn table and stays live until row 13 retires it;
 3. a **legacy Google link**, any row in `oauth_accounts` for the user, which is
    this product's own OAuth table and is a different table from the package's
-   `oauth-links`.
+   `oauth-links`;
+4. a **package passkey**, any row in the package's `passkeys` table for the
+   user, new in row 9. This is the one the package cannot infer and the one
+   that matters most after migration: a user who enrolled a passkey through the
+   package's M5 routes and never set a package password holds exactly one way
+   in, and it is not a thing `unlink` looks at;
+5. a **package OAuth link for another provider**, any row in the package's
+   `oauth-links` table for the user, new in row 9.
+
+Point 5 needs a word, because `OAuthService.unlink` does count the package's
+links itself and the module docstring above says not to double count them. The
+reason it is here anyway is that the two answers are taken at different moments
+and this one is the conservative side: `unlink` counts the links it is about to
+reduce by one, this counts what exists now, and if the two ever disagree the
+disagreement makes this hook answer `True` where `unlink` would have answered
+`False`. That refuses an unlink that might have been allowed, which costs a user
+one support ticket, rather than permitting one that locks an account out
+permanently. Every other line of this method leans the same way.
+
+**TOTP and recovery codes are still not counted**, package or legacy. A second
+factor is not a sign-in method: a user holding only a TOTP factor and no first
+factor cannot sign in at all, so counting it would let `unlink` remove the last
+real credential and lock the account permanently.
+
+The two package stores are **optional**, and a `None` for either reads as "no
+rows", not as an error. The composition root always supplies both, but the
+legacy call sites that build these hooks without them, and the tests that do the
+same, are counting only the legacy tables and should not be made to stub two
+stores to do it. An absent store is a store this deployment does not have, and a
+deployment without the package's passkeys table has no package passkeys in it.
 
 TOTP is deliberately **not** counted. A second factor is not a sign-in method: a
 user holding only a TOTP factor and no first factor cannot sign in at all, so
@@ -135,6 +164,8 @@ from typing import Any
 from uuid import UUID
 
 from webbpulse.identity import AuthenticationRefused
+from webbpulse.identity.oauth import OAuthLinkStore
+from webbpulse.identity.storage import PasskeyStore
 
 from app.db.dynamo.errors import ItemNotFound
 from app.db.dynamo.users import (
@@ -174,19 +205,34 @@ class CarModPickerIdentityHooks:
         *,
         oauth_accounts: OAuthAccountRepository | None = None,
         webauthn_credentials: WebAuthnCredentialRepository | None = None,
+        package_passkeys: PasskeyStore | None = None,
+        package_oauth_links: OAuthLinkStore | None = None,
     ) -> None:
-        """The three repositories, injectable so a test can supply fakes.
+        """The three repositories and the two package stores, all injectable.
 
-        Defaulting rather than requiring them keeps the composition root's call
-        a bare `CarModPickerIdentityHooks()`, which is what it should be: the
-        repositories are not a configuration choice, they are this product's
-        tables.
+        Defaulting the three rather than requiring them keeps the composition
+        root's call short: the repositories are not a configuration choice, they
+        are this product's tables.
+
+        The two package stores are different and are deliberately **not**
+        defaulted. They are the package's, not this product's, and constructing
+        them here would mean spelling the package's table names in a second
+        place and keeping them in step by hand. `app/composition/identity.py`
+        already builds exactly these two for `IdentityStores` and passes the
+        same objects in, so there is one construction of each per process and
+        one source of truth for each table name.
+
+        `None` for either is a supported state and means "this deployment has no
+        such store", which reads as no rows rather than as an error. See
+        `has_other_sign_in_method`.
         """
         self._users = users if users is not None else UserRepository()
         self._oauth_accounts = oauth_accounts if oauth_accounts is not None else OAuthAccountRepository()
         self._webauthn_credentials = (
             webauthn_credentials if webauthn_credentials is not None else WebAuthnCredentialRepository()
         )
+        self._package_passkeys = package_passkeys
+        self._package_oauth_links = package_oauth_links
 
     # -- reads ---------------------------------------------------------------
 
@@ -244,16 +290,30 @@ class CarModPickerIdentityHooks:
         return {"roles": roles, "username": user["username"]}
 
     def has_other_sign_in_method(self, user_id: str) -> bool:
-        """Whether this user holds a sign-in method the package cannot see.
+        """Whether this user holds a sign-in method `unlink` does not count.
 
-        The legacy password hash, a passkey, or a legacy Google link. Not the
-        package's own credential or `oauth-links` rows, which `unlink` counts
-        itself, and not TOTP, which is a second factor rather than a way in.
-        See the module docstring for why each is on the list it is on.
+        The legacy password hash, a legacy passkey, a legacy Google link, a
+        package passkey, or a package OAuth link. Not TOTP or recovery codes,
+        which are second factors rather than ways in. See the module docstring
+        for why each is on the list it is on, and why the package's own links
+        are counted here despite `unlink` counting them too.
 
         An unparseable id answers `False`, which is the refusing side: an
         `unlink` for a subject this product cannot resolve should not be told
         the account has other ways in.
+
+        The five reads are ordered cheapest first and short circuit, so the
+        common case of a user with a password is one `GetItem`. The two package
+        stores are queried last because they are the two this product does not
+        own, and one of them, `oauth-links`, is a GSI query that cannot be read
+        consistently at all.
+
+        The package stores are keyed by the `sub` string rather than by the
+        parsed UUID: `PasskeyRecord.user_id` and `OAuthLinkRecord.user_id` are
+        whatever `claims_for` put in `sub`, which for this product is the
+        canonical string form of the id. `str(parsed)` rather than the raw
+        `user_id` argument, so a differently cased or braced spelling of the
+        same id normalises to the one the package wrote.
         """
         parsed = _as_uuid(user_id)
         if parsed is None:
@@ -264,7 +324,13 @@ class CarModPickerIdentityHooks:
             return True
         if self._webauthn_credentials.list_by_user(parsed):
             return True
-        return bool(self._oauth_accounts.list_by_user(parsed))
+        if self._oauth_accounts.list_by_user(parsed):
+            return True
+
+        subject = str(parsed)
+        if self._package_passkeys is not None and self._package_passkeys.list_for_user(subject):
+            return True
+        return bool(self._package_oauth_links is not None and self._package_oauth_links.list_for_user(subject))
 
     # -- writes --------------------------------------------------------------
 

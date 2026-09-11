@@ -80,21 +80,85 @@ mounting is conditional inside the package on exactly its own collaborators bein
 present, which is why supplying them is the whole of what turns M2, M3 and M4 on
 here.
 
-**M6's five OAuth routes deliberately do not mount.** They mount only when the
-stores carry an `oauth_states` and an `oauth_links`, and this module supplies
-neither, because `terraform/identity.tf` creates the six M1 to M4 tables and not
-the two OAuth ones. Supplying a store for a table that does not exist would turn
-a route that is absent from the OpenAPI document into a route that 500s on the
-first click. CarModPicker's own Google flow under `/api/auth/oauth/*` is
-untouched and still serves, and row 9 is where the package's OAuth replaces it,
-in the same row that adds the two tables. `oauth_client_secrets` is likewise not
-passed: nothing reads it while no OAuth route is mounted.
+## What row 9 adds, which is M5 and M6
 
-Passkeys are M5, and 0.14.0, which this file pins, does not carry them, so this
-row mounts none. They shipped in 0.15.0, after this row was cut; adopting them is
-a version bump and a row of its own, not a change here. CarModPicker's seven
-working WebAuthn routes are untouched, for the same reason the legacy OAuth
-routes are.
+The pin moves to 0.16.0 and this module now supplies four more stores, so
+`build_identity_router` also declares M6's five OAuth routes:
+
+    GET    /oauth/{provider}/start
+    GET    /oauth/callback
+    POST   /oauth/{provider}/link
+    GET    /oauth/links
+    DELETE /oauth/{provider}/link
+
+and M5's seven passkey routes:
+
+    POST   /passkeys/register/options
+    POST   /passkeys/register/verify
+    POST   /login/passkey/options
+    POST   /login/passkey/verify
+    GET    /passkeys
+    PATCH  /passkeys/{credential_id}
+    DELETE /passkeys/{credential_id}
+
+and, new in 0.16.0 and unconditionally in every deployment, one more:
+
+    GET    /oauth/providers
+
+**The four stores are supplied unconditionally, and that is deliberately not
+what decides whether the routes exist.** The package's condition for the five
+OAuth routes is both stores AND at least one provider carrying a client id; for
+the seven passkey routes it is both stores AND `passkeys_enabled`. So the switch
+for each lives in exactly one place, which is `terraform/lambda_domains.tf`.
+Adding a second condition here could only ever disagree with the settings
+object, and disagreeing would present as a Terraform variable flipped with
+nothing changing and no error anywhere to say why.
+
+The four tables all exist already. CMP does not pass `tables` to
+`module "identity"`, so it takes the module's default map, and the 2.8.0 release
+the `~> 2.7` pin resolved to carries all ten: `passkeys`,
+`webauthn-challenges`, `oauth-states` and `oauth-links` were created by row 4's
+apply along with the six M1 to M4 ones, and the module's IAM grant already
+covers them. This row is therefore a backend change against infrastructure that
+exists, with only environment variables in front of it.
+
+A `Repository` resolves its table lazily per call, so the four stores cost one
+construction each and touch DynamoDB not at all until a route that needs them is
+both mounted and called.
+
+`GET /oauth/providers` is the exception to all of the above conditionality: it
+mounts in every deployment, including this test suite's, and answers with only
+the providers that carry **both** a client id and a client secret. It exists so
+the sign-in page can ask rather than infer the answer by probing `start` and
+reading the status code, which spends the start route's rate limit budget on
+page loads and cannot tell "not configured" from "briefly broken". A provider
+with an id and no secret is not advertised and `start` refuses it with a 503
+`OAUTH_PROVIDER_UNAVAILABLE`, rather than sending a user to consent at the
+provider and meeting the failure on the way back.
+
+**The legacy routes are untouched, and both families still serve.** CarModPicker's
+own Google flow under `/api/auth/oauth/*` and its seven WebAuthn routes under
+`/api/auth/webauthn/*` collide with none of the twelve paths above, so this row
+is additive in exactly the way row 5 was. Row 13 retires them, and this row
+migrates none of their contents: `docs/identity-migration-runbook.md` records
+what a future migration of `oauth_accounts` and `webauthn_credentials` would
+map.
+
+## Why the client secrets are an argument and not a setting
+
+`build_identity_router` takes `oauth_client_secrets` as a keyword argument
+rather than reading it off `IdentitySettings`, and the package's own docstring
+gives the reason: a secret that is a settings field is a secret that appears in
+a `repr`, in a pydantic validation error, and in whatever log line prints the
+settings object. So the two client ids travel as ordinary `IDENTITY_*`
+environment variables and the two secrets travel through
+`build_oauth_client_secrets` below and are on no object that anything renders.
+
+They are also deliberately not Lambda environment variables. This estate's rule
+is one JSON secret per service per environment, reached through
+`APP_SECRETS_ARN`, and a client secret in a function's environment is a secret
+visible in the console, in `get-function-configuration` and in every Terraform
+plan that touches the function.
 
 ## What this changes about a legacy login, which is nothing
 
@@ -219,8 +283,16 @@ def build_router(settings: "Settings") -> "APIRouter":
     which is the package's default, plus all three of `totp_factors`,
     `recovery_codes` and `identity_tokens` on the stores.
 
-    `oauth_states` and `oauth_links` are deliberately absent, so the five M6
-    routes do not mount. See the module docstring.
+    Row 9 adds four more stores on the same rule. Supplying `oauth_states` and
+    `oauth_links` is necessary and not sufficient for M6's five routes: the
+    package also needs at least one provider carrying a client id, which comes
+    from `IDENTITY_GOOGLE_CLIENT_ID` or `IDENTITY_GITHUB_CLIENT_ID`. Supplying
+    `passkeys` and `webauthn_challenges` is necessary and not sufficient for
+    M5's seven: the package also needs `passkeys_enabled`, from
+    `IDENTITY_PASSKEYS_ENABLED`. See the module docstring for why the switch
+    lives there and not here.
+
+    `GET /oauth/providers` mounts regardless, in 0.16.0 and later.
     """
     import boto3
     from webbpulse.dynamodb import Repository
@@ -228,15 +300,23 @@ def build_router(settings: "Settings") -> "APIRouter":
         CREDENTIALS_TABLE,
         IDENTITY_TOKENS_TABLE,
         LOGIN_ATTEMPTS_TABLE,
+        OAUTH_LINKS_TABLE,
+        OAUTH_STATES_TABLE,
+        PASSKEYS_TABLE,
         RECOVERY_CODES_TABLE,
         REFRESH_TOKENS_TABLE,
         TOTP_FACTORS_TABLE,
+        WEBAUTHN_CHALLENGES_TABLE,
         DynamoCredentialStore,
         DynamoIdentityTokenStore,
         DynamoLoginAttemptStore,
+        DynamoOAuthLinkStore,
+        DynamoOAuthStateStore,
+        DynamoPasskeyStore,
         DynamoRecoveryCodeStore,
         DynamoRefreshTokenStore,
         DynamoTotpFactorStore,
+        DynamoWebAuthnChallengeStore,
         IdentityStores,
         build_identity_router,
     )
@@ -280,11 +360,30 @@ def build_router(settings: "Settings") -> "APIRouter":
         # so it needs no store of its own.
         totp_factors=DynamoTotpFactorStore(repository(TOTP_FACTORS_TABLE)),
         recovery_codes=DynamoRecoveryCodeStore(repository(RECOVERY_CODES_TABLE)),
+        # M6, row 9. Supplied unconditionally; the client ids are what decide
+        # whether the five OAuth routes are declared. See the module docstring.
+        oauth_states=DynamoOAuthStateStore(repository(OAUTH_STATES_TABLE)),
+        oauth_links=DynamoOAuthLinkStore(repository(OAUTH_LINKS_TABLE)),
+        # M5, row 9. Supplied unconditionally; `passkeys_enabled` is what
+        # decides whether the seven passkey routes are declared.
+        passkeys=DynamoPasskeyStore(repository(PASSKEYS_TABLE)),
+        webauthn_challenges=DynamoWebAuthnChallengeStore(repository(WEBAUTHN_CHALLENGES_TABLE)),
     )
 
     return build_identity_router(
         identity_settings,
-        CarModPickerIdentityHooks(),
+        # The two package stores are handed to the hooks as well as to the
+        # package, and they are the same two objects rather than a second
+        # construction. `has_other_sign_in_method` has to count a package
+        # passkey and a package OAuth link from row 9 on, because a user may
+        # hold only those after migration, and the hook cannot reach them any
+        # other way: it is the product's class and the package's tables.
+        # Passing the objects `stores` already carries means the table names are
+        # spelled once, above, rather than once here and once in the hooks.
+        CarModPickerIdentityHooks(
+            package_passkeys=stores.passkeys,
+            package_oauth_links=stores.oauth_links,
+        ),
         stores,
         kms_client=boto3.client("kms"),
         service="carmodpicker-identity",
@@ -298,7 +397,102 @@ def build_router(settings: "Settings") -> "APIRouter":
         # replacement for one.
         attempts=DynamoLoginAttemptStore(repository(LOGIN_ATTEMPTS_TABLE)),
         email_sender=build_email_sender(identity_settings),
+        # M6's client secrets, as an argument rather than a settings field. See
+        # `build_oauth_client_secrets` for why the package draws that line and
+        # why an empty mapping is the honest thing to pass when nothing is
+        # configured.
+        oauth_client_secrets=build_oauth_client_secrets(settings),
     )
+
+
+#: The keys of the `carmodpicker-<env>/app` secret that carry the OAuth client
+#: secrets, mapped to the provider names the package knows.
+#:
+#: The provider names on the left are the package's:
+#: `IdentitySettings.oauth_providers` is a `Literal["google", "github"]`, and
+#: `oauth_client_secrets` is keyed by exactly those strings. The names on the
+#: right are this product's, and they are SCREAMING_SNAKE because every other
+#: key of that secret is: `SECRET_KEY`, `SENTRY_DSN` and `EXTENSION_API_KEY`
+#: are the three `app/core/config.py` already reads, and `terraform/secretsmanager.tf`
+#: renders the JSON with those spellings. Matching the existing casing is what
+#: keeps one secret readable by one convention rather than two.
+#:
+#: Deliberately NOT added to `SECRET_FIELDS` in `app/core/config.py`. That tuple
+#: is the set of secrets resolved lazily as `Settings` properties, and putting
+#: these two there would make them settings fields, which is precisely what the
+#: package's design avoids. See `build_oauth_client_secrets`.
+OAUTH_SECRET_KEYS = {
+    "google": "OAUTH_GOOGLE_CLIENT_SECRET",
+    "github": "OAUTH_GITHUB_CLIENT_SECRET",
+}
+
+
+def build_oauth_client_secrets(settings: "Settings") -> dict[str, str]:
+    """The M6 OAuth client secrets, from the single app secret. Possibly empty.
+
+    ## Why every key is optional and an empty result is a success
+
+    **Returning `{}` is a correct state, not a failure.** With no client id set,
+    the package's `enabled_providers()` is empty and `build_identity_router`
+    declares no OAuth flow route at all, so there is no route that could want a
+    secret. Raising here for a missing key would turn a deployment that is
+    correctly serving no OAuth into a cold start failure, which is a much worse
+    outcome than the one it would be guarding against.
+
+    That stays true one provider at a time. Registering Google alone puts
+    `OAUTH_GOOGLE_CLIENT_SECRET` in the secret and leaves `github` out of this
+    mapping, and the package mounts the routes with only Google enabled.
+
+    A client id set with no matching secret is the one bad combination this
+    cannot prevent, and it does not try to. As of 0.16.0 the package handles it
+    itself and handles it well: `GET /oauth/providers` does not advertise such a
+    provider, and `start` refuses it with a 503 `OAUTH_PROVIDER_UNAVAILABLE`
+    rather than sending the user to consent and failing on the way back. So a
+    half-configured provider is a button that does not appear, not a service
+    that will not start.
+
+    ## Why it does not go through `Settings`
+
+    `Settings` resolves exactly the three `SECRET_FIELDS` names lazily as
+    properties, and adding these two there would make them settings fields. The
+    package's whole reason for taking the secrets as an argument is to keep them
+    off any object that a `repr`, a pydantic validation error or a settings log
+    line would render, and routing them through `Settings` would give that back.
+
+    `fetch_app_secrets` returns the whole flat map and caches it for the life of
+    the execution environment, so reading two more keys off it costs no extra
+    Secrets Manager call: by the time the identity function serves a request it
+    has already fetched the blob for `SECRET_KEY`.
+
+    The environment is consulted first for each key, ahead of the secret, which
+    is the same precedence `Settings._resolve_secret` gives every other secret
+    in this application. It is what lets a local run or a test supply one
+    without a Secrets Manager stub.
+
+    Called once at composition time rather than per request, so a rotated secret
+    is picked up on the next cold start, which is the same contract every other
+    value from this secret has.
+    """
+    import os
+
+    from app.core.secrets import fetch_app_secrets
+
+    arn = os.environ.get("APP_SECRETS_ARN", "") or settings.APP_SECRETS_ARN
+
+    from_env = {provider: os.environ[key] for provider, key in OAUTH_SECRET_KEYS.items() if os.environ.get(key)}
+    if len(from_env) == len(OAUTH_SECRET_KEYS) or not arn:
+        # Either the environment carried both, so there is nothing left to
+        # fetch, or there is no secret to fetch from. A local run and the test
+        # suite are the second case, and neither declares an OAuth client id, so
+        # no OAuth flow route is declared there anyway.
+        return from_env
+
+    loaded = fetch_app_secrets(arn)
+    return {
+        provider: from_env.get(provider) or loaded[key]
+        for provider, key in OAUTH_SECRET_KEYS.items()
+        if from_env.get(provider) or loaded.get(key)
+    }
 
 
 #: What the package router's own `/health` reports. A constant rather than a read
