@@ -775,7 +775,7 @@ jobs:
       ORIGIN_VERIFY_PARAMETER: ${{ github.ref_name == 'main' && '' || '/carmodpicker-staging/access-gate/origin-verify' }}
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Configure AWS credentials via OIDC
         uses: aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c # v6.2.4
