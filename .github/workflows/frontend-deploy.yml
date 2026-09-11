@@ -1,16 +1,27 @@
-# Pushes matching paths below build and sync the frontend to S3/CloudFront.
-# S3/CloudFront resources must already exist in Terraform state.
+# Builds the frontend and publishes it to S3 and CloudFront through the shared
+# spa-deploy workflow.
 #
-# The GitHub Environment is selected from the branch: main -> production, staging -> staging.
-# Every deploy-time value (role ARN, workspace id, bucket, distribution, API URL) comes
-# from that Environment's variables, so a staging push can never pick up production values.
+# This used to be a hand-rolled build and `aws s3 sync --delete`. That sync set no
+# --cache-control, so every object landed in S3 with no Cache-Control metadata at
+# all and CloudFront passed that absence through to browsers. With no explicit
+# freshness a browser falls back to heuristic caching, so a returning visitor could
+# keep serving an index.html from its own disk cache long after a deploy, pointing
+# at a hashed bundle that had already been pruned from the bucket. A CloudFront
+# invalidation does not help: it clears the edge, not the browser.
 #
-# Ordering guarantee: the npm build runs immediately (no conflict with Terraform), but
-# before syncing to S3 the job waits for any active HCP Terraform run on the
-# workspace to reach a terminal state. This prevents partial deploys
-# against infrastructure that is mid-update.
+# The shared workflow fixes that by writing the header at upload time, in three
+# passes: hashed assets first with a one year immutable max-age, then everything
+# else with no-cache, then a prune pass for objects from earlier builds. Pass two
+# covers the prerendered subdirectory documents (about/index.html and friends,
+# written by the postbuild prerender step) as well as the root index.html, because
+# it takes everything the immutable globs did not match. The CloudFront
+# invalidation is unchanged apart from naming those same prerendered routes, which
+# the old --paths "/*" covered implicitly.
 #
-# Requires GitHub Actions secret: TFC_API_TOKEN (a Terraform Cloud user/team token).
+# The GitHub Environment is selected from the branch: main -> production, staging ->
+# staging. Every deploy-time value (role ARN, workspace, bucket, distribution, API
+# URL) comes from that Environment, so a staging push can never pick up production
+# values.
 name: Frontend Deploy
 
 on:
@@ -22,119 +33,54 @@ on:
   workflow_dispatch:
 
 permissions:
-  id-token: write
   contents: read
 
 jobs:
-  deploy:
+  # A `uses:` job cannot declare an environment, so the environment name is resolved
+  # here and passed to the shared workflow as an input.
+  resolve-env:
     runs-on: ubuntu-latest
-    environment: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
-
-    env:
-      AWS_REGION: us-west-2
-      TFC_WORKSPACE_ID: ${{ vars.TFC_WORKSPACE_ID }}
-
+    outputs:
+      environment: ${{ steps.pick.outputs.environment }}
     steps:
-      - uses: actions/checkout@v7
-
-      - uses: actions/setup-node@v7
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-
-      - name: Configure AWS credentials via OIDC
-        uses: aws-actions/configure-aws-credentials@v6
-        with:
-          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      # The frontend depends on the private @webbpulse/* packages, so npm needs
-      # a CodeArtifact token before `npm ci` can resolve them.
-      #
-      # Run from the repository root, NOT from frontend/. Inside a package that
-      # is part of a workspace the CLI writes the registry line into that
-      # package's .npmrc, which is the checked-in file, and the token would then
-      # land in a tracked path. From the root it writes ~/.npmrc, where the
-      # token belongs.
-      - name: Log in to CodeArtifact for npm
-        env:
-          CODEARTIFACT_DOMAIN_OWNER: ${{ vars.CODEARTIFACT_DOMAIN_OWNER }}
+      - id: pick
         run: |
-          set -euo pipefail
-          aws codeartifact login \
-            --tool npm \
-            --domain webbpulse \
-            --domain-owner "$CODEARTIFACT_DOMAIN_OWNER" \
-            --repository npm \
-            --namespace @webbpulse
+          if [ "${{ github.ref_name }}" = "main" ]; then
+            echo "environment=production" >> "$GITHUB_OUTPUT"
+          else
+            echo "environment=staging" >> "$GITHUB_OUTPUT"
+          fi
 
-      - name: Install dependencies
-        working-directory: frontend
-        run: npm ci
-
-      # Build runs in parallel with any active Terraform run — it is purely local.
-      - name: Build
-        working-directory: frontend
-        env:
-          VITE_API_URL: ${{ vars.VITE_API_URL }}
-          # Allowlist for the /extension-auth token hand-off. Without this, the
-          # page refuses to send the JWT to any extension in production builds.
-          VITE_ALLOWED_EXTENSION_IDS: ${{ vars.CWS_EXTENSION_ID }}
-          # Selects the auth mechanism this bundle is built with: unset or
-          # `bearer` keeps the token-in-localStorage flow every environment runs
-          # today, `identity` builds against the shared identity service.
-          #
-          # The variable is deliberately NOT set on either Environment, so this
-          # expands to an empty string and `src/api/authMode.ts` falls through
-          # to `bearer`. It is forwarded now so that turning identity on later
-          # is setting one Environment variable and redeploying, rather than
-          # editing this workflow under time pressure. Rolling back is clearing
-          # it again.
-          VITE_AUTH_MODE: ${{ vars.AUTH_MODE }}
-        run: npm run build
-
-      # Wait for HCP Terraform to finish before touching S3/CloudFront.
-      # Polls every 15 s for up to 10 min (40 attempts).
-      - name: Wait for Terraform run to complete
-        env:
-          TFC_API_TOKEN: ${{ secrets.TFC_API_TOKEN }}
-        run: |
-          TERMINAL="applied planned_and_finished discarded errored canceled force_canceled"
-          echo "Polling HCP Terraform workspace $TFC_WORKSPACE_ID for active runs..."
-          for i in $(seq 1 40); do
-            RESPONSE=$(curl -sfg \
-              -H "Authorization: Bearer $TFC_API_TOKEN" \
-              -H "Content-Type: application/vnd.api+json" \
-              "https://app.terraform.io/api/v2/workspaces/$TFC_WORKSPACE_ID/runs?page[size]=1")
-            STATUS=$(echo "$RESPONSE" | python3 -c "
-          import sys, json
-          runs = json.load(sys.stdin).get('data', [])
-          print(runs[0]['attributes']['status'] if runs else 'no_runs')
-          ")
-            echo "  Attempt $i/40 — Terraform run status: $STATUS"
-            if echo "$TERMINAL" | grep -qw "$STATUS" || [ "$STATUS" = "no_runs" ]; then
-              echo "Terraform is idle. Proceeding."
-              break
-            fi
-            if [ "$i" -eq 40 ]; then
-              echo "Timed out waiting for Terraform (last status: $STATUS)."
-              exit 1
-            fi
-            sleep 15
-          done
-
-      - name: Sync to S3
-        env:
-          FRONTEND_BUCKET: ${{ vars.FRONTEND_S3_BUCKET }}
-        run: |
-          aws s3 sync frontend/dist/ s3://$FRONTEND_BUCKET/ --delete
-
-      - name: Invalidate CloudFront cache
-        if: ${{ vars.CLOUDFRONT_DISTRIBUTION_ID != '' }}
-        env:
-          CLOUDFRONT_DISTRIBUTION_ID: ${{ vars.CLOUDFRONT_DISTRIBUTION_ID }}
-        run: |
-          aws cloudfront create-invalidation \
-            --distribution-id $CLOUDFRONT_DISTRIBUTION_ID \
-            --paths "/*"
+  deploy:
+    needs: resolve-env
+    uses: WebbPulse/.github/.github/workflows/spa-deploy.yml@v2
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      environment: ${{ needs.resolve-env.outputs.environment }}
+      node-version: "22"
+      working-directory: frontend
+      cache-dependency-path: frontend/package-lock.json
+      build-env-json: >-
+        ${{ format('{{"VITE_API_URL":"{0}","VITE_ALLOWED_EXTENSION_IDS":"{1}"}}',
+                   vars.VITE_API_URL, vars.CWS_EXTENSION_ID) }}
+      s3-bucket: ${{ vars.FRONTEND_S3_BUCKET }}
+      cloudfront-distribution-id: ${{ vars.CLOUDFRONT_DISTRIBUTION_ID }}
+      # The prerender postbuild step writes an index.html under each of these
+      # routes, so each needs invalidating alongside / and /index.html.
+      invalidation-paths: >-
+        /about /about/ /pricing /pricing/ /support /support/
+        /contact-us /contact-us/ /privacy-policy /privacy-policy/
+        /terms-of-service /terms-of-service/ /robots.txt /sitemap.xml
+      aws-region: us-west-2
+      concurrency-group: frontend-deploy-${{ github.ref_name }}
+      codeartifact-domain: webbpulse
+      codeartifact-repository: npm
+      codeartifact-namespace: "@webbpulse"
+      tfc-organization: WebbPulse
+      tfc-workspace: ${{ github.ref_name == 'main' && 'CarModPicker' || 'CarModPicker-staging' }}
+    secrets:
+      role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+      codeartifact-domain-owner: ${{ vars.CODEARTIFACT_DOMAIN_OWNER }}
+      tfc-api-token: ${{ secrets.TFC_API_TOKEN }}
