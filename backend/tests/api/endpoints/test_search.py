@@ -142,7 +142,8 @@ class TestSearch:
         response = client.get(f"{settings.API_STR}/search/?q={search_term}")
         assert response.status_code == 200
         data = response.json()
-        # Note: email might not be in PublicUserRead, so we check username matches
+        # The backend still matches on the stored email, but PublicUserRead does
+        # not return it, so the assertion can only be that a result came back.
         assert len(data["users"]["items"]) > 0
 
     def test_search_parts_by_name(
@@ -482,3 +483,58 @@ class TestSearch:
             # Should find the build list regardless of case
             found = any(item.get("name") == build_list_name for item in data["build_lists"]["items"])
             assert found, f"Search with '{query}' should find '{build_list_name}'"
+
+
+# Regression: `GET /api/search?q=...` returned 500 whenever a match's stored
+# email was undeliverable. Staging seeds its synthetic users as
+# `user-<n>@staging.invalid`, and `.invalid` is an IANA special-use reserved TLD
+# that `email-validator` rejects, so `PublicUserRead.email` (then an `EmailStr`)
+# failed revalidating a value it had only read back. The failure lands in
+# response serialisation, after the handler has already returned, so it is an
+# unhandled 500 rather than a 422.
+#
+# `PublicUserRead` now has no `email` field at all: nothing public needed it,
+# and carrying it meant any anonymous search could read the address of every
+# user whose name matched. Dropping it fixes the crash and closes the exposure
+# in one move. `test_users.py` covers the `UserRead` side, where the address is
+# still returned to the user themselves as a plain `str`.
+#
+# `UserRepository().create_user` is used directly so the address bypasses
+# `UserCreate`, which still rejects it. That is how the row gets there in
+# staging too: the seeder writes `email` as a plain `str`.
+RESERVED_TLD_SEARCH_EMAIL_DOMAIN = "staging.invalid"
+
+
+class TestSearchReservedTldEmail:
+    """A seeded `@staging.invalid` user must be searchable, not a 500."""
+
+    def test_search_returns_user_with_reserved_tld_email(self, client: TestClient) -> None:
+        username = get_unique_name("stagingseed")
+        UserRepository().create_user(
+            DBUser(
+                username=username,
+                email=f"{username}@{RESERVED_TLD_SEARCH_EMAIL_DOMAIN}",
+                hashed_password=get_password_hash("testpassword"),
+                email_verified=True,
+                disabled=False,
+            )
+        )
+
+        response = client.get(f"{settings.API_STR}/search/?q={username}")
+
+        assert response.status_code == 200, response.text
+        items = response.json()["users"]["items"]
+        matched = [u for u in items if u["username"] == username]
+        assert matched, f"seeded user {username} missing from search results"
+
+        # The public shape must not carry the address it used to 500 on.
+        assert "email" not in matched[0], "PublicUserRead must not expose email"
+
+    def test_search_result_shape_omits_email_for_every_user(self, client: TestClient, test_user: DBUser) -> None:
+        """No user result carries an email, deliverable address or not."""
+        response = client.get(f"{settings.API_STR}/search/?q={test_user.username}")
+
+        assert response.status_code == 200, response.text
+        items = response.json()["users"]["items"]
+        assert items, "expected at least one user result"
+        assert all("email" not in u for u in items)

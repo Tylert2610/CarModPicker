@@ -743,6 +743,10 @@ def test_delete_profile_picture_storage_failure_graceful(client: TestClient, db_
 # staging seeder and the identity package's `create_user` hook both take
 # `email` as a plain `str`. `UserRepository.update` is used here for the same
 # reason, to write the stored value without going through API input validation.
+#
+# `UserRead` now types `email` as a plain `str`; `PublicUserRead` dropped the
+# field entirely, so the tests below exercise only the `UserRead` routes. The
+# public/search side is covered in `test_search.py`.
 RESERVED_TLD_EMAIL = "row12-cutover-check@staging.invalid"
 
 

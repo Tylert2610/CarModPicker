@@ -4076,10 +4076,6 @@
             "title": "Disabled",
             "type": "boolean"
           },
-          "email": {
-            "title": "Email",
-            "type": "string"
-          },
           "facebook_url": {
             "anyOf": [
               {
@@ -4195,7 +4191,6 @@
         "required": [
           "id",
           "username",
-          "email",
           "disabled",
           "is_superuser",
           "is_admin",

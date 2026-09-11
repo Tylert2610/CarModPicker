@@ -12,11 +12,11 @@ import useApiRequest from '../hooks/UseApiRequest';
 import { useDocumentMeta } from '../hooks/useDocumentMeta';
 import { buildListsApi } from '../api/build_lists';
 import { apiClient } from '../api/client';
-import type { BuildListRead, UserRead } from '../types/Api';
+import type { BuildListRead, PublicUserRead } from '../types/Api';
 
 const fetchUserRequestFn = (
   userId: string // userId will be a string from URL params
-) => apiClient.get<UserRead>(`/users/${userId}`);
+) => apiClient.get<PublicUserRead>(`/users/${userId}`);
 
 const fetchBuildListsByUserRequestFn = (userId: string) =>
   buildListsApi.getBuildListsByUser(userId);
