@@ -1,3 +1,9 @@
+"""Transactional email through SES: verification, password reset and price alerts.
+
+Bodies come from the HTML templates beside this module. Every send returns a
+bool rather than raising, and nothing is sent when email is disabled.
+"""
+
 import logging
 from pathlib import Path
 from typing import Any
@@ -7,12 +13,6 @@ from botocore.exceptions import BotoCoreError, ClientError
 
 from app.core.config import settings
 
-# IN-07: declare the logger at module level (QUAL-07 idiom) so log records
-# emitted from ``email.py`` carry ``name="app.core.email"`` instead of the
-# shared ``app.core.logging.logger`` module name. Importing the module-level
-# ``logger`` helper directly from ``app.core.logging`` is fine for runtime
-# behavior, but it tags records with the logging-module's name and breaks
-# log-routing filters keyed on module origin.
 logger = logging.getLogger(__name__)
 
 _TEMPLATES_DIR = Path(__file__).parent / "email_templates"
@@ -24,13 +24,14 @@ PRICE_DROP_ALERT_SUBJECT_PREFIX = "[CarModPicker] Price drop on"
 
 
 def _load_template(name: str) -> str:
+    """One named HTML template from the templates directory."""
     return (_TEMPLATES_DIR / f"{name}.html").read_text(encoding="utf-8")
 
 
 def _send(to_email: str, subject: str, html_body: str) -> bool:
     """Send a single transactional email via SES. Returns True on success."""
     if not settings.EMAIL_ENABLED:
-        logger.debug(f"Email disabled — skipping send to {to_email} (subject: {subject!r})")
+        logger.debug(f"Email disabled, skipping send to {to_email} (subject: {subject!r})")
         return False
     try:
         client = boto3.client("sesv2", region_name=settings.AWS_REGION)
@@ -70,21 +71,11 @@ def send_price_drop_alert_email(
     price_cents: int,
     alert: Any,
 ) -> bool:
-    """Send a price-drop alert email for `part` to `to_email`.
+    """Send a price drop alert for `part` to `to_email`, returning success.
 
-    Builds a 30-day signed JWT with ``purpose='price_alert_unsubscribe'`` so the
-    one-click unsubscribe link in the email body deactivates the alert without
-    requiring login. Returns False on SES failure (matches send_verify_email
-    contract); the evaluator leaves last_fired_at unchanged on False so the
-    retry on the next observation is idempotent.
-
-    Redaction: this function does not log the email address, the unsubscribe
-    token, or the user_id — those are emitted by the evaluator with safe
-    fields only.
+    The unsubscribe link carries a 30 day signed token so it works without a login.
+    A `False` return leaves `last_fired_at` alone, so the next observation retries.
     """
-    # Local imports defer until first send so test environments without an
-    # email-enabled config still import cleanly even if SECRET_KEY/DEBUG are
-    # not yet set up at module-import time.
     from datetime import timedelta
 
     from app.api.dependencies.auth import create_access_token
@@ -115,4 +106,5 @@ def send_price_drop_alert_email(
 
 
 def _escape_html(text: str) -> str:
+    """Escape the five characters that must not appear raw in template HTML."""
     return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")

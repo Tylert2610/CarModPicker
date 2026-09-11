@@ -1,13 +1,6 @@
-"""
-Part category data for the global parts catalog.
+"""The canonical list of part categories, seeded by `init_categories` on startup.
 
-This module contains the canonical list of part categories that are available
-in the application. Categories are seeded into the database on startup via
-init_categories.py.
-
-To add a new part category:
-1. Add a new entry to PART_CATEGORIES with: name, display_name, description, icon, sort_order
-2. The initialization logic will automatically create it in the database
+Add an entry to `PART_CATEGORIES` and the initialisation creates it.
 """
 
 from typing import TypedDict, cast
@@ -25,7 +18,6 @@ class PartCategoryData(TypedDict):
     sort_order: int
 
 
-# Part categories - source of truth for the application
 PART_CATEGORIES: list[PartCategoryData] = [
     {
         "name": "exhaust",
@@ -108,10 +100,5 @@ PART_CATEGORIES: list[PartCategoryData] = [
 
 
 def get_all_part_categories() -> list[PartCategoryData]:
-    """
-    Return all part category definitions for seeding the database.
-
-    Returns:
-        List of dictionaries with name, display_name, description, icon, sort_order
-    """
+    """Every part category definition, as fresh dicts for seeding the database."""
     return cast(list[PartCategoryData], [dict(cat) for cat in PART_CATEGORIES])

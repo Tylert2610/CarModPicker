@@ -1,60 +1,7 @@
-"""Sentry SDK 2.x init helper for CarModPicker backend (OBS-01).
+"""Sentry initialisation, called once per process with a distinct `server_name`.
 
-Single entry point (`init_sentry(*, server_name)`) called from every process:
-
-- `app/main.py`                      → server_name="apprunner-backend"
-- `app/crawlers/__main__.py`         → server_name="crawler-cli"
-- `app/crawlers/ecs_runner.py`       → server_name="ecs-crawler"
-- `app/crawlers/ecs_rescrape_runner.py` → server_name="ecs-crawler"
-
-# DSN source
-
-DSN comes from `settings.SENTRY_DSN`, which prefers the `SENTRY_DSN` env var and
-otherwise resolves the `${prefix}/app` JSON secret named by `APP_SECRETS_ARN` on
-first read. In local dev neither is set so `init_sentry()` no-ops and no Secrets
-Manager call is made. Never hard-code the DSN, see `terraform/secretsmanager.tf`
-and `app/core/secrets.py` for the injection path (D-01, D-55).
-
-# Release tag
-
-`SENTRY_RELEASE` is the git commit SHA baked at Docker build time by GitHub
-Actions. Empty release → Sentry shows "(unknown)" for that event but the SDK
-still works. Release is passed as `release=...` to `sentry_sdk.init` (D-02).
-
-# Ignored exceptions
-
-These never reach Sentry, because they're normal 4xx control-flow, not bugs:
-
-- `fastapi.exceptions.HTTPException`      — FastAPI 4xx/redirect raises
-- `starlette.exceptions.HTTPException`    — Starlette base class (caught by safety net)
-- `slowapi.errors.RateLimitExceeded`      — defensive entry; our rate limiter
-   currently returns JSONResponse directly rather than raising. Kept so if we
-   ever swap to slowapi, 429s still won't flood Sentry quota (D-07, Landmine 1).
-
-Rate limiter in `backend/app/api/middleware/rate_limiter.py` returns
-`JSONResponse(status_code=429)` directly (verified via grep — no `raise`
-call) so HTTPException(429) does not currently flow through Sentry.
-
-# Server name
-
-Each process passes a distinct `server_name` so Sentry's "server" facet
-separates App Runner exceptions from Fargate crawler exceptions from CLI
-runs. Keep the three canonical values: `apprunner-backend`, `ecs-crawler`,
-`crawler-cli` (D-11).
-
-# Scope processor
-
-`_before_send` reads `request_id_var.get()` and `user_id_var.get()` from
-`webbpulse.log_context` ContextVars (populated by the package's
-`task_context` / `request_context_middleware` / CLI bootstrap) and
-attaches them as `tags.request_id` + `user.id`. Only ever attaches tags
-when the values are not the sentinel `UNSET` ("-") default (D-09).
-
-# See also
-
-- `CLAUDE.md` "Architecture / Backend" bullet for a one-line pointer
-- `.planning/phases/02-observability/02-CONTEXT.md` §D-01..D-15 for all decisions
-- `.planning/phases/02-observability/02-RESEARCH.md` §5 Landmines 1, 2, 3, 16, 17
+The DSN comes from settings, so local runs with none configured no-op. Normal
+4xx control flow is ignored, and request and user ids are attached as tags.
 """
 
 import logging
@@ -63,8 +10,6 @@ import os
 import sentry_sdk
 from sentry_sdk.integrations.fastapi import FastApiIntegration
 from sentry_sdk.integrations.logging import LoggingIntegration
-
-# Starlette integration REQUIRED even with FastApi — NOT auto-enabled (Landmine 2)
 from sentry_sdk.integrations.starlette import StarletteIntegration
 from sentry_sdk.types import Event, Hint
 from webbpulse.log_context import request_id_var, user_id_var
@@ -75,11 +20,9 @@ _HEALTH_SUBSTRINGS = ("health", "ready", "openapi")
 
 
 def _traces_sampler(sampling_context: dict) -> float:
-    """Return trace sample rate per-transaction.
+    """The trace sample rate for one transaction.
 
-    0.0 for health/ready/openapi noise; 0.05 (5%) otherwise. Keeps Sentry
-    Performance free-tier under budget while still producing a representative
-    transaction sample for the dashboard (D-06).
+    Zero for health, readiness and OpenAPI noise, and five percent otherwise.
     """
     name = sampling_context.get("transaction_context", {}).get("name", "") or ""
     if any(sub in name.lower() for sub in _HEALTH_SUBSTRINGS):
@@ -88,13 +31,9 @@ def _traces_sampler(sampling_context: dict) -> float:
 
 
 def _before_send(event: Event, hint: Hint) -> Event | None:
-    """Attach request_id + user_id from ContextVars to every Sentry event.
+    """Attach the request and user ids from the log context to every event.
 
-    Reads `webbpulse.log_context`'s `request_id_var` + `user_id_var`
-    (populated by `request_context_middleware` for HTTP requests,
-    `task_context` for background tasks, and the CLI bootstrap in
-    `crawlers/__main__.py`). The sentinel `UNSET` ("-") default is not
-    attached (D-09).
+    The `"-"` sentinel that means unset is not attached.
     """
     rid = request_id_var.get()
     uid = user_id_var.get()
@@ -106,27 +45,16 @@ def _before_send(event: Event, hint: Hint) -> Event | None:
 
 
 def init_sentry(*, server_name: str) -> None:
-    """Initialize Sentry for the current process.
+    """Initialise Sentry for this process, or no-op when it should not run.
 
-    No-ops when any of the following hold (D-01, D-13):
-    - `TESTING` env var is "true" (prevents test collection from firing init)
-    - `APP_ENVIRONMENT` is not "staging" or "production" (dev runs don't emit)
-    - `SENTRY_DSN` env var is empty or whitespace
-
-    On active init: registers FastAPI + Starlette + SQLAlchemy + Logging
-    integrations (all four explicit — Starlette is NOT auto-enabled),
-    installs `_traces_sampler` + `_before_send`, and tags every event with
-    `environment`, `release`, `server_name`.
+    Skipped under `TESTING`, outside staging and production, and with no DSN.
+    Tags every event with the environment, release and server name.
     """
     if os.environ.get("TESTING") == "true":
         return
     env = (settings.APP_ENVIRONMENT or "").lower()
     if env not in {"staging", "production"}:
         return
-    # settings.SENTRY_DSN is the lazily resolved property: an env var wins, and
-    # otherwise it reads the APP_SECRETS_ARN blob on this first touch. Reading it
-    # through settings rather than os.environ is what lets config.py stop
-    # exporting the whole secret into the process environment at import.
     dsn = settings.SENTRY_DSN.strip()
     if not dsn:
         return

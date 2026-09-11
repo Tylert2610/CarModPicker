@@ -1,14 +1,9 @@
-# Development services
-# Run: docker compose up -d
-# Backend runs directly on host during development. Tables live in DynamoDB
-# Local; create them with `python scripts/create_dynamo_tables.py`.
-
 services:
   dynamodb:
     image: amazon/dynamodb-local:latest
     container_name: carmodpicker_dynamodb
     ports:
-      - "8001:8000"   # set DYNAMODB_ENDPOINT_URL=http://localhost:8001 in .env
+      - "8001:8000"
     command: ["-jar", "DynamoDBLocal.jar", "-sharedDb", "-dbPath", "/home/dynamodblocal/data"]
     volumes:
       - dynamodb_data:/home/dynamodblocal/data
@@ -22,8 +17,8 @@ services:
     image: minio/minio:latest
     container_name: carmodpicker_minio
     ports:
-      - "9000:9000"   # S3 API  (set S3_ENDPOINT_URL=http://localhost:9000 in .env)
-      - "9001:9001"   # Web console  →  http://localhost:9001  (minioadmin / minioadmin)
+      - "9000:9000"
+      - "9001:9001"
     environment:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
@@ -36,8 +31,6 @@ services:
       timeout: 5s
       retries: 5
 
-  # One-shot container: creates the two local buckets after MinIO is healthy.
-  # Exits with 0 on success; docker compose ignores stopped init containers.
   createbuckets:
     image: minio/mc:latest
     container_name: carmodpicker_minio_init

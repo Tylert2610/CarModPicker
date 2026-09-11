@@ -1,3 +1,5 @@
+"""A typed repository over one DynamoDB table: reads, writes, pagination and transactions."""
+
 import base64
 import json
 import time
@@ -37,45 +39,57 @@ TRANSACTION_CANCELED = "TransactionCanceledException"
 
 @dataclass(frozen=True)
 class Page(Generic[TModel]):
+    """One page of results and the cursor that continues it, None when exhausted."""
+
     items: list[TModel]
     next_cursor: str | None
 
 
 @dataclass(frozen=True)
 class RangeCondition:
+    """A sort key comparison, independent of boto3's condition objects."""
+
     operator: str
     value: Any
     upper: Any = None
 
     @classmethod
     def eq(cls, value: Any) -> "RangeCondition":
+        """Sort key equal to `value`."""
         return cls("eq", value)
 
     @classmethod
     def lt(cls, value: Any) -> "RangeCondition":
+        """Sort key less than `value`."""
         return cls("lt", value)
 
     @classmethod
     def lte(cls, value: Any) -> "RangeCondition":
+        """Sort key at most `value`."""
         return cls("lte", value)
 
     @classmethod
     def gt(cls, value: Any) -> "RangeCondition":
+        """Sort key greater than `value`."""
         return cls("gt", value)
 
     @classmethod
     def gte(cls, value: Any) -> "RangeCondition":
+        """Sort key at least `value`."""
         return cls("gte", value)
 
     @classmethod
     def begins_with(cls, value: Any) -> "RangeCondition":
+        """Sort key starting with `value`."""
         return cls("begins_with", value)
 
     @classmethod
     def between(cls, low: Any, high: Any) -> "RangeCondition":
+        """Sort key within the inclusive range `low` to `high`."""
         return cls("between", low, high)
 
     def to_key_condition(self, attribute: str) -> ConditionBase:
+        """Render this comparison against `attribute` as a boto3 key condition."""
         key = Key(attribute)
         if self.operator == "between":
             return key.between(to_dynamo_value(self.value), to_dynamo_value(self.upper))
@@ -84,6 +98,7 @@ class RangeCondition:
 
 
 def encode_cursor(last_evaluated_key: dict[str, Any] | None) -> str | None:
+    """Encode a LastEvaluatedKey as an opaque cursor, None when there is no more."""
     if not last_evaluated_key:
         return None
     payload = json.dumps(last_evaluated_key, default=_json_default, separators=(",", ":"))
@@ -91,6 +106,12 @@ def encode_cursor(last_evaluated_key: dict[str, Any] | None) -> str | None:
 
 
 def decode_cursor(cursor: str | None) -> dict[str, Any] | None:
+    """Decode a cursor back to an ExclusiveStartKey.
+
+
+    Raises ValueError on anything that is not a cursor this module produced, so a
+    client-supplied value cannot reach DynamoDB malformed.
+    """
     if not cursor:
         return None
     try:
@@ -104,34 +125,43 @@ def decode_cursor(cursor: str | None) -> dict[str, Any] | None:
 
 
 def _json_default(value: Any) -> Any:
+    """Encode Decimal as int or float for the cursor, rejecting other types."""
     if isinstance(value, Decimal):
         return int(value) if value == value.to_integral_value() else float(value)
     raise TypeError(f"cannot encode {type(value).__name__} in cursor")
 
 
 def _error_code(exc: ClientError) -> str:
+    """The AWS error code from a ClientError, empty when absent."""
     return str(exc.response.get("Error", {}).get("Code", ""))
 
 
 def _chunks(values: list[Any], size: int) -> Iterable[list[Any]]:
+    """Split `values` into consecutive lists of at most `size`."""
     for start in range(0, len(values), size):
         yield values[start : start + size]
 
 
 class DynamoRepository(Generic[TModel]):
+    """Typed access to one table: reads, writes, pagination and transaction actions."""
+
     def __init__(self, model_cls: type[TModel], spec: TableSpec) -> None:
+        """Bind this repository to a model class and the table spec it is stored in."""
         self.model_cls = model_cls
         self.spec = spec
 
     @property
     def table_name(self) -> str:
+        """The deployed name of this repository's table."""
         return table_name(self.spec)
 
     @property
     def table(self) -> "Table":
+        """The boto3 Table this repository reads and writes."""
         return get_table(self.spec)
 
     def key(self, partition_value: Any, sort_value: Any = None) -> dict[str, Any]:
+        """Build a key dict, raising ValueError when a composite table gets no sort value."""
         key = {self.spec.partition_key.name: to_dynamo_value(partition_value)}
         if self.spec.sort_key is not None:
             if sort_value is None:
@@ -140,16 +170,20 @@ class DynamoRepository(Generic[TModel]):
         return key
 
     def key_of(self, model: TModel) -> dict[str, Any]:
+        """The key of `model`, taken from its serialized item."""
         item = to_item(model, self.spec)
         return {name: item[name] for name in self.spec.key_attribute_names}
 
     def to_item(self, model: TModel) -> dict[str, Any]:
+        """Serialize `model` to a stored item, including derived attributes."""
         return to_item(model, self.spec)
 
     def from_item(self, item: dict[str, Any]) -> TModel:
+        """Deserialize a stored item into this repository's model."""
         return from_item(item, self.model_cls)
 
     def get(self, partition_value: Any, sort_value: Any = None, *, consistent: bool = False) -> TModel | None:
+        """The item at this key, or None when it does not exist."""
         response = self.table.get_item(Key=self.key(partition_value, sort_value), ConsistentRead=consistent)
         item = response.get("Item")
         if item is None:
@@ -157,12 +191,14 @@ class DynamoRepository(Generic[TModel]):
         return self.from_item(dict(item))
 
     def get_or_raise(self, partition_value: Any, sort_value: Any = None, *, consistent: bool = False) -> TModel:
+        """The item at this key, raising ItemNotFound when it does not exist."""
         model = self.get(partition_value, sort_value, consistent=consistent)
         if model is None:
             raise ItemNotFound(self.table_name, self.key(partition_value, sort_value))
         return model
 
     def put(self, model: TModel, *, condition: ConditionBase | None = None) -> TModel:
+        """Write `model`, translating a failed condition into ConditionFailed."""
         item = self.to_item(model)
         kwargs: dict[str, Any] = {"Item": item}
         if condition is not None:
@@ -176,12 +212,19 @@ class DynamoRepository(Generic[TModel]):
         return model
 
     def create(self, model: TModel) -> TModel:
+        """Write `model` only if its id is unused, raising ConditionFailed otherwise."""
         try:
             return self.put(model, condition=Attr(self.spec.partition_key.name).not_exists())
         except ConditionFailed as exc:
             raise ConditionFailed(self.table_name, "attribute_not_exists(id)", exc.key) from exc
 
     def update(self, partition_value: Any, sort_value: Any = None, /, **changes: Any) -> TModel:
+        """Apply `changes` to an existing item and return it as stored.
+
+
+        Refreshes `updated_at` when the model has one. Raises ValueError on an attempt
+        to change a key attribute, and ItemNotFound when the item does not exist.
+        """
         if not changes:
             return self.get_or_raise(partition_value, sort_value)
         if "updated_at" in self.model_cls.model_fields and "updated_at" not in changes:
@@ -209,6 +252,12 @@ class DynamoRepository(Generic[TModel]):
         return self.from_item(dict(response["Attributes"]))
 
     def _build_update_expression(self, changes: dict[str, Any]) -> tuple[str, dict[str, str], dict[str, Any]]:
+        """Build the UPDATE expression and its name and value maps from `changes`.
+
+
+        A None value becomes a REMOVE, so the attribute is deleted rather than stored
+        as a null.
+        """
         names: dict[str, str] = {}
         values: dict[str, Any] = {}
         sets: list[str] = []
@@ -231,6 +280,12 @@ class DynamoRepository(Generic[TModel]):
         return " ".join(clauses), names, values
 
     def _derived_changes(self, changes: dict[str, Any]) -> dict[str, Any]:
+        """The derived attributes `changes` implies, for the mirrors that can be updated.
+
+
+        Raises ValueError for composite and coalesced keys, which cannot be recomputed
+        from a partial update and need a full put.
+        """
         derived: dict[str, Any] = {}
         for source, target in self.spec.lowercase_mirrors:
             if source in changes:
@@ -245,6 +300,7 @@ class DynamoRepository(Generic[TModel]):
         return derived
 
     def delete(self, partition_value: Any, sort_value: Any = None, *, must_exist: bool = False) -> None:
+        """Delete the item at this key, raising ItemNotFound when `must_exist` and it does not."""
         kwargs: dict[str, Any] = {"Key": self.key(partition_value, sort_value)}
         if must_exist:
             kwargs["ConditionExpression"] = Attr(self.spec.partition_key.name).exists()
@@ -266,6 +322,7 @@ class DynamoRepository(Generic[TModel]):
         scan_forward: bool = True,
         filter_expression: ConditionBase | None = None,
     ) -> Page[TModel]:
+        """One page of items matching a key, optionally on an index and filtered."""
         hash_name, range_name = self._query_key_names(index)
         condition: ConditionBase = Key(hash_name).eq(to_dynamo_value(key_value))
         if range_condition is not None:
@@ -299,6 +356,7 @@ class DynamoRepository(Generic[TModel]):
         filter_expression: ConditionBase | None = None,
         page_size: int | None = None,
     ) -> list[TModel]:
+        """Every item matching a key, following the cursor until it is exhausted."""
         items: list[TModel] = []
         cursor: str | None = None
         while True:
@@ -317,6 +375,7 @@ class DynamoRepository(Generic[TModel]):
                 return items
 
     def _query_key_names(self, index: str | None) -> tuple[str, str | None]:
+        """The hash and range attribute names of the table or of one of its indexes."""
         if index is None:
             return self.spec.partition_key.name, self.spec.sort_key.name if self.spec.sort_key else None
         index_spec: IndexSpec = self.spec.index(index)
@@ -329,6 +388,7 @@ class DynamoRepository(Generic[TModel]):
         limit: int | None = None,
         cursor: str | None = None,
     ) -> Page[TModel]:
+        """One page of the table, excluding the uniqueness reservation rows."""
         exclude_lookups: ConditionBase = ~Attr(self.spec.partition_key.name).begins_with(UNIQUE_KEY_PREFIX)
         combined = exclude_lookups if filter_expression is None else exclude_lookups & filter_expression
         kwargs: dict[str, Any] = {"FilterExpression": combined}
@@ -342,6 +402,7 @@ class DynamoRepository(Generic[TModel]):
         return Page(items=items, next_cursor=encode_cursor(response.get("LastEvaluatedKey")))
 
     def scan_all(self, *, filter_expression: ConditionBase | None = None, page_size: int | None = None) -> list[TModel]:
+        """The whole table, following the cursor until it is exhausted."""
         items: list[TModel] = []
         cursor: str | None = None
         while True:
@@ -352,6 +413,7 @@ class DynamoRepository(Generic[TModel]):
                 return items
 
     def batch_get(self, keys: list[Any], *, consistent: bool = False) -> list[TModel]:
+        """Fetch many items by key, chunked and retried while DynamoDB leaves keys unprocessed."""
         found: list[TModel] = []
         key_dicts = [self._coerce_key(key) for key in keys]
         for chunk in _chunks(key_dicts, BATCH_GET_LIMIT):
@@ -371,6 +433,7 @@ class DynamoRepository(Generic[TModel]):
         return found
 
     def _coerce_key(self, key: Any) -> dict[str, Any]:
+        """Normalise a key given as a dict, a tuple, or a bare partition value."""
         if isinstance(key, dict):
             return {name: to_dynamo_value(value) for name, value in cast(dict[str, Any], key).items()}
         if isinstance(key, tuple):
@@ -379,12 +442,15 @@ class DynamoRepository(Generic[TModel]):
         return self.key(key)
 
     def batch_put(self, models: list[TModel]) -> None:
+        """Write many items, chunked to the batch limit."""
         self._batch_write([{"PutRequest": {"Item": self.to_item(model)}} for model in models])
 
     def batch_delete(self, keys: list[Any]) -> None:
+        """Delete many items by key, chunked to the batch limit."""
         self._batch_write([{"DeleteRequest": {"Key": self._coerce_key(key)}} for key in keys])
 
     def _batch_write(self, requests: list[dict[str, Any]]) -> None:
+        """Run batch writes in chunks, retrying unprocessed items with backoff."""
         for chunk in _chunks(requests, BATCH_WRITE_LIMIT):
             pending: dict[str, Any] = {self.table_name: chunk}
             for attempt in range(UNPROCESSED_RETRY_ATTEMPTS + 1):
@@ -398,12 +464,14 @@ class DynamoRepository(Generic[TModel]):
                 pending = dict(unprocessed)
 
     def put_action(self, model: TModel, *, condition: str | None = None) -> dict[str, Any]:
+        """A transaction Put for `model`, under an optional condition expression."""
         action: dict[str, Any] = {"TableName": self.table_name, "Item": self.to_item(model)}
         if condition is not None:
             action["ConditionExpression"] = condition
         return {"Put": action}
 
     def create_action(self, model: TModel) -> dict[str, Any]:
+        """A transaction Put for `model` that fails if the key already exists."""
         return {
             "Put": {
                 "TableName": self.table_name,
@@ -416,6 +484,7 @@ class DynamoRepository(Generic[TModel]):
     def delete_action(
         self, partition_value: Any, sort_value: Any = None, *, must_exist: bool = False
     ) -> dict[str, Any]:
+        """A transaction Delete for this key, optionally requiring that it exists."""
         action: dict[str, Any] = {"TableName": self.table_name, "Key": self.key(partition_value, sort_value)}
         if must_exist:
             action["ConditionExpression"] = "attribute_exists(#pk)"
@@ -425,6 +494,7 @@ class DynamoRepository(Generic[TModel]):
     def condition_check_action(
         self, partition_value: Any, sort_value: Any = None, *, exists: bool = True
     ) -> dict[str, Any]:
+        """A transaction ConditionCheck asserting this key does or does not exist."""
         return {
             "ConditionCheck": {
                 "TableName": self.table_name,
@@ -435,6 +505,7 @@ class DynamoRepository(Generic[TModel]):
         }
 
     def update_action(self, partition_value: Any, sort_value: Any = None, /, **changes: Any) -> dict[str, Any]:
+        """A transaction Update applying `changes` to an item that must already exist."""
         if "updated_at" in self.model_cls.model_fields and "updated_at" not in changes:
             changes["updated_at"] = utc_now()
         expression, names, values = self._build_update_expression(changes)
@@ -451,6 +522,12 @@ class DynamoRepository(Generic[TModel]):
         return {"Update": action}
 
     def unique_lookup_item(self, attribute: str, value: str, owner_id: str | None = None) -> dict[str, Any]:
+        """The reservation row for a unique attribute value, optionally owned.
+
+
+        Raises ValueError on a composite table, where a single-attribute reservation
+        key has no meaning.
+        """
         if self.spec.is_composite:
             raise ValueError(f"{self.spec.suffix} has a composite key; unique lookups need a single-attribute key")
         item: dict[str, Any] = {self.spec.partition_key.name: unique_lookup_key(attribute, value)}
@@ -459,6 +536,7 @@ class DynamoRepository(Generic[TModel]):
         return item
 
     def ensure_unique_action(self, attribute: str, value: str, owner_id: str | None = None) -> dict[str, Any]:
+        """A transaction Put that claims a unique value, failing if already claimed."""
         return {
             "Put": {
                 "TableName": self.table_name,
@@ -469,6 +547,7 @@ class DynamoRepository(Generic[TModel]):
         }
 
     def release_unique_action(self, attribute: str, value: str) -> dict[str, Any]:
+        """A transaction Delete that gives up a claimed unique value."""
         return {
             "Delete": {
                 "TableName": self.table_name,
@@ -477,6 +556,7 @@ class DynamoRepository(Generic[TModel]):
         }
 
     def ensure_unique(self, attribute: str, value: str, owner_id: str | None = None) -> None:
+        """Claim a unique value, raising ConditionFailed when another row holds it."""
         item = self.unique_lookup_item(attribute, value, owner_id)
         try:
             self.table.put_item(Item=item, ConditionExpression=Attr(self.spec.partition_key.name).not_exists())
@@ -486,14 +566,17 @@ class DynamoRepository(Generic[TModel]):
             raise
 
     def release_unique(self, attribute: str, value: str) -> None:
+        """Give up a claimed unique value so another row may take it."""
         self.table.delete_item(Key={self.spec.partition_key.name: unique_lookup_key(attribute, value)})
 
     def is_unique_taken(self, attribute: str, value: str) -> bool:
+        """True when a reservation row already holds this attribute value."""
         response = self.table.get_item(Key={self.spec.partition_key.name: unique_lookup_key(attribute, value)})
         return response.get("Item") is not None
 
 
 def transact_write(actions: list[dict[str, Any]]) -> None:
+    """Run `actions` as one transaction, raising TransactionCanceled if it is rejected."""
     if not actions:
         return
     if len(actions) > TRANSACT_WRITE_LIMIT:

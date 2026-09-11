@@ -1,23 +1,7 @@
 """One name per repository, and the table each one owns.
 
-This is the catalogue the bundles are cut from. It exists so that "which
-repositories does `media` need" and "which tables does `media` therefore touch"
-are answered from one table rather than from two lists that drift.
-
-Every entry is a factory, never an instance. Importing this module must
-construct no repository and reach no DynamoDB client, because
-`app.composition.domains` imports it to declare each domain's bundle and that
-import happens in every one of the nine functions. The factory's module is
-recorded alongside it and imported only when a bundle actually builds the
-repository, which is what keeps `app.entrypoints.media` from importing
-`app.db.dynamo.build_lists` at all.
-
-The `table` value is `TableSpec.suffix`, the same string section 1.2 of
-`docs/migration/split-plan.md` uses in its ownership table and the same one
-`app.db.dynamo.client.table_name` prefixes with the environment to get the real
-DynamoDB table name. `tests/entrypoints/test_repository_bundles.py` compares the
-two, so a repository added here without a plan row, or a plan row without a
-repository, fails rather than being noticed later in an IAM policy.
+Entries are factories, never instances, so importing this catalogue constructs
+no repository and reaches no DynamoDB client. `table` is the `TableSpec.suffix`.
 """
 
 from __future__ import annotations
@@ -26,7 +10,7 @@ import importlib
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Dict, Tuple
 
-if TYPE_CHECKING:  # pragma: no cover - typing only
+if TYPE_CHECKING:  # pragma: no cover
     from app.db.dynamo.repository import DynamoRepository
 
 
@@ -34,18 +18,13 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 class RepositorySpec:
     """Where a repository's class lives, and which table it owns.
 
-    `module` and `class_name` are strings rather than the class itself so that
-    reading this catalogue costs no import. `build()` is the only thing that
-    imports, and a bundle calls it once per repository it declares.
+    `module` and `class_name` are strings so reading this catalogue costs no
+    import; `build()` is the only thing that imports.
     """
 
-    #: The attribute name on the bundle: `repos.<name>`.
     name: str
-    #: Dotted module path under `app.db.dynamo`.
     module: str
-    #: The repository class in that module.
     class_name: str
-    #: `TableSpec.suffix`, matching the plan's table names.
     table: str
 
     def build(self) -> "DynamoRepository[Any]":
@@ -55,12 +34,10 @@ class RepositorySpec:
 
 
 def _spec(name: str, module: str, class_name: str, table: str) -> Tuple[str, RepositorySpec]:
+    """Build one catalogue entry keyed by its repository name."""
     return name, RepositorySpec(name=name, module=module, class_name=class_name, table=table)
 
 
-#: The twenty-five repositories, keyed by the attribute name routes already use.
-#: The order is the order the old frozen dataclass declared its fields in, so
-#: the diff against it reads as a move.
 REPOSITORY_SPECS: Dict[str, RepositorySpec] = dict(
     [
         _spec("users", "users", "UserRepository", "users"),
@@ -101,14 +78,9 @@ REPOSITORY_SPECS: Dict[str, RepositorySpec] = dict(
     ]
 )
 
-#: All twenty-five names. Root A's bundle, and the upper bound on any domain's.
 ALL_REPOSITORY_NAMES: Tuple[str, ...] = tuple(REPOSITORY_SPECS)
 
 
 def tables_for(names: "Tuple[str, ...]") -> Tuple[str, ...]:
-    """The table suffixes a set of repository names touches, sorted.
-
-    Used by the bundle tests and by anything that wants to state a function's
-    DynamoDB surface without constructing a repository to ask it.
-    """
+    """The table suffixes a set of repository names touches, sorted."""
     return tuple(sorted({REPOSITORY_SPECS[name].table for name in names}))

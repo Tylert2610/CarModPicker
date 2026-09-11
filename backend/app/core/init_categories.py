@@ -1,9 +1,7 @@
-"""
-Initialize part categories in the database on application startup.
+"""Seed part categories from the source data on startup.
 
-This module ensures that all part categories defined in part_categories_data.py
-are present in the database. Source code is the source of truth: existing rows
-are updated to match the latest data; new rows are created when missing.
+Source is the source of truth: existing rows are synced and missing ones
+are created.
 """
 
 import logging
@@ -15,19 +13,11 @@ from app.db.dynamo.users import UniqueAttributeTaken
 
 logger = logging.getLogger(__name__)
 
-# Fields from source that are synced when updating an existing category
-# (only fields defined on PartCategoryData; is_active is not in source, Category defaults to True)
 _CATEGORY_SYNC_FIELDS = ("display_name", "description", "icon", "sort_order")
 
 
 def init_part_categories() -> None:
-    """
-    Initialize part categories in the database from part_categories_data (source of truth).
-
-    For each category in source:
-    - If it already exists (same name): update synced fields to match source.
-    - If it does not exist: create it.
-    """
+    """Create or sync every part category from the source data, matching on name."""
     categories = get_repositories().categories
 
     logger.info("Initializing part categories...")

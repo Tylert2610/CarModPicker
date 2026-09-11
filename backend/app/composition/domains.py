@@ -1,31 +1,7 @@
-"""The nine domains of the split, as descriptors.
+"""The nine domains of the split, as descriptors carrying their routers.
 
-One entry per row of section 1.1 of `docs/migration/split-plan.md`, carrying the
-same endpoint modules, the same path prefixes and the same route counts. The
-counts in the comments were taken by walking `app.routes`, not by grepping
-decorators: nine routes across three modules are generated at runtime by
-`BaseDynamoEndpointRouter` and are invisible to a grep, which is why the
-decorator count is 162 and the real count is 171.
-
-**Importing this module imports no endpoint module.** Each `_<domain>_routers`
-function does its imports in its own body, and nothing at module scope reaches
-`app.api.endpoints`. That is what lets `app.entrypoints.media` build an
-application carrying `images` and nothing else, and
-`tests/entrypoints/test_entrypoint_isolation.py` proves it in a fresh
-interpreter rather than trusting the reading.
-
-**The prefixes and tags are the ones `EndpointRegistry` produced.** `app/main.py`
-registered every router through `EndpointRegistry`, which prepends
-`settings.API_STR` and applies a tag list. Those two values are the whole of what
-the registry contributed to the routing table, so they are recorded here on the
-descriptor instead, and `Domain.router_prefix` supplies the `/api`. The registry
-itself is untouched and still exports `register_crud_endpoint`; this PR simply
-stops `app/main.py` being the only place that knows which prefix a router takes.
-
-The tuple order inside each loader is the order `app/main.py` registered those
-modules in, relative to each other. Section 1.4's seven ordering hazards are all
-inside a single module, so they are decided by that module's own decorator order
-and are untouched here.
+Importing this module imports no endpoint module: each loader does its own
+imports in its body, which is what keeps one domain's image free of the rest.
 """
 
 from __future__ import annotations
@@ -34,20 +10,19 @@ from typing import TYPE_CHECKING, Dict, Sequence, Tuple
 
 from app.composition.wiring import Domain
 
-if TYPE_CHECKING:  # pragma: no cover - typing only
+if TYPE_CHECKING:  # pragma: no cover
     from fastapi import APIRouter
 
 RouterSpec = Tuple["APIRouter", str, Tuple[str, ...]]
 
 
 def _identity_routers() -> "Sequence[RouterSpec]":
+    """The four auth routers: core, 2FA, WebAuthn and OAuth."""
     from app.api.endpoints.auth import core as auth_core
     from app.api.endpoints.auth import oauth as auth_oauth
     from app.api.endpoints.auth import two_factor as auth_2fa
     from app.api.endpoints.auth import webauthn as auth_webauthn
 
-    # `/auth` first: `core` declares the literal login and token routes, and the
-    # three sub-prefixes are strictly longer, so no pair here can shadow.
     return [
         (auth_core.router, "/auth", ("authentication",)),
         (auth_2fa.router, "/auth/2fa", ("authentication",)),
@@ -57,6 +32,7 @@ def _identity_routers() -> "Sequence[RouterSpec]":
 
 
 def _users_routers() -> "Sequence[RouterSpec]":
+    """The user account router and the app settings singleton router."""
     from app.api.endpoints import app_settings, users
 
     return [
@@ -66,6 +42,7 @@ def _users_routers() -> "Sequence[RouterSpec]":
 
 
 def _catalog_routers() -> "Sequence[RouterSpec]":
+    """Parts, categories, manufacturers and retailers."""
     from app.api.endpoints import categories, part_manufacturers, parts, retailers
 
     return [
@@ -77,6 +54,7 @@ def _catalog_routers() -> "Sequence[RouterSpec]":
 
 
 def _vehicles_routers() -> "Sequence[RouterSpec]":
+    """Car generations and the unified search."""
     from app.api.endpoints import car_generations, search
 
     return [
@@ -86,6 +64,7 @@ def _vehicles_routers() -> "Sequence[RouterSpec]":
 
 
 def _build_lists_routers() -> "Sequence[RouterSpec]":
+    """Build lists and their parts, phases and labor estimates."""
     from app.api.endpoints import (
         build_list_labor_estimates,
         build_list_parts,
@@ -106,12 +85,14 @@ def _build_lists_routers() -> "Sequence[RouterSpec]":
 
 
 def _build_logs_routers() -> "Sequence[RouterSpec]":
+    """The build log threads and posts router."""
     from app.api.endpoints import build_logs
 
     return [(build_logs.router, "/build-logs", ("build-logs",))]
 
 
 def _moderation_routers() -> "Sequence[RouterSpec]":
+    """Votes, reports and bug reports."""
     from app.api.endpoints import bug_reports, reports, votes
 
     return [
@@ -122,20 +103,18 @@ def _moderation_routers() -> "Sequence[RouterSpec]":
 
 
 def _media_routers() -> "Sequence[RouterSpec]":
+    """The image upload and serving router."""
     from app.api.endpoints import images
 
     return [(images.router, "/images", ("images",))]
 
 
 def _admin_routers() -> "Sequence[RouterSpec]":
+    """Price alerts, crawled pages and the two admin routers."""
     from app.api.endpoints import crawled_pages, part_price_alerts
     from app.api.endpoints.admin import db_ops as admin_db_ops
     from app.api.endpoints.admin import stats as admin_stats
 
-    # `part_price_alerts` declares `/unsubscribe` before its two `/{alert_id}`
-    # routes, which is the one ordering hazard in section 1.4 that is a route
-    # away from breaking silently. It is decided inside that module, so it is
-    # preserved by not touching the module.
     return [
         (part_price_alerts.router, "/part-price-alerts", ("part-price-alerts",)),
         (crawled_pages.router, "/crawled-pages", ("crawled-pages",)),
@@ -144,67 +123,14 @@ def _admin_routers() -> "Sequence[RouterSpec]":
     ]
 
 
-# --- Repository bundles ------------------------------------------------------
-# Which of the twenty-five repositories each domain's process carries. The
-# blocker section 2.3 of the split plan describes was that every route reached a
-# module-level object holding all twenty-five, so a `media` function would have
-# imported the whole data layer at cold start and held a `UserRepository`
-# pointed at a table it has no IAM grant for. These tuples are what replaced it.
-#
-# Each tuple is the set of `repos.<name>` attributes reachable from that
-# domain's endpoint modules through their real import graph, not a guess and not
-# the plan's ownership column. The two differ, and the difference is exactly the
-# cross-domain reads section 1.3 leaves synchronous: `media` owns one table and
-# reads four more for the orphan sweep, `vehicles` owns three and reads the rest
-# for search. `tests/entrypoints/test_repository_bundles.py` recomputes the
-# reachable set from the import graph and fails if a tuple drifts from it, in
-# either direction, so this list cannot rot quietly and a domain cannot acquire
-# a table by accident.
-#
-# Ownership, in the sense section 1.2 means it, is not expressed here. A
-# repository in two domains' tuples is two domains reading one table; which of
-# them may write to it is a Terraform IAM question and rows 22 onward are what
-# make the writer single. Nothing here grants or withholds a write.
-
-#: `identity` owns `oauth_accounts` and `webauthn_credentials` and writes
-#: `users`, which `users` owns. That write is seam 1's neighbour and stays
-#: synchronous until the tombstone lands.
 _IDENTITY_REPOSITORIES = ("users", "oauth_accounts", "webauthn_credentials")
 
-#: `users` owns `users` and `app_settings`, and reads `oauth_accounts`.
-#:
-#: This tuple was twenty-three of twenty-five until row 30, and almost none of
-#: those entries were there because a `users` route reads or writes the table.
-#: They were there because `_delete_user_everywhere` deleted a user and then
-#: wrote into roughly fifteen tables across five other domains, on the request
-#: thread. Row 30 moved that cascade to `carmodpicker-<env>-users-delete-consumer`,
-#: which names the tables itself in `app/entrypoints/users_delete_consumer.py`,
-#: and twenty entries went with it. This is seam 1 closing, and it is the
-#: largest single narrowing in the plan.
-#:
-#: `oauth_accounts` is the one that stayed, and it is a genuine cross-domain
-#: read rather than a leftover: `user_service.user_read` attaches a user's
-#: linked accounts to every user response. It was invisible to
-#: `tests/entrypoints/test_repository_bundles.py` until this row, because that
-#: module read the bundle through a local named `repositories` rather than
-#: `repos`; row 30 renamed it, so the graph now sees the read that was always
-#: there.
 _USERS_REPOSITORIES = (
     "users",
     "app_settings",
     "oauth_accounts",
 )
 
-#: `catalog` owns the eleven catalogue tables. Two extras are left and both are
-#: seams: `users` is read by the price alert fan-out (seam 4), and `votes` is
-#: read by row 24's `net_votes` stream consumer, which `catalog` owns.
-#: `part_service` reads the car tables to infer fitment.
-#:
-#: Row 28 removed three: `build_list_parts`, `part_price_alerts` and `reports`.
-#: They were here for seam 2, the synchronous part purge, and no `catalog` route
-#: reaches them now that the cascade runs on
-#: `catalog-part-purge-consumer`. That function names them itself in
-#: `app/entrypoints/catalog_part_purge_consumer.py`.
 _CATALOG_REPOSITORIES = (
     "users",
     "car_makes",
@@ -220,23 +146,8 @@ _CATALOG_REPOSITORIES = (
     "votes",
 )
 
-#: `vehicles` owns the three car tables. The other ten are seam 5's search
-#: fan-out: one route reading four domains' tables, which the plan leaves
-#: synchronous because turning it into service calls would make one Dynamo round
-#: trip into three or four HTTP hops on a path that is already slow.
-#:
-#: It tracks `catalog` by construction, so row 28's three removals applied here
-#: too: the search fan-out never read `build_list_parts`, `part_price_alerts` or
-#: `reports`, it inherited them from the tuple it extends.
 _VEHICLES_REPOSITORIES = _CATALOG_REPOSITORIES + ("build_lists",)
 
-#: `build-lists` owns its four tables and `catalog`'s price capture reaches the
-#: listing tables. `build_logs` and `build_log_posts` are there because a build
-#: log is created with the list.
-#:
-#: Row 28 removed two: `part_price_alerts` and `reports`. Both were reached only
-#: through the synchronous part purge, which section 8's row 28 note predicted
-#: for `reports` by name, and both moved to the part purge consumer.
 _BUILD_LISTS_REPOSITORIES = (
     "users",
     "car_makes",
@@ -258,14 +169,8 @@ _BUILD_LISTS_REPOSITORIES = (
     "votes",
 )
 
-#: `build-logs` owns two tables and reads `build_lists` for the parent and
-#: `users` for the author.
 _BUILD_LOGS_REPOSITORIES = ("users", "build_lists", "build_logs", "build_log_posts")
 
-#: `moderation` owns three tables. `parts` is seam 3, the `net_votes`
-#: denormalisation, and it is the only cross-domain write left here; row 24
-#: inverts it into a stream handler `catalog` owns. The rest are author and
-#: target reads.
 _MODERATION_REPOSITORIES = (
     "users",
     "car_makes",
@@ -278,11 +183,6 @@ _MODERATION_REPOSITORIES = (
     "bug_reports",
 )
 
-#: `media` owns one table. The other four are seam 5's orphan sweep, which
-#: full-scans `parts`, `users`, `car_generations`, `build_lists` and
-#: `image_source_mappings` to find unreferenced S3 objects and stays synchronous
-#: with read-only grants. This is the narrowest bundle and the first domain the
-#: plan cuts, which is why it is the one the isolation tests name.
 _MEDIA_REPOSITORIES = (
     "users",
     "car_generations",
@@ -291,15 +191,6 @@ _MEDIA_REPOSITORIES = (
     "image_source_mappings",
 )
 
-#: `admin` owns `part_price_alerts`, and the two admin modules read and write
-#: most of the application by design: `admin/stats` counts twelve tables and
-#: `admin/db_ops` seeds and purges. It is the second widest bundle, and the
-#: breadth is why the domain is called `admin`: section 1.5 argued the contents
-#: were closer to administration than to ingestion, and the name now says so.
-#:
-#: Row 28 removed one: `build_list_parts`, reached only through the part purge
-#: that `admin/db_ops` triggers. `admin` keeps `part_price_alerts` because it
-#: owns that table and `admin/price_alerts` reads it directly.
 _ADMIN_REPOSITORIES = (
     "users",
     "oauth_accounts",
@@ -325,8 +216,6 @@ _ADMIN_REPOSITORIES = (
 
 
 DOMAINS: Dict[str, Domain] = {
-    # 24 routes under /api/auth. Signs and verifies every token the application
-    # issues, so it names SECRET_KEY.
     "identity": Domain(
         name="identity",
         title="CarModPicker identity",
@@ -334,9 +223,6 @@ DOMAINS: Dict[str, Domain] = {
         repositories=_IDENTITY_REPOSITORIES,
         requires_secrets=("SECRET_KEY",),
     ),
-    # 14 routes under /api/users and /api/app-settings. Every user route is
-    # behind get_current_user or get_current_admin_user, both of which decode a
-    # token, so it names SECRET_KEY.
     "users": Domain(
         name="users",
         title="CarModPicker users",
@@ -344,16 +230,6 @@ DOMAINS: Dict[str, Domain] = {
         repositories=_USERS_REPOSITORIES,
         requires_secrets=("SECRET_KEY",),
     ),
-    # 43 routes, the largest domain: parts, manufacturers, categories, retailers.
-    # 17 of them verify a token.
-    #
-    # `POST /api/parts/price-history` also accepts an X-API-Key matching
-    # EXTENSION_API_KEY, another key of the same carmodpicker-<env>/app JSON, so
-    # it needs no additional grant beyond the one SECRET_KEY already buys. It is
-    # deliberately NOT named in requires_secrets: `check_signing_key` turns that
-    # tuple into a hard `require_secrets` in production, and an unset key is a
-    # supported state here (the route falls back to admin tokens only) rather
-    # than a reason to fail a cold start.
     "catalog": Domain(
         name="catalog",
         title="CarModPicker catalog",
@@ -361,11 +237,6 @@ DOMAINS: Dict[str, Domain] = {
         repositories=_CATALOG_REPOSITORIES,
         requires_secrets=("SECRET_KEY",),
     ),
-    # 11 routes, and the one domain that needs no secret: every route under
-    # /api/car-generations and /api/search is a public read. `car_generations`
-    # builds a BaseDynamoEndpointRouter with the writing endpoints disabled, so
-    # the generated `get_current_user` routes are never registered. This is what
-    # lets the vehicles function run with no secretsmanager:GetSecretValue.
     "vehicles": Domain(
         name="vehicles",
         title="CarModPicker vehicles",
@@ -373,7 +244,6 @@ DOMAINS: Dict[str, Domain] = {
         repositories=_VEHICLES_REPOSITORIES,
         seeds=True,
     ),
-    # 34 routes across the four build-list modules. 28 of them verify a token.
     "build-lists": Domain(
         name="build-lists",
         title="CarModPicker build lists",
@@ -381,7 +251,6 @@ DOMAINS: Dict[str, Domain] = {
         repositories=_BUILD_LISTS_REPOSITORIES,
         requires_secrets=("SECRET_KEY",),
     ),
-    # 5 routes. 4 verify a token.
     "build-logs": Domain(
         name="build-logs",
         title="CarModPicker build logs",
@@ -389,7 +258,6 @@ DOMAINS: Dict[str, Domain] = {
         repositories=_BUILD_LOGS_REPOSITORIES,
         requires_secrets=("SECRET_KEY",),
     ),
-    # 20 routes: votes, reports, bug reports. 17 verify a token.
     "moderation": Domain(
         name="moderation",
         title="CarModPicker moderation",
@@ -397,7 +265,6 @@ DOMAINS: Dict[str, Domain] = {
         repositories=_MODERATION_REPOSITORIES,
         requires_secrets=("SECRET_KEY",),
     ),
-    # 8 routes, every one of them behind a token.
     "media": Domain(
         name="media",
         title="CarModPicker media",
@@ -405,9 +272,6 @@ DOMAINS: Dict[str, Domain] = {
         repositories=_MEDIA_REPOSITORIES,
         requires_secrets=("SECRET_KEY",),
     ),
-    # 12 routes: price alerts, the crawled-page parser and the two admin
-    # modules. 11 verify a token, and the price-alert unsubscribe route decodes
-    # one of its own. Named `admin` rather than `ingestion`, per section 1.5.
     "admin": Domain(
         name="admin",
         title="CarModPicker admin",
@@ -417,11 +281,6 @@ DOMAINS: Dict[str, Domain] = {
     ),
 }
 
-#: The nine names, in the order the plan lists them.
 DOMAIN_NAMES: Tuple[str, ...] = tuple(DOMAINS)
 
-#: The module name under `app.entrypoints` for each domain. `build-lists` and
-#: `build-logs` are hyphenated as domain names, because that is what the ECR
-#: repository, the function name and the log group carry, but a Python module
-#: cannot be.
 ENTRYPOINT_MODULES: Dict[str, str] = {name: name.replace("-", "_") for name in DOMAIN_NAMES}
