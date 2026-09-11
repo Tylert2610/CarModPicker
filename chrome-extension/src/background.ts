@@ -205,22 +205,10 @@ function generateNonce(): string {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-/**
- * Derive the web origin (where /extension-auth lives) from the configured API
- * URL. In prod/staging, the API is at api.<domain> and the web app at <domain>
- * on the same port. In local dev, the backend runs on :8000 and the frontend
- * dev server on :4000, so we swap the port.
- */
+/** The legacy `/extension-auth` page, which posts a token back to us over
+ * `chrome.runtime.sendMessage`. */
 async function getWebAuthUrl(state: string): Promise<string> {
-  const apiUrl = await getApiUrl();
-  const u = new URL(apiUrl);
-  let host = u.host;
-  if (host.startsWith("api.")) {
-    host = host.slice(4);
-  } else if (host === "localhost:8000" || host === "127.0.0.1:8000") {
-    host = host.replace(":8000", ":4000");
-  }
-  const origin = `${u.protocol}//${host}`;
+  const origin = await getWebOrigin();
   return `${origin}/extension-auth?extensionId=${encodeURIComponent(
     chrome.runtime.id,
   )}&state=${encodeURIComponent(state)}`;
@@ -321,6 +309,231 @@ chrome.runtime.onMessageExternal.addListener(
     return true;
   },
 );
+
+/**
+ * Identity-mode sign in (row 10 of docs/identity-adoption.md).
+ *
+ * The legacy flow above has the web page push a token at us over
+ * `chrome.runtime.sendMessage`. The identity flow inverts that: the web app
+ * redirects back to a URL we own, carrying a short lived code in the URL
+ * fragment, and we spend that code ourselves at the API. Nothing but this
+ * service worker ever holds the resulting access token.
+ *
+ * Why `chrome.tabs` rather than `chrome.identity.launchWebAuthFlow`, which the
+ * row 10 brief named first. `launchWebAuthFlow` only ever hands back a
+ * `https://<extension-id>.chromiumapp.org/` redirect. Row 6's handoff page
+ * (frontend/src/pages/authentication/ExtensionHandoff.tsx) validates the
+ * `redirect_uri` by requiring `url.protocol === 'chrome-extension:'` and
+ * refuses anything else, so a chromiumapp.org callback is rejected before the
+ * page ever calls the API. Matching that contract exactly, as the brief
+ * requires, means redirecting to a `chrome-extension://` page, and that is
+ * what `chrome.tabs` plus a bundled callback page does. It also avoids adding
+ * the `identity` permission, which is a new user visible grant on an installed
+ * base and a Chrome Web Store review the owner has not asked for.
+ *
+ * The callback page is `auth-callback.html`, a page inside this extension. It
+ * reads the fragment, relays it to the worker, and closes itself. A fragment
+ * never leaves the browser, so the code is not in any server log along the way.
+ */
+
+/** Where the web app sends the user back to. Must be a `chrome-extension:` URL. */
+const IDENTITY_CALLBACK_PAGE = "auth-callback.html";
+
+/** The row 6 page's route in the web app. */
+const IDENTITY_HANDOFF_PATH = "/auth/extension-handoff";
+
+/** Pending identity sign in, kept separately from the legacy nonce so the two
+ * modes cannot consume each other's state. */
+const IDENTITY_NONCE_STORAGE_KEY = "pendingIdentityAuth";
+
+type PendingIdentityAuth = {
+  state: string;
+  createdAt: number;
+  tabId?: number;
+};
+
+/**
+ * Which sign in the popup offers.
+ *
+ * The web app switches on `VITE_AUTH_MODE`, a build time flag. The extension
+ * has no build time env plumbing and ships one artifact to the store, so the
+ * equivalent here is a runtime setting in `chrome.storage.sync` under
+ * `authMode`, set from the options page. Default is `legacy` until row 12
+ * cuts over, so an existing install behaves exactly as it does today.
+ */
+type AuthMode = "legacy" | "identity";
+
+const AUTH_MODE_STORAGE_KEY = "authMode";
+const DEFAULT_AUTH_MODE: AuthMode = "legacy";
+
+async function getAuthMode(): Promise<AuthMode> {
+  const result = await chrome.storage.sync.get([AUTH_MODE_STORAGE_KEY]);
+  return result[AUTH_MODE_STORAGE_KEY] === "identity"
+    ? "identity"
+    : DEFAULT_AUTH_MODE;
+}
+
+/**
+ * Derive the web origin (where the sign in pages live) from the configured API
+ * URL. In prod/staging the API is at api.<domain> and the web app at <domain>
+ * on the same port. In local dev the backend runs on :8000 and the frontend
+ * dev server on :4000, so we swap the port.
+ *
+ * Shared by both sign in modes so they cannot disagree about where the web app
+ * lives.
+ */
+async function getWebOrigin(): Promise<string> {
+  const apiUrl = await getApiUrl();
+  const u = new URL(apiUrl);
+  let host = u.host;
+  if (host.startsWith("api.")) {
+    host = host.slice(4);
+  } else if (host === "localhost:8000" || host === "127.0.0.1:8000") {
+    host = host.replace(":8000", ":4000");
+  }
+  return `${u.protocol}//${host}`;
+}
+
+async function getIdentityAuthUrl(state: string): Promise<string> {
+  const origin = await getWebOrigin();
+  const redirectUri = chrome.runtime.getURL(IDENTITY_CALLBACK_PAGE);
+  const params = new URLSearchParams({
+    redirect_uri: redirectUri,
+    state,
+  });
+  return `${origin}${IDENTITY_HANDOFF_PATH}?${params.toString()}`;
+}
+
+async function getPendingIdentityAuth(): Promise<PendingIdentityAuth | null> {
+  const result = await chrome.storage.local.get(IDENTITY_NONCE_STORAGE_KEY);
+  const pending = result[IDENTITY_NONCE_STORAGE_KEY] as
+    | PendingIdentityAuth
+    | undefined;
+  if (!pending) return null;
+  if (Date.now() - pending.createdAt > AUTH_NONCE_TTL_MS) {
+    await chrome.storage.local.remove(IDENTITY_NONCE_STORAGE_KEY);
+    return null;
+  }
+  return pending;
+}
+
+async function clearPendingIdentityAuth(): Promise<void> {
+  await chrome.storage.local.remove(IDENTITY_NONCE_STORAGE_KEY);
+}
+
+async function initiateIdentityAuth(): Promise<ApiResponse<{ authUrl: string }>> {
+  const state = generateNonce();
+  const pending: PendingIdentityAuth = { state, createdAt: Date.now() };
+  await chrome.storage.local.set({ [IDENTITY_NONCE_STORAGE_KEY]: pending });
+
+  let authUrl: string;
+  try {
+    authUrl = await getIdentityAuthUrl(state);
+  } catch (e) {
+    await clearPendingIdentityAuth();
+    return {
+      success: false,
+      error: `Failed to build auth URL: ${e instanceof Error ? e.message : String(e)}`,
+    };
+  }
+
+  try {
+    const tab = await chrome.tabs.create({ url: authUrl, active: true });
+    await chrome.storage.local.set({
+      [IDENTITY_NONCE_STORAGE_KEY]: { ...pending, tabId: tab.id },
+    });
+    return { success: true, data: { authUrl } };
+  } catch (e) {
+    await clearPendingIdentityAuth();
+    return {
+      success: false,
+      error: `Failed to open auth tab: ${e instanceof Error ? e.message : String(e)}`,
+    };
+  }
+}
+
+/**
+ * Spend a handoff code for an access token.
+ *
+ * Deliberately not `apiRequest`: that helper attaches the stored bearer token,
+ * and the whole point of the exchange is that it stands on the code alone. The
+ * backend accepts it with no Authorization header, which is what lets a signed
+ * out extension complete a sign in.
+ *
+ * No refresh token comes back. The identity package's `POST /api/auth/refresh`
+ * reads its token from an httpOnly cookie and applies a `Sec-Fetch-Site`
+ * check, so a service worker cannot drive it. That matches how the extension
+ * behaves today: when the access token expires the user signs in again. Open
+ * question 2 in docs/identity-adoption.md is the owner's call on whether
+ * extensions get a refresh family of their own.
+ */
+async function exchangeHandoffCode(
+  code: string,
+): Promise<ApiResponse<{ expiresIn: number }>> {
+  const apiUrl = await getApiUrl();
+  try {
+    const response = await fetch(`${apiUrl}/auth/extension/token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code }),
+    });
+    if (!response.ok) {
+      return {
+        success: false,
+        error: `Sign in could not be completed (${response.status})`,
+      };
+    }
+    const body = (await response.json()) as {
+      access_token?: unknown;
+      expires_in?: unknown;
+    };
+    const accessToken = body.access_token;
+    if (typeof accessToken !== "string" || accessToken.length === 0) {
+      return { success: false, error: "Sign in returned no token" };
+    }
+    await setToken(accessToken);
+    const expiresIn =
+      typeof body.expires_in === "number" ? body.expires_in : 0;
+    return { success: true, data: { expiresIn } };
+  } catch (e) {
+    return {
+      success: false,
+      error: `Sign in could not be completed: ${e instanceof Error ? e.message : String(e)}`,
+    };
+  }
+}
+
+/**
+ * Handle the callback page reporting back what the web app put in the
+ * fragment. The sender check is that the message came from this extension's
+ * own callback page: `chrome.runtime.onMessage` only carries messages from
+ * inside the extension, and the id and page are pinned here so a content
+ * script on some other page cannot stand in for it.
+ */
+async function completeIdentityAuth(
+  code: string,
+  state: string,
+): Promise<ApiResponse<{ expiresIn: number }>> {
+  const pending = await getPendingIdentityAuth();
+  if (!pending) {
+    return { success: false, error: "No pending sign in" };
+  }
+  if (state !== pending.state) {
+    return { success: false, error: "State mismatch" };
+  }
+
+  const result = await exchangeHandoffCode(code);
+  const tabId = pending.tabId;
+  await clearPendingIdentityAuth();
+  if (typeof tabId === "number") {
+    try {
+      await chrome.tabs.remove(tabId);
+    } catch {
+      // tab may already be closed by the user - ignore
+    }
+  }
+  return result;
+}
 
 /**
  * Get current user
@@ -696,24 +909,62 @@ chrome.runtime.onMessage.addListener(
       listingData?: PartListingCreate;
       url?: string;
       html?: string;
+      // Identity sign in: sent by auth-callback.html with what the handoff
+      // page put in the URL fragment.
+      code?: string;
+      state?: string;
     },
     _sender,
     sendResponse: (response: unknown) => void,
   ) => {
+    // Sign in. Which of the two flows runs is the `authMode` setting, not the
+    // caller's choice, so the popup needs no knowledge of either one.
     if (request.action === "initiateWebAuth") {
-      initiateWebAuth().then(sendResponse);
+      getAuthMode()
+        .then((mode) =>
+          mode === "identity" ? initiateIdentityAuth() : initiateWebAuth(),
+        )
+        .then(sendResponse);
       return true;
     }
 
     if (request.action === "getPendingWebAuth") {
-      getPendingWebAuth().then((pending) => {
-        sendResponse({ success: true, data: { pending: !!pending } });
-      });
+      Promise.all([getPendingWebAuth(), getPendingIdentityAuth()]).then(
+        ([legacy, identity]) => {
+          sendResponse({
+            success: true,
+            data: { pending: !!legacy || !!identity },
+          });
+        },
+      );
       return true;
     }
 
     if (request.action === "cancelWebAuth") {
-      clearPendingWebAuth().then(() => sendResponse({ success: true }));
+      Promise.all([clearPendingWebAuth(), clearPendingIdentityAuth()]).then(
+        () => sendResponse({ success: true }),
+      );
+      return true;
+    }
+
+    // Posted by auth-callback.html, the `redirect_uri` the handoff page sends
+    // the user back to. `onMessage` only carries messages from inside this
+    // extension, so no external page can reach this branch.
+    if (request.action === "completeIdentityAuth") {
+      const code = typeof request.code === "string" ? request.code : "";
+      const state = typeof request.state === "string" ? request.state : "";
+      if (code === "") {
+        sendResponse({ success: false, error: "Sign in returned no code" });
+        return true;
+      }
+      completeIdentityAuth(code, state).then(sendResponse);
+      return true;
+    }
+
+    if (request.action === "getAuthMode") {
+      getAuthMode().then((mode) => {
+        sendResponse({ success: true, data: { mode } });
+      });
       return true;
     }
 

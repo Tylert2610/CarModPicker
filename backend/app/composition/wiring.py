@@ -527,8 +527,24 @@ def build_domain_app(
     for domain in resolved:
         if domain.name == "identity" and settings.IDENTITY_ISSUER:
             from app.composition.identity import build_router as build_identity_router
+            from app.composition.identity_extension import build_router as build_extension_router
 
             app.include_router(build_identity_router(settings))
+
+            # Row 10's two extension routes, on the same terms as the package's
+            # own: no prefix here, because that module derives `/api/auth` from
+            # the issuer exactly as `build_identity_router` does. They collide
+            # with nothing on either side — the package declares no path under
+            # `/api/auth/extension/` and neither do the four legacy routers — so
+            # the order relative to the mount above is free, and they are second
+            # only because row 10 came after row 5.
+            #
+            # `POST /api/auth/extension/handoff` is the route
+            # `frontend/src/pages/authentication/ExtensionHandoff.tsx` has been
+            # calling since row 6, and answering 404 is what it renders as "not
+            # switched on in this deployment yet". Mounting it is what turns that
+            # page on.
+            app.include_router(build_extension_router(settings))
 
     if include_root_routes:
         add_root_routes(app)

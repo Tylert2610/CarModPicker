@@ -8,11 +8,25 @@ const API_URLS = {
 
 type ApiEnvironment = keyof typeof API_URLS;
 
+/**
+ * Which sign in the extension uses.
+ *
+ * The web app switches on `VITE_AUTH_MODE`, a build time flag. The extension
+ * ships one artifact to the store and has no build time env plumbing, so the
+ * equivalent here is this runtime setting. It stays on `legacy` until row 12
+ * of docs/identity-adoption.md cuts over, so an existing install is unchanged
+ * until someone deliberately flips it.
+ */
+type AuthMode = "legacy" | "identity";
+
+const DEFAULT_AUTH_MODE: AuthMode = "legacy";
+
 function Options() {
   const [environment, setEnvironment] = useState<ApiEnvironment>("production");
   const [openPartAfterCreation, setOpenPartAfterCreation] = useState(true);
   const [openInNewTab, setOpenInNewTab] = useState(true);
   const [apiKey, setApiKey] = useState("");
+  const [authMode, setAuthMode] = useState<AuthMode>(DEFAULT_AUTH_MODE);
   const [status, setStatus] = useState<{
     message: string;
     type: "success" | "error";
@@ -21,7 +35,7 @@ function Options() {
   useEffect(() => {
     // Load saved settings
     chrome.storage.sync.get(
-      ["apiUrl", "openPartAfterCreation", "openInNewTab"],
+      ["apiUrl", "openPartAfterCreation", "openInNewTab", "authMode"],
       (result) => {
         const apiUrl = result["apiUrl"];
         if (apiUrl && typeof apiUrl === "string") {
@@ -34,6 +48,9 @@ function Options() {
         if (result["openInNewTab"] !== undefined) {
           setOpenInNewTab(result["openInNewTab"] as boolean);
         }
+        // Anything other than the exact string falls back to legacy, so a
+        // stale or malformed value cannot switch the flow on by accident.
+        setAuthMode(result["authMode"] === "identity" ? "identity" : "legacy");
       },
     );
 
@@ -68,6 +85,7 @@ function Options() {
       apiUrl,
       openPartAfterCreation,
       openInNewTab,
+      authMode,
     });
 
     const trimmedApiKey = apiKey.trim();
@@ -137,6 +155,29 @@ function Options() {
                   </label>
                 </div>
               )}
+
+              <div className="pt-2 border-t border-white/10">
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={authMode === "identity"}
+                    onChange={(e) =>
+                      setAuthMode(e.target.checked ? "identity" : "legacy")
+                    }
+                    className="w-5 h-5 rounded border-white/20 bg-white/10 text-primary-500 focus:ring-2 focus:ring-primary-500/50 focus:ring-offset-2 focus:ring-offset-neutral-900 cursor-pointer"
+                  />
+                  <div>
+                    <div className="text-sm font-medium text-neutral-300">
+                      Use the new sign in
+                    </div>
+                    <div className="text-xs text-neutral-400">
+                      Signs in through the CarModPicker website and hands the
+                      result straight back to the extension. Leave this off
+                      unless you have been asked to try it.
+                    </div>
+                  </div>
+                </label>
+              </div>
             </div>
           </div>
 

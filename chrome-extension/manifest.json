@@ -41,6 +41,18 @@
       "http://localhost:4000/*"
     ]
   },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "auth-callback.html"
+      ],
+      "matches": [
+        "https://carmodpicker.com/*",
+        "https://*.carmodpicker.com/*",
+        "http://localhost/*"
+      ]
+    }
+  ],
   "options_page": "options.html",
   "icons": {
     "16": "icons/icon16.png",
