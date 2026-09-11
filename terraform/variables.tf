@@ -253,3 +253,39 @@ variable "identity_jwt_mode" {
     error_message = "identity_jwt_mode must not be native in staging. Every route there carries the staging access gate's REQUEST authorizer and a route takes exactly one authorizer, so a native JWT authorizer has no slot to occupy. Use gate, which moves the same check into the gate's own Lambda."
   }
 }
+
+# ---------------------------------------------------------------------------
+# Row 12 of the identity adoption plan: the domain routes that need an
+# authenticated caller, enforced at the gateway rather than only inside the
+# function.
+# ---------------------------------------------------------------------------
+
+variable "domain_jwt_enforced" {
+  description = <<-EOT
+    Whether the 80 domain route keys that need an authenticated caller actually require an
+    identity access token at the gateway. Row 12 of docs/identity-adoption.md.
+
+    THE KEYS EXIST EITHER WAY. local.domain_identity_jwt_route_keys writes all 80 route keys into
+    the API in both settings, pointing at the same integration the generated `ANY` pair points at,
+    so a request reaches the same function by the same route regardless. This variable only decides
+    whether each of those keys additionally carries require_identity_jwt, which is what puts it in
+    module.api.identity_jwt_route_keys and so into the gate Lambda's list.
+
+    THE DEFAULT IS false AND IT HAS TO BE, because of the ordering this row sits in. With
+    identity_jwt_mode = "gate", the moment a key is marked the gate demands a valid RS256 identity
+    access token on it, and the CarModPicker frontend still sends the legacy HS256 session token,
+    which the gate rejects. Marking the keys before the frontend cutover signs every user out of
+    every write path in staging. So the keys land first, unmarked and inert, and enforcement is a
+    later one line flip on the workspace variable once the frontend sends identity tokens.
+
+    WHAT THE FLIP COSTS IN A PLAN. In staging the platform module keeps a marked route in the same
+    resource at the same address as an unmarked one, with the same authorization_type CUSTOM and
+    the same gate authorizer, because it only moves routes into its own JWT resource when
+    module.api.identity_jwt is non-null, and in gate mode that is null. So flipping this changes no
+    route resource at all: the only diff is the gate authorizer Lambda's environment, which gains
+    the 80 keys. Flipping it back is the rollback and is equally cheap.
+  EOT
+
+  type    = bool
+  default = false
+}
