@@ -416,11 +416,201 @@ locals {
     "DELETE /api/auth/oauth/{provider}/link" = { integration = "identity", require_identity_jwt = true }
   }
 
-  # The generated pairs plus the fifteen explicit identity keys. The merge cannot collide: every
-  # generated key is `ANY <prefix>` or `ANY <prefix>/{proxy+}` and every explicit key names a
-  # concrete method and a path below `/api/auth`, so no key is written twice and none of the nine
-  # domains' existing keys changes in any way.
-  lambda_domain_route_keys = merge(local.lambda_domain_generated_route_keys, local.identity_jwt_route_keys)
+
+  # ---------------------------------------------------------------------------
+  # Row 12. The domain routes that need an authenticated caller, each given a route key of its own
+  # so that the identity access token can be required on it.
+  #
+  # WHY THIS ROW EXISTS. Row 8 did this for `/api/auth` and deliberately stopped there, and its
+  # comment above says why: the domain keys are `ANY` over a whole prefix, so one key carries both
+  # the anonymous reads and the authenticated writes of a domain and marking it would demand a
+  # token on both. This row splits out the authenticated half. Each key below names one method and
+  # one concrete path, points at the same integration the generated `ANY` pair already points at,
+  # and differs from that pair in exactly one respect: it can be marked.
+  #
+  # WHY THE MARK IS BEHIND A VARIABLE. `var.domain_jwt_enforced` is false by default and the keys
+  # below land unmarked. In staging, `identity_jwt_mode` is "gate", so the moment a key is marked
+  # the gate Lambda demands a valid RS256 identity access token on it, while the CarModPicker
+  # frontend still sends the legacy HS256 session the gate rejects. Landing the keys and enforcing
+  # them in one apply would sign every staging user out of every write path. So this PR lands the
+  # keys inert and the flip is a one line change on the workspace variable afterwards. See
+  # `variable "domain_jwt_enforced"` for what the flip costs in a plan, which is nothing on any
+  # route resource.
+  #
+  # HOW THE SET IS DERIVED, and it is derived rather than chosen. A route is here when its FastAPI
+  # dependency tree reaches `get_current_user`, `get_current_admin_user` or `get_current_superuser`,
+  # all three of which answer 401 without a caller. `backend/tests/entrypoints/test_gateway_routes.py`
+  # recomputes that set from the application and fails if it is not exactly the set below, so a
+  # route added to a router and not added here is a failing test rather than a silent hole.
+  #
+  # WHAT IS DELIBERATELY NOT HERE.
+  #
+  #   - The 15 routes resolving through `get_optional_current_user`, which personalise when a
+  #     caller is signed in and answer anonymously when not. `GET /api/build-lists/{build_list_id}`
+  #     and `GET /api/users/{user_id}` are the shape: marking either would turn a public page into
+  #     a 401 for every signed out visitor. This is the trap in this row, because the optional
+  #     resolver and the required one are one word apart in a router and identical from the
+  #     gateway's side.
+  #   - `POST /api/parts/price-history`, whose dependency is `require_api_key_or_admin`. A valid
+  #     `X-API-Key` is a complete credential there and carries no bearer token at all, so marking
+  #     it would lock out the Chrome extension and the ingestion jobs, which are its only callers.
+  #   - The 12 legacy routes under `/api/auth` that do require a caller. `/api/auth` is the
+  #     `identity` domain and row 8 owns its keys; these 12 are CarModPicker's own pre-package auth
+  #     routes, disjoint from the 15 package paths row 8 marked, and row 13 retires them with the
+  #     legacy session itself. Marking them here would require an identity token on the very
+  #     endpoints that issue and manage the legacy session, which is the circularity row 8's
+  #     comment describes.
+  #   - Everything anonymous by construction: the catalogue reads, the `count` routes, the sitemap
+  #     and health routes.
+  #
+  # THE TWO `count` KEYS BELOW ARE NOT AUTHENTICATED ROUTES, and they are the one piece of this
+  # block that is defensive rather than derived. `GET /api/reports/{report_id}` and
+  # `GET /api/bug-reports/{bug_report_id}` are marked, and `GET /api/reports/count` and
+  # `GET /api/bug-reports/count` are anonymous routes that those two path parameter keys would
+  # otherwise capture: `count` is one segment and matches `{report_id}` as readily as a uuid does.
+  # FastAPI gets this right today only because the router registers `/count` first, and that
+  # ordering does not exist at the gateway. API Gateway resolves it by specificity instead, and a
+  # static segment beats a path variable at the same depth, so naming the two literals explicitly
+  # is what keeps them anonymous. They are written with no `require_identity_jwt`, so they are
+  # inert in both settings of the variable and exist only to hold the more specific match.
+  # This is section 1.4's ordering hazard reappearing, for the reason the `catalog` and `users`
+  # prefix comments above both predicted: splitting a subtree across route keys is what breaks it,
+  # and this row is the first one that splits any subtree.
+  domain_identity_jwt_route_paths = {
+    admin = [
+      "POST /api/admin/db-ops/cars/delete-all",
+      "POST /api/admin/db-ops/init/car-generations",
+      "POST /api/admin/db-ops/init/part-categories",
+      "POST /api/admin/db-ops/part-manufacturers/delete-all",
+      "POST /api/admin/db-ops/parts/delete-all",
+      "GET /api/admin/stats/table-counts",
+      "POST /api/crawled-pages/scrape",
+      "POST /api/part-price-alerts",
+      "GET /api/part-price-alerts/me",
+      "PATCH /api/part-price-alerts/{alert_id}",
+      "DELETE /api/part-price-alerts/{alert_id}",
+    ]
+
+    "build-lists" = [
+      "PUT /api/build-list-labor-estimates/{labor_estimate_id}",
+      "DELETE /api/build-list-labor-estimates/{labor_estimate_id}",
+      "POST /api/build-list-parts/{build_list_id}/create-and-add-part",
+      "POST /api/build-list-parts/{build_list_id}/parts/{part_id}",
+      "PUT /api/build-list-parts/{build_list_id}/parts/{part_id}",
+      "DELETE /api/build-list-parts/{build_list_id}/parts/{part_id}",
+      "PUT /api/build-list-parts/{build_list_part_id}",
+      "DELETE /api/build-list-parts/{build_list_part_id}",
+      "PUT /api/build-list-phases/{phase_id}",
+      "DELETE /api/build-list-phases/{phase_id}",
+      "POST /api/build-lists",
+      "GET /api/build-lists/user/me",
+      "POST /api/build-lists/{build_list_id}/append-images",
+      "POST /api/build-lists/{build_list_id}/copy",
+      "DELETE /api/build-lists/{build_list_id}/images/{image_index}",
+      "POST /api/build-lists/{build_list_id}/labor-estimates",
+      "POST /api/build-lists/{build_list_id}/phases",
+      "PATCH /api/build-lists/{build_list_id}/primary-image",
+      "PUT /api/build-lists/{entity_id}",
+      "DELETE /api/build-lists/{entity_id}",
+    ]
+
+    "build-logs" = [
+      "POST /api/build-logs/build-list/{build_list_id}/posts",
+      "PUT /api/build-logs/posts/{post_id}",
+      "DELETE /api/build-logs/posts/{post_id}",
+    ]
+
+    catalog = [
+      "POST /api/part-manufacturers",
+      "PUT /api/part-manufacturers/{part_manufacturer_id}",
+      "DELETE /api/part-manufacturers/{part_manufacturer_id}",
+      "POST /api/parts",
+      "GET /api/parts/find-by-part-manufacturer-and-part-number",
+      "PUT /api/parts/{entity_id}",
+      "DELETE /api/parts/{part_id}",
+      "POST /api/parts/{part_id}/append-images",
+      "DELETE /api/parts/{part_id}/images/{image_index}",
+      "POST /api/parts/{part_id}/listings",
+      "PATCH /api/parts/{part_id}/primary-image",
+      "POST /api/retailers",
+      "POST /api/retailers/get-or-create",
+      "PUT /api/retailers/{retailer_id}",
+      "DELETE /api/retailers/{retailer_id}",
+    ]
+
+    media = [
+      "GET /api/images/admin/count",
+      "GET /api/images/admin/count-by-entity-type",
+      "GET /api/images/admin/orphaned",
+      "POST /api/images/admin/purge-orphaned",
+      "GET /api/images/by-source-url",
+      "DELETE /api/images/delete",
+      "POST /api/images/upload",
+    ]
+
+    moderation = [
+      "GET /api/bug-reports/admin/list",
+      "GET /api/bug-reports/admin/list-with-details",
+      "GET /api/bug-reports/{bug_report_id}",
+      "PUT /api/bug-reports/{bug_report_id}",
+      "DELETE /api/bug-reports/{bug_report_id}",
+      "GET /api/reports/admin/list",
+      "GET /api/reports/admin/list-with-details",
+      "GET /api/reports/my-reports",
+      "POST /api/reports/{entity_type}/{entity_id}",
+      "GET /api/reports/{report_id}",
+      "PUT /api/reports/{report_id}",
+      "DELETE /api/reports/{report_id}",
+      "GET /api/votes/admin/flagged/{entity_type}",
+      "POST /api/votes/{entity_type}/{entity_id}",
+      "DELETE /api/votes/{entity_type}/{entity_id}",
+    ]
+
+    users = [
+      "PUT /api/app-settings",
+      "GET /api/users/admin/users",
+      "PUT /api/users/admin/users/{user_id}",
+      "DELETE /api/users/admin/users/{user_id}",
+      "GET /api/users/me",
+      "POST /api/users/me/profile-picture",
+      "DELETE /api/users/me/profile-picture",
+      "PUT /api/users/{user_id}",
+      "DELETE /api/users/{user_id}",
+    ]
+  }
+
+  # The 80 keys above, each pointing at the domain that serves its prefix and carrying the flag
+  # only when the variable says to enforce. The integration is the map key rather than a lookup,
+  # so a key cannot name a domain that does not serve its path.
+  domain_identity_jwt_route_keys = merge([
+    for domain, keys in local.domain_identity_jwt_route_paths : {
+      for key in keys : key => {
+        integration          = domain
+        require_identity_jwt = var.domain_jwt_enforced
+      }
+    }
+  ]...)
+
+  # The two literal keys that hold a more specific match than a marked `{id}` key on the same
+  # method and depth, so that an anonymous `count` route is never captured by one. Never marked.
+  domain_anonymous_guard_route_keys = {
+    "GET /api/reports/count"     = { integration = "moderation" }
+    "GET /api/bug-reports/count" = { integration = "moderation" }
+  }
+
+  # The generated pairs, row 8's fifteen explicit identity keys, row 12's eighty domain keys and
+  # row 12's two anonymous guard keys. The merge cannot collide, and each source is disjoint from
+  # the others by construction: every generated key is `ANY <prefix>` or `ANY <prefix>/{proxy+}`,
+  # row 8's keys all name a concrete method and a path below `/api/auth`, and row 12's all name a
+  # concrete method and a path below some other prefix. So no key is written twice, and none of
+  # the nine domains' existing `ANY` keys changes in any way: the new keys sit alongside them and
+  # take precedence only on the exact method and path each one names.
+  lambda_domain_route_keys = merge(
+    local.lambda_domain_generated_route_keys,
+    local.identity_jwt_route_keys,
+    local.domain_identity_jwt_route_keys,
+    local.domain_anonymous_guard_route_keys,
+  )
 }
 
 module "api" {

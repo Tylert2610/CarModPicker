@@ -271,6 +271,122 @@ possible shapes, and they are not equivalent:
 
 Neither is needed for row 11 to be correct, and no Terraform changed in this row.
 
+**The owner decided this on 2026-09-11: the gateway verifies, not the domain
+functions.** That is the first of the two shapes, and it is the one that keeps
+`kms:GetPublicKey` on the one function that signs rather than spreading it across
+all nine. The section below is what that decision costs and how it lands.
+
+## Row 12 preparation: explicit route keys for the authenticated routes
+
+The decision above cannot be applied to the route keys as they stand, for the
+reason the first bullet gives: every domain prefix is served by a generated pair,
+`ANY /api/<prefix>` and `ANY /api/<prefix>/{proxy+}`, and one key carries both the
+anonymous reads and the authenticated writes of that prefix. Marking either would
+demand a token on a public catalogue page. So the preparation is to give every
+route that needs an authenticated caller a key of its own, which is the same move
+row 8 made for `/api/auth` and for the same reason: enforcement granularity at an
+HTTP API is the route key and nothing finer.
+
+`local.domain_identity_jwt_route_paths` in `terraform/apigateway.tf` is that set.
+Each key names one method and one concrete path, points at the same integration
+the generated pair points at, and takes precedence over that pair only on the
+exact method and path it names. Everything else keeps falling through to the
+generated `ANY` keys exactly as before.
+
+### The inventory
+
+80 route keys across seven domains, derived from the application rather than
+chosen: a route is in the set when its FastAPI dependency tree reaches
+`get_current_user`, `get_current_admin_user` or `get_current_superuser`, all three
+of which answer 401 without a caller.
+
+| Domain | Flagged | Left anonymous on the `ANY` keys |
+| --- | --- | --- |
+| `admin` | 11 | 1 |
+| `build-lists` | 20 | 14 |
+| `build-logs` | 3 | 2 |
+| `catalog` | 15 | 28 |
+| `media` | 7 | 1 |
+| `moderation` | 15 | 5 |
+| `users` | 9 | 5 |
+| `vehicles` | 0 | 11 |
+| `identity` | 0 (row 8 owns `/api/auth`) | 24 |
+| **Total** | **80** | **91** |
+
+The 91 are the 171 domain routes less the 80. They divide into the catalogue and
+lookup reads that are anonymous by construction, the 15 routes that resolve
+through the optional resolvers, one route on a shared API key, and the 24 under
+`/api/auth`.
+
+### What is deliberately not flagged
+
+- **The 15 optional-resolver routes.** `get_optional_current_user` returns `None`
+  rather than raising, so these routes serve anonymous callers and personalise
+  when a caller is signed in. `GET /api/build-lists/{build_list_id}` and
+  `GET /api/users/{user_id}` are the shape. Flagging one turns a public page into
+  a 401 for every signed out visitor, and a route key cannot tell the optional
+  resolver from the required one: they are one word apart in a router.
+- **`POST /api/parts/price-history`**, whose dependency is
+  `require_api_key_or_admin`. A valid `X-API-Key` is a complete credential there
+  and carries no bearer token at all, so flagging it locks out the Chrome
+  extension and the ingestion jobs, which are its only callers.
+- **The 12 legacy routes under `/api/auth` that do require a caller.** That prefix
+  is row 8's, and these 12 are CarModPicker's own pre-package auth routes, disjoint
+  from the 15 package paths row 8 marked. Row 13 retires them with the legacy
+  session. Requiring an identity token on the endpoints that issue and manage the
+  legacy session is the circularity row 8's comment describes.
+
+### The two guard keys, which are an ordering hazard rather than a route
+
+`GET /api/reports/{report_id}` and `GET /api/bug-reports/{bug_report_id}` are
+flagged, and `GET /api/reports/count` and `GET /api/bug-reports/count` are
+anonymous. To a gateway those are the same shape: `count` matches `{report_id}` as
+readily as a uuid does. FastAPI gets this right today only because the router
+registers `/count` first, and that ordering does not exist at the gateway. API
+Gateway resolves it by specificity instead, and a static segment beats a path
+variable at the same depth, so `local.domain_anonymous_guard_route_keys` names the
+two literals explicitly to hold the more specific match. They carry no
+`require_identity_jwt` and are inert in both settings of the variable.
+
+This is section 1.4's ordering hazard reappearing, and it is worth naming because
+the `catalog` and `users` prefix comments in `apigateway.tf` both predicted it:
+splitting a subtree across route keys is what breaks it, and this is the first row
+that splits any subtree. `test_gateway_routes.py` asserts the property over the
+whole application rather than over these two cases, so a `/count` style route
+added under any flagged `{id}` key in future fails a test instead of quietly
+becoming a 401.
+
+### The keys land before they are enforced
+
+**This is the part that sequences the row, and getting it wrong signs every
+staging user out.** In staging `identity_jwt_mode` is `gate`, so the moment a key
+carries `require_identity_jwt` the gate Lambda demands a valid RS256 identity
+access token on it. The CarModPicker frontend still sends the legacy HS256 session
+token, which the gate rejects. A PR that landed the keys already flagged would
+therefore break every write path in staging on apply.
+
+So `var.domain_jwt_enforced` gates the flag and **defaults to `false`**. The 80
+keys land as explicit but unflagged route keys, routing exactly as the generated
+`ANY` pair already routed them, and enforcement is a later one line flip on the
+workspace variable once the frontend sends identity tokens.
+
+### The flip procedure
+
+1. Land and apply this preparation PR with `domain_jwt_enforced = false`. Nothing
+   about request handling changes.
+2. Complete the frontend cutover, so the SPA sends an identity access token on
+   every call. That is row 12's `VITE_AUTH_MODE` flip.
+3. Verify in staging that a signed in browser session carries an RS256 token on a
+   write path, and that an anonymous caller still reaches the public reads.
+4. Set `domain_jwt_enforced = true` on the staging workspace and apply. No route
+   resource changes; the gate authorizer Lambda gains the 80 keys in its
+   environment.
+5. Soak, then repeat on production once `identity_jwt_mode` there is `native`.
+
+**Rollback at any point is setting `domain_jwt_enforced` back to `false` and
+applying.** It is the same shape of change in reverse and equally cheap, because
+in gate mode no route resource moves in either direction.
+
 ## What is not here yet
 
 ### Deliberately not in row 4
@@ -325,8 +441,9 @@ unchanged per environment, so no passkey is re-enrolled and no link is re-made.
 | 8 | Terraform: `identity_jwt_mode`, fifteen explicit `/api/auth` route keys, gate enforcement in staging | 4, 5 | landed |
 | 9 | Backend M5 and M6 adoption | 1, 2, 5 | landed |
 | 10 | Chrome extension: auth option, handoff page, publish | 6 | landed |
-| **11** | **Domains read authorizer claims; `sub` becomes the user id** | 8, 9 | **this change** |
-| 12 | Cutover: flip `VITE_AUTH_MODE`, run migrations, verify | 7, 9, 10, 11 | |
+| 11 | Domains read authorizer claims; `sub` becomes the user id | 8, 9 | landed |
+| 12a | Terraform: 80 explicit domain route keys behind `domain_jwt_enforced`, default off | 11 | **this change** |
+| 12 | Cutover: flip `VITE_AUTH_MODE`, run migrations, verify, then `domain_jwt_enforced = true` | 7, 9, 10, 11, 12a | |
 | 13 | Retire legacy: 24 routes, `hashed_password`, `totp_secret`, `SECRET_KEY` | 12, soak | |
 
 Row 6 ships dark behind a flag, which makes row 12 a variable flip rather than a

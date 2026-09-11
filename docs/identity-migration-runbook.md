@@ -441,3 +441,102 @@ session stays signed in, because that path is untouched by this row and by its
 revert. A user signed in through an identity token would need to sign in again,
 which is only possible for someone testing the new flow deliberately, since row
 12 has not flipped the frontend yet.
+
+# Row 12 preparation: the domain route keys
+
+The owner decided on 2026-09-11 that the gateway verifies the identity access
+token on the domain routes, not the domain functions. This row is the Terraform
+that makes that possible, and it deliberately does not switch it on.
+
+## What lands
+
+`local.domain_identity_jwt_route_paths` in `terraform/apigateway.tf` names 80
+route keys, one per `/api` route outside `/api/auth` that needs an authenticated
+caller, plus `local.domain_anonymous_guard_route_keys` with two literal `count`
+keys that keep an anonymous route from being captured by a flagged `{id}` key on
+the same method. Both are merged into `local.lambda_domain_route_keys` alongside
+the generated `ANY` pairs and row 8's fifteen identity keys.
+
+`var.domain_jwt_enforced` decides whether the 80 carry `require_identity_jwt`. It
+defaults to `false` and this row applies with it false.
+
+## Why it must not be enforced on the same apply
+
+In staging `identity_jwt_mode` is `gate`. A flagged route key puts the key in
+`module.api.identity_jwt_route_keys`, which `terraform/staging_access_gate.tf`
+passes to the gate authorizer, and from that moment the gate requires a valid
+RS256 identity access token on those routes. **The CarModPicker frontend still
+sends the legacy HS256 session token, which the gate rejects with a 401.** So
+enforcing on this apply would break every authenticated write path in staging for
+every user, including the owner.
+
+The keys are inert until the frontend cutover. Do not set
+`domain_jwt_enforced = true` before that is ready.
+
+## The expected plan, with the variable false
+
+Run against the staging workspace. The change is 82 new routes and nothing else:
+
+```
+Plan: 82 to add, 0 to change, 0 to destroy.
+```
+
+All 82 are `module.api.aws_apigatewayv2_route.this["<key>"]`, each with
+`authorization_type = "CUSTOM"` and the staging gate's `authorizer_id`, which is
+what every existing route on this API already carries. 80 are the authenticated
+routes and 2 are the guard keys.
+
+**Nothing else may appear in that plan.** In particular no existing route is
+changed or replaced, because the new keys are additional map entries rather than
+edits to the generated `ANY` pairs, and the gate authorizer Lambda is untouched
+because `module.api.identity_jwt_route_keys` is still empty with the variable
+false. A plan showing a change to `module.staging_access_gate` means the variable
+is true; stop and check the workspace variable before applying.
+
+## The expected plan, with the variable true
+
+This is the later enforcement apply, after the frontend cutover:
+
+```
+Plan: 0 to add, 1 to change, 0 to destroy.
+```
+
+The one change is the gate's authorizer Lambda, whose environment gains the 80
+route keys. **No route resource moves, changes or is replaced.** That is a
+property of the platform module in gate mode rather than a coincidence: it only
+moves a marked route into its own JWT resource when `module.api.identity_jwt` is
+non-null, and in gate mode it is null, so a marked route stays at the same
+resource address with the same `authorization_type` and the same authorizer as an
+unmarked one. Only the module's `identity_jwt_route_keys` output changes, and the
+gate consumes it.
+
+A plan at this step that proposes to destroy and recreate routes means the
+workspace is in `native` mode rather than `gate`, which is production's shape and
+not staging's. Do not apply it in staging.
+
+## Rollback
+
+Set `domain_jwt_enforced` back to `false` and apply. The gate authorizer's
+environment loses the 80 keys, every route keeps its address, and the keys go back
+to being inert explicit routes. There is no state to unwind and no user is signed
+out, because the legacy session path is untouched throughout.
+
+To roll back the keys themselves as well, revert the pull request and apply: the
+82 routes are destroyed and every request falls back to the generated `ANY` pair
+that served it before, which is where it was routed all along.
+
+## What keeps the two in step
+
+`backend/tests/entrypoints/test_gateway_routes.py` rebuilds the application,
+walks every route's dependency tree, and asserts the set of routes that refuse an
+anonymous caller is exactly the set `apigateway.tf` names. It fails in both
+directions: a route added behind `get_current_user` with no key, and a key naming
+a route the application serves anonymously. It also asserts each key names the
+domain that serves its prefix, that no key ends in a slash, and that no anonymous
+route is capturable by a flagged path parameter key. Run it after any route
+change:
+
+```
+cd backend
+TESTING=true SECRET_KEY=test-secret-key python -m pytest tests/entrypoints/test_gateway_routes.py
+```
