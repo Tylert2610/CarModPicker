@@ -20,9 +20,21 @@ module "staging_access_gate" {
   # measures a few hundred bytes regardless of how many routes are enforced.
   #
   # identity_jwt and identity_jwt_route_keys are the inputs this root passes and they are unchanged;
-  # how they reach the function was never part of the module's interface. The bump plans one in-place
-  # update of the authorizer function (source hash, filename, environment) and nothing else.
-  version = "~> 2.11"
+  # how they reach the function was never part of the module's interface.
+  #
+  # 2.12 is the fix for a defect that made enforcement useless here. The authorizer verifies a token
+  # against the issuer's JWKS, and this product's issuer is this same API: local.identity_issuer is
+  # built from the API custom domain, so the derived JWKS URL is
+  # https://api.staging.carmodpicker.com/api/auth/.well-known/jwks.json, a path that carries this
+  # very authorizer. The authorizer's own fetch has no gate cookie and no origin header, so the gate
+  # refused it 403 and every valid RS256 token was denied "JWKS unavailable". No authenticated
+  # request had ever succeeded through this gate; anonymous-only verification never reached it,
+  # because an anonymous route fetches no key set at all. 2.12.0 sends the origin verification
+  # header on that fetch and exempts the issuer's .well-known subtree, which is public key material.
+  #
+  # The bump plans one in-place update of the authorizer function (source hash, and the config file
+  # rendered into its archive) and nothing else.
+  version = "~> 2.12"
 
   name             = local.prefix
   cookie_domain    = local.domain_name
