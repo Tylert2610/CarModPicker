@@ -126,11 +126,35 @@ class AdminUserUpdate(BaseModel):
         return s
 
 
+# Read models take `email` as a plain `str`, deliberately, while the write
+# models above keep `EmailStr`.
+#
+# A response model has to be able to serialise anything the write path
+# legitimately accepted, plus anything already sitting in the table. It cannot,
+# when it revalidates a stored value with a rule stricter than the one that let
+# the value in. `email` is a plain `str` on the DynamoDB row
+# (`app/db/dynamo/users.py`), so the stored value is whatever the writer put
+# there, and `EmailStr` re-runs full `email-validator` checks on the way out.
+#
+# That is not hypothetical. Staging users are seeded with addresses under
+# `staging.invalid`, and `.invalid` is an IANA special-use reserved TLD that
+# `email-validator` rejects. Reading one of those rows raised a `ValidationError`
+# inside response serialisation, which surfaces as an unhandled HTTP 500 rather
+# than as a 422, because by then the request has already succeeded and there is
+# no request body left to blame. It fired the
+# `carmodpicker-staging-application-errors` alarm.
+#
+# Returning the stored value is strictly better than 500ing on it: the caller
+# can see and correct a bad address, and an operator can read the row. Input
+# validation stays where it belongs, on `UserCreate`, `UserUpdate` and
+# `AdminUserUpdate`, so no new bad address can be written through the API.
+
+
 # Schema for public user data (excludes sensitive fields like email_verified and totp_enabled)
 class PublicUserRead(BaseModel):
     id: UUID
     username: str
-    email: EmailStr
+    email: str
     disabled: bool
     image_urls: Optional[List[str]] = None
     is_superuser: bool
@@ -158,7 +182,7 @@ class PublicUserRead(BaseModel):
 class UserRead(BaseModel):
     id: UUID
     username: str
-    email: EmailStr
+    email: str
     disabled: bool
     email_verified: bool
     image_urls: Optional[List[str]] = None

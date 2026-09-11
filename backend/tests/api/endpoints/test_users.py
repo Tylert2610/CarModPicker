@@ -726,3 +726,58 @@ def test_delete_profile_picture_storage_failure_graceful(client: TestClient, db_
                 user_before = UserRepository().get_or_raise(user_id)
                 # DB should be rolled back (image_urls should still be set)
                 assert user_before.image_urls == old_image_urls, "DB should be rolled back on storage deletion failure"
+
+
+# --- Reserved / undeliverable stored email regression ---
+#
+# A user row whose stored `email` is under a reserved TLD used to make every
+# route that serialises a user return HTTP 500. `UserRead.email` and
+# `PublicUserRead.email` were `EmailStr`, so Pydantic re-ran the full
+# `email-validator` deliverability checks on the way *out*, and `.invalid` is an
+# IANA special-use name that those checks reject. Response-model validation
+# failed after the request had already succeeded, which is an unhandled
+# exception rather than a 422, and it fired the staging application-errors
+# alarm.
+#
+# Rows like this reach the table through writers other than `UserCreate`: the
+# staging seeder and the identity package's `create_user` hook both take
+# `email` as a plain `str`. `UserRepository.update` is used here for the same
+# reason, to write the stored value without going through API input validation.
+RESERVED_TLD_EMAIL = "row12-cutover-check@staging.invalid"
+
+
+def test_read_user_with_reserved_tld_email_returns_200(client: TestClient, db_session: Any) -> None:
+    """Reading a user whose stored email has a reserved TLD returns 200, not 500."""
+    user_info, token = create_and_login_user(client, "reserved_tld_email")
+    headers = get_auth_headers(token)
+    user_id = UUID(user_info["id"])
+
+    # Write the undeliverable address straight onto the row, the way an
+    # out-of-band seeder does, bypassing UserCreate/UserUpdate validation.
+    UserRepository().update(user_id, email=RESERVED_TLD_EMAIL)
+    stored = UserRepository().get_or_raise(user_id)
+    assert stored.email == RESERVED_TLD_EMAIL
+
+    # UserRead path: the caller reading their own record.
+    me_response = client.get(f"{settings.API_STR}/users/me", headers=headers)
+    assert me_response.status_code == 200, me_response.text
+    assert me_response.json()["email"] == RESERVED_TLD_EMAIL
+    assert me_response.json()["id"] == user_info["id"]
+
+    # Read-by-id path, which returns UserRead for the user themselves.
+    by_id_response = client.get(f"{settings.API_STR}/users/{user_id}", headers=headers)
+    assert by_id_response.status_code == 200, by_id_response.text
+    assert by_id_response.json()["email"] == RESERVED_TLD_EMAIL
+
+
+def test_write_path_still_rejects_reserved_tld_email(client: TestClient, db_session: Any) -> None:
+    """Relaxing the read models must not let a new bad address in through the API."""
+    response = client.post(
+        f"{settings.API_STR}/users/",
+        json={
+            "username": "reserved_tld_write_attempt",
+            "email": RESERVED_TLD_EMAIL,
+            "password": "password123",
+        },
+    )
+    assert response.status_code == 422, response.text

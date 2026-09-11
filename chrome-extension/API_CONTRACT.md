@@ -29,7 +29,6 @@ TESTING=true ENABLE_RATE_LIMITING=false python scripts/generate_ext_api_contract
       "type": "boolean"
     },
     "email": {
-      "format": "email",
       "title": "Email",
       "type": "string"
     },
