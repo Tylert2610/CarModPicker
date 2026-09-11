@@ -120,6 +120,56 @@ documents answer under `/api/auth` rather than at the origin root, and the
 The audience is `carmodpicker-<env>-api`, carrying the environment so a staging
 token is not accepted by production.
 
+## Row 8: the token enforced at the gateway
+
+Row 8 is done, and it turned out to be a different shape from the one row 4
+sketched above. The sketch assumed the authorizer was the whole of it and that
+the existing `ANY /api/auth` pair needed nothing added. Both halves changed.
+
+**`var.identity_jwt_mode`, with values `native`, `gate` and `off`.** Enforcement
+needs two different mechanisms because an HTTP API route takes exactly one
+authorizer and which one is free differs by environment. `gate` puts the check
+in the staging access gate's own Lambda authorizer, which already holds every
+route's slot: the signed cookie first, exactly as before, then a Bearer access
+token on the marked routes. `native` creates API Gateway's own JWT authorizer,
+which is the ungated shape production will use. `off`, the default, enforces
+nothing. A variable validation refuses `native` in staging, because there is no
+slot for it there.
+
+**Staging is `gate`, set as a workspace variable rather than in this
+repository. Production stays `off` until the identity stack is promoted.**
+`CreateAuthorizer` synchronously fetches
+`<issuer>/.well-known/openid-configuration` from outside AWS with none of our
+credentials, so turning `native` on before the promotion fails the apply rather
+than leaving anything open. That is the safe direction but it is still a failed
+apply; set it in the apply that follows the promotion.
+
+**Fifteen explicit route keys, which row 4 did not anticipate.** Enforcement
+granularity is the route key and nothing finer, and row 27 cut this whole domain
+onto `ANY /api/auth` and `ANY /api/auth/{proxy+}`, so the token bearing routes
+and the anonymous ones share a key. Marking that key would require a token on
+`login`, `register` and `refresh`, which is an API nobody can sign in to. So
+`password`, `logout-all`, the five TOTP and step-up routes, the five passkey
+management routes and the three OAuth link routes each get a key of their own,
+pointed at the same `identity` integration, and are marked there. API Gateway
+picks the most specific match, so every other method and path under `/api/auth`
+still falls to the proxy key untouched. `terraform/apigateway.tf` carries the
+per-route reasoning, including why `login/totp`, `logout`, the passkey login
+legs and `oauth/{provider}/start` stay open.
+
+**The two `.well-known` documents needed no key.** In production `authorizer_id`
+is null, so the module's default authorization type is already `NONE` on the
+proxy key that serves them, and the anonymous discovery fetch succeeds. In
+staging no native authorizer is created at all, so nothing fetches discovery,
+and giving them `NONE` there would punch a hole past the gate on two paths that
+currently sit behind it.
+
+**No backend change.** Nothing in `backend/app` reads authorizer claims today;
+the only `requestContext` consumer is the shared rate limiter, which reads the
+source IP. Row 11 is where the domains start reading claims, and that is where
+the two context shapes, `authorizer.jwt.claims` in production and
+`authorizer.lambda["jwt.claims"]` in staging, get their one-line reader.
+
 ## What is not here yet
 
 ### Deliberately not in row 4
@@ -171,7 +221,7 @@ unchanged per environment, so no passkey is re-enrolled and no link is re-made.
 | 5 | Backend M1 to M4: hooks, `composition/identity.py`, mount | 4 | next |
 | 6 | Frontend: `AuthClient`, delete `tokenStore`, verify and reset pages, behind `VITE_AUTH_MODE` | — | |
 | 7 | Credential migration script plus TOTP seed sealing script | 5 | |
-| 8 | Terraform: JWT authorizer, `.well-known` at `NONE` | 4, 5 | |
+| **8** | **Terraform: `identity_jwt_mode`, fifteen explicit `/api/auth` route keys, gate enforcement in staging** | 4, 5 | **this change** |
 | 9 | Backend M5 and M6 adoption | 1, 2, 5 | |
 | 10 | Chrome extension: auth option, handoff page, publish | 6 | |
 | 11 | Domains read authorizer claims; `sub` becomes the user id | 8, 9 | |

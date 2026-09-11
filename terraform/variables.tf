@@ -200,3 +200,56 @@ variable "oauth_github_client_secret" {
   sensitive   = true
   default     = ""
 }
+
+# ---------------------------------------------------------------------------
+# Row 8 of the identity adoption plan: the identity access token enforced at
+# the gateway rather than only inside the identity function.
+# ---------------------------------------------------------------------------
+
+variable "identity_jwt_mode" {
+  description = <<-EOT
+    How the gateway enforces the identity module's access tokens on the routes that need an
+    authenticated caller. The routes themselves are marked once, with require_identity_jwt in
+    terraform/apigateway.tf; this variable only picks which of the two mechanisms carries out the
+    check, because an HTTP API route takes exactly one authorizer and which one is free depends on
+    whether the staging access gate is in front of the API.
+
+      "gate"    The staging access gate's own Lambda authorizer does both checks: the signed gate
+                cookie as before, then a valid Bearer access token on the marked routes. This is
+                what a gated staging environment has to use, because the gate already occupies the
+                route's one authorizer slot. module.api.identity_jwt stays null and no route moves.
+
+      "native"  API Gateway's own JWT authorizer verifies the token: the RS256 signature against
+                the issuer's JWKS, then iss, aud, exp and nbf, with nothing of ours on the request
+                path. This is the ungated shape, which is what production is. The marked routes
+                become authorization_type JWT and are replaced, because the platform module keeps
+                them in a separate resource so the .well-known routes can exist before the
+                authorizer and the protected routes after it.
+
+      "off"     Nothing is enforced at the gateway. The identity function still verifies the token
+                itself, which it does in every mode: this is an extra gate in front of it, never a
+                replacement for its own check. Every route named in apigateway.tf keeps answering
+                exactly as it does today.
+
+    The default is "off" and PRODUCTION KEEPS IT for now. "native" creates an authorizer whose
+    CreateAuthorizer call synchronously fetches <issuer>/.well-known/openid-configuration from
+    outside AWS, so it fails unless the identity function is already deployed and already serving
+    those two documents at the production API host. The identity stack has not been promoted to
+    production yet, so turning this on there before that promotion fails the apply rather than
+    leaving anything open. Set it to "native" on the production workspace in the apply that follows
+    the promotion, not before.
+  EOT
+
+  type    = string
+  default = "off"
+
+  validation {
+    condition     = contains(["native", "gate", "off"], var.identity_jwt_mode)
+    error_message = "identity_jwt_mode must be one of native, gate or off."
+  }
+
+  validation {
+    condition     = var.identity_jwt_mode != "native" || var.environment != "staging"
+    error_message = "identity_jwt_mode must not be native in staging. Every route there carries the staging access gate's REQUEST authorizer and a route takes exactly one authorizer, so a native JWT authorizer has no slot to occupy. Use gate, which moves the same check into the gate's own Lambda."
+  }
+}
