@@ -1,4 +1,4 @@
-webbpulse[fastapi,otel,dynamodb,aws-otel,security,identity,oauth,passkeys]==0.19.0
+webbpulse[fastapi,otel,dynamodb,aws-otel,security,identity,oauth,passkeys]==0.20.0
 
 annotated-types==0.8.0
 anyio==4.15.0
