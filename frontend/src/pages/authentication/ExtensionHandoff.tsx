@@ -23,7 +23,7 @@
  * an open redirect that carries a credential in its fragment.
  *
  * So the target must parse, must use the `chrome-extension:` scheme, and its
- * extension id must appear in `VITE_EXTENSION_IDS`. An id that is not on the
+ * extension id must appear in `VITE_ALLOWED_EXTENSION_IDS`. An id that is not on the
  * list is refused outright rather than being allowed in development, because
  * the thing being handed over is a credential and "it worked on my machine" is
  * how that check gets left off.
@@ -61,13 +61,19 @@ export const EXTENSION_HANDOFF_PATH = '/api/auth/extension/handoff';
 /**
  * The extension ids this frontend will hand a code to.
  *
- * Comma separated in `VITE_EXTENSION_IDS`. Empty means no extension is
- * trusted, which is the safe default for an environment that forgot to set it.
+ * Comma separated in `VITE_ALLOWED_EXTENSION_IDS`, the same variable the legacy
+ * `/extension-auth` page reads and the same one `frontend-deploy.yml` already
+ * supplies from `vars.CWS_EXTENSION_ID`. Deliberately shared rather than given
+ * a name of its own: two allowlists for one extension is how one of them ends
+ * up unset, and an unset allowlist here refuses every handoff silently.
+ *
+ * Empty means no extension is trusted, which is the safe default for an
+ * environment that forgot to set it.
  */
 export const allowedExtensionIds = (
   env: Record<string, unknown> = import.meta.env
 ): string[] => {
-  const raw = env['VITE_EXTENSION_IDS'];
+  const raw = env['VITE_ALLOWED_EXTENSION_IDS'];
   if (typeof raw !== 'string') return [];
   return raw
     .split(',')

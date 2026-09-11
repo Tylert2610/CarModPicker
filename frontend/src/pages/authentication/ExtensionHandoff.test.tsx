@@ -12,7 +12,7 @@ const ALLOWED = ['abcdefghijklmnopabcdefghijklmnop'];
 describe('allowedExtensionIds', () => {
   it('reads a comma separated list', () => {
     expect(
-      allowedExtensionIds({ VITE_EXTENSION_IDS: 'aaa, bbb ,ccc' })
+      allowedExtensionIds({ VITE_ALLOWED_EXTENSION_IDS: 'aaa, bbb ,ccc' })
     ).toEqual(['aaa', 'bbb', 'ccc']);
   });
 
@@ -20,7 +20,7 @@ describe('allowedExtensionIds', () => {
     // The safe default for an environment that forgot to set it. An empty
     // allowlist refuses every extension rather than permitting any.
     expect(allowedExtensionIds({})).toEqual([]);
-    expect(allowedExtensionIds({ VITE_EXTENSION_IDS: '' })).toEqual([]);
+    expect(allowedExtensionIds({ VITE_ALLOWED_EXTENSION_IDS: '' })).toEqual([]);
   });
 });
 
