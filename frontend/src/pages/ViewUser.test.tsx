@@ -1,9 +1,3 @@
-// Phase 8 plan 08-14 (D-11) — ViewUser public-profile render + 404 path.
-//
-// ViewUser imports `apiClient` from `../api/client` and `buildListsApi` from
-// `../api/build_lists`. setup.ts mocks the client, and the domain module calls
-// through it, so both paths land on the same mocked Axios surface.
-
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
@@ -32,8 +26,6 @@ describe('ViewUser page', () => {
   });
 
   it('renders a public user profile when the user fetch succeeds', async () => {
-    // First call is GET /users/:id → returns the profile; second call is
-    // GET /build-lists/user/:id → returns an empty list.
     vi.mocked(apiClient.get).mockImplementation((url: string) => {
       if (url.startsWith('/users/')) {
         return Promise.resolve({ data: mockUser });
@@ -52,7 +44,6 @@ describe('ViewUser page', () => {
       </MemoryRouter>
     );
 
-    // PageHeader renders `Profile: <username>` plus a Username CardInfoItem.
     await waitFor(() =>
       expect(
         screen.getByRole('heading', {
@@ -79,8 +70,6 @@ describe('ViewUser page', () => {
       </MemoryRouter>
     );
 
-    // Source renders `ErrorAlert` with "Failed to load profile for User ID
-    // "<id>". <error-message>" when userApiError is set.
     await waitFor(() =>
       expect(
         screen.getByText(

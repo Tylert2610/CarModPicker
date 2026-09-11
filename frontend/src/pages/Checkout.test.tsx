@@ -1,12 +1,3 @@
-// Phase 8 plan 08-14 (D-11) — Checkout page authenticated-render test.
-//
-// Checkout has no auth gate — it relies on `useAuth().user` to show the
-// "billed to" email row. Cover: auth render (order summary + disabled
-// subscribe CTA), email visible in billed-to row, back-to-pricing link.
-//
-// NOTE: bypasses test-utils.tsx's customRender for the same reason as
-// Pricing.test.tsx (createMockUser returns incomplete UserRead).
-
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { BrowserRouter } from 'react-router-dom';
@@ -56,7 +47,6 @@ describe('Checkout page', () => {
         <Checkout />
       </BrowserRouter>
     );
-    // mockUser.email is 'test@example.com'.
     expect(screen.getByText(/test@example\.com/i)).toBeInTheDocument();
   });
 

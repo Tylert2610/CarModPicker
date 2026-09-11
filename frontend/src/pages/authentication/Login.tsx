@@ -36,9 +36,8 @@ import {
 } from '../../api/identityAuth';
 
 /**
- * Only accept returnTo values that look like a local path. Blocks protocol-
- * relative and absolute URLs so a crafted /login?returnTo=... link can't be
- * used as an open-redirect gadget.
+ * Accept only returnTo values that look like a local path, so a crafted
+ * `/login?returnTo=` link cannot be used as an open redirect.
  */
 const safeReturnTo = (value: string | null): string => {
   if (!value) return '/';
@@ -46,16 +45,15 @@ const safeReturnTo = (value: string | null): string => {
   return value;
 };
 
+/**
+ * Sign in page, covering password, passkey, and provider callback flows for
+ * both the bearer and identity auth modes.
+ */
 function Login() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [otp, setOtp] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  // The challenge from the first leg, or null when there is no challenge in
-  // flight. Replaces the boolean this used to hold: in identity mode the second
-  // leg needs the server's ticket, and in bearer mode it needs the credentials
-  // again, so "a second factor is required" and "here is what it needs" are one
-  // fact rather than two.
   const [challenge, setChallenge] = useState<LoginChallenge | null>(null);
   const [isPasskeyLoading, setIsPasskeyLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -63,12 +61,6 @@ function Login() {
   const [searchParams] = useSearchParams();
   const returnTo = safeReturnTo(searchParams.get('returnTo'));
   const { login: authLogin, checkAuthStatus } = useAuth();
-  // Both mechanisms carry passkeys and OAuth, and they carry them differently:
-  // the legacy ones speak CarModPicker's own routes through
-  // `@simplewebauthn/browser` and `@react-oauth/google`, the identity ones go
-  // through the package. `available` says the mode has the affordance at all;
-  // the identity components ask the deployment whether it is actually on and
-  // render nothing when it is not.
   const available = identityAvailability();
   const identityMode = AUTH_MODE === 'identity';
   const passkeySupported =
@@ -76,21 +68,15 @@ function Login() {
   const googleAvailable =
     !identityMode && isGoogleConfigured() && available.googleOauth;
   const requires2FA = challenge !== null;
-  // Only the identity service issues recovery codes, and one is not six digits,
-  // so the field stops being numeric when they are accepted.
   const allowRecoveryCode = acceptsRecoveryCodes();
 
   const [apiError, setApiError] = useState<string | null>(null);
   const isLoading = isSubmitting;
 
   /**
-   * Finishes a sign in that has already succeeded on the server.
-   *
-   * Bearer login answers with the user in the body, so it is handed straight
-   * to the context. Identity login answers with a token and no user, because
-   * this application reads roughly twenty `UserRead` fields that no token claim
-   * carries, so the user is fetched. One function rather than two so the
-   * navigate happens in one place either way.
+   * Finishes a sign in that has already succeeded on the server. Bearer login
+   * carries the user in the body; identity login carries a token, so the user
+   * is fetched before the single shared navigate.
    */
   const finishLogin = async (user: UserRead | null) => {
     if (user !== null) {
@@ -102,13 +88,8 @@ function Login() {
   };
 
   /**
-   * Acts on an OAuth callback this page was reached from.
-   *
-   * Four markers, three of which are already modelled by the password flow's
-   * own states: a completed sign in finishes exactly like a password one, an
-   * MFA ticket becomes the same challenge the second leg reads, and a refusal
-   * becomes the same banner. `linked` cannot reach the login page (it is a
-   * callback for a signed in user), so it is folded into the sign in case.
+   * Acts on an OAuth callback this page was reached from, mapping each marker
+   * onto the state the password flow already models.
    */
   useOAuthCallback(async (result) => {
     if (result.kind === 'signed-in' || result.kind === 'linked') {
@@ -187,8 +168,6 @@ function Login() {
       return;
     }
 
-    // Second leg. The code is whatever the mode accepts: six digits always,
-    // and a recovery code too when the identity service is the one checking.
     if (challenge !== null) {
       const code = otp.trim();
       if (code === '') {
@@ -218,7 +197,6 @@ function Login() {
       return;
     }
 
-    // First leg.
     setIsSubmitting(true);
     try {
       const result = await signIn(username, password);
@@ -356,9 +334,6 @@ function Login() {
                       required
                       value={otp}
                       onChange={(e) => {
-                        // A recovery code is not six digits, so stripping
-                        // non-digits would make it impossible to type. The
-                        // server tells the two apart by shape.
                         const raw = e.target.value;
                         setOtp(
                           allowRecoveryCode

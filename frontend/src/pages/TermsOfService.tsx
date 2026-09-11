@@ -6,6 +6,7 @@ const LAST_UPDATED = 'April 15, 2026';
 const CONTACT_EMAIL = 'tyler@webbpulse.com';
 const GOVERNING_STATE = 'California';
 
+/** Static terms of service page. */
 function TermsOfService() {
   useDocumentMeta({
     title: 'Terms of Service',

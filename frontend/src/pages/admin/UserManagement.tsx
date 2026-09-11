@@ -41,6 +41,7 @@ const updateUserRequestFn = (payload: {
 const deleteUserRequestFn = (userId: string) =>
   usersApi.adminDeleteUser(userId);
 
+/** Admin page for viewing user accounts and managing their roles and status. */
 function UserManagement() {
   const { user: currentUser } = useAuth();
   const navigate = useNavigate();
@@ -90,25 +91,22 @@ function UserManagement() {
     setError: setDeleteError,
   } = useApiRequest(deleteUserRequestFn);
 
-  // Redirect non-admin users
   useEffect(() => {
     if (currentUser && !currentUser.is_admin) {
       void navigate('/');
     }
   }, [currentUser, navigate]);
 
-  // Debounce search term - update debouncedSearchTerm after user stops typing
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedSearchTerm(searchTerm);
-    }, 300); // 300ms delay
+    }, 300);
 
     return () => {
       clearTimeout(timer);
     };
   }, [searchTerm]);
 
-  // Reset to page 1 when debounced search term changes
   useEffect(() => {
     setCurrentPage(1);
   }, [debouncedSearchTerm]);
@@ -124,17 +122,14 @@ function UserManagement() {
     void fetchUsers(params);
   }, [fetchUsers, currentPage, debouncedSearchTerm]);
 
-  // Restore focus after data updates if input was previously focused
   useEffect(() => {
     if (wasFocusedRef.current) {
-      // Use requestAnimationFrame to ensure DOM has updated
       requestAnimationFrame(() => {
         const input = document.getElementById(
           'user-search'
         ) as HTMLInputElement;
         if (input && document.activeElement !== input) {
           input.focus();
-          // Restore cursor position if possible
           if (searchTerm.length > 0) {
             input.setSelectionRange(searchTerm.length, searchTerm.length);
           }
@@ -143,7 +138,6 @@ function UserManagement() {
     }
   }, [usersData, searchTerm]);
 
-  // Extract users and pagination info from the response
   const users = usersData?.data || [];
   const pagination = usersData?.pagination;
 
@@ -172,7 +166,6 @@ function UserManagement() {
   const handleUpdateUser = async () => {
     if (!selectedUser) return;
 
-    // Build update data - send all fields, backend will handle partial updates
     const updateData: AdminUserUpdate = {
       username: formData.username || null,
       email: formData.email || null,
@@ -186,7 +179,6 @@ function UserManagement() {
       subscription_expires_at: formData.subscription_expires_at || null,
     };
 
-    // Only include password if it was changed
     if (formData.password) {
       updateData.password = formData.password;
     }
@@ -280,12 +272,10 @@ function UserManagement() {
   };
 
   const canEditUser = () => {
-    // Prevent editing yourself in a way that would lock you out
-    return true; // Admin can edit all users, backend will prevent removing own admin
+    return true;
   };
 
   const canDeleteUser = (user: UserRead) => {
-    // Prevent deleting yourself
     return user.id !== currentUser.id;
   };
 

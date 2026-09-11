@@ -2,7 +2,6 @@ import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-// jsdom ResizeObserver stub — kept defensively for downstream charts.
 class ResizeObserverStub {
   constructor(_cb: ResizeObserverCallback) {
     void _cb;
@@ -161,20 +160,16 @@ describe('ViewPart Price by retailer block (collapsed)', () => {
 
     renderViewPart();
 
-    // Page loads.
     await waitFor(() =>
       expect(
         screen.getByRole('heading', { level: 1, name: mockPart.name })
       ).toBeInTheDocument()
     );
 
-    // Section header is always rendered (sibling of subscribe button), but
-    // the body — the table + summary header — should not appear.
     expect(
       screen.queryByTestId('price-summary-header')
     ).not.toBeInTheDocument();
     expect(screen.queryByTestId('retailer-row')).not.toBeInTheDocument();
-    // Empty-state copy renders instead.
     expect(
       screen.getByText('No retailer pricing observed yet.')
     ).toBeInTheDocument();
@@ -209,7 +204,6 @@ describe('ViewPart Price by retailer block (collapsed)', () => {
       expect(screen.getByTestId('price-summary-header')).toBeInTheDocument()
     );
 
-    // One row per retailer, no tabs anywhere.
     expect(screen.getAllByTestId('retailer-row')).toHaveLength(
       retailers.length
     );
@@ -252,7 +246,6 @@ describe('ViewPart Price by retailer block (collapsed)', () => {
     const header = await waitFor(() =>
       screen.getByTestId('price-summary-header')
     );
-    // Format: $9.00–$21.00 across 2 retailers, last observed ↓ <date>
     expect(header.textContent).toContain('$9.00');
     expect(header.textContent).toContain('$21.00');
     expect(header.textContent).toContain('across 2 retailers');
@@ -297,7 +290,6 @@ describe('ViewPart Price by retailer block (collapsed)', () => {
       expect(screen.getByText('Stale Shop')).toBeInTheDocument()
     );
 
-    // Single source of truth for the stale caveat — exactly one occurrence.
     const staleMatches = screen.getAllByText(/as of/i);
     expect(staleMatches).toHaveLength(1);
   });
@@ -319,8 +311,6 @@ describe('ViewPart Price by retailer block (collapsed)', () => {
       history: [],
       window: '90d',
     };
-    // makeListing assigns retailer_id = `r-${id}` — pass id "L1" to align
-    // with the retailer above so the join produces a product_url.
     const listings = [makeListing('L1', 'Linked Shop', 5)];
     installGetRouting({ summary, listings });
 
@@ -331,7 +321,6 @@ describe('ViewPart Price by retailer block (collapsed)', () => {
     );
     expect(link.getAttribute('target')).toBe('_blank');
     expect(link.getAttribute('rel')).toBe('noopener noreferrer');
-    // Lucide ExternalLink renders as an <svg> child of the link.
     expect(link.querySelector('svg')).not.toBeNull();
   });
 });

@@ -10,6 +10,7 @@ import useApiRequest from '../../hooks/UseApiRequest';
 import { authApi } from '../../api/auth';
 import type { NewPassword } from '../../types/Api';
 
+/** Landing page for CarModPicker's own reset link, where a new password is set. */
 function ForgotPasswordConfirm() {
   const [newPassword, setNewPassword] = useState('');
   const [confirmNewPassword, setConfirmNewPassword] = useState('');

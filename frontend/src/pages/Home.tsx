@@ -18,6 +18,7 @@ import { partsApi } from '../api/parts';
 import { retailersApi } from '../api/retailers';
 import type { BuildListReadWithVotes } from '../types/Api';
 
+/** Landing page. Shows featured build lists over headline catalog counts. */
 export default function HomePage() {
   useDocumentMeta({
     title: 'CarModPicker | Plan, track, and share your car build',
@@ -30,7 +31,6 @@ export default function HomePage() {
     BuildListReadWithVotes[]
   >([]);
 
-  // Fetch featured build lists (top 6 by votes)
   const fetchFeaturedBuildListsFn = useCallback(
     () =>
       buildListsApi.getBuildListsWithVotes({
@@ -47,9 +47,6 @@ export default function HomePage() {
     executeRequest: fetchFeaturedBuildLists,
   } = useApiRequest(fetchFeaturedBuildListsFn);
 
-  // Stats bar: approximate totals for the four stat tiles. Using the /count
-  // endpoints (reltuples on Postgres) rather than pagination.total_items so the
-  // banner numbers don't force a real COUNT(*) on parts / build_lists.
   const fetchBuildListsCountFn = useCallback(
     () => buildListsApi.countBuildLists(),
     []
@@ -90,7 +87,6 @@ export default function HomePage() {
 
   useEffect(() => {
     if (featuredBuildListsData?.data) {
-      // Sort by total votes (upvotes - downvotes) descending
       const sorted = [...featuredBuildListsData.data].sort(
         (a, b) => b.total_votes - a.total_votes
       );

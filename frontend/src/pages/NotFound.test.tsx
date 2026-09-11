@@ -1,8 +1,3 @@
-// Phase 8 plan 08-14 (D-11) — static 404 page test for NotFound.
-//
-// Smallest page in the plan (27 lines). Covers the 404 render + "Go Home"
-// link that App.tsx routes the catch-all `*` route to (Phase 6 FE-03).
-
 import { describe, expect, it } from 'vitest';
 import { render, screen, testScenarios } from '../test/utils/test-utils';
 import NotFound from './NotFound';

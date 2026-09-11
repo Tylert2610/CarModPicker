@@ -29,10 +29,9 @@ const getChromeRuntime = (): ExtensionRuntime | null => {
 };
 
 /**
- * Parse VITE_ALLOWED_EXTENSION_IDS (comma-separated) into a set of IDs the web
- * page is willing to hand the user's token to. Hand-off to unknown extensions
- * is refused in production to prevent a malicious site from sending visitors
- * through /extension-auth with their own extension ID.
+ * Parse `VITE_ALLOWED_EXTENSION_IDS` into the set of extension ids this page
+ * will hand a token to. Unknown ids are refused so a malicious site cannot
+ * route visitors through `/extension-auth` with its own id.
  */
 const getAllowedExtensionIds = (): ReadonlyArray<string> => {
   const raw = import.meta.env['VITE_ALLOWED_EXTENSION_IDS'] as
@@ -47,7 +46,6 @@ const getAllowedExtensionIds = (): ReadonlyArray<string> => {
 const isExtensionIdAllowed = (extensionId: string): boolean => {
   const allowlist = getAllowedExtensionIds();
   if (allowlist.length > 0) return allowlist.includes(extensionId);
-  // No allowlist configured: permitted in dev, rejected in prod.
   return import.meta.env.DEV;
 };
 
@@ -57,6 +55,10 @@ type HandoffState =
   | { kind: 'success' }
   | { kind: 'error'; message: string };
 
+/**
+ * Legacy token handoff page for the Chrome extension, which passes a token to
+ * an allowlisted extension id.
+ */
 function ExtensionAuth() {
   const [searchParams] = useSearchParams();
   const { isAuthenticated, isLoading } = useAuth();
@@ -93,14 +95,6 @@ function ExtensionAuth() {
       });
       return;
     }
-    // In bearer mode this is the `localStorage` token, which lives until it
-    // expires. In identity mode `getStoredToken` reads the in-memory access
-    // token instead, so the handoff still works, but what the extension
-    // receives is short lived and it holds no refresh cookie of its own to
-    // renew it. The extension will need its own grant before identity mode is
-    // switched on for an environment whose users rely on it; that is tracked
-    // with the cutover rather than solved here, because the fix is a backend
-    // route and an extension release rather than a change to this page.
     const token = getStoredToken();
     if (!token) {
       setHandoff({

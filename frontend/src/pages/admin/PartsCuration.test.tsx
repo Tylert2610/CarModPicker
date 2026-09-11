@@ -1,27 +1,3 @@
-// Phase 8 plan 08-18 (Wave 4 — D-02) — PartsCuration admin page test.
-//
-// PartsCuration is the admin canonical-part curation workflow page (762 lines).
-// It uses adminApi (from ../../api/admin) for its core actions:
-//   - getPartLinkGroup(partId)        — GET  /admin/parts/:id/link-group
-//   - promotePartToCanonical(partId)  — POST /admin/parts/promote-canonical
-//   - unlinkPartFromCanonical(partId) — POST /admin/parts/unlink
-//   - manuallyLinkParts(body)         — POST /admin/parts/link (merge-canonical)
-//   - rescanPartsForCanonicalLinking  — POST /admin/parts/rescan
-//
-// Coverage targets per plan 08-18:
-//   1. Curation page render + static card structure for admin user
-//   2. Link-group lookup + member row render (queue view)
-//   3. Promote / approve action — adminApi.promotePartToCanonical
-//   4. Merge-canonical action   — adminApi.manuallyLinkParts
-//   5. Auth-deny for non-admin user
-//
-// We bypass test-utils.tsx's customRender because setupApiMocks() clears and
-// re-installs default mock implementations inside customRender, which clobbers
-// per-test `mockResolvedValueOnce` chains set in beforeEach. Follows the
-// Builder.test.tsx + Profile.test.tsx pattern: local MemoryRouter + explicit
-// `mockUseAuth.mockReturnValue(...)`, letting the real `adminApi` run so its
-// internal apiClient.* calls land on the shared mock from setup.ts.
-
 import userEvent from '@testing-library/user-event';
 import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
@@ -36,14 +12,10 @@ import { mockAdminUser, mockUseAuth } from '../../test/utils/test-mocks';
 import { mockUser } from '../../test/mocks/api';
 import PartsCuration from './PartsCuration';
 
-// Same rationale as Builder.test.tsx — test-utils.tsx registers the useAuth
-// mock only when imported; this test doesn't import test-utils (we bypass
-// customRender), so register the mock here against the same hook.
 vi.mock('../../hooks/useAuth', () => ({
   useAuth: () => mockUseAuth(),
 }));
 
-// Logical equivalent of testScenarios.adminAuthenticated from test-utils.tsx.
 function seedAdmin(): void {
   mockUseAuth.mockReturnValue({
     isAuthenticated: true,
@@ -55,7 +27,6 @@ function seedAdmin(): void {
   });
 }
 
-// Logical equivalent of testScenarios.authenticated (non-admin user).
 function seedNonAdmin(): void {
   mockUseAuth.mockReturnValue({
     isAuthenticated: true,
@@ -70,8 +41,6 @@ function seedNonAdmin(): void {
 describe('PartsCuration page', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    // Default GET returns a single-canonical link group. Tests that need a
-    // multi-member queue override with mockResolvedValueOnce BEFORE rendering.
     vi.mocked(apiClient.get).mockResolvedValue({
       data: makeCurationQueue(),
     });
@@ -86,7 +55,6 @@ describe('PartsCuration page', () => {
       </MemoryRouter>
     );
 
-    // Page header + all three admin cards render on first mount (no ?part= in URL).
     expect(screen.getByText('Parts Curation')).toBeInTheDocument();
     expect(screen.getByText(/Look up a link group/i)).toBeInTheDocument();
     expect(screen.getByText(/Manual link/i)).toBeInTheDocument();
@@ -116,8 +84,6 @@ describe('PartsCuration page', () => {
       </MemoryRouter>
     );
 
-    // Type a part id and click "Load group" — handleLookup calls
-    // adminApi.getPartLinkGroup (GET /admin/parts/:id/link-group).
     const partIdInput = screen.getByPlaceholderText(/Paste any Part ID/i);
     await user.type(partIdInput, canonical.id);
     await user.click(screen.getByRole('button', { name: /^Load group$/i }));
@@ -128,7 +94,6 @@ describe('PartsCuration page', () => {
       )
     );
 
-    // Both members render; Promote/Unlink only on non-canonical rows.
     expect(await screen.findByText('Canonical Part')).toBeInTheDocument();
     expect(screen.getByText('Duplicate Part')).toBeInTheDocument();
     expect(
@@ -166,7 +131,6 @@ describe('PartsCuration page', () => {
       </MemoryRouter>
     );
 
-    // Load the link group so Promote buttons appear.
     await user.type(
       screen.getByPlaceholderText(/Paste any Part ID/i),
       canonical.id
@@ -174,10 +138,8 @@ describe('PartsCuration page', () => {
     await user.click(screen.getByRole('button', { name: /^Load group$/i }));
     expect(await screen.findByText('Duplicate to Promote')).toBeInTheDocument();
 
-    // Click Promote on the only duplicate.
     await user.click(screen.getByRole('button', { name: /Promote/i }));
 
-    // adminApi.promotePartToCanonical posts { part_id } to /admin/parts/promote-canonical.
     await waitFor(() =>
       expect(apiClient.post).toHaveBeenCalledWith(
         '/admin/parts/promote-canonical',
@@ -213,8 +175,6 @@ describe('PartsCuration page', () => {
       </MemoryRouter>
     );
 
-    // Fill both manual-link inputs (Duplicate part ID + Canonical part ID) and
-    // click "Link as duplicate". This is the merge-canonical user flow.
     const duplicateInput = screen.getByPlaceholderText(
       /Part to become the duplicate/i
     );
@@ -225,8 +185,6 @@ describe('PartsCuration page', () => {
       screen.getByRole('button', { name: /Link as duplicate/i })
     );
 
-    // adminApi.manuallyLinkParts posts { duplicate_id, canonical_id } to
-    // /admin/parts/link — the merge-canonical API surface.
     await waitFor(() =>
       expect(apiClient.post).toHaveBeenCalledWith('/admin/parts/link', {
         duplicate_id: duplicateId,
@@ -234,7 +192,6 @@ describe('PartsCuration page', () => {
       })
     );
 
-    // Success alert confirms the happy-path UI rendering post-merge.
     await waitFor(() =>
       expect(screen.getByText(/Linked .* as duplicate of/i)).toBeInTheDocument()
     );
@@ -248,13 +205,10 @@ describe('PartsCuration page', () => {
       </MemoryRouter>
     );
 
-    // Non-admin user hits the `!user.is_admin` branch — ErrorAlert renders
-    // "You do not have permission to access this page."
     expect(
       screen.getByText(/do not have permission to access this page/i)
     ).toBeInTheDocument();
 
-    // None of the admin action cards are rendered.
     expect(screen.queryByText(/Look up a link group/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Manual link/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Catalog rescan/i)).not.toBeInTheDocument();

@@ -1,10 +1,3 @@
-// Phase 8 Wave 3 page test — UserParts renders the authenticated user's
-// parts list and exposes an auth-gated error state when unauthenticated.
-//
-// This file builds a local render that wraps children in <MemoryRouter> and
-// seeds useAuth via the same mockUseAuth singleton test-utils uses, so the
-// auth scenario is set per test without going through customRender.
-
 import type { ReactElement, ReactNode } from 'react';
 import { render as rtlRender, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
@@ -14,19 +7,12 @@ import { mockCategory, mockPart, mockUser } from '../../test/mocks/api';
 import type { UserRead } from '../../types/Api';
 import UserParts from './UserParts';
 
-// Mock useAuth the same way TestProviders does, swapping the auth state per
-// scenario.
 vi.mock('../../hooks/useAuth', () => ({
   useAuth: () => mockUseAuth(),
 }));
 
-// usePartsFilters, PartList and UserParts reach the API through their
-// `../../api/<domain>` modules, which call the apiClient that setup.ts mocks.
-// Import apiClient AFTER the vi.mock declarations so it resolves to that mock.
 import { apiClient } from '../../api/client';
 
-// PartList depends on ResizeObserver (via useContainerWidth). Stub globally
-// so mounting in jsdom does not throw when the callback ref attaches.
 class ResizeObserverStub {
   observe(): void {}
   unobserve(): void {}
@@ -116,8 +102,6 @@ describe('UserParts page', () => {
 
     expect(screen.getByText(/my parts/i)).toBeInTheDocument();
 
-    // usePartsFilters scopes the list to the authenticated user_id. Verify
-    // a /parts/with-votes call was made.
     await waitFor(() => {
       const calls = vi.mocked(apiClient.get).mock.calls.map(([url]) => url);
       expect(calls.some((u) => u.startsWith('/parts/with-votes'))).toBe(true);
@@ -152,8 +136,6 @@ describe('UserParts page', () => {
     seedAuth({ isAuthenticated: true, user: mockUser });
     renderWithRouter(<UserParts />);
 
-    // Empty-state copy is wired in UserParts.tsx:168 —
-    // "You haven't created any parts yet. ..."
     await waitFor(() => {
       expect(
         screen.getByText(/haven't created any parts yet/i)
@@ -163,8 +145,6 @@ describe('UserParts page', () => {
   });
 
   it('shows a login-required error when the viewer is unauthenticated', () => {
-    // Unauthenticated short-circuits in UserParts.tsx:129 before any fetch
-    // runs.
     seedAuth({ isAuthenticated: false, user: null });
     renderWithRouter(<UserParts />);
 

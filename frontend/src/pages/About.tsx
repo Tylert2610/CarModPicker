@@ -11,6 +11,7 @@ import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
 import { useDocumentMeta } from '../hooks/useDocumentMeta';
 
+/** Static marketing page describing the product and the team behind it. */
 function About() {
   useDocumentMeta({
     title: 'About',

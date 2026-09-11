@@ -18,6 +18,10 @@ import { useAuth } from '../hooks/useAuth';
 import { apiClient } from '../api/client';
 import type { UserRead, UserUpdate } from '../types/Api';
 
+/**
+ * The signed in user's own profile, with inline editing for their details,
+ * avatar, and social links, plus access to security settings.
+ */
 function Profile() {
   const navigate = useNavigate();
   const {
@@ -51,7 +55,6 @@ function Profile() {
 
   useEffect(() => {
     if (user) {
-      // Note: user.image_urls[0] is a presigned URL from the API
       setImageFileKey(null);
       setImageChanged(false);
       setSocialLinks({
@@ -93,7 +96,6 @@ function Profile() {
     const payload: UserUpdate = {};
     let hasChanges = false;
 
-    // Image - only include if changed
     if (imageChanged) {
       payload.image_urls = imageFileKey ? [imageFileKey] : null;
       hasChanges = true;
@@ -112,7 +114,7 @@ function Profile() {
     const result = await executeUpdateUser({ userId: user.id, data: payload });
 
     if (result) {
-      authLogin(result); // Use the returned user data to update auth context
+      authLogin(result);
       setIsEditing(false);
       setStatusMessage({
         type: 'success',

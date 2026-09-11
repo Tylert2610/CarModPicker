@@ -1,10 +1,3 @@
-// Phase 8 plan 08-14 (D-11) — ContactUs page render test.
-//
-// ContactUs (as of this plan) is a static contact-info page — no form, no API
-// call. The three mailto: links (Business, Tech Support, DMCA) are the only
-// interactive surface. Cover headings + at least one mailto link + at least
-// one alternate-section heading to satisfy the "at least 2 it-blocks" rule.
-
 import { describe, expect, it, vi } from 'vitest';
 import { apiClient } from '../api/client';
 import { render, screen, testScenarios } from '../test/utils/test-utils';
@@ -18,8 +11,6 @@ describe('ContactUs page', () => {
     expect(
       screen.getByRole('heading', { name: /^contact us$/i })
     ).toBeInTheDocument();
-    // Hero subtitle tagline — also appears in body copy ("We'd love to hear
-    // from you. Have questions, ..."), so match via getAllByText.
     const tagline = screen.getAllByText(/we'd love to hear from you/i);
     expect(tagline.length).toBeGreaterThan(0);
   });
@@ -36,7 +27,6 @@ describe('ContactUs page', () => {
       screen.getByRole('heading', { name: /dmca & copyright/i })
     ).toBeInTheDocument();
 
-    // At least one mailto: link is wired. There are multiple (one per section).
     const mailtoLinks = screen
       .getAllByRole('link')
       .filter((a) => a.getAttribute('href')?.startsWith('mailto:'));

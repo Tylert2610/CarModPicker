@@ -1,18 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment --
- * vi.mocked(apiClient.get) is the canonical Phase 8 mocking pattern.
- * `expect.objectContaining(...)` returns `any` and trips no-unsafe-assignment
- * when nested as a property value — false positive in this matcher pattern.
- */
-
-// Phase 8 plan 08-14 (D-11) — Search page render + URL-driven API round-trip.
-//
-// Search imports `searchApi` from `../api/search`, which calls the apiClient
-// that setup.ts mocks, so the round-trip is observable on
-// vi.mocked(apiClient.get).
-//
-// We render manually with MemoryRouter at the `/search?q=...` route rather
-// than through test-utils.tsx's customRender, so this file controls the route
-// and the auth branch directly.
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
@@ -45,7 +31,6 @@ const searchResultsFixture = {
       skip: 0,
       limit: 10,
     },
-    // Search backend still returns parts; the UI no longer renders them.
     parts: {
       data: [mockPart],
       total: 1,

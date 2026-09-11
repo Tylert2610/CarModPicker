@@ -13,6 +13,7 @@ import { identityAvailability } from '../../api/authMode';
 import { apiClient } from '../../api/client';
 import type { UserCreate, UserRead } from '../../types/Api';
 
+/** Account registration form. */
 function Register() {
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');

@@ -1,46 +1,9 @@
 /**
- * The web sign in handoff for the Chrome extension, in identity mode.
+ * Web sign in handoff for the Chrome extension in identity mode.
  *
- * ## What this is for
- *
- * Row 10 of `docs/identity-adoption.md` decides the extension stops holding
- * credentials of its own. Instead it opens this page with
- * `chrome.identity.launchWebAuthFlow`, the user signs in here with whatever the
- * deployment offers (password, passkey, a provider), and the browser hands the
- * result back to the extension by watching for a redirect to a URL the
- * extension owns.
- *
- * That is deliberately the *whole* mechanism. The refresh token stays an
- * httpOnly cookie on this origin, which an extension cannot read and cannot be
- * tricked into leaking, and what crosses to the extension is a single use,
- * short lived code it exchanges for its own tokens.
- *
- * ## Why the redirect target is validated
- *
- * `redirect_uri` arrives in a query parameter, which means it arrives from
- * whoever built the link, which means it arrives from an attacker in the case
- * this check exists for. Redirecting to it unchecked would turn this page into
- * an open redirect that carries a credential in its fragment.
- *
- * So the target must parse, must use the `chrome-extension:` scheme, and its
- * extension id must appear in `VITE_ALLOWED_EXTENSION_IDS`. An id that is not on the
- * list is refused outright rather than being allowed in development, because
- * the thing being handed over is a credential and "it worked on my machine" is
- * how that check gets left off.
- *
- * ## Why the token goes in the fragment
- *
- * A fragment is never sent to a server and is not written to a server access
- * log. `launchWebAuthFlow` gives the extension the full redirect URL including
- * the fragment, so nothing is lost by keeping it out of the query string.
- *
- * ## What is not implemented here
- *
- * The backend exchange. `POST /api/auth/extension/handoff` does not exist yet;
- * its contract is written down in `docs/identity-adoption.md` under "The
- * extension handoff contract" and row 10 builds it. Until then this page signs
- * the user in, validates the target, asks for a code, and renders a plain
- * "coming soon" when the route answers 404. It never invents a token.
+ * The refresh token stays an httpOnly cookie on this origin; only a single use
+ * code crosses to the extension, in the fragment, after the redirect target is
+ * validated against the allowlist so this page cannot become an open redirect.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -55,20 +18,12 @@ import { useAuth } from '../../hooks/useAuth';
 import { AUTH_MODE } from '../../api/authMode';
 import { getIdentityClient, identityUrl } from '../../api/identityClient';
 
-/** Where the exchange will live. Not mounted yet; see the module note. */
+/** Backend route that exchanges a validated handoff for a code. */
 export const EXTENSION_HANDOFF_PATH = '/api/auth/extension/handoff';
 
 /**
- * The extension ids this frontend will hand a code to.
- *
- * Comma separated in `VITE_ALLOWED_EXTENSION_IDS`, the same variable the legacy
- * `/extension-auth` page reads and the same one `frontend-deploy.yml` already
- * supplies from `vars.CWS_EXTENSION_ID`. Deliberately shared rather than given
- * a name of its own: two allowlists for one extension is how one of them ends
- * up unset, and an unset allowlist here refuses every handoff silently.
- *
- * Empty means no extension is trusted, which is the safe default for an
- * environment that forgot to set it.
+ * Extension ids this frontend will hand a code to, from
+ * `VITE_ALLOWED_EXTENSION_IDS`. Empty means no extension is trusted.
  */
 export const allowedExtensionIds = (
   env: Record<string, unknown> = import.meta.env
@@ -83,11 +38,7 @@ export const allowedExtensionIds = (
 
 /**
  * The validated redirect target, or null when it is not one this page will use.
- *
- * Three things are checked and all three matter: the scheme, because any other
- * scheme is a redirect off this origin entirely; the id, because that is what
- * names the extension; and membership of the allowlist, because a
- * `chrome-extension://` URL is not by itself evidence of anything.
+ * Checks the `chrome-extension:` scheme and allowlist membership of the id.
  */
 export const validateRedirectUri = (
   value: string | null,
@@ -101,8 +52,6 @@ export const validateRedirectUri = (
     return null;
   }
   if (url.protocol !== 'chrome-extension:') return null;
-  // The extension id is the URL's host. `new URL` lowercases it, and the ids
-  // themselves are lowercase, so a plain comparison is right.
   if (url.hostname === '' || !allowed.includes(url.hostname)) return null;
   return url.toString();
 };
@@ -113,6 +62,10 @@ type State =
   | { kind: 'coming-soon' }
   | { kind: 'handing-off' };
 
+/**
+ * Signs the user in, validates the extension redirect target, and hands back a
+ * single use code in the URL fragment.
+ */
 function ExtensionHandoff() {
   const [searchParams] = useSearchParams();
   const { isAuthenticated, isLoading } = useAuth();
@@ -170,8 +123,6 @@ function ExtensionHandoff() {
     }
 
     if (response.status === 404) {
-      // The route is not built yet. This is the expected answer today, and it
-      // is a plain statement of fact rather than an error. See the module note.
       setState({ kind: 'coming-soon' });
       return;
     }
@@ -197,7 +148,6 @@ function ExtensionHandoff() {
       return;
     }
 
-    // The fragment, not the query string. See the module note.
     const fragment = new URLSearchParams({ code });
     if (extensionState !== '') fragment.set('state', extensionState);
     setState({ kind: 'handing-off' });
@@ -220,7 +170,6 @@ function ExtensionHandoff() {
   }
 
   if (!isAuthenticated) {
-    // Sign in first, then come straight back with the parameters intact.
     const returnTo = `${globalThis.location.pathname}${globalThis.location.search}`;
     return (
       <Navigate

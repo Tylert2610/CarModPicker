@@ -38,6 +38,7 @@ import {
   normalizeCarReadList,
 } from '../../utils/carUtils';
 
+/** Public catalog of build lists, filterable by car make, model, and generation. */
 const BuildListsCatalog: React.FC = () => {
   useDocumentMeta({
     title: 'Build Lists',
@@ -64,7 +65,6 @@ const BuildListsCatalog: React.FC = () => {
   const isInitializingFromUrlRef = useRef(false);
   const itemsPerPage = BUILD_LISTS_CATALOG_ITEMS_PER_PAGE;
 
-  // Debounce search so API is called only after user stops typing
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedSearchTerm(searchTerm);
@@ -72,7 +72,6 @@ const BuildListsCatalog: React.FC = () => {
     return () => clearTimeout(timer);
   }, [searchTerm]);
 
-  // When no vehicle selected: paginated list of all build lists (search + cost + sort via API)
   const allBuildListsParams = useMemo(() => {
     const params: {
       skip: number;
@@ -156,7 +155,6 @@ const BuildListsCatalog: React.FC = () => {
     void fetchMakes();
   }, [fetchMakes]);
 
-  // Initialize filter state from URL (deeplinking), same param names as parts where applicable
   const initializeFromUrl = useCallback(() => {
     if (isInitializedFromUrl || !makeStats) return;
     const hasUrlParams = Array.from(searchParams.keys()).length > 0;
@@ -196,7 +194,6 @@ const BuildListsCatalog: React.FC = () => {
       void fetchCarById(carIdParam);
       return;
     }
-    // Leave isInitializingFromUrlRef true so reset-page effect skips; cleared in useEffect after tick
     setIsInitializedFromUrl(true);
   }, [searchParams, makeStats, isInitializedFromUrl, fetchCarById]);
 
@@ -218,7 +215,6 @@ const BuildListsCatalog: React.FC = () => {
     }
   }, [carFromUrl, fetchCarsByMake]);
 
-  // Sync filter state to URL when filters change (after initial load from URL)
   const syncFiltersToUrl = useCallback(() => {
     if (!isInitializedFromUrl) return;
     const newParams = new URLSearchParams();
@@ -262,14 +258,12 @@ const BuildListsCatalog: React.FC = () => {
     syncFiltersToUrl,
   ]);
 
-  // Debounce search in URL to avoid rapid updates while typing
   useEffect(() => {
     if (!isInitializedFromUrl) return;
     const t = setTimeout(syncFiltersToUrl, 500);
     return () => clearTimeout(t);
   }, [isInitializedFromUrl, searchTerm, syncFiltersToUrl]);
 
-  // Clear "initializing" ref after first sync so page reset on filter change works
   useEffect(() => {
     if (!isInitializedFromUrl) return;
     const id = setTimeout(() => {
@@ -287,7 +281,6 @@ const BuildListsCatalog: React.FC = () => {
   useEffect(() => {
     if (selectedMake) {
       void fetchCarsByMake(selectedMake);
-      // Only clear model/generation when user changed make; skip when restoring from URL
       if (
         !selectedGeneration ||
         (selectedGeneration.car_make_name ?? '') !== selectedMake
@@ -308,7 +301,6 @@ const BuildListsCatalog: React.FC = () => {
 
   useEffect(() => {
     if (selectedModel) {
-      // Only clear generation when user changed model; skip when restoring from URL
       if (
         !selectedGeneration ||
         selectedGeneration.car_model_name !== selectedModel
@@ -318,7 +310,6 @@ const BuildListsCatalog: React.FC = () => {
     }
   }, [selectedModel, selectedGeneration]);
 
-  // Reset to page 1 when filters or sort change (skip during URL init so deeplink page is preserved)
   useEffect(() => {
     if (isInitializingFromUrlRef.current) return;
     setCurrentPage(1);
@@ -379,7 +370,7 @@ const BuildListsCatalog: React.FC = () => {
       return (a.generation_name ?? '').localeCompare(b.generation_name ?? '');
     });
 
-  /** Car IDs for API filter: single generation, or all for make, or all for make+model */
+  /** Car ids for the API filter: one generation, or all for a make or make and model. */
   const effectiveCarIds = useMemo(
     () =>
       selectedGeneration
@@ -400,7 +391,7 @@ const BuildListsCatalog: React.FC = () => {
 
   const hasVehicleFilter = selectedMake !== '';
 
-  /** Memoized params for BuildListCatalogList so the reference is stable and we don't refetch on every render */
+  /** Memoised list params, so a stable reference avoids a refetch each render. */
   const buildListCatalogListParams = useMemo(
     () => ({
       skip: (currentPage - 1) * itemsPerPage,
@@ -423,7 +414,6 @@ const BuildListsCatalog: React.FC = () => {
     [currentPage, itemsPerPage, sortBy, debouncedSearchTerm, costMin, costMax]
   );
 
-  // Fetch all build lists (paginated) when no vehicle filter is selected
   useEffect(() => {
     if (!hasVehicleFilter) {
       void fetchAllBuildLists(allBuildListsParams);

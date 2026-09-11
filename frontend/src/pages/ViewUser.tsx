@@ -14,13 +14,13 @@ import { buildListsApi } from '../api/build_lists';
 import { apiClient } from '../api/client';
 import type { BuildListRead, PublicUserRead } from '../types/Api';
 
-const fetchUserRequestFn = (
-  userId: string // userId will be a string from URL params
-) => apiClient.get<PublicUserRead>(`/users/${userId}`);
+const fetchUserRequestFn = (userId: string) =>
+  apiClient.get<PublicUserRead>(`/users/${userId}`);
 
 const fetchBuildListsByUserRequestFn = (userId: string) =>
   buildListsApi.getBuildListsByUser(userId);
 
+/** Public profile page for another user, showing their details and build lists. */
 function ViewUser() {
   const { userId: userIdParam } = useParams<{ userId: string }>();
 

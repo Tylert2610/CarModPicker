@@ -1,26 +1,7 @@
-// Phase 8 plan 08-11 (D-11) — page test for ViewBuildlist (the deepest
-// /build-lists/:buildListId page: 463 lines, 5 fetches on mount + a parts
-// subsection).
-//
-// Fetches exercised:
-//   - /build-lists/{id}                 (build list)
-//   - /car-generations/{carId}          (associated car — fires after build list)
-//   - /users/{userId}                   (owner)
-//   - /votes/build_list/{id}/summary    (vote summary via buildListVotesApi)
-//   - /build-list-parts/{id}/parts      (nested BuildListParts component)
-//   - /build-lists/{id}/phases          (phases fetch from BuildListParts)
-//
-// testScenarios.authenticated is the canonical auth fixture (Phase 8 D-05);
-// we inline its shape locally so this file sets the auth branch without going
-// through customRender.
-
 import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-// jsdom does not implement ResizeObserver, but ViewBuildList → BuildListParts →
-// ResponsiveTableWrapper → useContainerWidth constructs one. Stub it so the
-// commitAttachRef layout-effect doesn't throw. Matches App.coverage.test.tsx.
 class ResizeObserverStub {
   constructor(_cb: ResizeObserverCallback) {
     void _cb;
@@ -50,7 +31,6 @@ vi.mock('../../hooks/useAuth', () => ({
   useAuth: () => mockUseAuth(),
 }));
 
-// Inlined equivalent of testScenarios.authenticated (D-05).
 const authenticatedAuthState = {
   isAuthenticated: true,
   isLoading: false,
@@ -134,28 +114,23 @@ describe('ViewBuildList page', () => {
       </MemoryRouter>
     );
 
-    // Page-level header swaps from "Build List Details" loader to the name.
     await waitFor(() =>
       expect(
         screen.getByRole('heading', { level: 1, name: mockBuildList.name })
       ).toBeInTheDocument()
     );
 
-    // Build list info card sections render after fetch.
     expect(screen.getByText('Build List Information')).toBeInTheDocument();
     expect(screen.getByText('Description:')).toBeInTheDocument();
 
-    // Associated car card label resolves once /car-generations/{id} returns.
     await waitFor(() =>
       expect(screen.getByText('Associated Car:')).toBeInTheDocument()
     );
 
-    // Owner section resolves once /users/{id} returns.
     await waitFor(() =>
       expect(screen.getByText('Build List Owner:')).toBeInTheDocument()
     );
 
-    // Confirm the canonical fetches happened.
     expect(vi.mocked(apiClient.get)).toHaveBeenCalledWith(
       `/build-lists/${mockBuildList.id}`
     );
@@ -197,14 +172,12 @@ describe('ViewBuildList page', () => {
       </MemoryRouter>
     );
 
-    // "Parts in <name>" section heading (rendered inside BuildListParts).
     await waitFor(() =>
       expect(
         screen.getByText(new RegExp(`Parts in ${mockBuildList.name}`, 'i'))
       ).toBeInTheDocument()
     );
 
-    // The part row surfaces the part name from mockPart.
     await waitFor(() =>
       expect(screen.getAllByText(mockPart.name).length).toBeGreaterThan(0)
     );

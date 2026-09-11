@@ -8,11 +8,11 @@ import { ErrorAlert } from '../../components/ui/alert';
 import { Button } from '../../components/ui/button';
 import { Card } from '../../components/ui/card';
 
+/** Admin landing page linking to each administrative area. */
 function AdminDashboard() {
   const { user } = useAuth();
   const navigate = useNavigate();
 
-  // Redirect non-admin users
   useEffect(() => {
     if (user && !user.is_admin) {
       void navigate('/');

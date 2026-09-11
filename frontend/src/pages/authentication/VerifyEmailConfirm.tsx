@@ -4,6 +4,7 @@ import AuthCard from '../../components/auth/AuthCard';
 import { ErrorAlert, ConfirmationAlert } from '../../components/ui/alert';
 import AuthRedirectLink from '../../components/auth/AuthRedirectLink';
 
+/** Shows the outcome of an email verification attempt. */
 function VerifyEmailConfirm() {
   const [searchParams] = useSearchParams();
   const [status, setStatus] = useState<string | null>(null);

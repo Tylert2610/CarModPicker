@@ -1,18 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment --
- * vi.mocked(apiClient.*) is the canonical Phase 8 mocking pattern.
- * `expect.objectContaining(...)` returns `any` and trips no-unsafe-assignment
- * when nested as a property value — false positive in this matcher pattern.
- */
-
-// Phase 8 plan 08-16 (Wave 4) — UserManagement admin page coverage.
-//
-// UserManagement imports `usersApi` from `../../api/users` and uses that
-// module's `getAllUsers`, `adminUpdateUser`, `adminDeleteUser` methods, which
-// call the apiClient that setup.ts mocks.
-//
-// Manual BrowserRouter + mockUseAuth wire-up per the pattern established in
-// Profile.test.tsx / BugReport.test.tsx, so this file controls the auth
-// branch directly.
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -26,7 +12,6 @@ import { mockUser } from '../../test/mocks/api';
 import { makeAdminUserView, makeUserList } from '../../test/mocks/admin/users';
 import type { PaginatedResponse, UserRead } from '../../types/Api';
 
-// Use the canonical admin scenario fixture for the authenticated-admin user.
 const adminUser = testScenarios.adminAuthenticated.initialAuthState.user;
 
 vi.mock('../../hooks/useAuth', () => ({
@@ -85,7 +70,6 @@ describe('UserManagement page', () => {
       );
     });
 
-    // Username from makeAdminUserView() fixture becomes a table cell.
     await waitFor(() =>
       expect(screen.getByText('adminuser')).toBeInTheDocument()
     );
@@ -101,7 +85,6 @@ describe('UserManagement page', () => {
       </BrowserRouter>
     );
 
-    // Wait for the first fetch to settle.
     await waitFor(() => expect(vi.mocked(apiClient.get)).toHaveBeenCalled());
     vi.mocked(apiClient.get).mockClear();
 
@@ -110,7 +93,6 @@ describe('UserManagement page', () => {
     );
     await user.type(searchInput, 'bob');
 
-    // 300ms debounce; waitFor default 1000ms timeout handles it.
     await waitFor(() =>
       expect(vi.mocked(apiClient.get)).toHaveBeenCalledWith(
         '/users/admin/users',
@@ -123,7 +105,6 @@ describe('UserManagement page', () => {
 
   it('opens the edit dialog and calls adminUpdateUser with the form payload', async () => {
     const user = userEvent.setup();
-    // Resolve the PUT with the updated user.
     vi.mocked(apiClient.put).mockResolvedValueOnce({
       data: makeAdminUserView({ username: 'adminuser-updated' }),
     });
@@ -134,7 +115,6 @@ describe('UserManagement page', () => {
       </BrowserRouter>
     );
 
-    // Wait for row to render.
     await waitFor(() =>
       expect(screen.getByText('adminuser')).toBeInTheDocument()
     );
@@ -142,11 +122,9 @@ describe('UserManagement page', () => {
     const editButtons = screen.getAllByRole('button', { name: /^edit$/i });
     await user.click(editButtons[0]!);
 
-    // Dialog renders — the username input is prefilled.
     const usernameInput = await screen.findByLabelText(/^username$/i);
     expect(usernameInput).toHaveValue('adminuser');
 
-    // Click the "Update User" submit button.
     const updateButton = screen.getByRole('button', { name: /update user/i });
     await user.click(updateButton);
 

@@ -1,22 +1,3 @@
-// Phase 8 Plan 10 (D-11 Wave 3) — Login page coverage.
-//
-// Login.tsx wires together three sign-in surfaces: the password form (posts to
-// /auth/token via authApi.login), a passkey (WebAuthn) button, and the Google
-// OAuth button rendered via <GoogleAuthFlow>. Per PATTERNS.md §11 + the plan's
-// interfaces block we exercise ONLY the password-form happy path and its
-// error branch; OAuth + WebAuthn are mocked at the module level so the UI
-// renders but their flows are not invoked (D-11 "happy-path + one error", not
-// OAuth flow).
-//
-// Mocking: setup.ts mocks `../api/client`, so when Login.tsx calls
-// authApi.login(...), the real authApi code runs and internally hits
-// `apiClient.post(...)` which lands on the mocked client. We therefore assert
-// on `apiClient.post`, not on authApi.
-//
-// We use `fireEvent` (not userEvent) for form submission — jsdom +
-// `userEvent.click` on a submit button inside nested containers is flaky
-// under Vitest's test isolation, but `fireEvent.submit(form)` is
-// deterministic.
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   render,
@@ -30,24 +11,15 @@ import { buildApiError } from '../../test/apiResponse';
 import { mockUser } from '../../test/mocks/api';
 import Login from './Login';
 
-// Mock WebAuthn browser module so passkey feature detection is deterministic
-// and we don't accidentally invoke navigator.credentials during tests.
 vi.mock('@simplewebauthn/browser', () => ({
   startAuthentication: vi.fn(),
   browserSupportsWebAuthn: vi.fn(() => false),
 }));
 
-// <GoogleAuthFlow> internally consumes the useGoogleSignIn hook and renders a
-// <GoogleLogin> from @react-oauth/google. Stub the whole component to a
-// predictable button so the Login page renders without needing a real
-// GoogleOAuthProvider in the test tree.
 vi.mock('../../components/authentication/GoogleAuthFlow', () => ({
   default: () => <button type="button">Sign in with Google</button>,
 }));
 
-// isGoogleConfigured reads VITE_GOOGLE_CLIENT_ID. Force "disabled" so the
-// Google button branch only renders through the GoogleAuthFlow stub above
-// (when WebAuthn is also off, the entire OAuth/WebAuthn block is skipped).
 vi.mock('../../hooks/useGoogleSignIn', () => ({
   isGoogleConfigured: () => false,
   useGoogleSignIn: () => ({
@@ -75,8 +47,6 @@ describe('Login page', () => {
   it('renders the login form with username, password and submit controls', () => {
     render(<Login />, testScenarios.unauthenticated);
 
-    // htmlFor is not wired on Login's <Input>s (no `id` prop passed), so we
-    // locate inputs by placeholder/role instead of getByLabelText.
     expect(
       screen.getByPlaceholderText(/enter your username/i)
     ).toBeInTheDocument();
@@ -93,18 +63,6 @@ describe('Login page', () => {
   });
 
   it('submits credentials and calls apiClient.post on /auth/token', async () => {
-    // authApi.login POSTs to /auth/token with x-www-form-urlencoded. The real
-    // authApi runs (setup.ts preserves it via importOriginal) and hits the
-    // mocked apiClient.post under the hood.
-    //
-    // The body is a plain object rather than a `URLSearchParams`. The page used
-    // to build the search params itself and cast them through authApi's
-    // signature; it now hands `signIn` a username and password and the
-    // form-encoding happens where it belongs, in `api/client`'s
-    // `toRequestOptions`, which converts an object body when the request
-    // carries the urlencoded content type. What reaches the wire is identical,
-    // so this asserts the fields and the header rather than the intermediate
-    // type.
     vi.mocked(apiClient.post).mockResolvedValueOnce({
       data: {
         access_token: 'tok',
@@ -141,8 +99,6 @@ describe('Login page', () => {
   });
 
   it('surfaces an error message when credentials are invalid (401)', async () => {
-    // parseApiError in useApiRequest reads `message` off the error envelope,
-    // which the client hands over on `ApiError.body`.
     vi.mocked(apiClient.post).mockRejectedValueOnce(
       buildApiError(401, {
         success: false,
@@ -165,8 +121,6 @@ describe('Login page', () => {
   it('validates empty form before calling the API', async () => {
     render(<Login />, testScenarios.unauthenticated);
 
-    // Whitespace-only values bypass the browser's `required` check but trip
-    // the component's own trim() guard, surfacing the validation message.
     fillAndSubmit('   ', '   ');
 
     await waitFor(() => {

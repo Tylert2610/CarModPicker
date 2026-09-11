@@ -1,13 +1,3 @@
-// The login page in identity mode.
-//
-// Separate from `./Login.test.tsx` rather than folded into it, because
-// `AUTH_MODE` is read once at module load and the two modes therefore need two
-// module graphs. That file covers bearer mode and must keep passing unchanged:
-// it is the proof that turning this work on changed nothing about `main`.
-//
-// What is covered here is the identity-only surface: the passkey button's
-// visibility gate, the provider buttons rendered from the discovery route, the
-// TOTP second leg, and the four OAuth callback markers.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
@@ -28,15 +18,9 @@ let signInResult: unknown = { status: 'failed', error: 'nope' };
 let mfaResult: unknown = { status: 'authenticated', user: null };
 
 /**
- * `passkeyResult` is what a *pressed* sign in produces.
- *
- * The conditional request armed on mount is deliberately left hanging instead,
- * because that is what the real one does: a conditional mediation call that
- * finds no discoverable credential never settles, it just waits on an
- * authenticator that never answers. Resolving it here would make every test
- * below sign in on mount and never reach the button at all.
- *
- * A test that wants the conditional path itself sets `conditionalResult`.
+ * `passkeyResult` is what a pressed sign in produces. The conditional request
+ * armed on mount is left hanging, as a real one is when no discoverable
+ * credential exists; a test wanting that path sets `conditionalResult`.
  */
 let conditionalResult: unknown = undefined;
 
@@ -66,7 +50,6 @@ vi.mock('../../hooks/useAuth', () => ({
   }),
 }));
 
-// Identity mode, for every module in this graph that reads it.
 vi.mock('../../api/authMode', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../api/authMode')>();
   return { ...actual, AUTH_MODE: 'identity' as const };
@@ -124,7 +107,6 @@ vi.mock('../../api/identityOAuth', async (importOriginal) => {
   };
 });
 
-// Legacy surfaces, stubbed so the bearer branch renders nothing in this graph.
 vi.mock('@simplewebauthn/browser', () => ({
   startAuthentication: vi.fn(),
   browserSupportsWebAuthn: () => false,
@@ -183,8 +165,6 @@ describe('the passkey button', () => {
   });
 
   it('stays hidden when the read learned nothing', async () => {
-    // `unknown` is not `unavailable`, but it is not a reason to offer a
-    // control whose failure the user could not act on either.
     passkeyAnswer = 'unknown';
     await renderLogin();
     await waitFor(() => {
@@ -204,8 +184,6 @@ describe('the passkey button', () => {
   });
 
   it('signs in from the autofill chooser, with no press at all', async () => {
-    // The whole point of conditional mediation: the user picks the passkey out
-    // of the username field's autofill and never touches the button.
     passkeyAnswer = 'available';
     conditionalResult = { status: 'authenticated' };
     await renderLogin();
@@ -215,8 +193,6 @@ describe('the passkey button', () => {
   });
 
   it('ignores a cancelled conditional request', async () => {
-    // An aborted or dismissed conditional request is the common case and must
-    // not produce a banner or a navigation.
     passkeyAnswer = 'available';
     conditionalResult = { status: 'cancelled' };
     await renderLogin();
@@ -275,8 +251,6 @@ describe('the provider buttons', () => {
     await waitFor(() => {
       expect(screen.getByText(/continue with google/i)).toBeTruthy();
     });
-    // A provider this build has never heard of still renders, from the
-    // server's own display name.
     expect(screen.getByText(/continue with acme sso/i)).toBeTruthy();
   });
 
@@ -346,7 +320,6 @@ describe('the TOTP step', () => {
 
     const code = screen.getByLabelText(/authentication code/i);
     fireEvent.change(code, { target: { value: 'abcd-efgh-ijkl' } });
-    // The field would have stripped the letters in bearer mode.
     expect((code as HTMLInputElement).value).toBe('abcd-efgh-ijkl');
   });
 });
@@ -358,7 +331,6 @@ describe('the OAuth callback', () => {
     await waitFor(() => {
       expect(checkAuthStatus).toHaveBeenCalled();
     });
-    // The marker is single use and the page is bookmarkable.
     expect(globalThis.location.search).not.toContain('oauth=1');
   });
 

@@ -1,8 +1,3 @@
-// The mailed verification link branch of /verify-email.
-//
-// The component takes its client from `getIdentityClient`, so mocking that one
-// module is what drives every branch here, including the bearer-mode case where
-// it returns null.
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen } from '../../test/utils/test-utils';
 
@@ -18,11 +13,8 @@ vi.mock('../../api/identityClient', () => ({
 import VerifyEmailToken from './VerifyEmailToken';
 
 /**
- * Puts a token in the URL the way a mailed link would.
- *
- * Relative rather than absolute, because `readLinkToken` checks the path
- * against `VERIFY_EMAIL_PATH` and jsdom refuses a `replaceState` that changes
- * the origin.
+ * Put a token in the URL the way a mailed link would. Relative, because
+ * jsdom refuses a `replaceState` that changes the origin.
  */
 const arriveWithToken = (token: string | null) => {
   window.history.replaceState(
@@ -47,9 +39,6 @@ describe('VerifyEmailToken', () => {
   });
 
   it('spends the token exactly once across a strict mode double mount', async () => {
-    // The bug this guard exists for: the second run of a mount effect would
-    // present an already spent token, and the user would be told their link was
-    // invalid on the one page whose job is to tell them it worked.
     confirmEmailVerification.mockResolvedValue({ ok: true });
     const { rerender } = render(<VerifyEmailToken />);
     rerender(<VerifyEmailToken />);
@@ -64,16 +53,12 @@ describe('VerifyEmailToken', () => {
       message: '',
     });
     render(<VerifyEmailToken />);
-    // The fallback rather than a bare "invalid": a user holding a dead link
-    // needs to know to request another one.
     expect(
       await screen.findByText(/sign in and request a new one/i)
     ).toBeInTheDocument();
   });
 
   it('prefers the server own message over the fallback', async () => {
-    // The server's wording is written to be shown, so it wins whenever there
-    // is one.
     confirmEmailVerification.mockResolvedValue({
       ok: false,
       reason: 'invalid-link',
@@ -111,9 +96,6 @@ describe('VerifyEmailToken', () => {
   });
 
   it('says verification is unavailable in bearer mode', async () => {
-    // The page is registered unconditionally so the route coverage test can see
-    // it, which means it can be reached in a bearer bundle. It says so rather
-    // than throwing on a null client.
     clientIsNull = true;
     render(<VerifyEmailToken />);
     expect(

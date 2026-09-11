@@ -23,6 +23,10 @@ import { useAuth } from '../../hooks/useAuth';
 import { buildListsApi } from '../../api/build_lists';
 import type { BuildListRead } from '../../types/Api';
 
+/**
+ * The signed in user's build lists, with creation and management of their cars
+ * and parts.
+ */
 function Builder() {
   const { user } = useAuth();
   const [refreshTrigger, setRefreshTrigger] = useState(0);
@@ -33,16 +37,12 @@ function Builder() {
   const itemsPerPage = BUILDER_ITEMS_PER_PAGE;
   const [totalItems, setTotalItems] = useState<number | null>(null);
   const isFirstPage = currentPage === 1;
-  // On first page: create button (1) + 7 build lists = 8 items
-  // On other pages: 8 build lists = 8 items
   const buildListsPerPage = isFirstPage
     ? BUILDER_FIRST_PAGE_BUILD_LISTS
     : BUILDER_SUBSEQUENT_PAGE_BUILD_LISTS;
 
-  // Fetch user's build lists (with vote + total-cost enrichment) with pagination
   const fetchMyBuildListsFn = useCallback(() => {
     if (!user) return Promise.reject(new Error('Not authenticated'));
-    // Calculate skip: page 1 = 0, page 2 = 7, page 3 = 15, page 4 = 23, etc.
     const skip = isFirstPage
       ? 0
       : BUILDER_FIRST_PAGE_BUILD_LISTS +
@@ -61,14 +61,11 @@ function Builder() {
     executeRequest: fetchMyBuildLists,
   } = useApiRequest(fetchMyBuildListsFn);
 
-  // Extract build lists and total from paginated response
   const buildLists = buildListsResponse?.data || [];
   const totalBuildLists = buildListsResponse?.pagination?.total_items ?? 0;
 
-  // Calculate total items: build lists + 1 for the create button on page 1
   useEffect(() => {
     if (buildListsResponse) {
-      // Total items = total build lists + 1 (for the create button on page 1)
       setTotalItems(totalBuildLists + 1);
     }
   }, [buildListsResponse, totalBuildLists]);
@@ -80,7 +77,6 @@ function Builder() {
   }, [user, fetchMyBuildLists, refreshTrigger, currentPage]);
 
   const handleBuildListCreated = (newBuildList: BuildListRead) => {
-    // Refresh the list after creation and reset to first page
     void newBuildList;
     setCurrentPage(1);
     setTotalItems(null);
@@ -164,7 +160,6 @@ function Builder() {
               totalPages={Math.ceil(totalItems / itemsPerPage)}
               onPageChange={(page) => {
                 setCurrentPage(page);
-                // Scroll to top when page changes
                 window.scrollTo({ top: 0, behavior: 'smooth' });
               }}
               itemsPerPage={itemsPerPage}

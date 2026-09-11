@@ -10,13 +10,11 @@ import { Input } from '../components/ui/input';
 import { Textarea } from '../components/ui/textarea';
 import PageHeader from '../components/layout/PageHeader';
 
-// Utility functions to detect browser and device info
 const detectBrowserInfo = (): string => {
   const userAgent = navigator.userAgent;
   let browserName = 'Unknown';
   let browserVersion = 'Unknown';
 
-  // Detect browser
   if (userAgent.indexOf('Firefox') > -1) {
     browserName = 'Firefox';
     const match = userAgent.match(/Firefox\/(\d+)/);
@@ -53,7 +51,6 @@ const detectDeviceInfo = (): string => {
   let os = 'Unknown';
   let deviceType = '';
 
-  // Detect OS
   if (userAgent.indexOf('Win') > -1) {
     if (userAgent.indexOf('Windows NT 10.0') > -1) os = 'Windows 10/11';
     else if (userAgent.indexOf('Windows NT 6.3') > -1) os = 'Windows 8.1';
@@ -85,7 +82,6 @@ const detectDeviceInfo = (): string => {
     }
   }
 
-  // Detect device type
   if (
     userAgent.indexOf('Mobile') > -1 ||
     userAgent.indexOf('iPhone') > -1 ||
@@ -104,6 +100,10 @@ const detectDeviceInfo = (): string => {
   return `${os} (${deviceType})`;
 };
 
+/**
+ * Form for filing a bug report, prefilled with detected browser and device
+ * details so the reporter does not have to supply them.
+ */
 function BugReport() {
   const navigate = useNavigate();
   const [formData, setFormData] = useState<BugReportCreate>({
@@ -120,7 +120,6 @@ function BugReport() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
-  // Auto-detect browser and device info on component mount
   useEffect(() => {
     const browserInfo = detectBrowserInfo();
     const deviceInfo = detectDeviceInfo();
@@ -146,7 +145,6 @@ function BugReport() {
     setError(null);
     setSuccess(false);
 
-    // Validation
     if (!formData.title.trim()) {
       setError('Title is required');
       return;
@@ -159,7 +157,6 @@ function BugReport() {
     setIsSubmitting(true);
 
     try {
-      // Clean up empty strings to null
       const submitData: BugReportCreate = {
         title: formData.title.trim(),
         description: formData.description.trim(),
@@ -173,7 +170,6 @@ function BugReport() {
 
       await bugReportsApi.createBugReport(submitData);
       setSuccess(true);
-      // Reset form
       setFormData({
         title: '',
         description: '',
@@ -184,7 +180,6 @@ function BugReport() {
         device_info: '',
         screenshot_url: '',
       });
-      // Redirect after 2 seconds
       setTimeout(() => {
         void navigate('/');
       }, 2000);

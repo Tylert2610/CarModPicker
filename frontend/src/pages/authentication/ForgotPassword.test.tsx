@@ -1,8 +1,3 @@
-// Phase 8 Plan 10 (D-11 Wave 3) — ForgotPassword page coverage.
-//
-// Form: single email field → authApi.resetPassword({ email }) → confirmation
-// alert. Uses the shared mocked apiClient via setup.ts + test-utils.tsx.
-
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   render,

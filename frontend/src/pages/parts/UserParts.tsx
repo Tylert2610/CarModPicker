@@ -14,6 +14,7 @@ import { buildListPartsApi } from '../../api/build_list_parts';
 import { partsApi } from '../../api/parts';
 import type { PartReadWithVotes, PaginationInfo } from '../../types/Api';
 
+/** The signed in user's own parts, with deletion. */
 const UserParts: React.FC = () => {
   const { user, isAuthenticated } = useAuth();
 

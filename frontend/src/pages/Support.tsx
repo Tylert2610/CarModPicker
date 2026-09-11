@@ -17,6 +17,7 @@ type SupportOption = {
   external: boolean;
 };
 
+/** Static support page pointing at help resources and contact routes. */
 function Support() {
   const premiumSystemDisabled = useIsPremiumSystemDisabled();
   useDocumentMeta({

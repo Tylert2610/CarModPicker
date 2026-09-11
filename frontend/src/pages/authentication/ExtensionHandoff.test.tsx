@@ -1,9 +1,3 @@
-// The extension handoff's redirect target validation.
-//
-// This is the security-critical half of the page: `redirect_uri` arrives in a
-// query parameter, which means it arrives from whoever built the link, and
-// what is about to be appended to it is a credential. Every case below is a
-// URL that must not be redirected to.
 import { describe, expect, it } from 'vitest';
 import { allowedExtensionIds, validateRedirectUri } from './ExtensionHandoff';
 
@@ -17,8 +11,6 @@ describe('allowedExtensionIds', () => {
   });
 
   it('trusts nothing when the variable is unset', () => {
-    // The safe default for an environment that forgot to set it. An empty
-    // allowlist refuses every extension rather than permitting any.
     expect(allowedExtensionIds({})).toEqual([]);
     expect(allowedExtensionIds({ VITE_ALLOWED_EXTENSION_IDS: '' })).toEqual([]);
   });
@@ -41,8 +33,6 @@ describe('validateRedirectUri', () => {
   });
 
   it('refuses every scheme but chrome-extension', () => {
-    // The whole point: an https target is a redirect off this origin entirely,
-    // carrying a credential in its fragment.
     for (const uri of [
       `https://${ALLOWED[0]}/callback`,
       `http://${ALLOWED[0]}/callback`,
@@ -67,8 +57,6 @@ describe('validateRedirectUri', () => {
   });
 
   it('matches on the host, not on a prefix of the whole URL', () => {
-    // A target whose *path* happens to contain an allowlisted id is a
-    // different extension, and a naive `startsWith` would have taken it.
     expect(
       validateRedirectUri(
         `chrome-extension://evilevilevilevilevilevilevilevil/${ALLOWED[0]}`,

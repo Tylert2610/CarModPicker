@@ -1,21 +1,9 @@
 /**
- * The `/verify-email` page, which is two pages sharing one path.
+ * The `/verify-email` page, which serves two behaviours on one path.
  *
- * CarModPicker has always used this path for "send me a verification email",
- * reached by a signed in user whose address is not yet verified. In identity
- * mode the same path is also where a mailed verification link lands, because
- * `VERIFY_EMAIL_PATH` in `@webbpulse/auth` is `/verify-email` and the backend
- * concatenates it onto the frontend base when it builds the URL it sends. That
- * constant is a contract across two repositories and this application does not
- * get to pick a different path for it.
- *
- * So the query string decides. A `?token=` came from an email and is a
- * confirmation, handled by `VerifyEmailToken`. Anything else is the request
- * form below, unchanged from what it has always been.
- *
- * The dispatch is deliberately not gated on the mode. In bearer mode no link
- * ever arrives carrying a token, so the branch is unreachable rather than
- * wrong, and a mode check here would be a second place to update at cutover.
+ * A `?token=` query means a mailed link landed here and `VerifyEmailToken`
+ * handles it; anything else is a signed in user requesting a fresh email.
+ * The path is fixed by `VERIFY_EMAIL_PATH` in the identity contract.
  */
 import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
@@ -30,17 +18,13 @@ import { useAuth } from '../../hooks/useAuth';
 import { requestVerificationEmail } from '../../api/identityAuth';
 import VerifyEmailToken from './VerifyEmailToken';
 
+/** Routes `/verify-email` to the token confirmation or the request form. */
 function VerifyEmail() {
   const [searchParams] = useSearchParams();
   const [isSubmitted, setIsSubmitted] = useState(false);
-  const { user, isLoading: authIsLoading } = useAuth(); // Get user from auth context
+  const { user, isLoading: authIsLoading } = useAuth();
   const linkToken = searchParams.get(LINK_TOKEN_PARAM);
 
-  // Through `requestVerificationEmail` rather than the legacy route directly,
-  // so the mail comes from whichever service also serves the confirm link it
-  // carries. The token in that link is only valid against its own issuer.
-  // Wrapped into the `{ data }` envelope `useApiRequest` unwraps. See the same
-  // wrapper in `ForgotPassword` for why a refusal is thrown.
   const verifyEmailRequestFn = async (payload: { email: string }) => {
     const outcome = await requestVerificationEmail(payload.email);
     if (!outcome.ok) throw new Error(outcome.message);
@@ -59,19 +43,15 @@ function VerifyEmail() {
       setApiError('User email not found. Please log in again.');
       return;
     }
-    setApiError(null); // Clear previous errors
+    setApiError(null);
     setIsSubmitted(false);
 
     const result = await sendEmailVerificationLink({ email: user.email });
     if (result) {
-      // Successfully sent the link
       setIsSubmitted(true);
     }
   };
 
-  // A token in the query string means this is a mailed link rather than a
-  // person asking for one. Checked before the loading and signed in guards
-  // below, because confirming a link needs neither: the link is the proof.
   if (linkToken !== null && linkToken !== '') {
     return <VerifyEmailToken />;
   }
