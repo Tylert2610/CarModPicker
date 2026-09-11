@@ -1,11 +1,6 @@
 /**
- * Builders for the values `src/api/client.ts` resolves and rejects with.
- *
- * These replace the hand-built `AxiosResponse` and `AxiosError` objects the
- * tests used to construct, which needed five fields of ceremony (`status`,
- * `statusText`, `headers`, `config`) before the one field under test. The
- * client's contract is now "resolve with `{ data }`, reject with `ApiError`",
- * and these two helpers are that contract in test form.
+ * Builders for the values `src/api/client.ts` resolves and rejects with, so a
+ * test states the field under test rather than a response's worth of ceremony.
  */
 import { ApiError } from '@webbpulse/api-client';
 import type { ApiClientResponse } from '../api/client';

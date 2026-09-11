@@ -21,13 +21,8 @@ const loadWith = async (stub: Stub | null) => {
 };
 
 /**
- * An `ApiError` carrying the identity envelope.
- *
- * Built through the real constructor with a real envelope body rather than a
- * hand-shaped object, because `getAuthErrorCode` reads the code out of the body
- * through `getWebbPulseError`, which validates the envelope's shape. A stub that
- * merely carried an `error_code` property would take the "not an envelope"
- * branch and every code test would pass for the wrong reason.
+ * An `ApiError` carrying a real identity envelope. A hand-shaped stub would
+ * fail the envelope validation and pass every code test for the wrong reason.
  */
 const identityError = (status: number, code: string, message: string) =>
   new ApiError({

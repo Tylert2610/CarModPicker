@@ -1,14 +1,6 @@
 /**
- * Single source of truth for the App.tsx <Route path> enumeration used by:
- *   - frontend/src/App.coverage.test.tsx (FE-03 / D-10 / D-24 drift guard)
- *   - frontend/e2e/polish-coverage.spec.ts (M003/S05/T06 visual regression)
- *
- * Adding a new <Route> in App.tsx requires a matching entry here; the vitest
- * drift guard (`ALL_ROUTES.length >= 38`) and the Playwright per-route
- * screenshot loop both consume this list.
- *
- * Source-of-truth count:
- *   `grep -cE 'path="' frontend/src/App.tsx` returns 38 (2026-04-25).
+ * The App.tsx route enumeration, shared by the coverage test's drift guard and
+ * the Playwright per-route screenshot loop. A new `<Route>` needs an entry here.
  */
 
 export type RouteGroup = 'admin' | 'authentication' | 'builder' | 'public';

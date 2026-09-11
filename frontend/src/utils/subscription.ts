@@ -1,13 +1,8 @@
 import type { UserRead } from '../types/Api';
 
 /**
- * Returns true if the user has an active premium subscription.
- * Use this to gate ads and premium features (e.g. unlimited build lists).
- *
- * Premium is active when:
- * - subscription_tier === 'premium'
- * - subscription_status === 'active'
- * - subscription_expires_at is null or in the future
+ * True when the user holds an active, unexpired premium subscription. Gates ads
+ * and premium features.
  */
 export function isPremium(user: UserRead | null | undefined): boolean {
   if (!user) return false;

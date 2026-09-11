@@ -1,29 +1,14 @@
 import * as Sentry from '@sentry/react';
 
 /**
- * Frontend Sentry initialization.
- *
- * OBS-05: captures React runtime errors in staging + production environments,
- * with Session Replay enabled ON ERROR ONLY (zero ambient) to stay well under
- * the Sentry free-tier 500-replays/month quota (D-32).
- *
- * Decision refs: 02-CONTEXT.md D-32..D-43. Landmine refs: 02-RESEARCH.md §5
- * Landmines 11 (v10 sendDefaultPii + strict IP exclusion), 12 (build.sourcemap
- * 'hidden' required for vite-plugin), 13 (process.env.CI cross-CI standard),
- * 14 (beforeErrorSampling decides replay attach, NOT error reporting —
- * auth-route errors still report, replay just doesn't attach).
- *
- * PII posture (D-36 + D-40):
- * - sendDefaultPii: false — v10 strictly excludes IP address
- * - maskAllText / maskAllInputs / blockAllMedia for Session Replay
- * - Sentry.setUser({ id }) only — never email/username (see AuthContext.tsx)
+ * Initialises Sentry outside development. Session Replay attaches on error
+ * only, and no personally identifying data is sent: IP is excluded, text and
+ * inputs are masked, and only a user id is ever set.
  */
 
 /**
- * Auth-route pathname prefixes where Session Replay must NOT attach.
- * D-37: defense-in-depth against token-bearing URL fragments (oauth redirects,
- * password-reset tokens, 2FA step-up challenges). Errors on these pages still
- * report to Sentry — the replay video is what gets dropped.
+ * Pathname prefixes where Session Replay must not attach, since these URLs can
+ * carry tokens. Errors on these pages still report; only the replay is dropped.
  */
 const AUTH_PATHS = [
   '/login',

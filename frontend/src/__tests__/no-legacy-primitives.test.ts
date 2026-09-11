@@ -4,46 +4,9 @@ import { describe, expect, it } from 'vitest';
 import { resolve } from 'path';
 
 /**
- * R017 / M002-S12 + M003-S06 enforcement gate.
- *
- * Original R017 assertion (M002-S12) blocks re-introduction of imports from
- * the retired `frontend/src/components/common/` and
- * `frontend/src/components/buttons/` directories.
- *
- * M003-S06/T02 extends this guard with three additional assertions that
- * promote the per-PR grep gates (raw palette utilities, glassNAME classes,
- * hand-rolled primitive shapes) into vitest assertions that fail fast at
- * `npm test` time:
- *
- * - `no raw legacy palette utilities outside index.css/tokens.css` —
- *   replicates standing gates 1 and 2 (raw-palette and textNAME-accent).
- *   The `@theme` block was deleted in S04 so these utilities no longer
- *   compile, but a future re-introduction would silently break visuals;
- *   this gate surfaces the mistake at test time. Per MEM168, the scan is
- *   scoped to consumer dirs (`components,pages,contexts,hooks,api,lib,__tests__`)
- *   and excludes `index.css` + `styles/tokens.css`.
- * - `no glassNAME class references in consumer code` — replicates standing
- *   gates 3 and 4 (glassNAME-card and glassNAME-button class references in
- *   className strings). The variant prop on `<Card variant="..." />` is
- *   intentionally not matched because the regex requires a className= prefix.
- * - `no hand-rolled patterns now that ui/* primitives exist` — three
- *   sub-checks (hand-rolled textarea elements, inline loading-overlay div,
- *   inline status/priority badge factories) with allowlist entries for
- *   each primitive's own source file.
- *
- * Memory references: MEM168 (consumer-dir scoping), MEM163 (placeholder
- * strings in comments to avoid self-tripping the per-PR rg gates), MEM180
- * (the existing `__tests__/` exclusion already prevents test-file false
- * positives for cross-test gates; this file is also self-allowlisted in
- * the in-test scan helper).
- *
- * The guard file itself is excluded via the `allowlist` set in each
- * assertion because its source contains the regex source strings.
- *
- * Regex sources for the glassNAME and className-glassNAME gates are
- * constructed via string concatenation so the bare prefixed-glassNAME
- * literal does not appear in this file's source — that keeps the per-PR
- * rg gates green even though they scan `__tests__/`.
+ * Fails the suite when retired primitives reappear: imports from the removed
+ * `common/` and `buttons/` directories, raw palette utilities outside the token
+ * stylesheets, legacy glass classes, and hand-rolled shapes that `ui/` replaces.
  */
 const LEGACY_PRIMITIVE_RE = /from\s+['"](?:\.\.\/)+(?:common|buttons)\//;
 

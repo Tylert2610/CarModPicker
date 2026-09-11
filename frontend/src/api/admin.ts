@@ -330,26 +330,16 @@ export const adminApi = {
     ),
 
   /**
-   * Admin: archived page count per source (adapter name or chrome_extension).
-   *
-   * NOTE: URL is under `/crawled-pages/...` rather than `/admin/crawled-pages/...`
-   * because the backend crawled_pages router is mounted at `/crawled-pages`
-   * (see backend/app/main.py EndpointRegistry). Admin-only access is enforced
-   * at the handler level via `Depends(get_current_admin_user)` on
-   * `count_crawled_pages_by_source` in
-   * backend/app/api/endpoints/crawled_pages.py — verified in Phase 6 WR-05.
-   * A non-admin token will receive 403 Forbidden from the backend.
+   * Archived page count per source. Sits under `/crawled-pages` rather than
+   * `/admin`, because that is where the backend router mounts; admin access is
+   * enforced on the handler and a non-admin token gets a 403.
    */
   getCrawledPageCountsBySource: () =>
     apiClient.get<Record<string, number>>('/crawled-pages/counts-by-source'),
 
   /**
-   * Admin: per-source, per-parse_status counts — drives the parsed/total progress pill.
-   *
-   * Admin access is enforced by the backend handler
-   * (`count_crawled_pages_by_source_and_status` uses
-   * `Depends(get_current_admin_user)`); see note on
-   * `getCrawledPageCountsBySource` above for the URL-prefix rationale.
+   * Per-source, per-parse-status counts, driving the parsed/total progress pill.
+   * Admin access is enforced on the backend handler.
    */
   getCrawledPageCountsBySourceAndStatus: () =>
     apiClient.get<Record<string, Record<string, number>>>(
@@ -453,14 +443,9 @@ export const adminApi = {
   }) => apiClient.post<RescanResponse>('/admin/parts/rescan', body),
 
   /**
-   * Admin extraction-health snapshot — compliance counts, per-tier coverage
-   * gradient, and 7-day per-adapter failure rates. Backend handler is mounted
-   * at `/admin/extraction-health/` (router prefix + `@router.get("/")`). Call
-   * with the trailing slash: FastAPI's no-slash 307 redirect points at the
-   * upstream (localhost:8000), which is cross-origin from the Vite dev server
-   * (localhost:4000), and browsers drop the Authorization header on cross-origin
-   * redirects → 401. Sources failure-rate from `crawled_pages.parse_status`
-   * (D009) — works in dev/test without IAM.
+   * Admin extraction-health snapshot: compliance counts, per-tier coverage, and
+   * seven day per-adapter failure rates. The trailing slash is required, since
+   * the redirect without it is cross-origin in dev and drops the auth header.
    */
   getExtractionHealth: () =>
     apiClient.get<ExtractionHealthResponse>('/admin/extraction-health/'),

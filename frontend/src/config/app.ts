@@ -1,11 +1,8 @@
 import { loadAppConfig, type AppConfig } from '@webbpulse/config';
 
 /**
- * Reads a URL variable, treating blank as unset.
- *
- * `backendTargets` accepts `undefined` for a target and falls through to the
- * normal resolution, so an unset `VITE_STAGING_API_URL` needs no guard at the
- * call site. What it does not do is distinguish `''` from unset, hence this.
+ * Reads a URL variable, treating blank as unset, which the package's own target
+ * resolution does not do.
  */
 const readEnvUrl = (env: ImportMetaEnv, key: string): string | undefined => {
   const value: unknown = env[key];
@@ -15,12 +12,8 @@ const readEnvUrl = (env: ImportMetaEnv, key: string): string | undefined => {
 };
 
 /**
- * Ensures a protocol on a URL from the environment.
- *
- * The deploy writes `VITE_API_URL` and the two dev URLs from the Terraform
- * `api_url` output, which is a bare host in some environments. The `/api`
- * suffix is no longer added here: `apiPathPrefix` below appends it after
- * resolution, and appending it twice would produce `/api/api`.
+ * Ensures a protocol on a URL from the environment, which the deploy writes as
+ * a bare host in some environments.
  */
 const withProtocol = (url: string | undefined): string | undefined => {
   if (url === undefined) return undefined;
@@ -30,17 +23,9 @@ const withProtocol = (url: string | undefined): string | undefined => {
 };
 
 /**
- * Loads and validates the configuration for a given environment bag.
- *
- * Exported separately from the singleton below so tests can drive it with a
- * synthetic bag rather than the real `import.meta.env`.
- *
- * `backendTargets` is consulted by the package only when `DEV` is true, which
- * is what keeps a stray `VITE_BACKEND` in a deploy environment from repointing
- * a shipped production bundle at another backend. A dev run with no
- * `VITE_BACKEND`, or one naming a target whose URL is unset, falls through to
- * `defaultApiBaseUrl` and so to `/api`, which the Vite dev server proxies to
- * localhost:8000 and which is what keeps the session cookie same origin.
+ * Loads and validates the configuration for an environment bag. Exported apart
+ * from the singleton so tests can pass a synthetic bag. `backendTargets` is
+ * honoured only under `DEV`, so a stray `VITE_BACKEND` cannot repoint a build.
  */
 export const loadCarModPickerConfig = (env: ImportMetaEnv): AppConfig =>
   loadAppConfig(

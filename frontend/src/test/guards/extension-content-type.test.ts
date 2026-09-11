@@ -4,12 +4,9 @@ import { describe, expect, it } from 'vitest';
 import { resolve } from 'path';
 
 /**
- * Walks `src` starting at `startIdx`, which must point at an opening `{`.
- * Returns the index just past the matching closing `}`, or -1 if unbalanced.
- * Treats string literals (single, double, backtick) as opaque so braces inside
- * strings do not affect the depth count. Ignores `//` line comments and `/*`
- * block comments. This intentionally does not try to be a full JS parser —
- * it only needs to be correct for the shape of real fetch(...) options objects.
+ * Returns the index just past the brace matching the one at `startIdx`, or -1
+ * when unbalanced. Skips string literals and comments, which is enough for the
+ * shape of a real fetch options object without being a full parser.
  */
 function findMatchingBrace(src: string, startIdx: number): number {
   if (src[startIdx] !== '{') return -1;
@@ -64,10 +61,8 @@ function findMatchingBrace(src: string, startIdx: number): number {
 }
 
 /**
- * Extract every options-object literal passed to `fetch(...)` in `src`.
- * Returns the substring of each options object (including the wrapping braces).
- * Uses brace balancing so nested object literals (e.g. `headers: { ... }`) do
- * not truncate the match — fixes WR-01 from the Phase 6 code review.
+ * Extracts every options-object literal passed to `fetch(...)`, balancing braces
+ * so a nested literal such as `headers` does not truncate the match.
  */
 function extractFetchOptionsObjects(src: string): string[] {
   const results: string[] = [];

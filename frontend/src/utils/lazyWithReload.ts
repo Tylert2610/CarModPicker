@@ -14,10 +14,9 @@ function isChunkLoadError(error: unknown): boolean {
 }
 
 /**
- * Wraps React.lazy so that a failed dynamic import (typically caused by a stale
- * index.html referencing chunk hashes that no longer exist after a deploy)
- * forces a one-time hard reload to fetch the fresh asset manifest. A
- * sessionStorage flag prevents an infinite reload loop if the failure is real.
+ * Wraps `React.lazy` so a failed dynamic import, usually a stale index.html
+ * naming chunks a deploy removed, forces one hard reload. A sessionStorage flag
+ * stops a genuine failure from looping.
  */
 export function lazyWithReload<
   T extends ComponentType<Record<string, unknown>>,

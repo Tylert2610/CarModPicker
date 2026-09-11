@@ -1,11 +1,9 @@
 import { useCallback, useRef, useState, type RefCallback } from 'react';
 
 /**
- * Returns a callback ref and the observed element's content width.
- * Uses a callback ref (not useRef) so the ResizeObserver is wired up
- * whenever the element mounts — even if the first render showed a
- * loading state and the element wasn't in the DOM yet.
- * Returns 0 until the first measurement.
+ * Returns a callback ref and the observed element's content width, 0 until
+ * first measurement. A callback ref rather than `useRef`, so the observer
+ * attaches whenever the element mounts, including after a loading state.
  */
 export function useContainerWidth<T extends HTMLElement>(): [
   RefCallback<T>,

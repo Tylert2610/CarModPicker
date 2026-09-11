@@ -22,12 +22,8 @@ export interface UserRead {
 }
 
 /**
- * What the public endpoints actually return: `/search` user results, and
- * `GET /users/{id}` for anyone other than the user themselves or an admin.
- *
- * Deliberately has no `email`. The backend `PublicUserRead` dropped the field
- * so an anonymous search could not read every matched user's address; typing
- * these responses as `UserRead` is what hid that from the compiler.
+ * What the public user endpoints return. Carries no `email`, so an anonymous
+ * search cannot read a matched user's address.
  */
 export interface PublicUserRead {
   id: string;
@@ -366,11 +362,11 @@ export interface PriceHistorySinglePartResponse {
   summary: PriceHistorySummary;
   retailers: RetailerPriceBreakdown[];
   history: PartPriceHistoryReadWithRetailer[];
-  /** Most recent observation per retailer from BEFORE the window cutoff.
-   *  Lets clients render a "last known" carry-over point on the chart's
-   *  y-axis so a sparse window doesn't strand a single observation.
-   *  Empty when window='all'. Optional for backwards-compat with older
-   *  API responses; consumers should `?? []`. */
+  /**
+   * Most recent observation per retailer from before the window cutoff, so a
+   * sparse window still renders a carry-over point. Empty when `window` is
+   * `all`, and absent from older API responses.
+   */
   pre_window_anchors?: PartPriceHistoryReadWithRetailer[];
   window: string;
 }
@@ -482,15 +478,9 @@ export interface VoteRead {
 }
 
 /**
- * What the vote and unvote routes return.
- *
- * Split plan row 24 moved `parts.net_votes` onto the votes stream, so that
- * column now lags the write. The counts here do not: the backend reads them
- * from the votes table in the same request that writes the vote, so a client
- * can render the new total straight off the response instead of re-fetching a
- * summary that might still hold the old number.
- *
- * `vote` is null on a removal, where there is no vote left to return.
+ * What the vote and unvote routes return. The counts are read in the same
+ * request that writes the vote, so they lead the eventually consistent
+ * `parts.net_votes` column. `vote` is null on a removal.
  */
 export interface VoteMutationResult {
   vote: VoteRead | null;

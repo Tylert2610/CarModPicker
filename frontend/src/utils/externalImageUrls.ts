@@ -1,11 +1,7 @@
 /**
- * Build display URLs for externally-hosted images (scraped retailer / CMS URLs).
- *
- * Many CDNs serve full-resolution originals; we request smaller variants where the
- * host supports URL-based transforms so thumbnails and hero views do not decode
- * 25–45 MP images for 92px tiles.
- *
- * @see https://dev.wix.com/docs/api-reference/assets/media/media-manager/url-image-transformation
+ * Builds display URLs for externally hosted images, requesting a smaller
+ * variant where the host supports URL-based transforms so a thumbnail does not
+ * decode a full resolution original.
  */
 
 export type ExternalImageVariant = 'thumbnail' | 'hero' | 'carouselTile';

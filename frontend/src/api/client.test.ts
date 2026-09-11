@@ -7,11 +7,8 @@ interface Captured {
 }
 
 /**
- * Installs a fetch stub and returns the calls it captured.
- *
- * Resolves 200 with an empty JSON body by default, which is enough for every
- * request-shaping assertion here; cases that care about the response pass their
- * own.
+ * Installs a fetch stub and returns the calls it captured. Resolves 200 with an
+ * empty JSON body unless the case passes its own response.
  */
 function stubFetch(response?: Response): Captured[] {
   const calls: Captured[] = [];
