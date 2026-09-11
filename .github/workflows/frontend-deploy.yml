@@ -36,20 +36,39 @@ permissions:
   contents: read
 
 jobs:
-  # A `uses:` job cannot declare an environment, so the environment name is resolved
-  # here and passed to the shared workflow as an input.
+  # A `uses:` job cannot declare an `environment:`, and the environment the shared
+  # workflow declares from its own input is not in scope when this caller evaluates
+  # `with:`. A `vars.*` lookup here therefore reads repository variables only, and
+  # the deploy values for this repository are environment scoped, so they would come
+  # back empty. This job carries the environment itself and republishes the values
+  # it needs as job outputs, which the `with:` block below can read.
   resolve-env:
     runs-on: ubuntu-latest
+    environment: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
     outputs:
       environment: ${{ steps.pick.outputs.environment }}
+      s3-bucket: ${{ vars.FRONTEND_S3_BUCKET }}
+      cloudfront-distribution-id: ${{ vars.CLOUDFRONT_DISTRIBUTION_ID }}
+      role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+      build-env-json: ${{ steps.pick.outputs.build-env-json }}
     steps:
       - id: pick
+        env:
+          VITE_API_URL: ${{ vars.VITE_API_URL }}
+          CWS_EXTENSION_ID: ${{ vars.CWS_EXTENSION_ID }}
         run: |
+          set -euo pipefail
           if [ "${{ github.ref_name }}" = "main" ]; then
             echo "environment=production" >> "$GITHUB_OUTPUT"
           else
             echo "environment=staging" >> "$GITHUB_OUTPUT"
           fi
+
+          BUILD_ENV=$(python3 -c 'import json, os; print(json.dumps({
+              "VITE_API_URL": os.environ["VITE_API_URL"],
+              "VITE_ALLOWED_EXTENSION_IDS": os.environ["CWS_EXTENSION_ID"],
+          }))')
+          echo "build-env-json=$BUILD_ENV" >> "$GITHUB_OUTPUT"
 
   deploy:
     needs: resolve-env
@@ -62,11 +81,9 @@ jobs:
       node-version: "22"
       working-directory: frontend
       cache-dependency-path: frontend/package-lock.json
-      build-env-json: >-
-        ${{ format('{{"VITE_API_URL":"{0}","VITE_ALLOWED_EXTENSION_IDS":"{1}"}}',
-                   vars.VITE_API_URL, vars.CWS_EXTENSION_ID) }}
-      s3-bucket: ${{ vars.FRONTEND_S3_BUCKET }}
-      cloudfront-distribution-id: ${{ vars.CLOUDFRONT_DISTRIBUTION_ID }}
+      build-env-json: ${{ needs.resolve-env.outputs.build-env-json }}
+      s3-bucket: ${{ needs.resolve-env.outputs.s3-bucket }}
+      cloudfront-distribution-id: ${{ needs.resolve-env.outputs.cloudfront-distribution-id }}
       # The prerender postbuild step writes an index.html under each of these
       # routes, so each needs invalidating alongside / and /index.html.
       invalidation-paths: >-
@@ -81,6 +98,6 @@ jobs:
       tfc-organization: WebbPulse
       tfc-workspace: ${{ github.ref_name == 'main' && 'CarModPicker' || 'CarModPicker-staging' }}
     secrets:
-      role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+      role-to-assume: ${{ needs.resolve-env.outputs.role-to-assume }}
       codeartifact-domain-owner: ${{ vars.CODEARTIFACT_DOMAIN_OWNER }}
       tfc-api-token: ${{ secrets.TFC_API_TOKEN }}
