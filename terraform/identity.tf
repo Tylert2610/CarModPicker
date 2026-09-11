@@ -159,8 +159,13 @@ locals {
 }
 
 module "identity" {
-  source  = "app.terraform.io/WebbPulse/platform-modules/aws//modules/identity"
-  version = "~> 2.7"
+  source = "app.terraform.io/WebbPulse/platform-modules/aws//modules/identity"
+
+  # >= 2.10 is a floor rather than taste: `attach_role_policies` below arrives in
+  # 2.10.0 and the production promotion cannot plan without it. `~> 2.10` still
+  # takes every 2.x minor, so the M5 and M6 tables and anything else additive
+  # keep arriving by bumping this pin.
+  version = "~> 2.10"
 
   name_prefix        = local.prefix
   issuer             = local.identity_issuer
@@ -176,6 +181,28 @@ module "identity" {
   # while an `aws_iam_role_policy` takes a role name.
   identity_role_name = module.lambda_domain["identity"].role_id
   identity_role_arn  = module.lambda_domain["identity"].role_arn
+
+  # ATTACH THE POLICIES, AND THE REASON THIS IS AN EXPLICIT INPUT RATHER THAN
+  # INFERRED FROM THE ROLE NAME ABOVE.
+  #
+  # `role_id` is `aws_iam_role.this.id`. On staging that role already exists, so
+  # the value is known at plan time and nothing about it is interesting. On
+  # production it is not: `main` declares five domains and `identity` is not one
+  # of them, so `module.lambda_domain["identity"]` is a create and its id is
+  # unknown until apply.
+  #
+  # Through module 2.9 the three `aws_iam_role_policy` resources counted off
+  # `var.identity_role_name == null`. An unknown value is not null, but it is
+  # also not known, and Terraform does not defer an unknown `count`: it refuses
+  # to produce a plan at all and reports `Invalid count argument`. A production
+  # speculative plan of this tree errored on exactly that, which is blocker 1 of
+  # `docs/prod-promotion-runbook.md`.
+  #
+  # Module 2.10.0 moves those counts onto this boolean, which is known at plan
+  # time by construction. True is the ordinary state and the only state this
+  # repository uses; the module validates that true requires a non-null role
+  # name, so the two lines above and this one stand or fall together.
+  attach_role_policies = true
 
   # `tables` IS DELIBERATELY NOT PASSED, WHICH IS THE OPPOSITE OF WHAT
   # PORTFOLIO DOES AND IS RIGHT HERE FOR A REASON WORTH WRITING DOWN.

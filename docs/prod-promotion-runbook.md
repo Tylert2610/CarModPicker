@@ -83,7 +83,44 @@ rows 25 to 32 of the domain split. Concretely, promoting lands all of:
 
 ### 1. The production plan errors today, and it does not fix itself
 
-This is the one real blocker and it needs a code change before the merge.
+> **FIXED, 2026-09-10.** Option C below was taken.
+> [`terraform-aws-platform-modules` PR 46](https://github.com/WebbPulse/terraform-aws-platform-modules/pull/46)
+> added an `attach_role_policies` input to `modules/identity` and moved all three
+> counts onto it, released as **`v2.10.0`**. CarModPicker PR 415 bumped the pin in
+> `terraform/identity.tf` from `~> 2.7` to `~> 2.10` and passes
+> `attach_role_policies = true`.
+>
+> A speculative plan of that branch against the production workspace
+> `ws-oh1VvpTBPxmcrSYD` (run `run-6gtpiUqZf6bxbfmF`) now reaches
+> `planned_and_finished` and renders a diff: **201 to add, 6 to change, 18 to
+> destroy**. The previous attempt reached `errored` with `Invalid count argument`
+> and no diff at all, so the gate this section names is met.
+>
+> The three policies plan as `module.identity.aws_iam_role_policy.identity_signing[0]`,
+> `identity_tables[0]` and `identity_mfa[0]`, plain creates at a known index,
+> which is precisely what the unknown count made impossible.
+>
+> **Every hard stop in step 3 passes on that plan**, checked against the plan
+> JSON rather than by eye: zero DynamoDB table destroys, zero
+> `aws_apigatewayv2_authorizer` of any action, zero Route 53 record changes, and
+> zero destroys anywhere under `module.identity`. The 18 destroys are row 32's
+> monolith retirement and nothing else, itemised in step 3. The 6 changes are
+> five alarm and policy updates that follow from adding domains, plus the
+> `github_actions_role` policy.
+>
+> The staging workspace `ws-dNLoiEHVxr2o81XM` (run `run-xeNGeMRSE4xPkcji`) is
+> zero-change against the same branch, which is the other half of the check: the
+> fix is a plan-time change, and staging, whose identity role already exists and
+> whose id was therefore always known, must not move at all.
+>
+> Both runs were speculative configuration versions, which HCP refuses to apply
+> by construction, so neither could be confirmed against production.
+>
+> The rest of this section is kept as written because it explains why the fix
+> takes the shape it does, and because the same trap applies to any future module
+> input that counts off a consumer's computed value.
+
+This was the one real blocker and it needed a code change before the merge.
 
 A speculative plan of the `staging` tree against production state fails with
 `Invalid count argument` in `module.identity`, in the module's `kms.tf` and
@@ -141,7 +178,7 @@ There are three ways out and the owner picks one.
 | --- | --- | --- |
 | **A. Two-phase by `bootstrap_image_tag`** | Set `bootstrap_image_tag = ""` on the production workspace, apply, then set the real sha and apply again | Resolves `local.lambda_domains` to `{}`, so `module.lambda_domain["identity"]` does not exist and the plan fails on a *missing map key* instead. Does not work. |
 | **B. `-target` the identity function first** | Apply `module.lambda_domain["identity"]` alone, then apply the rest | Works, because the role is real by the second plan. Requires a targeted apply through the HCP API, which is a deliberate departure from how every other apply in this repository runs. |
-| **C. Make the count plan-time known** | Change the module so the three policies count off a plan-time boolean rather than off the role name | The correct fix. It is a `platform-modules` change and a version bump, and it is what the module already does for `local.mfa_key_exists`. |
+| **C. Make the count plan-time known** ✅ **taken** | Change the module so the three policies count off a plan-time boolean rather than off the role name | The correct fix. It is a `platform-modules` change and a version bump, and it is what the module already does for `local.mfa_key_exists`. Shipped as `v2.10.0`. |
 
 **Recommendation: C, as a `platform-modules` release, with B as the fallback if
 the owner wants the promotion to go this week.** C is a small change: add a
@@ -150,10 +187,33 @@ evaluated against the variable's own nullness is not enough, because the
 variable is non-null but unknown. The shape that works is an explicit boolean
 input the consumer sets, which is known at plan time by construction.
 
+**What actually shipped**, and it is that shape. `v2.10.0` adds
+`attach_role_policies`, a `bool` defaulting to `true`, and the three counts read
+it:
+
+```hcl
+count = var.attach_role_policies ? 1 : 0                              # kms.tf, signing
+count = var.attach_role_policies && local.mfa_key_exists ? 1 : 0      # kms.tf, mfa
+count = var.attach_role_policies && length(var.tables) > 0 ? 1 : 0    # dynamodb.tf, tables
+```
+
+Both remaining operands were already plan-time known: `local.mfa_key_exists`
+reads two input variables for this same reason, and `var.tables` is an input.
+
+`identity_role_name = null` keeps its old meaning of attaching nothing, now
+written as the pair `attach_role_policies = false`. The halfway state, true with
+a null role name, is refused by a `validation` on `identity_role_name` whose
+condition is `!var.attach_role_policies || var.identity_role_name != null`. That
+reads only the two variables and nothing computed, so it stays decidable at plan
+time even when the role name's value is not: a validation checks whether the
+value is null, and an unknown non-null value is not null. That distinction is
+the whole of why the fix works.
+
 Either way, **do not merge until a production speculative plan renders.** A
 plan that cannot be produced is not a plan with a surprising shape; it is a
 merge that queues a run which errors before it shows a diff, on a branch that
-auto-deploys.
+auto-deploys. This gate is now satisfied; re-run it against the actual promotion
+branch anyway, since it is cheap and the branch will have moved.
 
 Confirm the fix the same way every other gate here is confirmed:
 
@@ -346,10 +406,32 @@ difference between the two runbooks.
 
 ### 7. The Chrome extension publishes on merge, and the locked decision says when
 
+> **FIXED, 2026-09-10, by CarModPicker PR 415.** The push trigger is now gated on
+> a variable that is deliberately unset, so **the merge no longer publishes**.
+>
+> `.github/workflows/chrome-extension-deploy.yml` gained a first job, `gate`,
+> which reads the `production` environment variable
+> **`CHROME_EXTENSION_AUTO_RELEASE`**. `changes` and `release` both require
+> `gate.outputs.allowed == 'true'`. A push releases only when that variable is
+> exactly `true`; `workflow_dispatch` is never gated, because a manual run is
+> already an explicit decision to release.
+>
+> The variable was **not created**, and an unset variable reads as an empty
+> string, so the hold is the default and nobody has to remember to apply it. A
+> held run still appears in the run list with `gate` green and `release` skipped,
+> and `gate`'s job summary says why and how to release, so a hold is visible
+> rather than looking like a workflow that never triggered.
+>
+> This makes order 1 and order 2 below the same decision rather than a fork:
+> `chrome-extension/` can ship in the promotion without burning the release, and
+> the single publish happens at step 12 when the operator flips the variable.
+> **Order 1's revert is no longer necessary.**
+
 `.github/workflows/chrome-extension-deploy.yml` triggers on pushes to `main`
 under `chrome-extension/**`. The promotion diff touches six files there,
-including `background.ts`, `auth-callback.ts` and `options.tsx`, so **the merge
-fires a Chrome Web Store publish**. That is live and irreversible.
+including `background.ts`, `auth-callback.ts` and `options.tsx`, so before the
+gate landed **the merge fired a Chrome Web Store publish**. That is live and
+irreversible.
 
 The locked decision of 2026-09-11 is: publish the extension **after the
 production cutover, with the identity default flipped in the same release.**
@@ -366,8 +448,9 @@ Two consequences, and they pull in opposite directions:
   is a second store publish and a second review, which is exactly what the
   locked decision says to avoid.
 
-**So the decision to take before the merge is whether `chrome-extension/` ships
-in the promotion at all.** Two workable orders:
+**So the decision to take before the merge was whether `chrome-extension/` ships
+in the promotion at all.** Two workable orders, both now reachable without a
+revert because the gate holds the publish either way:
 
 1. **Revert `chrome-extension/` out of the promotion branch**, promote the
    backend and frontend, complete the cutover through step 11, then land the
@@ -377,8 +460,12 @@ in the promotion at all.** Two workable orders:
    publish at step 12 for the flip. Two reviews, and the first one ships a
    default that is wrong within a day.
 
-**Recommendation: order 1.** It is what the locked decision describes and it is
-the only one that publishes once.
+**Recommendation: order 1's outcome, reached the cheap way.** With the gate in
+place, let `chrome-extension/` ride the promotion merge with
+`CHROME_EXTENSION_AUTO_RELEASE` unset. The merge publishes nothing. Then flip
+`DEFAULT_AUTH_MODE` to `"identity"` and publish once at step 12. One store
+publish, correct default, matches the locked decision, and no revert to carry
+and re-land.
 
 Also confirm before merging that `main` still carries the fixed workflow, the
 one that derives the version from the last `chrome-extension-v*` tag and opens a
@@ -642,6 +729,19 @@ curl -s -X PATCH -H "Authorization: Bearer $T" \
 
 ### Step 3. The first apply, mode off
 
+**Blocker 1 is fixed, so this plan renders.** It did not before: through module
+`2.9` the identity role policies counted off a value that is unknown while the
+identity role is still to be created, and the run reached `errored` with
+`Invalid count argument` before showing any diff. `platform-modules` `v2.10.0`
+plus CarModPicker PR 415 moved those counts onto `attach_role_policies`, and a
+speculative plan against this workspace now reaches `planned_and_finished` with
+**201 to add, 6 to change, 18 to destroy** for the branch as it stood at the fix,
+and every hard stop in the table below passes on it. The 18 destroys are row 32's
+retirement, listed in this table's last two rows, and nothing else. Section 1 has
+the mechanism and the run ids. If a run here still errors on a count, the module
+pin in `terraform/identity.tf` is the first thing to read: it must be `~> 2.10`
+or later.
+
 The merge queued a run on `ws-oh1VvpTBPxmcrSYD` before the tag was refreshed, so
 **discard it and queue a fresh one** rather than confirming a run planned
 against the stale tag:
@@ -665,7 +765,7 @@ number to match, and read every destroy line.
 | Domain functions | 4 create, each with role, log group, X-Ray policy and runtime policy | `build-lists`, `catalog`, `identity`, `users` |
 | KMS keys, aliases, key policies | 2 keys, 2 aliases, 2 policies | `identity-signing` and `identity-mfa`. Portfolio's runbook under-counted this by one because it forgot the MFA key; it is created here by the module default |
 | Identity tables | 10 create | `credentials`, `refresh-tokens`, `login-attempts`, `identity-tokens`, `totp-factors`, `recovery-codes`, `passkeys`, `webauthn-challenges`, `oauth-states`, `oauth-links`. All carry `deletion_protection = true` because `var.environment == "production"` |
-| IAM role policies on the identity role | 3 create | `identity-signing`, `identity-tables`, `identity-mfa` |
+| IAM role policies on the identity role | 3 create | `identity-signing`, `identity-tables`, `identity-mfa`. These are the three that blocker 1 was about. They plan as creates now because their `count` reads `attach_role_policies`, not the role id |
 | Gateway routes, row 8 | 15 create | The explicit `/api/auth` keys, `authorization_type` NONE in this apply |
 | Gateway routes, row 12a | 82 create | 80 domain keys plus 2 anonymous guard keys, all unmarked |
 | Gateway routes, domain cuts | 8 create | The `ANY` bare and `{proxy+}` pair for each of four new prefixes |
@@ -1092,15 +1192,60 @@ fails and presents as a 401.
 
 ### Step 12. Chrome extension, soak, then clear the plaintext
 
-Publish the extension per the blocker 7 decision. If the owner took order 1, this
-is the pull request that lands `chrome-extension/` on `main` with
-`DEFAULT_AUTH_MODE` flipped to `"identity"`, and merging it fires the store
-publish:
+Publish the extension per the blocker 7 decision. This is the one store publish
+the locked decision allows, and it carries `DEFAULT_AUTH_MODE = "identity"`.
+
+**The release is held behind a variable, and this is where the operator flips
+it.** The gate in `.github/workflows/chrome-extension-deploy.yml` releases on a
+push only when the `production` environment variable
+
+```
+CHROME_EXTENSION_AUTO_RELEASE = true
+```
+
+is exactly `true`. It is unset by default, which is the hold. Until it is set, a
+promotion merge that touches `chrome-extension/**` runs the workflow, reports
+the hold in the `gate` job summary, and skips `release`.
+
+So, in order:
+
+1. Land `DEFAULT_AUTH_MODE = "identity"` on `main` in the ordinary way. With the
+   variable unset this still publishes nothing, so it can land early.
+2. Set the variable, as the owner or the promotion operator:
+
+   ```bash
+   gh variable set CHROME_EXTENSION_AUTO_RELEASE --body true \
+     --env production --repo WebbPulse/CarModPicker
+   ```
+
+3. Release. Either re-run the held workflow run, or dispatch it manually, which
+   is never gated and needs no variable at all:
+
+   ```bash
+   gh workflow run chrome-extension-deploy.yml --repo WebbPulse/CarModPicker
+   ```
+
+4. **Put the hold back once the publish is done**, so a later merge that touches
+   the extension cannot spend a store review by accident:
+
+   ```bash
+   gh variable delete CHROME_EXTENSION_AUTO_RELEASE \
+     --env production --repo WebbPulse/CarModPicker
+   ```
+
+   Setting it to anything other than `true` works as well; deleting it is
+   tidier, because unset and held then read the same.
+
+Then watch the run:
 
 ```bash
 gh run list --branch main --workflow chrome-extension-deploy.yml --limit 3 \
   --repo WebbPulse/CarModPicker
 ```
+
+A run whose `release` job shows as skipped did not publish. Read the `gate` job
+summary for which of the two reasons applies, the variable or an unchanged
+extension tree.
 
 A store review is not instant and is outside anybody's control here. Existing
 installs keep working through the handoff either way, because `getAuthMode()`

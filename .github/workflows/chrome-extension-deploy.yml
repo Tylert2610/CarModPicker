@@ -18,6 +18,32 @@
 # in the tree is bookkeeping that trails the tag by design, so a missed or closed
 # bookkeeping PR never blocks or corrupts the next release.
 #
+# THE PUSH TRIGGER IS HELD BEHIND A VARIABLE, AND THAT HOLD IS DELIBERATE.
+#
+# A push to `main` under `chrome-extension/**` used to publish a store version on
+# its own. The locked decision for the identity cutover is a single publish, made
+# after the production identity cutover lands, carrying `DEFAULT_AUTH_MODE` =
+# identity. A promotion merge that happens to touch the extension must not spend
+# that publish early.
+#
+# So the `gate` job below releases on a push only when the `production` environment
+# variable (or the repository variable of the same name) is:
+#
+#     CHROME_EXTENSION_AUTO_RELEASE = true
+#
+# The variable is deliberately NOT created. An unset variable reads as an empty
+# string, which is not `true`, so the hold is the default and no one has to
+# remember to apply it.
+#
+# The owner or the promotion operator sets it to `true` immediately before the
+# identity-default extension is meant to ship, and unsets it (or sets it to
+# anything other than `true`) afterwards to put the hold back. Step 12 of
+# `docs/prod-promotion-runbook.md` is where that happens in the sequence.
+#
+# `workflow_dispatch` is never gated. A manual run is an explicit decision to
+# release, and holding it behind the same variable would leave no way to ship
+# without editing repository configuration first.
+#
 # Auto-publish to the Chrome Web Store requires all four of these on the `production`
 # environment:
 #   - vars: CWS_CLIENT_ID, CWS_EXTENSION_ID (not secret; public identifiers)
@@ -44,12 +70,68 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # The release hold. See the header for why this exists and who flips it.
+  #
+  # This is its own job rather than an `if:` on `release` so that a held run is
+  # visible in the run list: the run appears, `gate` reports the decision in its
+  # summary, and `release` shows as skipped. An `if:` on `release` alone would
+  # look the same as a workflow that did not trigger.
+  #
+  # `environment: production` is what makes the environment-scoped variable
+  # readable here. A repository variable of the same name is also visible, and
+  # the environment one wins if both are set.
+  gate:
+    runs-on: ubuntu-latest
+    environment: production
+    outputs:
+      allowed: ${{ steps.decide.outputs.allowed }}
+    steps:
+      - name: Decide whether this event is allowed to release
+        id: decide
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          AUTO_RELEASE: ${{ vars.CHROME_EXTENSION_AUTO_RELEASE }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            echo "allowed=true" >> "$GITHUB_OUTPUT"
+            echo "Manual dispatch: releasing regardless of CHROME_EXTENSION_AUTO_RELEASE."
+            echo "Manual dispatch, so the release hold does not apply." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          if [[ "$AUTO_RELEASE" == "true" ]]; then
+            echo "allowed=true" >> "$GITHUB_OUTPUT"
+            echo "CHROME_EXTENSION_AUTO_RELEASE is true: this push may release."
+            echo "CHROME_EXTENSION_AUTO_RELEASE is \`true\`, so this push may release." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          echo "allowed=false" >> "$GITHUB_OUTPUT"
+          echo "CHROME_EXTENSION_AUTO_RELEASE is not 'true' (value: '${AUTO_RELEASE:-unset}'). Holding the release."
+          {
+            echo "### Chrome extension release held"
+            echo
+            echo "\`CHROME_EXTENSION_AUTO_RELEASE\` is \`${AUTO_RELEASE:-unset}\`, not \`true\`, so this push did not publish."
+            echo
+            echo "This is the expected state. The locked decision is a single publish after the"
+            echo "production identity cutover, carrying \`DEFAULT_AUTH_MODE\` = identity."
+            echo
+            echo "To release: set the \`production\` environment variable"
+            echo "\`CHROME_EXTENSION_AUTO_RELEASE\` to \`true\` and re-run, or run this workflow"
+            echo "manually with **Run workflow**, which is never gated. See step 12 of"
+            echo "\`docs/prod-promotion-runbook.md\`."
+          } >> "$GITHUB_STEP_SUMMARY"
+
   # A bookkeeping PR only bumps manifest.json, and the tag is the version of
   # record, so a promotion whose only extension change is that bump must not
   # publish a new store version. Compare the extension tree, minus the manifest,
   # between the newest release tag and the commit being released. A manual
   # dispatch always releases.
   changes:
+    needs: gate
+    if: needs.gate.outputs.allowed == 'true'
     runs-on: ubuntu-latest
     outputs:
       release: ${{ steps.check.outputs.release }}
@@ -95,8 +177,8 @@ jobs:
           fi
 
   release:
-    needs: changes
-    if: needs.changes.outputs.release == 'true'
+    needs: [gate, changes]
+    if: needs.gate.outputs.allowed == 'true' && needs.changes.outputs.release == 'true'
     runs-on: ubuntu-latest
     environment: production
     steps:
