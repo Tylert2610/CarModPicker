@@ -1,12 +1,12 @@
 webbpulse[fastapi,otel,dynamodb,aws-otel,security,identity,oauth,passkeys]==0.20.0
 
 annotated-types==0.8.0
-anyio==4.15.0
+anyio==4.15.1
 click==8.5.0
 fastapi==0.141.1
 h11==0.16.0
 idna==3.19
-pydantic[email]==2.13.3
+pydantic[email]==2.13.5
 pydantic-settings==2.15.0
 python-dotenv==1.2.3
 python-json-logger==4.2.0
@@ -33,7 +33,7 @@ beautifulsoup4==4.15.0
 defusedxml==0.7.1
 pybreaker==1.4.1
 
-boto3==1.43.88
+boto3==1.43.89
 Pillow==12.3.0
 
 sentry-sdk>=2.68.1,<3
