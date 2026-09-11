@@ -11,14 +11,18 @@ module "staging_access_gate" {
 
   source = "app.terraform.io/WebbPulse/platform-modules/aws//modules/staging-access-gate"
 
-  # 2.9 for identity_jwt and identity_jwt_route_keys, which is how a gated environment enforces the
-  # identity access token at all. Every release between 1.1 and 2.9 is additive for this module:
-  # 2.3.0 read the region as `region` and required provider 6.x, which this root already does, and
-  # 2.9.0 added exactly the two inputs below and nothing else. The module merges the new
-  # environment variables rather than setting them empty, so the bump alone changes nothing but the
-  # authorizer function's source hash and description; what changes behaviour is the two inputs
-  # below being non-empty.
-  version = "~> 2.9"
+  # 2.11 because 2.9 cannot be applied here. Under 2.9 the enforced route key list travelled to the
+  # authorizer Lambda in IDENTITY_JWT_ROUTE_KEYS, and a Lambda's whole environment is capped at 4096
+  # bytes, measured only at UpdateFunctionConfiguration. Terraform's plan was green and the apply
+  # failed with "environment variables exceeded the 4KB limit. Measured size: 4545 bytes": this API
+  # has 95 enforced route keys, which serialised to 3600 bytes on their own. 2.11.0 renders the list
+  # and the signing public key into the authorizer's deployment package instead, so the environment
+  # measures a few hundred bytes regardless of how many routes are enforced.
+  #
+  # identity_jwt and identity_jwt_route_keys are the inputs this root passes and they are unchanged;
+  # how they reach the function was never part of the module's interface. The bump plans one in-place
+  # update of the authorizer function (source hash, filename, environment) and nothing else.
+  version = "~> 2.11"
 
   name             = local.prefix
   cookie_domain    = local.domain_name
