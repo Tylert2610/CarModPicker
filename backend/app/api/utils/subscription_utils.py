@@ -14,16 +14,10 @@ def is_premium_system_disabled() -> bool:
 
 
 def is_user_premium(user: DBUser, *, check_kill_switch: bool = False) -> bool:
-    """
-    Return True if the user has an active premium subscription, OR (when
+    """Return True if the user has an active premium subscription, OR (when
+
     ``check_kill_switch`` is set) if the admin kill switch has disabled the
     premium system entirely, in which case every user is treated as premium
-    so feature gates are bypassed.
-
-    Premium is active when:
-    - subscription_tier == 'premium'
-    - subscription_status == 'active'
-    - subscription_expires_at is None or in the future (UTC)
     """
     if check_kill_switch and is_premium_system_disabled():
         return True

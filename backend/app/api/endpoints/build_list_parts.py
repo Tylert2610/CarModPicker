@@ -44,15 +44,12 @@ from app.db.dynamo.catalog import Part
 from app.db.dynamo.tombstones import drop_tombstoned_values, is_tombstoned
 from app.db.dynamo.users import User as DBUser
 
-# Create router
 router = APIRouter()
 part_service = PartService()
 
 
 def _require_part(repos: Repositories, part_id: UUID) -> Part:
-    # A tombstoned part is absent as far as every caller is concerned, so it
-    # takes the same 404 as a part that was never there. This is the "404 on
-    # direct fetch" half of row 23.
+    """Return the live part or raise 404."""
     part = repos.parts.get(str(part_id))
     if part is None or is_tombstoned(part):
         ResponsePatterns.raise_not_found("part", part_id)
@@ -61,6 +58,7 @@ def _require_part(repos: Repositories, part_id: UUID) -> Part:
 
 
 def _require_build_list(repos: Repositories, build_list_id: UUID) -> BuildList:
+    """Return the build list or raise 404."""
     build_list = repos.build_lists.get(build_list_id)
     if build_list is None:
         ResponsePatterns.raise_not_found("build list", build_list_id)
@@ -69,6 +67,7 @@ def _require_build_list(repos: Repositories, build_list_id: UUID) -> BuildList:
 
 
 def _require_build_list_part(repos: Repositories, build_list_part_id: UUID) -> BuildListPart:
+    """Return the build list part or raise 404."""
     build_list_part = repos.build_list_parts.get(build_list_part_id)
     if build_list_part is None:
         ResponsePatterns.raise_not_found("build list part", build_list_part_id)
@@ -77,6 +76,7 @@ def _require_build_list_part(repos: Repositories, build_list_part_id: UUID) -> B
 
 
 def _find_part_in_build_list(repos: Repositories, build_list_id: UUID, part_id: UUID) -> Optional[BuildListPart]:
+    """Return the build list row holding that part, or None."""
     return next(
         (blp for blp in repos.build_list_parts.all_for_build_list(build_list_id) if blp.part_id == part_id),
         None,
@@ -84,6 +84,7 @@ def _find_part_in_build_list(repos: Repositories, build_list_id: UUID, part_id: 
 
 
 def _require_part_in_build_list(repos: Repositories, build_list_id: UUID, part_id: UUID) -> BuildListPart:
+    """Return the build list row holding that part or raise 404."""
     build_list_part = _find_part_in_build_list(repos, build_list_id, part_id)
     if build_list_part is None:
         ResponsePatterns.raise_not_found("Build list part not found in build list")
@@ -92,6 +93,7 @@ def _require_part_in_build_list(repos: Repositories, build_list_id: UUID, part_i
 
 
 def _part_read_with_best_price(part: Part) -> PartRead:
+    """Read a part with its cheapest known listing price attached."""
     best = get_best_listing_for_part(part.id)
     part_dict = PartRead.model_validate(part).model_dump()
     part_dict["best_price_cents"] = best.last_known_price_cents if best else None
@@ -101,6 +103,7 @@ def _part_read_with_best_price(part: Part) -> PartRead:
 def _build_list_part_with_part(
     repos: Repositories, build_list_part: BuildListPart, part_read: PartRead
 ) -> BuildListPartReadWithPart:
+    """Combine a build list row with its part and phase name."""
     phase_name = None
     if build_list_part.build_list_phase_id:
         phase = repos.build_list_phases.get(build_list_part.build_list_phase_id)
@@ -142,6 +145,7 @@ def _add_part_to_build_list(
     notes: Optional[str],
     build_list_phase_id: Optional[UUID],
 ) -> BuildListPart:
+    """Attach a part to a build list, or bump the quantity if it is already there."""
     return repos.build_list_parts.create(
         BuildListPart(
             build_list_id=build_list_id,
@@ -329,7 +333,6 @@ async def create_part_and_add_to_build_list(
     phase_id = getattr(request, "build_list_phase_id", None)
     _validate_phase_belongs_to_build_list(repos, phase_id, build_list_id)
 
-    # Dedup: find existing part by URL, part_manufacturer+part_number, or GTIN
     part_by_url: Optional[Part] = None
     part_by_part_manufacturer: Optional[Part] = None
     part_by_gtin: Optional[Part] = None
@@ -437,16 +440,6 @@ async def get_parts_in_build_list(
     build_list_parts_raw = repos.build_list_parts.all_for_build_list(build_list_id)
     phases = {phase.id: phase for phase in repos.build_list_phases.all_for_build_list(build_list_id)}
 
-    # Resolve each BuildListPart.part to its canonical for display. BuildListPart.part_id
-    # stays as stored (no repoint) so we preserve the exact part the user added, but
-    # the rendered Part data is always the canonical so users see the surface record.
-    # Seam 2's read consequence, per section 1.3 of the split plan: "A build list
-    # that contains a purged part must not render a hole; it must drop the row."
-    # A hard-deleted part is already dropped by the `part.part_id in stored_parts`
-    # filter below, because `get_many` simply does not return it. A *tombstoned*
-    # part is returned, so it has to be dropped here instead. `get_many` is a
-    # `batch_get`, which takes no filter expression, so the predicate is applied
-    # in Python; see `app/db/dynamo/tombstones.py` for why that is the shape.
     stored_parts = drop_tombstoned_values(repos.parts.get_many({p.part_id for p in build_list_parts_raw}))
     canonical_ids_to_load = {
         part.canonical_part_id for part in stored_parts.values() if part.canonical_part_id is not None
@@ -456,9 +449,7 @@ async def get_parts_in_build_list(
     )
 
     def effective_part(stored: Part) -> Part:
-        # A tombstoned canonical is filtered out of `canonicals` above, so this
-        # falls through to the stored part rather than rendering the deleted
-        # canonical. The stored part is itself live, having survived the filter.
+        """Return the canonical part a stored row points at, or the row itself."""
         if stored.canonical_part_id and stored.canonical_part_id in canonicals:
             return canonicals[stored.canonical_part_id]
         return stored
@@ -466,6 +457,7 @@ async def get_parts_in_build_list(
     best_price_cents_dict: Dict[UUID, Optional[int]] = {}
 
     def part_read_with_best_price(part: Part) -> PartRead:
+        """Read a part with the cheapest price across its link group attached."""
         if part.id not in best_price_cents_dict:
             best_price_cents_dict[part.id] = best_price_for_group(link_group_ids(part))
         part_dict = PartRead.model_validate(part).model_dump()
@@ -473,6 +465,7 @@ async def get_parts_in_build_list(
         return PartRead(**part_dict)
 
     def phase_name(part: BuildListPart) -> Optional[str]:
+        """Return the name of the phase a build list part sits in, if any."""
         phase = phases.get(part.build_list_phase_id) if part.build_list_phase_id else None
         return phase.name if phase else None
 

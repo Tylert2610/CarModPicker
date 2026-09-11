@@ -1,9 +1,7 @@
 """Pydantic schemas for WebAuthn (passkey) endpoints.
 
-Options and results are passed to/from the browser as JSON matching the
-WebAuthn spec shape produced by py_webauthn's options_to_json helper. The
-client hands the raw credential-response object back on verify — we don't
-validate its internal structure server-side; py_webauthn does.
+Options and results cross the wire as JSON in the WebAuthn spec shape that
+py_webauthn's options_to_json helper produces.
 """
 
 from datetime import datetime
@@ -14,35 +12,49 @@ from pydantic import BaseModel
 
 
 class WebAuthnRegisterOptionsRequest(BaseModel):
+    """Request body for starting passkey registration."""
+
     nickname: str
 
 
 class WebAuthnRegisterOptionsResponse(BaseModel):
+    """Registration options plus the challenge token to echo back."""
+
     options: dict[str, Any]
     challenge_token: str
 
 
 class WebAuthnRegisterVerifyRequest(BaseModel):
+    """Request body carrying the registration credential to verify."""
+
     challenge_token: str
     credential: dict[str, Any]
     nickname: str
 
 
 class WebAuthnLoginOptionsRequest(BaseModel):
+    """Request body for starting a passkey assertion."""
+
     username: Optional[str] = None
 
 
 class WebAuthnLoginOptionsResponse(BaseModel):
+    """Assertion options plus the challenge token to echo back."""
+
     options: dict[str, Any]
     challenge_token: str
 
 
 class WebAuthnLoginVerifyRequest(BaseModel):
+    """Request body carrying the assertion credential to verify."""
+
     challenge_token: str
     credential: dict[str, Any]
 
 
 class WebAuthnCredentialSummary(BaseModel):
+    """A registered passkey as shown in account settings."""
+
     id: UUID
     nickname: str
     aaguid: Optional[str] = None
@@ -56,4 +68,6 @@ class WebAuthnCredentialSummary(BaseModel):
 
 
 class WebAuthnCredentialRename(BaseModel):
+    """Request body for renaming a registered passkey."""
+
     nickname: str

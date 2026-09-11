@@ -1,10 +1,6 @@
-"""
-Search endpoint that searches across multiple entity types.
+"""Search endpoint that searches across multiple entity types.
 
 This endpoint provides unified search functionality across:
-- Build lists (name, description, and associated car make/model/generation/year range)
-- User profiles (username, email)
-- Global parts (name, description, part_manufacturer name, part_number)
 """
 
 from typing import Any, Dict

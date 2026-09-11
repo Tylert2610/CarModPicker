@@ -54,26 +54,11 @@ async def upload_image(
     current_user: DBUser = Depends(get_current_user),
     repos: Repositories = Depends(get_repositories),
 ) -> dict[str, str]:
-    """
-    Upload an image file to S3 bucket.
+    """Upload an image file to S3 bucket.
 
     The file is validated for security (type, size, content) and stored
     in S3 bucket. Returns the file key which should be stored
-    in your database. Use the /presigned-url endpoint to get a URL for displaying.
-
-    Args:
-        entity_type: Type of entity (e.g., 'build_list', 'part', 'user', 'car')
-        entity_id: Optional ID of the entity (for updates)
-        file: Image file to upload
-        current_user: Authenticated user (from JWT token)
-
-    Returns:
-        dict: Contains 'file_key' (store this in your database) and 'presigned_url' (for immediate use)
-
-    Raises:
-        HTTPException: If upload fails, validation fails, or user is not authenticated
     """
-    # Validate entity_type
     allowed_entity_types = ["build_list", "part", "user", "car_generation", "build_log_post"]
     if entity_type not in allowed_entity_types:
         raise HTTPException(
@@ -81,7 +66,6 @@ async def upload_image(
             detail=f"Invalid entity_type. Allowed types: {', '.join(allowed_entity_types)}",
         )
 
-    # If entity_id is provided, verify the user owns the entity
     if entity_id:
         entity_owned = False
         if entity_type == "build_list":
@@ -93,11 +77,9 @@ async def upload_image(
             if part and part.user_id == current_user.id:
                 entity_owned = True
         elif entity_type == "user":
-            # Users can only upload images for themselves
             if entity_id == current_user.id:
                 entity_owned = True
         elif entity_type == "car_generation":
-            # Cars are centrally managed - only admins can upload images
             if not current_user.is_admin:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
@@ -105,13 +87,9 @@ async def upload_image(
                 )
             entity_owned = True
         elif entity_type == "build_log_post":
-            # For build log posts, verify the user has access to the build list
-            # If entity_id is provided, it should be the build_list_id
             if entity_id:
                 build_list = repos.build_lists.get(entity_id)
                 if build_list:
-                    # Any authenticated user can upload images for build log posts
-                    # (build logs are public-readable, so images should be too)
                     entity_owned = True
                 else:
                     raise HTTPException(
@@ -119,7 +97,6 @@ async def upload_image(
                         detail="Build list not found",
                     )
             else:
-                # If no entity_id provided, allow upload (for new posts)
                 entity_owned = True
 
         if not entity_owned:
@@ -128,7 +105,6 @@ async def upload_image(
                 detail=f"Not authorized to upload images for this {entity_type}",
             )
 
-        # For part: reject upload if part already has max images (avoid expensive bucket uploads)
         if entity_type == "part":
             from app.api.schemas.part import MAX_IMAGES_PER_PART
 
@@ -142,7 +118,6 @@ async def upload_image(
                     )
 
     try:
-        # Deduplication: if source_url provided and we already have it, return existing file_key
         if source_url and source_url.strip():
             canonical = get_canonical_image_url(source_url)
             existing = repos.image_source_mappings.get_by_source_url(canonical)
@@ -155,8 +130,6 @@ async def upload_image(
                     "message": "Image already cached; reused existing",
                 }
 
-        # Upload image to S3 bucket
-        # Force square aspect ratio for user profile pictures
         force_square = entity_type == "user"
         file_key = storage_service.upload_image(
             file=file,
@@ -166,12 +139,10 @@ async def upload_image(
             force_square=force_square,
         )
 
-        # Generate presigned URL for immediate use
         presigned_url = storage_service.get_presigned_url(file_key)
 
         logger.info(f"User {current_user.id} uploaded image: {file_key}")
 
-        # Store source_url mapping for future deduplication (part only for now)
         if source_url and source_url.strip() and entity_type == "part":
             try:
                 canonical = get_canonical_image_url(source_url)
@@ -186,7 +157,6 @@ async def upload_image(
         }
 
     except HTTPException:
-        # Re-raise HTTP exceptions (validation errors, etc.)
         raise
     except Exception as e:
         logger.error(f"Unexpected error during image upload: {str(e)}")
@@ -202,30 +172,13 @@ async def get_presigned_url(
     expiration: Optional[int] = None,
     current_user: Optional[DBUser] = Depends(get_optional_current_user),
 ) -> dict[str, str]:
-    """
-    Generate a presigned URL for accessing an image in S3 bucket.
+    """Generate a presigned URL for accessing an image in S3 bucket.
 
     The S3 bucket is private; presigned URLs are required to access images.
     These URLs are temporary and expire after the specified time (default: 24 hours).
-
-    For security, if a user is authenticated, we verify they own the image.
-    Public access is allowed for images that may be shared (e.g., public build lists).
-
-    Args:
-        file_key: The file key stored in your database (from upload endpoint)
-        expiration: Optional expiration time in seconds (default: 24 hours, max: 90 days)
-        current_user: Optional authenticated user (for private images)
-
-    Returns:
-        dict: Contains 'presigned_url' for accessing the image
-
-    Raises:
-        HTTPException: If URL generation fails or user doesn't own the image
     """
-    # Validate file key format and security
     storage_service.validate_file_key(file_key)
 
-    # If user is authenticated, verify ownership
     if current_user:
         if not storage_service.verify_file_key_ownership(file_key, current_user.id):
             logger.warning(f"User {current_user.id} attempted to access file_key they don't own: {file_key}")
@@ -257,27 +210,13 @@ async def delete_image(
     file_key: str,
     current_user: DBUser = Depends(get_current_user),
 ) -> dict[str, str]:
-    """
-    Delete an image from S3 bucket.
+    """Delete an image from S3 bucket.
 
     Only the owner of the image can delete it. Ownership is verified by checking
     the user_hash embedded in the file_key.
-
-    Args:
-        file_key: The file key to delete
-        current_user: Authenticated user (from JWT token)
-
-    Returns:
-        dict: Success message
-
-    Raises:
-        HTTPException: If deletion fails, user is not authenticated, or user doesn't own the image
     """
-    # Validate file key format and security
     storage_service.validate_file_key(file_key)
 
-    # Verify ownership before allowing deletion. Admins may delete any image to
-    # support moderation / cleanup of UGC and orphaned uploads.
     is_owner = storage_service.verify_file_key_ownership(file_key, current_user.id)
     if not is_owner and not current_user.is_admin:
         logger.warning(f"User {current_user.id} attempted to delete file_key they don't own: {file_key}")
@@ -313,18 +252,7 @@ async def delete_image(
 async def get_bucket_object_count(
     current_user: DBUser = Depends(get_current_admin_user),
 ) -> dict[str, int]:
-    """
-    Get the total count of objects in the S3 bucket (admin only).
-
-    Args:
-        current_user: Authenticated admin user (from JWT token)
-
-    Returns:
-        dict: Contains 'count' with the total number of bucket objects
-
-    Raises:
-        HTTPException: If counting fails or user is not an admin
-    """
+    """Get the total count of objects in the S3 bucket (admin only)."""
     try:
         count = storage_service.count_bucket_objects()
         logger.info(f"Admin {current_user.id} retrieved bucket object count: {count}")
@@ -400,11 +328,10 @@ async def list_orphaned_bucket_objects(
 async def purge_orphaned_bucket_objects(
     current_user: DBUser = Depends(get_current_admin_user),
 ) -> dict[str, int | list[str]]:
-    """
-    Delete bucket objects that are not referenced by any entity (orphans).
+    """Delete bucket objects that are not referenced by any entity (orphans).
+
     Admin only. Non-destructive: only objects with no DB reference are removed.
     Referenced keys come from: part (image_urls), user (image_urls),
-    car (image_urls), build_list (image_urls), image_source_mapping (file_key).
     """
     try:
         referenced = get_all_referenced_file_keys()

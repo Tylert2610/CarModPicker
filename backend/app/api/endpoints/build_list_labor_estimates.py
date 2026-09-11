@@ -30,6 +30,7 @@ router = APIRouter()
 
 
 def _require_estimate(repos: Repositories, labor_estimate_id: UUID) -> BuildListLaborEstimate:
+    """Return the labor estimate or raise 404."""
     estimate = repos.build_list_labor_estimates.get(labor_estimate_id)
     if estimate is None:
         ResponsePatterns.raise_not_found("build list labor estimate", labor_estimate_id)
@@ -38,6 +39,7 @@ def _require_estimate(repos: Repositories, labor_estimate_id: UUID) -> BuildList
 
 
 def _require_build_list(repos: Repositories, build_list_id: UUID) -> BuildList:
+    """Return the build list or raise 404."""
     build_list = repos.build_lists.get(build_list_id)
     if build_list is None:
         ResponsePatterns.raise_not_found("build list", build_list_id)
@@ -46,6 +48,7 @@ def _require_build_list(repos: Repositories, build_list_id: UUID) -> BuildList:
 
 
 def _validate_phase_belongs_to_build_list(repos: Repositories, phase_id: Optional[UUID], build_list_id: UUID) -> None:
+    """Reject a phase id that does not belong to the given build list."""
     if phase_id is None:
         return
     phase = repos.build_list_phases.get(phase_id)

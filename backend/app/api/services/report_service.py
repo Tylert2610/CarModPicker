@@ -31,6 +31,7 @@ class ReportService:
     """
 
     def __init__(self, repos: Optional[Repositories] = None) -> None:
+        """Bind the service to a repository bundle."""
         self.repos = repos or get_repositories()
 
     def create_report(
@@ -102,8 +103,6 @@ class ReportService:
 
         details: List[ReportWithDetails] = []
         for report in reports:
-            # A tombstoned reporter or reviewer reads as absent, which the two
-            # existing fallbacks below already render ("" and None respectively).
             reporter = live_or_none(users_by_id.get(report.user_id))
             reviewer = live_or_none(users_by_id.get(report.reviewed_by)) if report.reviewed_by else None
             details.append(
@@ -191,6 +190,7 @@ class ReportService:
         )
 
     def _filtered(self, entity_type: Optional[EntityType], status: Optional[str]) -> list[Report]:
+        """Return reports matching the optional entity type and status filters."""
         return self.repos.reports.list_filtered(
             entity_type=entity_type.value if entity_type else None,
             status=status,
@@ -199,6 +199,7 @@ class ReportService:
     def _with_details(
         self, report: Report, *, reporter_username: str, reviewer_username: str | None
     ) -> ReportWithDetails:
+        """Attach reporter, reviewer and target details to a report."""
         entity = self._get_entity_details(report.entity_type, report.entity_id)
         return ReportWithDetails(
             **ReportRead.model_validate(report).model_dump(),
@@ -209,12 +210,11 @@ class ReportService:
         )
 
     def _get_entity_or_404(self, entity_type: EntityType, entity_id: UUID) -> Union[DBBuildList, Part]:
+        """Fetch the reported entity or raise 404."""
         entity: Union[DBBuildList, Part, None]
         if entity_type == EntityType.BUILD_LIST:
             entity = self.repos.build_lists.get(entity_id)
         elif entity_type == EntityType.PART:
-            # A tombstoned part cannot be reported: it is absent, so this is the
-            # same 404 as an id that was never there.
             entity = live_or_none(self.repos.parts.get(str(entity_id)))
         else:
             raise ValueError(f"Unknown entity type: {entity_type}")
@@ -229,8 +229,6 @@ class ReportService:
             if bl:
                 return {"name": bl.name, "description": bl.description}
         elif entity_type == "part":
-            # A report whose target was purged keeps rendering, but falls through
-            # to the "Unknown part" label below rather than naming the tombstone.
             part = live_or_none(self.repos.parts.get(str(entity_id)))
             if part:
                 return {"name": part.name, "description": part.description}

@@ -28,10 +28,8 @@ from app.db.dynamo.users import User as DBUser
 
 logger = logging.getLogger(__name__)
 
-# Create router
 router = APIRouter()
 
-# Create service
 bug_report_service = BugReportService()
 
 
@@ -44,8 +42,6 @@ bug_report_service = BugReportService()
 )
 async def count_bug_reports(repos: Repositories = Depends(get_repositories)) -> Dict[str, int]:
     """Get total count of bug reports."""
-    # WR-05: use the module-level logger (app.api.endpoints.bug_reports) so log
-    # records carry this module's name.
     try:
         count = repos.bug_reports.count()
         logger.info(f"Retrieved bug reports count: {count}")
@@ -208,9 +204,6 @@ async def get_bug_report(
     )
 
     if not bug_report:
-        # IN-06: use the centralized error-shape helper instead of raw
-        # ``HTTPException`` so the response follows the same {message,
-        # error_code, details} contract as the rest of the module.
         ResponsePatterns.raise_not_found("Bug report", bug_report_id)
 
     return bug_report

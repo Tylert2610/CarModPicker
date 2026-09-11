@@ -1,13 +1,7 @@
-"""
-Part manufacturers endpoint.
+"""Part manufacturers endpoint.
 
 There is a single global manufacturer namespace, unique by case-insensitive
 name. Manufacturers are created by the Chrome extension, the seed script,
-admins, or regular users while making a Part; ``get_or_create`` dedupes by
-name (and canonical key) so the same brand isn't minted twice.
-
-Edit/delete authorization is admin/superuser only. A manufacturer cannot be
-deleted while any Part still references it.
 """
 
 from typing import Dict, List
@@ -48,6 +42,7 @@ router = APIRouter()
 
 
 def _get_part_manufacturer_or_404(repos: Repositories, part_manufacturer_id: UUID) -> PartManufacturer:
+    """Return the part manufacturer or raise 404."""
     pm = repos.part_manufacturers.get(str(part_manufacturer_id))
     if pm is None:
         ResponsePatterns.raise_not_found("Part Manufacturer")
@@ -61,6 +56,7 @@ def _get_part_manufacturer_or_404(repos: Repositories, part_manufacturer_id: UUI
     responses={200: {"description": "Part manufacturer count retrieved successfully"}},
 )
 async def count_part_manufacturers(repos: Repositories = Depends(get_repositories)) -> Dict[str, int]:
+    """Return the total number of part manufacturers."""
     return {"count": repos.part_manufacturers.count()}
 
 

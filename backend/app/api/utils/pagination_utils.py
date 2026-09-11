@@ -11,7 +11,6 @@ from fastapi import Query
 
 from app.api.utils.endpoint_decorators import validate_pagination_params
 
-# Generic types
 ModelType = TypeVar("ModelType")
 
 
@@ -23,6 +22,7 @@ class PaginationParams:
         skip: int = Query(0, ge=0, description="Number of items to skip"),
         limit: int = Query(100, ge=1, le=1000, description="Maximum number of items to return"),
     ):
+        """Capture the validated skip and limit query parameters."""
         self.skip = skip
         self.limit = limit
 
@@ -31,16 +31,7 @@ def get_pagination_params(
     skip: int = Query(0, ge=0, description="Number of items to skip"),
     limit: int = Query(100, ge=1, le=1000, description="Maximum number of items to return"),
 ) -> Tuple[int, int]:
-    """
-    Get validated pagination parameters.
-
-    Args:
-        skip: Number of items to skip
-        limit: Maximum number of items to return
-
-    Returns:
-        Tuple of validated (skip, limit) parameters
-    """
+    """Get validated pagination parameters."""
     return validate_pagination_params(skip=skip, limit=limit)
 
 
@@ -51,19 +42,7 @@ def create_paginated_response(
     limit: int,
     entity_name: str = "items",
 ) -> dict[str, Any]:
-    """
-    Create a standardized paginated response.
-
-    Args:
-        data: List of items for current page
-        total: Total number of items
-        skip: Number of items skipped
-        limit: Items per page
-        entity_name: Name of the entity type
-
-    Returns:
-        Dictionary with pagination metadata and data
-    """
+    """Create a standardized paginated response."""
     current_page = (skip // limit) + 1
     total_pages = (total + limit - 1) // limit
 

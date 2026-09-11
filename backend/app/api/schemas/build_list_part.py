@@ -1,3 +1,5 @@
+"""Request and response schemas for parts within a build list."""
+
 from datetime import datetime
 from typing import List, Optional
 from uuid import UUID
@@ -8,6 +10,8 @@ from .part import PartRead
 
 
 class BuildListPartCreate(BaseModel):
+    """Request body for adding a part to a build list."""
+
     part_id: Optional[UUID] = None
     quantity: int = Field(1, ge=1, description="Quantity of the part")
     notes: Optional[str] = None
@@ -15,6 +19,8 @@ class BuildListPartCreate(BaseModel):
 
 
 class BuildListPartUpdate(BaseModel):
+    """Request body for updating a build list part."""
+
     quantity: Optional[int] = Field(None, ge=1, description="Quantity of the part")
     notes: Optional[str] = None
     purchased: Optional[bool] = None
@@ -22,6 +28,8 @@ class BuildListPartUpdate(BaseModel):
 
 
 class BuildListPartRead(BaseModel):
+    """A build list part as returned to clients."""
+
     id: UUID
     build_list_id: UUID
     part_id: UUID
@@ -36,6 +44,8 @@ class BuildListPartRead(BaseModel):
 
 
 class BuildListPartReadWithPart(BaseModel):
+    """A build list part with its part and phase name resolved."""
+
     id: UUID
     build_list_id: UUID
     part_id: UUID
@@ -54,7 +64,6 @@ class BuildListPartReadWithPart(BaseModel):
 class CreatePartAndAddToBuildListRequest(BaseModel):
     """Request model for creating a part and adding it to a build list."""
 
-    # Part fields
     name: str
     description: str | None = None
     image_urls: List[str] | None = None
@@ -68,7 +77,6 @@ class CreatePartAndAddToBuildListRequest(BaseModel):
     retailer_id: UUID | None = None
     price_cents: int | None = Field(None, ge=0, le=2147483647, description="Price in cents for this retailer")
 
-    # Build list part fields
     quantity: int = Field(1, ge=1, description="Quantity of the part")
     notes: str | None = None
     build_list_phase_id: UUID | None = None
@@ -76,6 +84,7 @@ class CreatePartAndAddToBuildListRequest(BaseModel):
     @field_validator("price_cents")
     @classmethod
     def validate_price_cents(cls, v: Optional[int]) -> Optional[int]:
+        """Reject prices outside the stored integer range."""
         if v is not None and (v < 0 or v > 2147483647):
             raise ValueError("Price must be between 0 and 2,147,483,647 (max PostgreSQL integer)")
         return v

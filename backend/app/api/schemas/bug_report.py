@@ -1,3 +1,5 @@
+"""Request and response schemas for user submitted bug reports."""
+
 from datetime import datetime
 from enum import Enum
 from typing import Optional
@@ -7,6 +9,8 @@ from pydantic import BaseModel, ConfigDict
 
 
 class BugReportStatus(str, Enum):
+    """Lifecycle state of a bug report."""
+
     PENDING = "pending"
     IN_PROGRESS = "in_progress"
     RESOLVED = "resolved"
@@ -14,6 +18,8 @@ class BugReportStatus(str, Enum):
 
 
 class BugReportPriority(str, Enum):
+    """Triage priority of a bug report."""
+
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
@@ -21,6 +27,8 @@ class BugReportPriority(str, Enum):
 
 
 class BugReportCreate(BaseModel):
+    """Request body for filing a bug report."""
+
     title: str
     description: str
     steps_to_reproduce: Optional[str] = None
@@ -32,6 +40,8 @@ class BugReportCreate(BaseModel):
 
 
 class BugReportUpdate(BaseModel):
+    """Request body for an admin triaging a bug report."""
+
     status: Optional[BugReportStatus] = None
     priority: Optional[BugReportPriority] = None
     admin_notes: Optional[str] = None
@@ -39,6 +49,8 @@ class BugReportUpdate(BaseModel):
 
 
 class BugReportRead(BaseModel):
+    """A bug report as returned to clients."""
+
     id: UUID
     user_id: Optional[UUID] = None
     title: str
@@ -61,6 +73,8 @@ class BugReportRead(BaseModel):
 
 
 class BugReportWithDetails(BugReportRead):
+    """A bug report with reporter and assignee usernames resolved."""
+
     reporter_username: Optional[str] = None
     assignee_username: Optional[str] = None
 

@@ -40,11 +40,10 @@ async def login_for_access_token(
     form_data: OAuth2PasswordRequestForm = Depends(),
     repos: Repositories = Depends(get_repositories),
 ) -> dict[str, str | UserRead | bool]:
-    """
-    Authenticate user and return access token and user details.
+    """Authenticate user and return access token and user details.
+
     Takes form data: username and password.
     If 2FA is enabled, returns requires_2fa: true and user must call /token/2fa to complete login.
-    Returns Bearer token in response body for standard OAuth2 flow.
     """
     user = repos.users.get_by_username(form_data.username)
     if not user or not verify_password(form_data.password, user.hashed_password):
@@ -57,7 +56,6 @@ async def login_for_access_token(
         logger.warning(f"Login attempt for service account: {user.username}")
         ResponsePatterns.raise_unauthorized("Incorrect username or password", headers={"WWW-Authenticate": "Bearer"})
 
-    # Check if 2FA is enabled
     if user.totp_enabled:
         logger.info(f"2FA enabled for user: {user.username}, requiring OTP verification")
         return {
@@ -102,19 +100,17 @@ async def login_with_2fa(
         logger.error(f"2FA enabled but no secret found for user: {user.username}")
         ResponsePatterns.raise_internal_server_error("2FA configuration error")
 
-    # Verify password again for security
     if not verify_password(request.password, user.hashed_password):
         logger.warning(f"Invalid password in 2FA login for user: {user.username}")
         ResponsePatterns.raise_unauthorized("Invalid credentials", headers={"WWW-Authenticate": "Bearer"})
 
-    # Verify OTP
     try:
         totp = pyotp.TOTP(user.totp_secret)
     except Exception as e:
         logger.error(f"Invalid TOTP secret format for user: {user.username}, error: {str(e)}")
         ResponsePatterns.raise_internal_server_error("2FA configuration error")
 
-    if not totp.verify(request.otp, valid_window=1):  # Allow 1 time step window for clock skew
+    if not totp.verify(request.otp, valid_window=1):
         logger.warning(f"Invalid OTP provided for user: {user.username}")
         ResponsePatterns.raise_unauthorized("Invalid OTP code", headers={"WWW-Authenticate": "Bearer"})
 
@@ -222,7 +218,6 @@ async def reset_password(
     user = repos.users.get_by_email(email)
     if not user:
         logger.warning(f"Password reset requested for non-existent email: {email}")
-        # Don't reveal if email exists or not for security
         return {"message": "If the email exists, a password reset link has been sent"}
 
     token = create_access_token(
@@ -259,7 +254,6 @@ async def reset_password_confirm(
             logger.warning(f"Password reset attempted for non-existent user: {email}")
             ResponsePatterns.raise_not_found("User")
 
-        # Hash the new password
         hashed_password = get_password_hash(new_password.password)
         repos.users.update(user.id, hashed_password=hashed_password)
 
@@ -270,7 +264,6 @@ async def reset_password_confirm(
         logger.warning(f"JWT error during password reset: {e}")
         ResponsePatterns.raise_bad_request("Invalid or expired reset token")
     except HTTPException:
-        # Re-raise HTTPException so it's not caught by the generic handler
         raise
     except Exception as e:
         logger.error(f"Unexpected error during password reset: {e}")

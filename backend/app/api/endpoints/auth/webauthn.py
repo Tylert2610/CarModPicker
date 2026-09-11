@@ -56,22 +56,23 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-# --- WebAuthn-local helpers (D-19 — stay in this module) ---
-
 WEBAUTHN_REGISTER_PURPOSE = "webauthn_register"
 WEBAUTHN_LOGIN_PURPOSE = "webauthn_login"
 
 
 def _b64url_encode(data: bytes) -> str:
+    """Encode bytes as unpadded base64url."""
     return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
 
 
 def _b64url_decode(data: str) -> bytes:
+    """Decode unpadded base64url back to bytes."""
     padding = "=" * (-len(data) % 4)
     return base64.urlsafe_b64decode(data + padding)
 
 
 def _build_challenge_token(purpose: str, challenge: bytes, user_id: str | None = None) -> str:
+    """Wrap a WebAuthn challenge in a short lived token bound to one purpose."""
     payload: dict[str, str] = {"purpose": purpose, "challenge": _b64url_encode(challenge)}
     if user_id is not None:
         payload["user_id"] = user_id
@@ -79,6 +80,7 @@ def _build_challenge_token(purpose: str, challenge: bytes, user_id: str | None =
 
 
 def _decode_challenge_token(token: str, expected_purpose: str) -> tuple[bytes, str | None]:
+    """Return the challenge and user id from a token issued for the expected purpose."""
     try:
         payload = decode_access_token(token)
     except TokenError:
@@ -246,8 +248,6 @@ async def webauthn_login_verify(
         ResponsePatterns.raise_bad_request("Inactive user")
     if user.is_service_account:
         ResponsePatterns.raise_unauthorized("Unknown credential")
-    # Mirrors get_current_user: unverified users must not be able to acquire a
-    # session, even via a previously-registered passkey.
     if not user.email_verified:
         ResponsePatterns.raise_unauthorized("Email not verified")
 
@@ -283,6 +283,7 @@ async def list_webauthn_credentials(
     current_user: DBUser = Depends(get_current_user),
     repos: Repositories = Depends(get_repositories),
 ) -> list[WebAuthnCredentialSummary]:
+    """Return the caller's registered passkeys."""
     creds = repos.webauthn_credentials.list_by_user(current_user.id)
     return [WebAuthnCredentialSummary.model_validate(c) for c in creds]
 
@@ -294,6 +295,7 @@ async def rename_webauthn_credential(
     current_user: DBUser = Depends(get_current_user),
     repos: Repositories = Depends(get_repositories),
 ) -> WebAuthnCredentialSummary:
+    """Set a new nickname on one of the caller's passkeys."""
     nickname = request.nickname.strip()
     if not nickname:
         ResponsePatterns.raise_bad_request("Nickname cannot be empty")
@@ -310,6 +312,7 @@ async def delete_webauthn_credential(
     current_user: DBUser = Depends(get_current_user),
     repos: Repositories = Depends(get_repositories),
 ) -> dict[str, str]:
+    """Remove one of the caller's passkeys."""
     cred = repos.webauthn_credentials.get(credential_id)
     if not cred or cred.user_id != current_user.id:
         ResponsePatterns.raise_not_found("Passkey")

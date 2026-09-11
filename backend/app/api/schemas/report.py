@@ -1,3 +1,5 @@
+"""Request and response schemas for user submitted content reports."""
+
 from datetime import datetime
 from enum import Enum
 from typing import Optional
@@ -7,6 +9,8 @@ from pydantic import BaseModel, ConfigDict
 
 
 class ReportReason(str, Enum):
+    """Why a user reported an entity."""
+
     INAPPROPRIATE_CONTENT = "inappropriate_content"
     SPAM = "spam"
     INACCURATE = "inaccurate"
@@ -15,6 +19,8 @@ class ReportReason(str, Enum):
 
 
 class ReportStatus(str, Enum):
+    """Moderation state of a report."""
+
     PENDING = "pending"
     REVIEWED = "reviewed"
     RESOLVED = "resolved"
@@ -22,6 +28,8 @@ class ReportStatus(str, Enum):
 
 
 class ReportEntityType(str, Enum):
+    """Kind of entity a report targets."""
+
     BUILD_LIST = "build_list"
     PART = "part"
 
@@ -30,16 +38,22 @@ EntityType = ReportEntityType
 
 
 class ReportCreate(BaseModel):
+    """Request body for filing a report."""
+
     reason: ReportReason
     description: Optional[str] = None
 
 
 class ReportUpdate(BaseModel):
+    """Request body for a moderator acting on a report."""
+
     status: ReportStatus
     admin_notes: Optional[str] = None
 
 
 class ReportRead(BaseModel):
+    """A report as returned to clients."""
+
     id: UUID
     user_id: UUID
     entity_type: str
@@ -57,6 +71,8 @@ class ReportRead(BaseModel):
 
 
 class ReportWithDetails(ReportRead):
+    """A report with reporter, reviewer and target names resolved."""
+
     reporter_username: str
     entity_name: str
     entity_description: Optional[str] = None

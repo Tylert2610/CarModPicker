@@ -1,16 +1,18 @@
+"""Schemas for password, two factor and Google OAuth authentication flows."""
+
 from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
-# bcrypt silently truncates anything past 72 bytes. Capping here so users can't
-# set a password whose tail is ignored on verification.
 PASSWORD_MIN_LENGTH = 8
 PASSWORD_MAX_LENGTH = 72
 
 
 class NewPassword(BaseModel):
+    """A new password constrained to the bcrypt safe length range."""
+
     password: str = Field(..., min_length=PASSWORD_MIN_LENGTH, max_length=PASSWORD_MAX_LENGTH)
 
 
@@ -18,14 +20,14 @@ class TOTPSetupResponse(BaseModel):
     """Response when setting up 2FA - contains QR code data and secret."""
 
     secret: str
-    qr_code_data: str  # Base64 encoded QR code image
-    manual_entry_key: str  # Formatted secret for manual entry
+    qr_code_data: str
+    manual_entry_key: str
 
 
 class TOTPVerifyRequest(BaseModel):
     """Request to verify and enable 2FA."""
 
-    otp: str  # The 6-digit OTP code
+    otp: str
 
 
 class TOTPVerifyResponse(BaseModel):
@@ -40,17 +42,14 @@ class TOTPLoginRequest(BaseModel):
 
     username: str
     password: str
-    otp: str  # The 6-digit OTP code
+    otp: str
 
 
 class TOTPDisableRequest(BaseModel):
     """Request to disable 2FA - requires password and OTP."""
 
-    password: str  # Current password
-    otp: str  # The 6-digit OTP code
-
-
-# --- Google / OAuth schemas ---
+    password: str
+    otp: str
 
 
 class GoogleSignInRequest(BaseModel):
@@ -91,6 +90,8 @@ class GoogleConnectRequest(BaseModel):
 
 
 class OAuthAccountRead(BaseModel):
+    """A linked OAuth account as returned to clients."""
+
     id: UUID
     provider: str
     email: Optional[str] = None

@@ -1,9 +1,7 @@
-"""
-Build lists endpoint on DynamoDB.
+"""Build lists endpoint on DynamoDB.
 
 Build lists and their children are DynamoDB tables. Votes and build logs are
 still SQL rows, which is why the vote-aware listing and the create/copy paths
-take the SQL session alongside the repositories.
 """
 
 import logging
@@ -48,14 +46,13 @@ from app.db.dynamo.build_lists import BuildList, BuildListLaborEstimate, BuildLi
 from app.db.dynamo.tombstones import drop_tombstoned_values
 from app.db.dynamo.users import User as DBUser
 
-# Create router
 router = APIRouter()
 
-# Create service
 build_list_service = BuildListService()
 
 
 def _require_build_list(repos: Repositories, build_list_id: UUID) -> BuildList:
+    """Return the build list or raise 404."""
     build_list = repos.build_lists.get(build_list_id)
     if build_list is None:
         ResponsePatterns.raise_not_found("build list", build_list_id)
@@ -64,6 +61,7 @@ def _require_build_list(repos: Repositories, build_list_id: UUID) -> BuildList:
 
 
 def _matches_search(term: str, build_list: BuildList) -> bool:
+    """Report whether the term appears in the build list name or description."""
     return search.contains(term, build_list.name, build_list.description)
 
 
@@ -75,11 +73,8 @@ def _next_sort_order(existing: List[Any]) -> int:
 
 
 def _log_user(current_user: Optional[DBUser]) -> str:
+    """Render the caller for a log line, naming anonymous callers as such."""
     return f"User {current_user.id}" if current_user else "Anonymous user"
-
-
-# Register custom endpoints BEFORE the base router so specific routes like
-# /with-votes and /count take precedence over /{entity_id}.
 
 
 @router.get(
@@ -121,8 +116,6 @@ async def read_build_lists_with_votes(
 
     skip, limit = validate_pagination_params(skip=skip, limit=limit)
 
-    # Filter on the build list's own attributes first; cost and votes only
-    # need computing for the survivors.
     term = search.normalize_term(search_term)
     car_filter = set(car_ids) if car_ids else ({car_id} if car_id is not None else None)
     candidates = [
@@ -133,16 +126,11 @@ async def read_build_lists_with_votes(
         and (owner_id is None or bl.user_id == owner_id)
     ]
 
-    # Cost breakdown per build list: base price + parts (quantity * best price) + labor.
     candidate_ids = {bl.id for bl in candidates}
     parts_by_list: Dict[UUID, List[Any]] = {}
     for part in repos.build_list_parts.scan_all():
         if part.build_list_id in candidate_ids:
             parts_by_list.setdefault(part.build_list_id, []).append(part)
-    # A tombstoned part contributes nothing to the total, the same as a part
-    # that was hard deleted: `prices.get(...) or 0` below already treats a
-    # missing id as zero, so dropping the tombstones here makes the two cases
-    # agree. `get_many` is a `batch_get` and cannot filter server-side.
     prices = {
         part_id: part.best_price_cents
         for part_id, part in drop_tombstoned_values(
@@ -159,6 +147,7 @@ async def read_build_lists_with_votes(
             labor_cost[estimate.build_list_id] = (labor_cost.get(estimate.build_list_id) or 0) + estimate.cost_cents
 
     def total_cost(bl: BuildList) -> int:
+        """Return the base price plus parts and labor cost for a build list."""
         return (bl.base_price_cents or 0) + (parts_cost.get(bl.id) or 0) + (labor_cost.get(bl.id) or 0)
 
     if min_cost_cents is not None:
@@ -167,17 +156,15 @@ async def read_build_lists_with_votes(
         candidates = [bl for bl in candidates if total_cost(bl) <= max_cost_cents]
     total = len(candidates)
 
-    # Vote tallies for the surviving lists.
     upvotes: Dict[UUID, int] = {}
     downvotes: Dict[UUID, int] = {}
     if candidates:
         upvotes, downvotes = repos.votes.tallies("build_list", [bl.id for bl in candidates])
 
     def net_votes(bl: BuildList) -> int:
+        """Return upvotes minus downvotes for a build list."""
         return upvotes.get(bl.id, 0) - downvotes.get(bl.id, 0)
 
-    # Sort: votes (default), votes_asc, price_asc, price_desc; id breaks ties
-    # in the same direction as the primary key.
     if sort == "price_asc":
         candidates.sort(key=lambda bl: (total_cost(bl), str(bl.id)))
     elif sort == "price_desc":
@@ -233,7 +220,6 @@ async def create_build_list(
     return BuildListRead.model_validate(build_list)
 
 
-# Public read access (update/delete stay owner-only via the base router)
 @router.get(
     "/{build_list_id}",
     response_model=BuildListRead,
@@ -406,7 +392,6 @@ async def read_build_lists_by_car(
 
     skip, limit = validate_pagination_params(skip=skip, limit=limit)
 
-    # Verify the car exists (cars are centrally managed, no ownership check needed)
     if repos.car_generations.get(str(car_id)) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Car not found")
 
@@ -490,7 +475,6 @@ async def read_build_lists_by_user(
     return [BuildListRead.model_validate(build_list) for build_list in build_lists]
 
 
-# Schema for copy build list request
 class CopyBuildListRequest(BaseModel):
     """Request model for copying a build list."""
 
@@ -520,7 +504,6 @@ async def copy_build_list(
     """
     logger = deps["logger"]
 
-    # Verify the build list exists (any authenticated user can copy any build list)
     _require_build_list(repos, build_list_id)
 
     new_build_list = build_list_service.copy_build_list(
@@ -534,10 +517,6 @@ async def copy_build_list(
     return BuildListRead.model_validate(new_build_list)
 
 
-# Image management endpoints (mirror parts.py pattern).
-# Build list owner or admin only.
-
-
 def _get_build_list_image_file_keys(build_list: BuildList) -> List[str]:
     """Return ordered list of image file keys. First entry is the primary/display image."""
     return list(build_list.image_urls or [])
@@ -546,6 +525,7 @@ def _get_build_list_image_file_keys(build_list: BuildList) -> List[str]:
 def _require_owned_build_list(
     repos: Repositories, build_list_id: UUID, current_user: DBUser, logger: logging.Logger
 ) -> BuildList:
+    """Return the build list once the caller is allowed to modify it."""
     build_list = _require_build_list(repos, build_list_id)
     verify_user_access_or_admin(current_user, build_list.user_id, "modify this build list", logger)
     return build_list
@@ -666,9 +646,6 @@ async def set_primary_image_for_build_list(
     return BuildListRead.model_validate(updated)
 
 
-# Base router: list, update, delete. Count, create and get have custom handlers
-# above (count must precede /{entity_id}; create needs the SQL session for the
-# premium kill switch; get is public).
 base_router = BaseDynamoEndpointRouter(
     build_list_service,
     router,

@@ -1,19 +1,7 @@
-"""
-Service for per-user price-drop alert subscriptions.
+"""Service for per-user price-drop alert subscriptions.
 
 Module-level functions (no class) to mirror part_listing_service.py style.
 T02 surface: subscribe upsert, list-mine, deactivate.
-T03 surface: evaluate_alerts_for_listing, which fires emails when an
-observation breaches an active alert's threshold (24h cooldown, exception-safe
-per-alert iteration, SES failure leaves last_fired_at unchanged so retries are
-idempotent).
-
-Split plan row 25 changed who calls it and nothing about what it does. It used
-to run at the end of create_or_update_listing_and_price, on the request thread,
-which was `catalog` reading `admin`'s alerts and calling SES. Seam 4 inverted
-that: the `part_listings` stream consumer in `app/consumers/price_alerts.py`
-calls it now, so a price write returns as soon as its transaction commits and
-`catalog` holds no SES grant.
 """
 
 import logging
@@ -28,9 +16,6 @@ from app.db.dynamo.part_price_alerts import PartPriceAlert
 
 logger = logging.getLogger(__name__)
 
-# Cooldown window between consecutive fires for the same alert. Prevents an alert
-# from spamming the user when several observations land below threshold in rapid
-# succession (e.g. a crawler revisiting a listing every few hours).
 ALERT_COOLDOWN = timedelta(hours=24)
 
 
@@ -38,12 +23,6 @@ def create_or_update_alert(user_id: UUID, part_id: UUID, threshold_cents: int) -
     """Subscribe-or-update upsert keyed on (user_id, part_id).
 
     Behavior:
-    - existing alert, active=True  → update threshold_cents
-    - existing alert, active=False → reactivate (active=True) + update threshold_cents
-    - no existing alert            → create a new active alert
-
-    Idempotent for callers: re-subscribing the same user+part mutates the
-    existing item in place.
     """
     alerts = get_repositories().part_price_alerts
     existing = alerts.get_for_user_part(user_id, part_id)
@@ -88,7 +67,6 @@ def deactivate_alert(alert_id: UUID, user_id: UUID) -> bool:
 
     Returns True if an alert was found-active-and-owned and deactivated; False if the
     alert doesn't exist, belongs to another user, or is already inactive. Endpoints
-    map False → 404 (uniform 'not currently active for this user' meaning).
     """
     alert = get_alert_for_owner(alert_id, user_id)
     if alert is None or not alert.active:
@@ -121,42 +99,10 @@ def evaluate_alerts_for_listing(
     repos: Optional[Any] = None,
 ) -> None:
     """Evaluate every active alert on `part_id` against this observation and
+
     fire emails for those whose threshold is breached.
-
     Split plan row 25 moved the only caller. This is no longer invoked from
-    `create_or_update_listing_and_price` on the request thread; the
-    `part_listings` stream consumer in `app/consumers/price_alerts.py` calls it,
-    which is seam 4. The semantics below did not change, and this function is
-    still the single place they live.
-
-    `repos` is the bundle to read and write through, defaulting to the process
-    bundle for the scripts and tests that call this directly. The consumer
-    passes its own, which is `admin`'s narrow bundle built once per execution
-    environment, rather than letting `get_repositories()` build all twenty-five.
-
-    Contract:
-    - Only active alerts are considered (`active=True`).
-    - Threshold semantics: ``price_cents <= threshold_cents`` fires.
-    - 24h cooldown: an alert that fired within ``ALERT_COOLDOWN`` of ``observed_at``
-      is suppressed (logged ``verdict=suppressed_cooldown``) without touching
-      ``last_fired_at`` so the user-facing window is honest.
-    - Exception-safe per-alert iteration: a bad alert (raises during email send,
-      template build, or the write) is logged at WARNING with ``alert_id`` and
-      iteration continues. One bad alert MUST NOT block other alerts on the
-      same part from firing.
-    - SES failure (``send_price_drop_alert_email`` returns False) is treated as
-      non-firing — ``last_fired_at`` stays unchanged so the next observation
-      retries. Email-success path sets ``last_fired_at = observed_at``.
-    - Logging: one ``price_alert_evaluated`` INFO log per evaluated alert with
-      verdict ∈ {fired, suppressed_cooldown, skip_above_threshold}, and one
-      ``price_alert_email_sent`` INFO log per attempted send (success or False).
-      Email addresses and unsubscribe tokens are NEVER logged — alert_id +
-      user_id (UUID) only.
     """
-    # Local import — avoids a circular import with app.core.email at module
-    # load (email.py is the leaf side; it does not import services). Keeping
-    # the import lazy also makes monkeypatching trivial in tests:
-    # `monkeypatch.setattr("app.core.email.send_price_drop_alert_email", ...)`.
     from app.core import email as email_module
 
     observed_at = _ensure_aware(observed_at)
@@ -167,12 +113,9 @@ def evaluate_alerts_for_listing(
     if not candidate_alerts:
         return
 
-    # Resolve part + retailer once; both are referenced by every email body.
     part = repos.parts.get(str(part_id))
     retailer = repos.retailers.get(str(retailer_id))
     if part is None or retailer is None:
-        # Defensive — the chokepoint guarantees both exist, but evaluate should
-        # never crash a price write.
         logger.warning(
             "price_alert_evaluator_missing_entity: part_id=%s retailer_id=%s " "part_present=%s retailer_present=%s",
             part_id,
@@ -201,7 +144,6 @@ def evaluate_alerts_for_listing(
 
             user = repos.users.get(alert.user_id)
             if user is None:
-                # Alert points at a deleted user — skip and log; do not crash.
                 logger.warning(
                     "price_alert_evaluator_missing_user: alert_id=%s user_id=%s",
                     alert.id,
@@ -219,7 +161,6 @@ def evaluate_alerts_for_listing(
 
             if success:
                 repos.part_price_alerts.update(alert.id, last_fired_at=observed_at, updated_at=utc_now())
-            # On failure leave last_fired_at as-is so the next observation re-attempts.
             verdict = "fired"
 
             elapsed_ms = int((time.monotonic() - start) * 1000)
@@ -234,8 +175,6 @@ def evaluate_alerts_for_listing(
                 elapsed_ms,
             )
         except Exception as exc:
-            # Per-alert iteration must NEVER poison the price write.
-            # Log with alert_id (UUID — safe) and continue.
             logger.warning(
                 "price_alert_evaluator_exception: alert_id=%s error=%s",
                 getattr(alert, "id", "?"),

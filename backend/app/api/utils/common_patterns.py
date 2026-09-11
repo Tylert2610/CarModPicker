@@ -24,10 +24,6 @@ class PublicEndpointDeps(TypedDict):
     logger: logging.Logger
 
 
-# ``validate_pagination_params`` is defined next to the
-# ``standard_pagination_params`` FastAPI dependency in ``endpoint_decorators``
-# and re-exported here so existing ``from common_patterns import
-# validate_pagination_params`` call sites keep working.
 from app.api.utils.endpoint_decorators import validate_pagination_params as validate_pagination_params  # noqa: E402
 
 
@@ -36,22 +32,13 @@ def get_standard_public_endpoint_dependencies() -> PublicEndpointDeps:
     return {"logger": logger}
 
 
-# Standard authorization patterns
 def verify_user_access_or_admin(
     current_user: DBUser,
     target_user_id: UUID,
     action_description: str = "access this resource",
     logger: Optional[logging.Logger] = None,
 ) -> None:
-    """
-    Verify that the current user can access a resource or is an admin.
-
-    Args:
-        current_user: The authenticated user making the request
-        target_user_id: The user ID of the resource owner
-        action_description: Description of the action for error messages
-        logger: Optional logger for warning messages
-    """
+    """Verify that the current user can access a resource or is an admin."""
     if current_user.id != target_user_id and not current_user.is_admin and not current_user.is_superuser:
         if logger:
             logger.warning(
@@ -67,19 +54,7 @@ def create_paginated_response(
     limit: int,
     message: str = "Data retrieved successfully",
 ) -> Dict[str, Any]:
-    """
-    Create a standardized paginated response.
-
-    Args:
-        data: List of items for current page
-        total: Total number of items
-        skip: Number of items skipped
-        limit: Items per page
-        message: Success message
-
-    Returns:
-        Dictionary with paginated response structure
-    """
+    """Create a standardized paginated response."""
     total_pages = (total + limit - 1) // limit
     current_page = (skip // limit) + 1
 

@@ -51,18 +51,10 @@ class VoteService:
         vote_data: VoteCreate,
         logger: logging.Logger,
     ) -> VoteMutationResult:
-        """
-        Vote on an entity (car, build list, or global part).
+        """Vote on an entity (car, build list, or global part).
 
         Returns the created or updated vote alongside the entity's tallies as of
         this write; raises 404 if the entity doesn't exist.
-
-        Nothing here writes `parts.net_votes` any more. Split plan row 24
-        inverted that: the `catalog` stream consumer in `app/consumers/votes.py`
-        recomputes the aggregate off the `votes` stream, so this service writes
-        only the table `moderation` owns. The tallies returned below are read
-        back from `votes` in this same request, which is what lets a client show
-        the right number without waiting for the stream.
         """
         self._get_entity_or_404(entity_type, entity_id)
 
@@ -94,7 +86,6 @@ class VoteService:
 
         Returns the entity's tallies after the removal, or `None` when the user
         had no vote to remove, which is the case the route turns into a 404.
-        `VoteMutationResult.vote` is `None` here because the vote is gone.
         """
         vote = self.repos.votes.get_user_vote(entity_type.value, entity_id, user_id)
         if vote is None:
@@ -104,6 +95,7 @@ class VoteService:
         return self._mutation_result(entity_type, entity_id, None)
 
     def get_user_vote(self, entity_type: EntityType, entity_id: UUID, user_id: UUID) -> Vote | None:
+        """Return this user's vote on the entity, or None."""
         return self.repos.votes.get_user_vote(entity_type.value, entity_id, user_id)
 
     def get_vote_summary(
@@ -205,17 +197,6 @@ class VoteService:
 
         One extra query on the vote path, and it replaces two things rather than
         adding one. It replaces the `parts.update` that `_sync_part_net_votes`
-        used to make, which was the cross-domain write row 24 removed, and it
-        replaces the client's follow-up `GET .../summary`, which was a second
-        round trip on every vote. The count itself was already being computed:
-        the old `_sync_part_net_votes` called `repos.votes.counts` for exactly
-        this number and then threw it away into another table.
-
-        It is computed for every entity type, not just parts. Car generations
-        and build lists have no denormalised aggregate to go stale, but their
-        clients still had to re-read to learn the new total, and one response
-        shape across the three is worth more than skipping a query on two of
-        them.
         """
         upvotes, downvotes = self.repos.votes.counts(entity_type.value, entity_id)
         return VoteMutationResult(
@@ -227,6 +208,7 @@ class VoteService:
         )
 
     def _get_entities(self, entity_type: EntityType, ids: List[Any]) -> dict[UUID, VotableEntity]:
+        """Load votable entities of one type by id, skipping tombstoned parts."""
         if not ids:
             return {}
         if entity_type == EntityType.BUILD_LIST:
@@ -234,15 +216,11 @@ class VoteService:
         if entity_type == EntityType.CAR_GENERATION:
             return dict(self.repos.car_generations.get_many(ids))
         if entity_type == EntityType.PART:
-            # Both vote paths funnel through here: `_get_entity_or_404` (which
-            # turns a dropped part into its existing 404) and the flagged-entity
-            # listing (which already skips ids that resolve to nothing). Filtering
-            # once covers both. `get_many` is a `batch_get`, so this is a Python
-            # filter rather than a filter expression.
             return dict(drop_tombstoned_values(self.repos.parts.get_many(ids)))
         raise ValueError(f"Unknown entity type: {entity_type}")
 
     def _get_entity_or_404(self, entity_type: EntityType, entity_id: UUID) -> VotableEntity:
+        """Fetch the votable entity or raise 404."""
         entity = self._get_entities(entity_type, [entity_id]).get(entity_id)
         if entity is None:
             raise HTTPException(status_code=404, detail=f"{entity_type.value.title()} not found")
@@ -261,4 +239,5 @@ class VoteService:
 
 
 def _aware(value: datetime) -> datetime:
+    """Return the timestamp in UTC, assuming UTC when it is naive."""
     return value if value.tzinfo is not None else value.replace(tzinfo=UTC)

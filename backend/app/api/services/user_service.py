@@ -1,3 +1,5 @@
+"""Read side service for user accounts."""
+
 import logging
 from typing import Iterable, List, Optional
 from uuid import UUID
@@ -12,15 +14,7 @@ logger = get_logger()
 
 
 def user_read(user: DBUser, repos: Optional[Repositories] = None) -> UserRead:
-    # Rebound to `repos` rather than to a differently named local, and that is
-    # load bearing rather than cosmetic. `tests/entrypoints/test_repository_bundles.py`
-    # recomputes each domain's declared tuple from the import graph by finding
-    # attribute accesses whose receiver is named `repos`, so a bundle read
-    # through any other name is invisible to it. This function reads
-    # `oauth_accounts` on every single user response, and under the old name the
-    # test could not see it: `users` declared the repository anyway, because the
-    # delete cascade reached it, and row 30 moving that cascade out is what would
-    # have exposed the gap as a `RepositoryNotInBundle` on `GET /users/me`.
+    """Build a UserRead with the user's linked OAuth accounts attached."""
     repos = repos if repos is not None else get_repositories()
     accounts = repos.oauth_accounts.list_by_user(user.id)
     return UserRead.model_validate(user).model_copy(
@@ -29,7 +23,7 @@ def user_read(user: DBUser, repos: Optional[Repositories] = None) -> UserRead:
 
 
 def user_reads(users: Iterable[DBUser], repos: Optional[Repositories] = None) -> List[UserRead]:
-    # `repos` for the reason spelled out on `user_read` above.
+    """Build UserReads for many users in one OAuth account lookup."""
     repos = repos if repos is not None else get_repositories()
     user_list = list(users)
     accounts_by_user = repos.oauth_accounts.list_by_users([user.id for user in user_list])
@@ -46,10 +40,14 @@ def user_reads(users: Iterable[DBUser], repos: Optional[Repositories] = None) ->
 
 
 class UserService:
+    """Lookup and counting operations over the user repository."""
+
     def __init__(self, repos: Optional[Repositories] = None) -> None:
+        """Bind the service to a repository bundle."""
         self.repos = repos if repos is not None else get_repositories()
 
     def get_by_id(self, user_id: UUID, logger: Optional[logging.Logger] = None) -> Optional[DBUser]:
+        """Return the user with this id, or None."""
         log = logger if logger is not None else get_logger()
         user = self.repos.users.get(user_id)
         if user:
@@ -59,6 +57,7 @@ class UserService:
         return user
 
     def get_by_username(self, username: str, logger: Optional[logging.Logger] = None) -> Optional[DBUser]:
+        """Return the user with this username, or None."""
         log = logger if logger is not None else get_logger()
         user = self.repos.users.get_by_username(username)
         if user:
@@ -68,6 +67,7 @@ class UserService:
         return user
 
     def get_by_email(self, email: str, logger: Optional[logging.Logger] = None) -> Optional[DBUser]:
+        """Return the user with this email, or None."""
         log = logger if logger is not None else get_logger()
         user = self.repos.users.get_by_email(email)
         if user:
@@ -77,12 +77,14 @@ class UserService:
         return user
 
     def get_all_users(self, search: Optional[str] = None, logger: Optional[logging.Logger] = None) -> List[DBUser]:
+        """Return every user, optionally filtered by a search term."""
         log = logger if logger is not None else get_logger()
         users = self.repos.users.search(search) if search else self.repos.users.list_all()
         log.info(f"Retrieved {len(users)} users")
         return users
 
     def count_all(self, logger: Optional[logging.Logger] = None) -> int:
+        """Return the total number of users."""
         log = logger if logger is not None else get_logger()
         count = self.repos.users.count()
         log.info(f"Total user count: {count}")

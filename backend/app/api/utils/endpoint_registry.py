@@ -40,27 +40,15 @@ class EndpointRegistry:
         description: str = "",
         include_in_openapi: bool = True,
     ) -> None:
-        """
-        Register an endpoint with standardized configuration.
-
-        Args:
-            router: FastAPI router to register
-            prefix: URL prefix for the endpoint
-            tags: OpenAPI tags for grouping
-            description: Description of the endpoint group
-            include_in_openapi: Whether to include in OpenAPI documentation
-        """
+        """Register an endpoint with standardized configuration."""
         full_prefix = f"{settings.API_STR}{prefix}"
 
-        # Register the router
-        # Convert to list to satisfy FastAPI's type requirements
         self.app.include_router(
             router,
             prefix=full_prefix,
             tags=list(tags),
         )
 
-        # Store registration info
         tags_list = list(tags)
         self.registered_endpoints[prefix] = {
             "router": router,
@@ -77,18 +65,9 @@ class EndpointRegistry:
         tags: Optional[List[str]] = None,
         description: str = "",
     ) -> None:
-        """
-        Register a CRUD endpoint with standardized naming.
-
-        Args:
-            router: FastAPI router to register
-            entity_name: Name of the entity (e.g., "cars", "users")
-            tags: OpenAPI tags for grouping
-            description: Description of the endpoint group
-        """
+        """Register a CRUD endpoint with standardized naming."""
         tags_to_use: Sequence[str] = [entity_name] if tags is None else tags
 
-        # Convert entity name to kebab-case for URL
         prefix = f"/{entity_name.replace('_', '-')}"
 
         self.register_endpoint(
@@ -105,15 +84,7 @@ class EndpointRegistry:
         tags: Optional[List[str]] = None,
         description: str = "",
     ) -> None:
-        """
-        Register a vote endpoint with standardized naming.
-
-        Args:
-            router: FastAPI router to register
-            entity_name: Name of the entity (e.g., "cars", "parts")
-            tags: OpenAPI tags for grouping
-            description: Description of the endpoint group
-        """
+        """Register a vote endpoint with standardized naming."""
         tags_to_use: Sequence[str] = [f"{entity_name}_votes"] if tags is None else tags
 
         prefix = f"/{entity_name.replace('_', '-')}-votes"
@@ -132,15 +103,7 @@ class EndpointRegistry:
         tags: Optional[List[str]] = None,
         description: str = "",
     ) -> None:
-        """
-        Register a report endpoint with standardized naming.
-
-        Args:
-            router: FastAPI router to register
-            entity_name: Name of the entity (e.g., "cars", "parts")
-            tags: OpenAPI tags for grouping
-            description: Description of the endpoint group
-        """
+        """Register a report endpoint with standardized naming."""
         tags_to_use: Sequence[str] = [f"{entity_name}_reports"] if tags is None else tags
 
         prefix = f"/{entity_name.replace('_', '-')}-reports"

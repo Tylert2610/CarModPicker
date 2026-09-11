@@ -1,3 +1,5 @@
+"""Ownership and admin checks shared by the endpoints."""
+
 from typing import Optional
 
 from fastapi import HTTPException

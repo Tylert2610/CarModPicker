@@ -13,7 +13,6 @@ from fastapi import Query
 
 from .response_patterns import ResponsePatterns
 
-# Type variables for decorators
 P = ParamSpec("P")
 T = TypeVar("T")
 
@@ -27,21 +26,7 @@ def standard_responses(
     conflict: bool = False,
     custom_responses: Optional[Dict[int | str, Dict[str, Any]]] = None,
 ) -> Dict[int | str, Dict[str, Any]]:
-    """
-    Generate standardized response documentation for endpoints.
-
-    Args:
-        success_description: Description for successful responses
-        not_found: Whether to include 404 response
-        unauthorized: Whether to include 401 response
-        forbidden: Whether to include 403 response
-        validation_error: Whether to include 422 response
-        conflict: Whether to include 409 response
-        custom_responses: Additional custom response codes and descriptions
-
-    Returns:
-        Dictionary of response codes and their documentation
-    """
+    """Generate standardized response documentation for endpoints."""
     responses: Dict[int | str, Dict[str, Any]] = {
         200: {"description": success_description},
     }
@@ -74,18 +59,7 @@ def crud_responses(
     allow_public_read: bool = False,
     custom_responses: Optional[Dict[int | str, Dict[str, Any]]] = None,
 ) -> Dict[int | str, Dict[str, Any]]:
-    """
-    Generate standardized CRUD operation response documentation.
-
-    Args:
-        entity_name: Name of the entity being operated on
-        operation: Type of operation (create, read, update, delete, list)
-        allow_public_read: Whether the operation allows public access
-        custom_responses: Additional custom response codes and descriptions
-
-    Returns:
-        Dictionary of response codes and their documentation
-    """
+    """Generate standardized CRUD operation response documentation."""
     base_responses: Dict[int | str, Dict[str, Any]] = {}
 
     if operation == "create":
@@ -149,17 +123,7 @@ def pagination_responses(
     allow_public_read: bool = False,
     custom_responses: Optional[Dict[int | str, Dict[str, Any]]] = None,
 ) -> Dict[int | str, Dict[str, Any]]:
-    """
-    Generate standardized pagination response documentation.
-
-    Args:
-        entity_name: Name of the entity being listed
-        allow_public_read: Whether the operation allows public access
-        custom_responses: Additional custom response codes and descriptions
-
-    Returns:
-        Dictionary of response codes and their documentation
-    """
+    """Generate standardized pagination response documentation."""
     base_responses: Dict[int | str, Dict[str, Any]] = {
         200: {"description": f"List of {entity_name}s retrieved successfully"},
     }
@@ -180,17 +144,7 @@ def search_responses(
     allow_public_read: bool = False,
     custom_responses: Optional[Dict[int | str, Dict[str, Any]]] = None,
 ) -> Dict[int | str, Dict[str, Any]]:
-    """
-    Generate standardized search response documentation.
-
-    Args:
-        entity_name: Name of the entity being searched
-        allow_public_read: Whether the operation allows public access
-        custom_responses: Additional custom response codes and descriptions
-
-    Returns:
-        Dictionary of response codes and their documentation
-    """
+    """Generate standardized search response documentation."""
     base_responses: Dict[int | str, Dict[str, Any]] = {
         200: {"description": f"Search results for {entity_name}s retrieved successfully"},
         400: {"description": "Invalid search parameters"},
@@ -211,41 +165,15 @@ def standard_pagination_params(
     skip: Annotated[int, Query(ge=0, description="Number of items to skip")] = 0,
     limit: Annotated[int, Query(ge=1, le=1000, description="Maximum number of items to return")] = 100,
 ) -> tuple[int, int]:
-    """
-    Standard pagination parameters for endpoints.
-
-    Returns:
-        Tuple of (skip, limit) values
-    """
+    """Standard pagination parameters for endpoints."""
     return skip, limit
 
 
 def validate_pagination_params(skip: int, limit: int) -> tuple[int, int]:
-    """
-    Validate and normalize pagination parameters (clamping variant).
+    """Validate and normalize pagination parameters (clamping variant).
 
     Silently clamps out-of-range inputs to the nearest legal value
     (``skip<0`` → 0, ``limit<1`` → 1, ``limit>1000`` → 1000) and
-    returns the normalized tuple. Used at the API endpoint layer so
-    callers can write ``skip, limit = validate_pagination_params(skip, limit)``
-    and not worry about HTTP 400s on fuzzy client input.
-
-    WR-01 (Phase 7): a second ``validate_pagination_params`` exists in
-    (historically) a second variant that **raised HTTPException(400)**
-    instead of clamping. The two variants share a name but have
-    incompatible contracts — do NOT "consolidate" them without
-    re-auditing every call site. ``common_operations`` is consumed by
-    service-layer code (``base_crud_service``, ``car_generation_service``)
-    where the caller wants a hard rejection, not a silent normalization.
-    See the review note in ``07-REVIEW.md`` before touching either
-    function.
-
-    Args:
-        skip: Number of items to skip
-        limit: Maximum number of items to return
-
-    Returns:
-        Tuple of validated (skip, limit) values
     """
     if skip < 0:
         skip = 0
@@ -264,6 +192,7 @@ def admin_only(func: Callable[P, Awaitable[T]]) -> Callable[P, Awaitable[T]]:
 
     @wraps(func)
     async def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
+        """Reject a non admin caller before running the endpoint."""
         from app.db.dynamo.users import User as DBUser
 
         user_value = kwargs.get("current_user")
@@ -284,8 +213,7 @@ def public_read_optional(func: Callable[P, Awaitable[T]]) -> Callable[P, Awaitab
 
     @wraps(func)
     async def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
-        # This decorator can be used to modify response models or add public access
-        # Implementation depends on specific use case
+        """Run the endpoint without requiring authentication."""
         return await func(*args, **kwargs)
 
     return wrapper

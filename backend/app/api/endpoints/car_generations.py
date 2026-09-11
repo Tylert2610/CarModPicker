@@ -23,13 +23,10 @@ from app.api.utils.endpoint_decorators import (
     standard_responses,
 )
 
-# Create router
 router = APIRouter()
 car_generation_service = CarGenerationService()
 
 
-# Add custom endpoints specific to cars BEFORE base router
-# These need to be defined first to avoid conflicts with /{entity_id} route
 @router.get(
     "/search",
     response_model=CursorPage[CarGenerationRead],
@@ -141,7 +138,6 @@ async def get_car_generations_by_ids(
     return car_generation_service.get_by_ids(ids, logger=logger)
 
 
-# Base endpoint router - read-only; car generations are seeded from car_generations_data
 base_router = BaseDynamoEndpointRouter(
     service=car_generation_service,
     router=router,

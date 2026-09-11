@@ -50,15 +50,14 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-# --- Google-specific helpers (D-20 — stay in this module) ---
-
 GOOGLE_LINK_PURPOSE = "google_link"
 GOOGLE_SIGNUP_PURPOSE = "google_signup"
-OAUTH_2FA_PURPOSE = "oauth_2fa"  # Duplicated in _helpers.py per planner decision
-GOOGLE_PROVIDER = "google"  # Duplicated in _helpers.py per planner decision
+OAUTH_2FA_PURPOSE = "oauth_2fa"
+GOOGLE_PROVIDER = "google"
 
 
 def _ensure_google_enabled() -> None:
+    """Raise 503 when Google sign-in is not configured."""
     if not settings.google_oauth_enabled:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -67,6 +66,7 @@ def _ensure_google_enabled() -> None:
 
 
 def _verify_google_or_400(id_token_str: str, nonce: str, logger: logging.Logger) -> GoogleIdentity:
+    """Verify a Google ID token, rejecting bad tokens and unverified emails."""
     try:
         identity = verify_google_id_token(id_token_str, nonce, settings.GOOGLE_CLIENT_ID)
     except GoogleTokenError as e:
@@ -90,13 +90,12 @@ def _suggest_username(email: str, repos: Repositories) -> str:
         suffix += 1
         candidate = f"{base}{suffix}"
         if suffix > 100:
-            # Give up on auto-numbering; user picks one. Returning the base is fine —
-            # the signup endpoint will reject it if still taken and the form will reprompt.
             return base
     return candidate
 
 
 def _decode_purpose_token(token: str, expected_purpose: str) -> dict[str, Any]:
+    """Decode a single purpose token, rejecting anything issued for another purpose."""
     try:
         payload = decode_access_token(token)
     except TokenError as e:
@@ -114,9 +113,6 @@ async def google_sign_in(
     """Verify a Google ID token and route to the right next step.
 
     Outcomes:
-      - Google `sub` is already linked → log the user in (or 2FA challenge).
-      - Email matches an existing user → return a `link_token`; client prompts for password.
-      - No match → return a `signup_token`; client collects a username.
     """
     _ensure_google_enabled()
     identity = _verify_google_or_400(request.id_token, request.nonce, logger)
@@ -184,7 +180,6 @@ async def google_link(
 
     Required after the initial /auth/google call returned `requires_link: true`.
     Verifies the user's password (and OTP if 2FA is enabled), creates the oauth_accounts row,
-    and returns an access token.
     """
     _ensure_google_enabled()
     payload = _decode_purpose_token(request.link_token, GOOGLE_LINK_PURPOSE)
@@ -196,7 +191,7 @@ async def google_link(
     user = repos.users.get_by_email(email)
     if user is None or user.disabled or user.is_service_account:
         ResponsePatterns.raise_unauthorized("Account not available")
-    assert user is not None  # for type checker
+    assert user is not None
 
     if not verify_password(request.password, user.hashed_password):
         logger.warning(f"Google link: bad password for user {user.username}")
@@ -208,12 +203,6 @@ async def google_link(
         if not user.totp_secret:
             logger.error(f"2FA enabled but no secret for user {user.username}")
             ResponsePatterns.raise_internal_server_error("2FA configuration error")
-        # WR-06: split into (a) construct TOTP, (b) verify code — mirrors
-        # ``verify_2fa`` (line ~419-434). Previously a single try/except wrapped
-        # both calls, so a verify-time secret-format error would surface as
-        # "Invalid OTP code" via the unauthorized helper while a construct-time
-        # error surfaced as "2FA configuration error". Splitting keeps each
-        # error message accurately scoped to its failure mode.
         try:
             totp = pyotp.TOTP(user.totp_secret)
         except (ValueError, TypeError, binascii.Error):
@@ -345,7 +334,6 @@ async def google_connect(
 
     Refuses if the Google email matches a *different* user — the user must instead sign out
     and use the merge flow from the login page. This preserves the invariant that no two
-    accounts share an email.
     """
     _ensure_google_enabled()
     identity = _verify_google_or_400(request.id_token, request.nonce, logger)
@@ -391,6 +379,7 @@ async def list_oauth_accounts(
     current_user: DBUser = Depends(get_current_user),
     repos: Repositories = Depends(get_repositories),
 ) -> list[OAuthAccountRead]:
+    """Return the OAuth providers linked to the caller."""
     rows = repos.oauth_accounts.list_by_user(current_user.id)
     return [OAuthAccountRead.model_validate(r) for r in rows]
 

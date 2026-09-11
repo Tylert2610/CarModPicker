@@ -1,3 +1,5 @@
+"""Registers the standard CRUD routes for a DynamoDB backed entity."""
+
 from typing import Any, Callable, Dict, Generic, List, Optional, Sequence, Type, TypeVar
 from uuid import UUID
 
@@ -19,6 +21,8 @@ UpdateSchema = TypeVar("UpdateSchema", bound=HasModelDump)
 
 
 class BaseDynamoEndpointRouter(Generic[TModel, CreateSchema, ReadSchema, UpdateSchema]):
+    """Registers count, create, read, list, update and delete routes on a router."""
+
     def __init__(
         self,
         service: BaseDynamoCRUDService[TModel, CreateSchema, UpdateSchema],
@@ -34,6 +38,7 @@ class BaseDynamoEndpointRouter(Generic[TModel, CreateSchema, ReadSchema, UpdateS
         serialize: Optional[Callable[[TModel], Any]] = None,
         serialize_many: Optional[Callable[[Sequence[TModel]], List[Any]]] = None,
     ) -> None:
+        """Configure the schemas and options, then register the routes."""
         self.service = service
         self.router = router
         self.entity_name = entity_name
@@ -48,6 +53,7 @@ class BaseDynamoEndpointRouter(Generic[TModel, CreateSchema, ReadSchema, UpdateS
         self._register_common_endpoints()
 
     def _register_common_endpoints(self) -> None:
+        """Register every CRUD route that is not disabled."""
         entity_name = self.entity_name
         read_schema = self._read_schema
         create_schema = self._create_schema
@@ -61,6 +67,7 @@ class BaseDynamoEndpointRouter(Generic[TModel, CreateSchema, ReadSchema, UpdateS
                 responses={200: {"description": f"{entity_name.title()} count retrieved successfully"}},
             )
             async def count_entities() -> Dict[str, int]:  # pyright: ignore[reportUnusedFunction]
+                """Return the total number of entities."""
                 return {"count": self.service.count()}
 
         if "create" not in self.disabled and create_schema is not None:
@@ -78,6 +85,7 @@ class BaseDynamoEndpointRouter(Generic[TModel, CreateSchema, ReadSchema, UpdateS
                 data: create_schema,  # type: ignore[valid-type]
                 current_user: DBUser = Depends(get_current_user),
             ) -> Any:
+                """Create an entity owned by the caller."""
                 entity = self.service.create(data, current_user, self.additional_create_data)
                 return self._serialize(entity)
 
@@ -90,6 +98,7 @@ class BaseDynamoEndpointRouter(Generic[TModel, CreateSchema, ReadSchema, UpdateS
                     responses={404: {"description": f"{entity_name.title()} not found"}},
                 )
                 async def read_entity_public(entity_id: UUID) -> Any:  # pyright: ignore[reportUnusedFunction]
+                    """Return one entity without requiring authentication."""
                     return self._serialize(self.service.get_by_id(entity_id, allow_public=True))
 
             else:
@@ -106,6 +115,7 @@ class BaseDynamoEndpointRouter(Generic[TModel, CreateSchema, ReadSchema, UpdateS
                     entity_id: UUID,
                     current_user: DBUser = Depends(get_current_user),
                 ) -> Any:
+                    """Return one entity the caller is allowed to read."""
                     return self._serialize(self.service.get_by_id(entity_id, current_user=current_user))
 
         if "list" not in self.disabled:
@@ -118,6 +128,7 @@ class BaseDynamoEndpointRouter(Generic[TModel, CreateSchema, ReadSchema, UpdateS
             async def list_entities(  # pyright: ignore[reportUnusedFunction]
                 params: CursorParams = Depends(get_cursor_params),
             ) -> Any:
+                """Return one page of entities."""
                 page = self.service.list_page(limit=params.limit, cursor=params.cursor)
                 return CursorPage(
                     items=self._serialize_many(page.items),
@@ -140,6 +151,7 @@ class BaseDynamoEndpointRouter(Generic[TModel, CreateSchema, ReadSchema, UpdateS
                 data: update_schema,  # type: ignore[valid-type]
                 current_user: DBUser = Depends(get_current_user),
             ) -> Any:
+                """Update an entity the caller is allowed to modify."""
                 return self._serialize(self.service.update(entity_id, data, current_user))
 
         if "delete" not in self.disabled:
@@ -156,4 +168,5 @@ class BaseDynamoEndpointRouter(Generic[TModel, CreateSchema, ReadSchema, UpdateS
                 entity_id: UUID,
                 current_user: DBUser = Depends(get_current_user),
             ) -> Any:
+                """Delete an entity the caller is allowed to modify."""
                 return self._serialize(self.service.delete(entity_id, current_user))

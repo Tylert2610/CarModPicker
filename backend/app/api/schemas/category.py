@@ -1,3 +1,5 @@
+"""Request and response schemas for part categories."""
+
 from datetime import datetime
 from typing import Optional
 from uuid import UUID
@@ -6,6 +8,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class CategoryBase(BaseModel):
+    """Fields shared by every category schema."""
+
     name: str = Field(..., description="Unique category name (e.g., 'exhaust', 'suspension')")
     display_name: str = Field(..., description="Human-readable display name (e.g., 'Exhaust Systems')")
     description: Optional[str] = Field(None, description="Category description")
@@ -15,10 +19,14 @@ class CategoryBase(BaseModel):
 
 
 class CategoryCreate(CategoryBase):
+    """Request body for creating a category."""
+
     pass
 
 
 class CategoryUpdate(BaseModel):
+    """Request body for updating a category."""
+
     name: Optional[str] = Field(None, description="Unique category name")
     display_name: Optional[str] = Field(None, description="Human-readable display name")
     description: Optional[str] = Field(None, description="Category description")
@@ -28,6 +36,8 @@ class CategoryUpdate(BaseModel):
 
 
 class CategoryInDB(CategoryBase):
+    """A stored category with its identifiers and timestamps."""
+
     id: UUID
     created_at: datetime
     updated_at: datetime
@@ -36,4 +46,6 @@ class CategoryInDB(CategoryBase):
 
 
 class CategoryResponse(CategoryInDB):
+    """A category as returned to clients."""
+
     pass

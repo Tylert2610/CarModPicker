@@ -1,3 +1,5 @@
+"""Request and response schemas for parts."""
+
 from datetime import datetime
 from typing import List, Optional
 from uuid import UUID
@@ -18,6 +20,8 @@ def apply_image_url_presigning(value: Optional[List[str]]) -> Optional[List[str]
 
 
 class PartCreate(BaseModel):
+    """Request body for creating a part."""
+
     name: str
     description: Optional[str] = None
     image_urls: Optional[List[str]] = Field(
@@ -58,12 +62,15 @@ class PartCreate(BaseModel):
     @field_validator("price_cents")
     @classmethod
     def validate_price_cents(cls, v: Optional[int]) -> Optional[int]:
+        """Reject prices outside the stored integer range."""
         if v is not None and (v < 0 or v > 2147483647):
             raise ValueError("Price must be between 0 and 2,147,483,647 (max PostgreSQL integer)")
         return v
 
 
 class PartUpdate(BaseModel):
+    """Request body for updating a part."""
+
     name: Optional[str] = None
     description: Optional[str] = None
     image_urls: Optional[List[str]] = Field(
@@ -80,6 +87,8 @@ class PartUpdate(BaseModel):
 
 
 class PartRead(BaseModel):
+    """A part as returned to clients."""
+
     id: UUID
     name: str
     description: Optional[str] = None
@@ -114,13 +123,17 @@ class PartRead(BaseModel):
 
 
 class PartReadWithVotes(PartRead):
+    """A part with its vote tallies."""
+
     upvotes: int = 0
     downvotes: int = 0
     total_votes: int = 0
-    user_vote: Optional[str] = None  # 'upvote', 'downvote', or None
+    user_vote: Optional[str] = None
 
 
 class PartAppendImages(BaseModel):
+    """Request body for appending images to a part gallery."""
+
     file_keys: List[str] = Field(
         ...,
         max_length=MAX_IMAGES_PER_PART,
@@ -129,14 +142,19 @@ class PartAppendImages(BaseModel):
 
 
 class SetPrimaryImageRequest(BaseModel):
+    """Request body for choosing a part's primary image."""
+
     index: int = Field(..., ge=0, description="0-based index into the part's image_urls gallery")
 
 
 def _default_listings() -> list[PartListingReadWithRetailer]:
+    """Return an empty listings list for use as a field default."""
     return []
 
 
 class PartReadWithListings(PartRead):
+    """A part with its retailer listings and the cheapest one."""
+
     listings: list[PartListingReadWithRetailer] = Field(
         default_factory=_default_listings, description="Retailer listings with current price"
     )

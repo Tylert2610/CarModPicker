@@ -39,34 +39,27 @@ async def setup_2fa(
     Generate a new 2FA secret and QR code for the current user.
     This does not enable 2FA - the user must verify the OTP first.
     """
-    # Generate a new secret
     secret = pyotp.random_base32()
 
-    # Store the secret temporarily (will be saved when verified)
     repos.users.update(current_user.id, totp_secret=secret)
 
-    # Create TOTP object
     totp = pyotp.TOTP(secret)
 
-    # Generate provisioning URI
     provisioning_uri = totp.provisioning_uri(
         name=current_user.email,
         issuer_name=settings.PROJECT_NAME,
     )
 
-    # Generate QR code
     qr = qrcode.QRCode(version=1, box_size=10, border=5)
     qr.add_data(provisioning_uri)
     qr.make(fit=True)
 
     img = qr.make_image(fill_color="black", back_color="white")
 
-    # Convert to base64
     buffer = io.BytesIO()
-    img.save(buffer, "PNG")  # Save as PNG format
+    img.save(buffer, "PNG")
     qr_code_data = base64.b64encode(buffer.getvalue()).decode("utf-8")
 
-    # Format secret for manual entry (add spaces every 4 characters)
     manual_entry_key = " ".join(secret[i : i + 4] for i in range(0, len(secret), 4))
 
     logger.info(f"2FA setup initiated for user: {current_user.username}")
@@ -90,14 +83,12 @@ async def verify_2fa(
     if not current_user.totp_secret:
         ResponsePatterns.raise_bad_request("2FA setup not initiated. Please call /2fa/setup first.")
 
-    # Verify OTP - handle invalid secret format gracefully
     try:
         totp = pyotp.TOTP(current_user.totp_secret)
     except (ValueError, TypeError, binascii.Error) as e:
         logger.error(f"Invalid TOTP secret format for user: {current_user.username}, error: {str(e)}")
         ResponsePatterns.raise_internal_server_error("2FA configuration error")
 
-    # Verify OTP - exception can also be raised here if secret is invalid during verification
     try:
         if not totp.verify(request.otp, valid_window=1):
             logger.warning(f"Invalid OTP during 2FA verification for user: {current_user.username}")
@@ -108,7 +99,6 @@ async def verify_2fa(
         )
         ResponsePatterns.raise_internal_server_error("2FA configuration error")
 
-    # Enable 2FA
     repos.users.update(current_user.id, totp_enabled=True)
 
     logger.info(f"2FA enabled successfully for user: {current_user.username}")
@@ -131,12 +121,10 @@ async def disable_2fa(
     if not current_user.totp_enabled:
         ResponsePatterns.raise_bad_request("2FA is not enabled for this user")
 
-    # Verify password
     if not verify_password(request.password, current_user.hashed_password):
         logger.warning(f"Invalid password provided during 2FA disable for user: {current_user.username}")
         ResponsePatterns.raise_unauthorized("Incorrect password")
 
-    # Verify OTP
     if not current_user.totp_secret:
         logger.error(f"2FA enabled but no secret found for user: {current_user.username}")
         ResponsePatterns.raise_internal_server_error("2FA configuration error")
@@ -151,7 +139,6 @@ async def disable_2fa(
         logger.warning(f"Invalid OTP provided during 2FA disable for user: {current_user.username}")
         ResponsePatterns.raise_unauthorized("Invalid OTP code")
 
-    # Disable 2FA
     repos.users.update(current_user.id, totp_enabled=False, totp_secret=None)
 
     logger.info(f"2FA disabled for user: {current_user.username}")
