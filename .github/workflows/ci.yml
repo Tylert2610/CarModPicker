@@ -272,6 +272,10 @@ jobs:
         working-directory: chrome-extension
         run: test -f dist/manifest.json
 
+      - name: Verify the API hosts stay in host_permissions
+        working-directory: chrome-extension
+        run: node scripts/check-host-permissions.js
+
       - name: Upload built extension as artifact
         uses: actions/upload-artifact@v7
         with:
