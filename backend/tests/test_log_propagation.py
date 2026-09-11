@@ -151,11 +151,24 @@ def test_task_context_job_id_none(caplog_with_context) -> None:
 
 
 def test_task_context_resets(caplog_with_context) -> None:
-    """Token-based reset leaves ContextVars at default after exit."""
-    with task_context("scope", "1"):
-        assert request_id_var.get() == "bg:scope:1"
-    assert request_id_var.get() == "-"
-    assert user_id_var.get() == "-"
+    """Token-based reset restores whatever the ContextVars held before entry.
+
+    The baseline is pinned explicitly rather than assumed to be the `"-"`
+    default. Under xdist another test on the same worker can leave a request
+    id behind, and `task_context` restores the previous value by token, so
+    asserting the module default made this test depend on scheduling order.
+    """
+    rid_token = request_id_var.set("before-rid")
+    uid_token = user_id_var.set("before-uid")
+    try:
+        with task_context("scope", "1"):
+            assert request_id_var.get() == "bg:scope:1"
+            assert user_id_var.get() == "bg"
+        assert request_id_var.get() == "before-rid"
+        assert user_id_var.get() == "before-uid"
+    finally:
+        request_id_var.reset(rid_token)
+        user_id_var.reset(uid_token)
 
 
 def test_cli_log_context(caplog_with_context) -> None:
